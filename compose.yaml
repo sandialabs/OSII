@@ -51,6 +51,11 @@ services:
     depends_on:
       api:
         condition: service_healthy
+      # The dashboard proxies /api/chat to this local-first service. Keeping
+      # it explicit prevents Nginx from starting before Podman registers the
+      # `chat` DNS name on the Compose network.
+      chat:
+        condition: service_started
 
   chat:
     build:
@@ -66,7 +71,6 @@ services:
     depends_on:
       api:
         condition: service_healthy
-    profiles: ["chat"]
 
   ollama:
     image: ollama/ollama:0.12.0

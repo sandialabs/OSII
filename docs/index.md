@@ -41,6 +41,7 @@ response models plus the FastAPI endpoints.
 
 - [Local and intermittently connected operation](operations/local-first.md)
 - [Extractor routing](reference/extractor-routing.md)
+- [Export components for separate repositories](operations/component-export.md)
 
 ## API and file-format reference
 

@@ -14,36 +14,13 @@ dashboard and available to agents.
 [Read the documentation](https://heidikmkv.github.io/osii/) ·
 [Browse the documentation on GitHub](docs/index.md)
 
-## Getting started — no development experience required
+## Getting started
 
-OSII runs as a small group of containers. You do not need to install Python,
-JavaScript, a database, or an AI model on your computer.
+OSII uses Podman by default. The shortcuts below start the dashboard together
+with its API, worker, local chat fallback, Tika, and Tesseract—so the frontend
+has backend features available immediately.
 
-### 1. Download OSII
-
-Download a release archive when one is available. Otherwise, on the OSII
-GitHub page select **Code → Download ZIP**, extract the ZIP, and open the
-extracted `osii` folder.
-
-The commands below are entered in a terminal opened in that folder. On macOS,
-the Terminal application is under **Applications → Utilities**. On Windows,
-use PowerShell.
-
-### 2. Install a container application
-
-Choose either:
-
-- **Docker Desktop**, if your organization already supports Docker; or
-- **Podman Desktop**, a free and open-source alternative available for macOS,
-  Windows, and Linux.
-
-For Podman, follow the official
-[Podman Desktop installation instructions](https://podman-desktop.io/docs/installation).
-On macOS and Windows, complete the guided setup and allow Podman Desktop to
-create and start a **Podman machine**. Also accept the option to install Compose
-support. Leave Docker Desktop or Podman Desktop running while you use OSII.
-
-### 3. Choose where your files live
+### 1. Choose where your files live
 
 By default, OSII looks in this folder inside the downloaded project:
 
@@ -69,7 +46,9 @@ Copy-Item .env.example .env
 ```
 
 You can now drag files into the newly created `osii-data/source` folder using
-Finder or File Explorer.
+Finder or File Explorer. Files placed in the repository root are intentionally
+not shown; this avoids treating OSII's own code and configuration as your
+corpus.
 
 OSII mounts `source` read-only: it can read your originals but cannot modify or
 delete them. The `osii-data` folder is ignored by Git, so your documents will
@@ -92,20 +71,33 @@ Files added with the dashboard's **Upload files** button are stored separately
 in a container-managed upload volume. OSII's generated database, extracted
 text, queue status, and indexes are also kept separately from your originals.
 
-### 4. Start OSII
+### 2. Start OSII
 
-With Docker Desktop:
+On macOS or Linux, use the Makefile shortcuts:
 
 ```bash
 cd /path/to/osii
-docker compose --profile chat --profile ocr up --build
+make dev
 ```
 
-With Podman Desktop:
+`make dev` builds images when needed and starts the normal integrated stack.
+After the images already exist, start it without rebuilding:
 
 ```bash
-cd /path/to/osii
-podman compose --profile chat --profile ocr up --build
+make run
+```
+
+On Windows PowerShell, use the equivalent launcher:
+
+```powershell
+cd C:\path\to\osii
+.\scripts\osii.ps1 dev
+```
+
+Later starts can skip rebuilding:
+
+```powershell
+.\scripts\osii.ps1 run
 ```
 
 The first startup takes longer because the container images must be downloaded
@@ -119,39 +111,28 @@ shared folder or use **Upload files**, select the operations you want, and
 press **Start processing**. Progress and recent messages appear on the same
 page.
 
-Keep the terminal window open while using OSII. Stop everything with
-<kbd>Ctrl</kbd>+<kbd>C</kbd>. To start it again later, run the same Compose
-command.
+Keep the terminal window open while using OSII. Stop it with
+<kbd>Ctrl</kbd>+<kbd>C</kbd>, or use `make down` / `.\scripts\osii.ps1 down`.
 
-### Troubleshooting startup
+### Useful shortcuts
 
-- If `podman compose` is unavailable, open Podman Desktop and install Compose
-  from its setup or settings screen. Podman documents the same
-  [`podman compose` workflow](https://podman-desktop.io/docs/compose/running-compose).
-- If the browser cannot open OSII, verify that Docker Desktop or the Podman
-  machine is running, then look for an error near the bottom of the terminal.
-- If a corporate proxy blocks image downloads, ask an administrator to stage
-  the required container images while connected. Once images and optional
-  model weights are present, normal local use does not require internet access.
+- `make dev-examples` / `.\scripts\osii.ps1 dev-examples`: build and run the
+  example table enricher.
+- `make dev-all` / `.\scripts\osii.ps1 dev-all`: include optional agents,
+  embeddings, Ollama, and all example services.
+- `make logs` / `.\scripts\osii.ps1 logs`: follow service logs.
+- `make down` / `.\scripts\osii.ps1 down`: stop the stack without deleting
+  your data volume.
+- [Export components for separate corporate repositories](docs/operations/component-export.md).
 
-### Developer shortcuts
-
-The Makefile uses Docker by default:
+Docker is supported as an override when it is your local container runtime:
 
 ```bash
-make dev
+make COMPOSE='docker compose' dev
 ```
 
-To use the same shortcuts with Podman:
-
-```bash
-make COMPOSE="podman compose" dev
-```
-
-To include the example subject-matter-expert processor:
-
-```bash
-make dev-examples
+```powershell
+.\scripts\osii.ps1 dev -Runtime Docker
 ```
 
 See the [documentation index](docs/index.md) for guided paths through usage,

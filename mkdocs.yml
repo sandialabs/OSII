@@ -49,6 +49,7 @@ nav:
   - Operate offline:
       - Local-first operation: operations/local-first.md
       - Extractor routing: reference/extractor-routing.md
+      - Export components: operations/component-export.md
   - API and formats:
       - REST API:
           - Overview: reference/api/index.md
@@ -57,4 +58,3 @@ nav:
           - Compatibility: reference/api/compatibility.md
       - Collection format: reference/collection-file-format.md
   - Contribute: contributing/developer-guide.md
-

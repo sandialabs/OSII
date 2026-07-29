@@ -1,9 +1,15 @@
-COMPOSE ?= docker compose
+# Podman is the default local container runtime. Override per invocation for
+# Docker Desktop, for example: make COMPOSE='docker compose' dev
+COMPOSE ?= podman-compose
 
-.PHONY: dev dev-examples dev-all down logs test build docs docs-serve
+.PHONY: dev run dev-examples dev-all down logs test build docs docs-serve
 
 dev:
 	$(COMPOSE) --profile chat --profile ocr up --build api worker dashboard chat tika tesseract
+
+# Start the normal integrated stack from existing images, without rebuilding.
+run:
+	$(COMPOSE) --profile chat --profile ocr up api worker dashboard chat tika tesseract
 
 dev-examples:
 	$(COMPOSE) --profile examples up --build api dashboard table-pdf-enricher
