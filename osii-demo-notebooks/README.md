@@ -21,3 +21,17 @@ make dev
 The local walkthrough does not need a model gateway. The final examples show
 where an optional OpenAI-compatible endpoint or custom Processor API service
 fits into the same workflow.
+
+## Notebook companions
+
+The legacy `.ipynb` demonstrations are retained for notebook users. Their
+same-basename `.py` companions are the reviewable, agent-safe source format.
+To regenerate a companion without manually editing notebook JSON, run:
+
+```bash
+cd ..
+python3 scripts/notebook_to_py.py osii-demo-notebooks/01_Welcome_to_OSII_the_On-Store_Intelligence_Index.ipynb
+```
+
+Agents are instructed not to open or modify `.ipynb` files unless a human
+explicitly requests it.
