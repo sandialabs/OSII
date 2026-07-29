@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("dev", "run", "dev-examples", "dev-all", "down", "logs", "build")]
+    [ValidateSet("dev", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
@@ -32,17 +32,43 @@ function Invoke-OsiiCompose {
     }
 }
 
+function Invoke-OsiiDevLauncher {
+    param([string[]]$Arguments = @())
+
+    $UvExecutable = Get-Command "uv" -ErrorAction SilentlyContinue
+    if (-not $UvExecutable) {
+        throw "uv was not found. The bare-metal developer workflow requires uv and Node.js/npm."
+    }
+    if (-not (Get-Command "npm" -ErrorAction SilentlyContinue)) {
+        throw "npm was not found. The bare-metal developer workflow requires Node.js/npm."
+    }
+
+    & $UvExecutable.Source run --no-project --python 3.11 python scripts/dev_stack.py @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Bare-metal development stack exited with code $LASTEXITCODE."
+    }
+}
+
 Push-Location $RepositoryRoot
 try {
     switch ($Command) {
         "dev" {
-            Invoke-OsiiCompose @("--profile", "chat", "--profile", "ocr", "up", "--build", "embeddings", "api", "worker", "chat", "dashboard", "tika", "tesseract")
+            Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
+            Invoke-OsiiDevLauncher
+        }
+        "dev-services" {
+            Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
         }
         "run" {
             Invoke-OsiiCompose @("--profile", "chat", "--profile", "ocr", "up", "embeddings", "api", "worker", "chat", "dashboard", "tika", "tesseract")
         }
         "dev-examples" {
-            Invoke-OsiiCompose @("--profile", "examples", "--profile", "ocr", "up", "--build", "embeddings", "api", "worker", "chat", "dashboard", "tika", "tesseract", "table-pdf-enricher")
+            Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
+            Invoke-OsiiCompose @("--profile", "examples", "up", "-d", "--build", "table-pdf-enricher")
+            Invoke-OsiiDevLauncher @("--examples")
+        }
+        "containers-dev" {
+            Invoke-OsiiCompose @("--profile", "chat", "--profile", "ocr", "up", "--build", "embeddings", "api", "worker", "chat", "dashboard", "tika", "tesseract")
         }
         "dev-all" {
             Invoke-OsiiCompose @("--profile", "examples", "--profile", "chat", "--profile", "agents", "--profile", "ocr", "--profile", "embeddings", "--profile", "ollama", "up", "--build")

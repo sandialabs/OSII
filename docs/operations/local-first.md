@@ -4,9 +4,10 @@ OSII must remain useful when corporate model and package services are
 unavailable. Container images and model weights should be staged while a
 connection exists; normal corpus use can then stay local.
 
-The Jina image downloads its configured embedding model during `docker compose
-build`, so a successfully built image does not need Hugging Face access at
-runtime. Tesseract language packs are likewise installed in its image.
+The deployment Jina image downloads its configured embedding model during
+`podman-compose build`, so a successfully built image does not need Hugging
+Face access at runtime. Bare-metal development caches the same model under
+`osii-data/models/`. Tesseract language packs are installed in its image.
 
 | Capability | Fully local option | Connected enhancement |
 |---|---|---|
@@ -19,17 +20,26 @@ runtime. Tesseract language packs are likewise installed in its image.
 | UI | bundled dashboard container | same UI |
 | Agent access | bundled MCP server | same MCP contract |
 
-Start the normal local system, including the bundled embedding service:
+For development, start the editable local system:
 
 ```bash
 make dev
 ```
 
-`make dev` starts the API, local worker, and local embedding service. In the dashboard, open
-**Processing** to add files from the shared volume or upload one-off files;
-every request is written to `/data/.osii/state/jobs.sqlite3` before the worker
-claims it. This preserves queued and completed status through an API restart
-without requiring Redis, RabbitMQ, or network access.
+`make dev` keeps only Tika and Tesseract in Podman. Jina embeddings, the API,
+local worker, extractive chat, and Vite dashboard run directly from source with
+reload support. Development state is written to
+`osii-data/.osii/state/jobs.sqlite3`; the worker can survive API reloads without
+Redis, RabbitMQ, or network access.
+
+To run only the supporting containers:
+
+```bash
+make dev-services
+```
+
+To test packaged images instead, use `make build` followed by `make run`.
+`make containers-dev` explicitly rebuilds and runs the packaged core stack.
 
 The worker chooses extractors by file extension using
 `ai-ready-ingest/config/extractor_routes.toml`. The default routes use bundled
@@ -39,7 +49,7 @@ processor containers and verify their health and contract with a small request.
 Registered enabled endpoints are also included in processor discovery; secrets
 are intentionally never stored in the registry.
 
-Start all bundled services:
+Start all bundled services as deployment-style containers:
 
 ```bash
 make dev-all

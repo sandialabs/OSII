@@ -16,9 +16,9 @@ dashboard and available to agents.
 
 ## Getting started
 
-OSII uses Podman by default. The shortcuts below start the dashboard together
-with its API, worker, local chat fallback, local embeddings, Tika, and Tesseract—so the frontend
-has backend features available immediately.
+OSII uses Podman for packaged deployment and for system-level development
+dependencies. The development shortcut runs editable application code directly
+on the host, so Python changes reload and dashboard changes appear immediately.
 
 ### 1. Choose where your files live
 
@@ -71,23 +71,26 @@ Files added with the dashboard's **Upload files** button are stored separately
 in a container-managed upload volume. OSII's generated database, extracted
 text, queue status, and indexes are also kept separately from your originals.
 
-### 2. Start OSII
+### 2. Develop OSII with live reload
 
-On macOS or Linux, use the Makefile shortcuts:
+Make sure the Podman machine is running on macOS or Windows:
+
+```bash
+podman machine start
+```
+
+On macOS or Linux, start the editable stack:
 
 ```bash
 cd /path/to/osii
 make dev
 ```
 
-`make dev` builds images when needed and starts the normal integrated stack.
-If you pull a change that adds or changes a service, run `make down` once
-before `make dev`; this stops containers but preserves your OSII data volume.
-After the images already exist, start it without rebuilding:
-
-```bash
-make run
-```
+`make dev` starts only Tika and Tesseract in Podman. It runs Jina embeddings,
+the API, worker, local chat service, and Vite dashboard from source. The
+launcher checks Python and Node dependencies, reloads backend services when
+Python changes, and lets Vite update the browser as frontend code changes.
+Generated development data and downloaded model files stay under `osii-data/`.
 
 On Windows PowerShell, use the equivalent launcher:
 
@@ -96,14 +99,9 @@ cd C:\path\to\osii
 .\scripts\osii.ps1 dev
 ```
 
-Later starts can skip rebuilding:
-
-```powershell
-.\scripts\osii.ps1 run
-```
-
-The first startup takes longer because the container images must be downloaded
-and built. When the terminal output settles, open:
+The first development startup takes longer while dependencies and the local
+embedding model are cached. Later starts reuse them. When the terminal output
+settles, open:
 
 - **OSII dashboard:** <http://localhost:5173>
 - **Backend status:** <http://localhost:8511/health>
@@ -113,15 +111,40 @@ shared folder or use **Upload files**, select the operations you want, and
 press **Start processing**. Progress and recent messages appear on the same
 page.
 
-Keep the terminal window open while using OSII. Stop it with
-<kbd>Ctrl</kbd>+<kbd>C</kbd>, or use `make down` / `.\scripts\osii.ps1 down`.
+Keep the terminal window open while using OSII. Stop host processes with
+<kbd>Ctrl</kbd>+<kbd>C</kbd>. Stop the supporting containers with `make down`
+or `.\scripts\osii.ps1 down`.
+
+### Run the packaged container stack
+
+Use the deployment-style stack when testing images rather than editing code:
+
+```bash
+make build
+make run
+```
+
+On Windows PowerShell:
+
+```powershell
+.\scripts\osii.ps1 build
+.\scripts\osii.ps1 run
+```
+
+`make run` never rebuilds images. Use `make containers-dev` or
+`.\scripts\osii.ps1 containers-dev` when you intentionally want to rebuild and
+run the normal integrated container stack.
 
 ### Useful shortcuts
 
-- `make dev-examples` / `.\scripts\osii.ps1 dev-examples`: build and run the
-  example table enricher.
+- `make dev-services` / `.\scripts\osii.ps1 dev-services`: start only the
+  Podman services needed by bare-metal development.
+- `make dev-examples` / `.\scripts\osii.ps1 dev-examples`: run editable OSII
+  plus the example table enricher.
 - `make dev-all` / `.\scripts\osii.ps1 dev-all`: include optional agents,
-  embeddings, Ollama, and all example services.
+  embeddings, Ollama, and all example services in containers.
+- `make containers-dev` / `.\scripts\osii.ps1 containers-dev`: rebuild and
+  run the normal deployment-style container stack.
 - `make logs` / `.\scripts\osii.ps1 logs`: follow service logs.
 - `make down` / `.\scripts\osii.ps1 down`: stop the stack without deleting
   your data volume.
