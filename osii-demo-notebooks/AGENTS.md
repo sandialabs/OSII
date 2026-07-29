@@ -9,5 +9,11 @@ To create or refresh a paired Python file without exposing notebook JSON in an
 agent session, run:
 
 ```bash
-python3 scripts/notebook_to_py.py osii-demo-notebooks/name.ipynb
+python notebook_to_py.py name.ipynb
+```
+
+To create a notebook from a marker-based Python file, run:
+
+```bash
+python py_to_notebook.py name.py
 ```
