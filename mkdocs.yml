@@ -29,6 +29,7 @@ nav:
   - Start here: index.md
   - Install and use:
       - Single-file walkthrough: tutorials/single-file.md
+      - Python demonstrations: tutorials/python-demonstrations.md
       - CLI cheat sheet: reference/cli.md
   - Understand OSII:
       - Architecture: concepts/architecture.md
