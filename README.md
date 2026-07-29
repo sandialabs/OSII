@@ -187,6 +187,8 @@ The monorepo currently contains components such as:
 
 ### 1. Build a local OSII database
 Use the backend CLI to process a source collection into `.osii`.
+For a step-by-step, code-first walkthrough, use the
+[Jupytext-ready Python demonstrations](osii-demo-notebooks/README.md).
 
 ### 2. Start the backend API
 Run the backend FastAPI service to expose the OSII store over REST.

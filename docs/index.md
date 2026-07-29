@@ -9,6 +9,7 @@ matches what you want to do.
 - [Get started from the repository README](https://github.com/heidikmkv/osii#getting-started--no-development-experience-required)
 - [Process one file end to end](tutorials/single-file.md)
 - [Use the command line](reference/cli.md)
+- [Follow the Python demonstrations](../osii-demo-notebooks/README.md)
 
 ## Understand OSII
 

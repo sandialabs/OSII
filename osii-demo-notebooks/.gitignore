@@ -124,6 +124,7 @@ data_volume/*
 
 ## OSII
 .osii/
+demo-workspace/
 
 # AI export output
 repo_for_ai.txt
