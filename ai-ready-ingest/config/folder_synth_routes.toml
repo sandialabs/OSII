@@ -1,0 +1,14 @@
+[[routes]]
+name = "experiments-recursive"
+synthesizer = "recursive_folder"
+path_patterns = ["experiments/**", "runs/**", "reports/**", "analysis/**"]
+
+[[routes]]
+name = "simulation-folders-recursive"
+synthesizer = "recursive_folder"
+path_patterns = ["simulation/**", "simulations/**", "thermal/**"]
+
+[[routes]]
+name = "catchall-describe"
+synthesizer = "describe_folder"
+path_patterns = ["*"]

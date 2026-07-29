@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "osii-mcp": {
+      "url": "http://127.0.0.1:8021/mcp",
+      "transport": "http",
+      "groups": [
+        "users"
+      ],
+      "description": "OSII traversal MCP server",
+      "author": "Heidi Komkov",
+      "short_description": "Traverse and inspect OSII stores",
+      "help_email": "hbkomko@sandia.gov",
+      "compliance_level": "All",
+      "auth_token": "${ATLAS_MCP_TOKEN}"
+    }
+  }
+}

@@ -1,0 +1,4428 @@
+openapi: 3.1.0
+info:
+  title: AI-Ready-Ingest API
+  version: 0.1.0
+  summary: Resource-oriented backend API for ingestion, canonical object access, collections, enrichments, and search.
+  description: |
+    This OpenAPI document describes the current implemented backend API surface for AI-Ready-Ingest.
+
+    The preferred public API is centered on:
+
+    - scope resources
+    - collection resources
+    - object resources
+    - text-span resources
+    - enrichment resources
+    - search resources
+
+    Compatibility read routes under `/api/osii/...` still exist in the application, but are not the preferred API for new consumers and are not fully modeled here.
+
+    Removed route families such as `/api/dashboard/...` and dashboard/workbench HTML routes are intentionally not documented in this specification.
+servers:
+  - url: http://localhost:8511
+    description: Default local development server
+tags:
+  - name: scopes
+    description: Scope discovery and scope membership resolution
+  - name: collections
+    description: Curated collection resources and membership management
+  - name: objects
+    description: Canonical object aggregates, manifests, text representations, and syntheses
+  - name: text
+    description: Canonical grounded text-span access over object text
+  - name: enrichments
+    description: Derived enrichment listing and object enrichment payload retrieval
+  - name: search
+    description: Public semantic search over derived chunks with canonical grounding fields
+  - name: discovery
+    description: Extractor and synthesizer discovery
+  - name: runs
+    description: Ingestion run orchestration and run status
+  - name: embeddings
+    description: Embedding build orchestration and embedding metadata
+  - name: artifacts
+    description: OSII-relative artifact file serving
+  - name: synthesis-jobs
+    description: Direct synthesis initiation over existing objects and collections
+  - name: enrichment-jobs
+    description: Direct enrichment initiation over supported scopes
+
+paths:
+  /api/scopes/root:
+    get:
+      tags:
+        - scopes
+      summary: Get the root scope descriptor and member file identifiers
+      operationId: getRootScope
+      responses:
+        '200':
+          description: Root scope and member file identifiers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScopeMembersResponse'
+              examples:
+                default:
+                  value:
+                    scope:
+                      scope_type: root
+                      scope_id: root
+                      label: root
+                    member_file_ids:
+                      - sha256-test123
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/scopes/artifacts:
+    post:
+      tags:
+        - scopes
+      summary: Get artifact summary for a resolved scope
+      description: |
+        Returns artifact availability and actions for a resolved scope.
+
+        Supported request variants are:
+
+        - root
+        - folder by `folder_id`
+        - collection by `collection_id`
+        - object by `file_id`
+
+        The response includes:
+
+        - resolved `scope`
+        - `artifact_summary`
+        - `actions`
+
+        Scope-level artifact summaries are especially useful for folder, collection, and root views that need to determine whether scope-level synthesis or enrichment outputs already exist.
+      operationId: getScopeArtifacts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScopeArtifactsRequest'
+            examples:
+              folder_scope:
+                value:
+                  scope:
+                    scope_type: folder
+                    folder_id: folder-root
+              collection_scope:
+                value:
+                  scope:
+                    scope_type: collection
+                    collection_id: col-abc123def456
+      responses:
+        '200':
+          description: Resolved scope and artifact summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScopeArtifactsResponse'
+              examples:
+                folder_scope:
+                  value:
+                    scope:
+                      scope_type: folder
+                      scope_id: folder-root
+                      folder_id: folder-root
+                      path: experiments/run_01
+                      label: run_01
+                    artifact_summary:
+                      member_count: 12
+                      has_synthesis: true
+                      synthesis_preview: This folder appears to contain one experiment run with calibration outputs and supporting notes.
+                      syntheses:
+                        - name: current
+                          relpath: folders/folder-folder-root.synth.txt
+                      has_enrichments: false
+                      enrichments: []
+                    actions:
+                      can_synthesize: true
+                      can_enrich: true
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/scopes/folders:
+    get:
+      tags:
+        - scopes
+      summary: List folder scope descriptors
+      description: Returns a flat catalog of folder scope descriptors. This is not a tree response.
+      operationId: listFolderScopes
+      responses:
+        '200':
+          description: Folder scope descriptors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderScopeListResponse'
+              examples:
+                default:
+                  value:
+                    scopes:
+                      - scope_type: folder
+                        scope_id: folder-root
+                        folder_id: folder-root
+                        path: ""
+                        label: root-folder
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/scopes/collections:
+    get:
+      tags:
+        - scopes
+      summary: List collection scope descriptors
+      description: Returns scope descriptors for collections, not full collection resources.
+      operationId: listCollectionScopes
+      responses:
+        '200':
+          description: Collection scope descriptors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionScopeListResponse'
+              examples:
+                default:
+                  value:
+                    scopes:
+                      - scope_type: collection
+                        scope_id: col-abc123def456
+                        collection_id: col-abc123def456
+                        label: sensor-calibration-review
+                        kind: file-list
+                        description: Documents related to calibration methods and drift analysis.
+                        document_count: 2
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/scopes/describe:
+    post:
+      tags:
+        - scopes
+      summary: Resolve and describe a scope
+      description: |
+        Supported request variants are:
+
+        - root
+        - folder by `folder_id`
+        - collection by `collection_id`
+        - object by `file_id`
+      operationId: describeScope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScopeDescribeRequest'
+            examples:
+              root:
+                value:
+                  scope_type: root
+              folder:
+                value:
+                  scope_type: folder
+                  folder_id: folder-root
+              collection:
+                value:
+                  scope_type: collection
+                  collection_id: col-abc123def456
+              object:
+                value:
+                  scope_type: object
+                  file_id: sha256-test123
+      responses:
+        '200':
+          description: Resolved scope and member file identifiers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScopeMembersResponse'
+              examples:
+                root:
+                  value:
+                    scope:
+                      scope_type: root
+                      scope_id: root
+                      label: root
+                    member_file_ids:
+                      - sha256-test123
+                folder:
+                  value:
+                    scope:
+                      scope_type: folder
+                      scope_id: folder-root
+                      folder_id: folder-root
+                      path: ""
+                      label: root-folder
+                    member_file_ids:
+                      - sha256-test123
+                collection:
+                  value:
+                    scope:
+                      scope_type: collection
+                      scope_id: col-abc123def456
+                      collection_id: col-abc123def456
+                      label: sensor-calibration-review
+                    member_file_ids:
+                      - sha256-test123
+                object:
+                  value:
+                    scope:
+                      scope_type: object
+                      scope_id: sha256-test123
+                      file_id: sha256-test123
+                      label: sha256-test123
+                    member_file_ids:
+                      - sha256-test123
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/scopes/summaries:
+    post:
+      tags:
+        - scopes
+      summary: Get compact object summaries for all objects resolved from a scope
+      description: |
+        Returns lightweight object summaries for all objects resolved from the requested scope.
+
+        Preferred request form wraps the scope object in a `scope` property:
+
+        ```json
+        {
+          "scope": {
+            "scope_type": "collection",
+            "collection_id": "col-abc123def456"
+          }
+        }
+        ```
+
+        Current implementation also accepts the direct scope object as the entire request body, but the wrapped form is the preferred public contract.
+
+        Current behavior:
+
+        - supported scope variants are root, folder, collection, and object
+        - missing or invalid members are silently skipped
+        - returned summaries follow resolved member order
+        - no pagination or truncation fields are currently part of the contract
+      operationId: getScopeSummaries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScopeSummariesRequest'
+            examples:
+              collection_scope:
+                value:
+                  scope:
+                    scope_type: collection
+                    collection_id: col-abc123def456
+              folder_scope:
+                value:
+                  scope:
+                    scope_type: folder
+                    folder_id: folder-root
+      responses:
+        '200':
+          description: Compact summaries for objects resolved from the requested scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScopeSummariesResponse'
+              examples:
+                default:
+                  value:
+                    scope:
+                      scope_type: collection
+                      collection_id: col-abc123def456
+                    summaries:
+                      - file_id: sha256-test123
+                        filename: example.pdf
+                        source_relpath: reports/example.pdf
+                        source_file_relpath: reports/example.pdf
+                        mime: application/pdf
+                        collections:
+                          - id: col-abc123def456
+                            name: sensor-calibration-review
+                            kind: file-list
+                        processing:
+                          extractor:
+                            name: null
+                            display_name: null
+                          synthesizer:
+                            name: null
+                            display_name: null
+                          canonical_text_path: objects/sha256-test123/text.txt
+                          editable_text_path: null
+                          has_editable_text: false
+                          capabilities:
+                            supports_markdown_render: false
+                        source_state:
+                          file_id: sha256-test123
+                          status: active
+                          source_relpath: reports/example.pdf
+                        has_preferred_text: true
+                        preferred_text_kind: canonical_extracted_text
+                        has_synthesis: true
+                        has_enrichments: true
+                        synthesis_preview: This appears to be a technical report about thermal calibration drift.
+                        preview_available: true
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/collections:
+    get:
+      tags:
+        - collections
+      summary: List collections
+      operationId: listCollections
+      responses:
+        '200':
+          description: Collection resources
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionListResponse'
+              examples:
+                default:
+                  value:
+                    collections:
+                      - id: col-abc123def456
+                        name: sensor-calibration-review
+                        description: Documents related to calibration methods and drift analysis.
+                        kind: file-list
+                        color: '#3366ff'
+                        document_count: 2
+                        created_utc: '2026-06-18T12:00:00Z'
+                        updated_utc: '2026-06-18T12:05:00Z'
+        default:
+          $ref: '#/components/responses/GenericError'
+
+    post:
+      tags:
+        - collections
+      summary: Create a collection
+      operationId: createCollection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CollectionCreateRequest'
+            examples:
+              default:
+                value:
+                  name: sensor-calibration-review
+                  description: Documents related to calibration methods and drift analysis.
+                  kind: file-list
+                  color: '#3366ff'
+      responses:
+        '200':
+          description: Collection created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionEnvelope'
+              examples:
+                default:
+                  value:
+                    collection:
+                      id: col-abc123def456
+                      name: sensor-calibration-review
+                      description: Documents related to calibration methods and drift analysis.
+                      kind: file-list
+                      color: '#3366ff'
+                      document_count: 0
+                      created_utc: '2026-06-18T12:00:00Z'
+                      updated_utc: '2026-06-18T12:00:00Z'
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/collections/{collection_id}:
+    get:
+      tags:
+        - collections
+      summary: Get a collection
+      operationId: getCollection
+      parameters:
+        - $ref: '#/components/parameters/CollectionIdPathParam'
+      responses:
+        '200':
+          description: Collection resource and artifact summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionDetailResponse'
+              examples:
+                default:
+                  value:
+                    collection:
+                      id: col-abc123def456
+                      name: sensor-calibration-review
+                      description: Documents related to calibration methods and drift analysis.
+                      kind: file-list
+                      color: '#3366ff'
+                      document_count: 2
+                      created_utc: '2026-06-18T12:00:00Z'
+                      updated_utc: '2026-06-18T12:05:00Z'
+                    artifact_summary:
+                      collection_id: col-abc123def456
+                      artifacts:
+                        member_count: 2
+                        has_synthesis: true
+                        has_enrichments: true
+                        syntheses:
+                          - name: collection_firstn.txt
+                            relpath: collections/col-abc123def456/syntheses/collection_firstn.txt
+                        enrichments:
+                          - name: wiki--llm_wiki_stub
+                            kind: bundle
+                            relpath: collections/col-abc123def456/enrichments/wiki--llm_wiki_stub
+                            files:
+                              - name: index.md
+                                relpath: collections/col-abc123def456/enrichments/wiki--llm_wiki_stub/index.md
+                                is_dir: false
+                      actions:
+                        can_synthesize: true
+                        can_enrich: true
+        default:
+          $ref: '#/components/responses/GenericError'
+
+    patch:
+      tags:
+        - collections
+      summary: Update a collection
+      operationId: updateCollection
+      parameters:
+        - $ref: '#/components/parameters/CollectionIdPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CollectionUpdateRequest'
+            examples:
+              default:
+                value:
+                  description: Updated description
+                  kind: manual
+      responses:
+        '200':
+          description: Updated collection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionEnvelope'
+              examples:
+                default:
+                  value:
+                    collection:
+                      id: col-abc123def456
+                      name: sensor-calibration-review
+                      description: Updated description
+                      kind: manual
+                      color: '#3366ff'
+                      document_count: 2
+                      created_utc: '2026-06-18T12:00:00Z'
+                      updated_utc: '2026-06-18T12:05:00Z'
+        default:
+          $ref: '#/components/responses/GenericError'
+
+    delete:
+      tags:
+        - collections
+      summary: Delete a collection
+      operationId: deleteCollection
+      parameters:
+        - $ref: '#/components/parameters/CollectionIdPathParam'
+      responses:
+        '200':
+          description: Collection deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  collection_id:
+                    type: string
+                  deleted:
+                    type: boolean
+                required:
+                  - collection_id
+                  - deleted
+                additionalProperties: false
+              examples:
+                default:
+                  value:
+                    collection_id: col-abc123def456
+                    deleted: true
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/collections/{collection_id}/members:
+    get:
+      tags:
+        - collections
+      summary: Get collection membership
+      operationId: getCollectionMembers
+      parameters:
+        - $ref: '#/components/parameters/CollectionIdPathParam'
+      responses:
+        '200':
+          description: Collection and member file identifiers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionMembersResponse'
+              examples:
+                default:
+                  value:
+                    collection:
+                      id: col-abc123def456
+                      name: sensor-calibration-review
+                      description: Documents related to calibration methods and drift analysis.
+                      kind: file-list
+                      color: '#3366ff'
+                      document_count: 2
+                      created_utc: '2026-06-18T12:00:00Z'
+                      updated_utc: '2026-06-18T12:05:00Z'
+                    file_ids:
+                      - sha256-test123
+        default:
+          $ref: '#/components/responses/GenericError'
+
+    post:
+      tags:
+        - collections
+      summary: Add object members to a collection
+      description: Batch-oriented membership add. The operation is effectively idempotent and distinguishes newly added from already-present members.
+      operationId: addCollectionMembers
+      parameters:
+        - $ref: '#/components/parameters/CollectionIdPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CollectionMembersAddRequest'
+            examples:
+              default:
+                value:
+                  file_ids:
+                    - sha256-test123
+                    - sha256-test456
+      responses:
+        '200':
+          description: Membership update result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionMembersAddResponse'
+              examples:
+                default:
+                  value:
+                    collection_id: col-abc123def456
+                    added:
+                      - sha256-test456
+                    already_present:
+                      - sha256-test123
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/collections/{collection_id}/members/{file_id}:
+    delete:
+      tags:
+        - collections
+      summary: Remove an object member from a collection
+      description: Success/no-op style removal. If the collection exists but the file is not a current member, the response reports `removed: false`.
+      operationId: removeCollectionMember
+      parameters:
+        - $ref: '#/components/parameters/CollectionIdPathParam'
+        - $ref: '#/components/parameters/FileIdPathParam'
+      responses:
+        '200':
+          description: Membership removal result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionMemberRemoveResponse'
+              examples:
+                removed:
+                  value:
+                    collection_id: col-abc123def456
+                    file_id: sha256-test123
+                    removed: true
+                not_present:
+                  value:
+                    collection_id: col-abc123def456
+                    file_id: sha256-test999
+                    removed: false
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/collections/{collection_id}/artifacts:
+    get:
+      tags:
+        - collections
+      summary: Get collection artifact summary
+      operationId: getCollectionArtifacts
+      parameters:
+        - $ref: '#/components/parameters/CollectionIdPathParam'
+      responses:
+        '200':
+          description: Collection artifact summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionArtifactSummary'
+              examples:
+                default:
+                  value:
+                    collection_id: col-abc123def456
+                    artifacts:
+                      member_count: 2
+                      has_synthesis: true
+                      has_enrichments: true
+                      syntheses:
+                        - name: collection_firstn.txt
+                          relpath: collections/col-abc123def456/syntheses/collection_firstn.txt
+                      enrichments:
+                        - name: wiki--llm_wiki_stub
+                          kind: bundle
+                          relpath: collections/col-abc123def456/enrichments/wiki--llm_wiki_stub
+                          files:
+                            - name: index.md
+                              relpath: collections/col-abc123def456/enrichments/wiki--llm_wiki_stub/index.md
+                              is_dir: false
+                    actions:
+                      can_synthesize: true
+                      can_enrich: true
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/collections/{collection_id}/syntheses:
+    get:
+      tags:
+        - collections
+      summary: List collection synthesis artifacts
+      operationId: getCollectionSyntheses
+      parameters:
+        - $ref: '#/components/parameters/CollectionIdPathParam'
+      responses:
+        '200':
+          description: Collection synthesis listing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionSynthesesResponse'
+              examples:
+                default:
+                  value:
+                    collection:
+                      id: col-abc123def456
+                      name: sensor-calibration-review
+                      description: Documents related to calibration methods and drift analysis.
+                      kind: file-list
+                      color: '#3366ff'
+                      document_count: 2
+                      created_utc: '2026-06-18T12:00:00Z'
+                      updated_utc: '2026-06-18T12:05:00Z'
+                    syntheses:
+                      - name: collection_firstn.txt
+                        relpath: collections/col-abc123def456/syntheses/collection_firstn.txt
+        default:
+          $ref: '#/components/responses/GenericError'
+
+    post:
+      tags:
+        - collections
+      summary: Start collection synthesis
+      operationId: runCollectionSynthesis
+      parameters:
+        - $ref: '#/components/parameters/CollectionIdPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CollectionSynthesisRequest'
+            examples:
+              default:
+                value:
+                  synthesizer_name: collection_firstn
+                  synthesizer_config:
+                    max_chars: 4000
+      responses:
+        '200':
+          description: Collection synthesis job started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionSynthesisJobResponse'
+              examples:
+                default:
+                  value:
+                    run_id: abc123
+                    status: pending
+                    collection_id: col-abc123def456
+                    synthesizer_name: collection_firstn
+        default:
+          $ref: '#/components/responses/GenericError'
+  /api/objects/{file_id}:
+    get:
+      tags:
+        - objects
+      summary: Get an object aggregate
+      description: |
+        Returns the preferred object-oriented read surface for one canonical object.
+
+        The aggregate currently includes:
+
+        - `file_id`
+        - `meta`
+        - `overview`
+        - `collections`
+        - `processing`
+        - `enrichments`
+        - `artifact_summary`
+      operationId: getObject
+      parameters:
+        - $ref: '#/components/parameters/FileIdPathParam'
+      responses:
+        '200':
+          description: Object aggregate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectAggregate'
+              examples:
+                default:
+                  value:
+                    file_id: sha256-test123
+                    meta:
+                      file:
+                        source_relpath: reports/example.pdf
+                        filename: example.pdf
+                        mime: application/pdf
+                        size_bytes: 1234
+                        mtime_utc: '2026-05-21T00:00:00Z'
+                      hash:
+                        sha256: test123
+                    overview:
+                      file_id: sha256-test123
+                      meta:
+                        file:
+                          source_relpath: reports/example.pdf
+                          filename: example.pdf
+                          mime: application/pdf
+                          size_bytes: 1234
+                          mtime_utc: '2026-05-21T00:00:00Z'
+                        hash:
+                          sha256: test123
+                      text_count: 1
+                      image_count: 0
+                      has_synth: true
+                      text_items:
+                        - kind: text
+                          id: seg-000001
+                          path: text.txt
+                          type: page
+                          span:
+                            char_start: 0
+                            char_end: 38
+                          source_origin:
+                            source_type: pdf
+                            unit_type: page
+                            page: 1
+                          related_ids: []
+                      image_items: []
+                    collections:
+                      - id: col-abc123def456
+                        name: sensor-calibration-review
+                        kind: file-list
+                    processing:
+                      extractor:
+                        name: null
+                        display_name: null
+                      synthesizer:
+                        name: null
+                        display_name: null
+                      canonical_text_path: objects/sha256-test123/text.txt
+                      editable_text_path: null
+                      has_editable_text: false
+                      capabilities:
+                        supports_markdown_render: false
+                    enrichments:
+                      - name: keywords--stats_keywords.json
+                        kind: file
+                        relpath: objects/sha256-test123/enrichments/keywords--stats_keywords.json
+                    artifact_summary:
+                      file_id: sha256-test123
+                      source_state:
+                        file_id: sha256-test123
+                        status: active
+                        source_relpath: reports/example.pdf
+                      artifacts:
+                        has_extraction: true
+                        has_synthesis: true
+                        has_enrichments: true
+                        manifest_record_count: 1
+                        text_representations:
+                          - name: canonical
+                            kind: canonical_extracted_text
+                            path: objects/sha256-test123/text.txt
+                            exists: true
+                            preferred: true
+                        syntheses:
+                          - name: current
+                            text_path: C:\...\ .osii\objects\sha256-test123\synth.txt
+                            toml_path: C:\...\ .osii\objects\sha256-test123\synth.toml
+                            scope: object
+                        enrichments:
+                          - name: keywords--stats_keywords.json
+                            kind: file
+                            relpath: objects/sha256-test123/enrichments/keywords--stats_keywords.json
+                      actions:
+                        can_extract: true
+                        can_synthesize: true
+                        can_enrich: true
+                        source_is_active: true
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/objects/summaries:
+    post:
+      tags:
+        - objects
+      summary: Get compact summaries for multiple objects
+      description: |
+        Returns compact object summaries for the requested file identifiers.
+
+        Current implementation behavior:
+
+        - `file_ids` is required
+        - summaries are returned only for found objects
+        - missing or invalid file identifiers are silently skipped
+        - returned summaries preserve request order for found objects
+      operationId: getObjectSummaries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ObjectSummariesRequest'
+            examples:
+              default:
+                value:
+                  file_ids:
+                    - sha256-a
+                    - sha256-b
+      responses:
+        '200':
+          description: Compact summaries for found objects
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectSummariesResponse'
+              examples:
+                default:
+                  value:
+                    summaries:
+                      - file_id: sha256-test123
+                        filename: example.pdf
+                        source_relpath: reports/example.pdf
+                        source_file_relpath: reports/example.pdf
+                        mime: application/pdf
+                        collections:
+                          - id: col-abc123def456
+                            name: sensor-calibration-review
+                            kind: file-list
+                        processing:
+                          extractor:
+                            name: null
+                            display_name: null
+                          synthesizer:
+                            name: null
+                            display_name: null
+                          canonical_text_path: objects/sha256-test123/text.txt
+                          editable_text_path: null
+                          has_editable_text: false
+                          capabilities:
+                            supports_markdown_render: false
+                        source_state:
+                          file_id: sha256-test123
+                          status: active
+                          source_relpath: reports/example.pdf
+                        has_preferred_text: true
+                        preferred_text_kind: canonical_extracted_text
+                        has_synthesis: true
+                        has_enrichments: true
+                        synthesis_preview: This appears to be a technical report about thermal calibration drift.
+                        preview_available: true
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/objects/{file_id}/manifest:
+    get:
+      tags:
+        - objects
+      summary: Get canonical manifest records for an object
+      description: Returns manifest records derived from the canonical object manifest.
+      operationId: getObjectManifest
+      parameters:
+        - $ref: '#/components/parameters/FileIdPathParam'
+      responses:
+        '200':
+          description: Object manifest records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectManifestResponse'
+              examples:
+                default:
+                  value:
+                    file_id: sha256-test123
+                    records:
+                      - kind: text
+                        id: seg-000001
+                        path: text.txt
+                        type: page
+                        span:
+                          char_start: 0
+                          char_end: 38
+                        source_origin:
+                          source_type: pdf
+                          unit_type: page
+                          page: 1
+                        related_ids: []
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/objects/{file_id}/texts:
+    get:
+      tags:
+        - objects
+      summary: List text representations and canonical segment records
+      description: |
+        Returns both:
+
+        - text representation descriptors
+        - canonical segment records derived from the object manifest
+
+        Segment records are manifest-derived and are returned in an implementation-aligned shape.
+      operationId: getObjectTexts
+      parameters:
+        - $ref: '#/components/parameters/FileIdPathParam'
+      responses:
+        '200':
+          description: Text representations and canonical segment records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectTextsResponse'
+              examples:
+                default:
+                  value:
+                    file_id: sha256-test123
+                    representations:
+                      - name: canonical
+                        kind: canonical_extracted_text
+                        path: objects/sha256-test123/text.txt
+                        exists: true
+                        preferred: true
+                      - name: editable
+                        kind: editable_text
+                        path: objects/sha256-test123/editable_text.txt
+                        exists: false
+                        preferred: false
+                    segments:
+                      - kind: text
+                        id: seg-000001
+                        path: text.txt
+                        type: page
+                        span:
+                          char_start: 0
+                          char_end: 38
+                        source_origin:
+                          source_type: pdf
+                          unit_type: page
+                          page: 1
+                        related_ids: []
+        default:
+          $ref: '#/components/responses/GenericError'
+    /api/objects/{file_id}/texts/edited:
+    get:
+      tags:
+        - objects
+      summary: Get edited text segments for an object
+      description: |
+        Returns the edited text representation for an object, if present.
+
+        Semantics:
+
+        - canonical extracted text remains unchanged
+        - edited text is stored separately
+        - edited text becomes the preferred text representation when present
+        - segment identifiers are stable canonical manifest identifiers
+        - source and page grounding remain valid at the segment level
+      operationId: getEditedObjectText
+      parameters:
+        - $ref: '#/components/parameters/FileIdPathParam'
+      responses:
+        '200':
+          description: Edited text representation state and segments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EditedTextReadResponse'
+              examples:
+                exists:
+                  value:
+                    file_id: sha256-test123
+                    exists: true
+                    representation: edited
+                    segments:
+                      - id: seg-000001
+                        text: Corrected text for this segment.
+                missing:
+                  value:
+                    file_id: sha256-test123
+                    exists: false
+                    representation: edited
+                    segments: []
+        default:
+          $ref: '#/components/responses/GenericError'
+
+    put:
+      tags:
+        - objects
+      summary: Replace edited text segments for an object
+      description: |
+        Writes the edited text representation for an object.
+
+        Semantics:
+
+        - canonical extracted text remains unchanged
+        - edited text is stored separately
+        - edited text becomes the preferred text representation when present
+        - segment identifiers must correspond to canonical manifest segment identifiers
+        - embeddings and search-derived chunks are marked stale after edits change text
+      operationId: putEditedObjectText
+      parameters:
+        - $ref: '#/components/parameters/FileIdPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditedTextWriteRequest'
+            examples:
+              default:
+                value:
+                  segments:
+                    - id: seg-000001
+                      text: Corrected text for this segment.
+      responses:
+        '200':
+          description: Edited text updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EditedTextWriteResponse'
+              examples:
+                default:
+                  value:
+                    file_id: sha256-test123
+                    representation: edited
+                    updated: true
+                    segments:
+                      - id: seg-000001
+                        text: Corrected text for this segment.
+                    stale:
+                      embeddings: true
+                      search_chunks: true
+        default:
+          $ref: '#/components/responses/GenericError'
+
+    delete:
+      tags:
+        - objects
+      summary: Remove edited text for an object
+      description: |
+        Removes the edited text representation for an object.
+
+        Semantics:
+
+        - canonical extracted text remains unchanged
+        - removing edited text restores canonical text as the preferred text representation
+        - embeddings and search-derived chunks are marked stale after edit removal
+      operationId: deleteEditedObjectText
+      parameters:
+        - $ref: '#/components/parameters/FileIdPathParam'
+      responses:
+        '200':
+          description: Edited text removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EditedTextDeleteResponse'
+              examples:
+                removed:
+                  value:
+                    file_id: sha256-test123
+                    representation: edited
+                    removed: true
+                    stale:
+                      embeddings: true
+                      search_chunks: true
+                not_present:
+                  value:
+                    file_id: sha256-test123
+                    representation: edited
+                    removed: false
+                    stale:
+                      embeddings: true
+                      search_chunks: true
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/objects/{file_id}/texts/preferred:
+    get:
+      tags:
+        - objects
+      summary: Get the backend-preferred text representation for an object
+      description: |
+        Returns the full preferred text content plus representation metadata.
+
+        If editable text exists, it may become the preferred representation. Canonical grounded text-span access remains based on canonical object text.
+      operationId: getPreferredObjectText
+      parameters:
+        - $ref: '#/components/parameters/FileIdPathParam'
+      responses:
+        '200':
+          description: Preferred text representation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferredTextResponse'
+              examples:
+                canonical:
+                  value:
+                    file_id: sha256-test123
+                    representation: canonical
+                    kind: canonical_extracted_text
+                    text: Thermal calibration drift was reduced.
+                    path: objects/sha256-test123/text.txt
+                editable:
+                  value:
+                    file_id: sha256-test123
+                    representation: editable
+                    kind: editable_text
+                    text: Thermal calibration drift was reduced.
+                    path: objects/sha256-test123/editable_text.txt
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/objects/{file_id}/syntheses:
+    get:
+      tags:
+        - objects
+      summary: Get current synthesis outputs and synthesis listing
+      description: |
+        Returns:
+
+        - `current_text`
+        - `current_toml`
+        - `syntheses`
+
+        The current implementation returns absolute backend paths in the synthesis listing.
+      operationId: getObjectSyntheses
+      parameters:
+        - $ref: '#/components/parameters/FileIdPathParam'
+      responses:
+        '200':
+          description: Object syntheses
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectSynthesesResponse'
+              examples:
+                default:
+                  value:
+                    file_id: sha256-test123
+                    current_text: This appears to be a technical report about thermal calibration drift.
+                    current_toml:
+                      path:
+                        source_relpath: reports/example.pdf
+                      synthesis:
+                        synthesis: Technical report about thermal calibration drift.
+                        doc_type: technical report
+                        quality: default
+                      details:
+                        description: This appears to be a technical report about thermal calibration drift.
+                    syntheses:
+                      - name: current
+                        text_path: C:\...\ .osii\objects\sha256-test123\synth.txt
+                        toml_path: C:\...\ .osii\objects\sha256-test123\synth.toml
+                        scope: object
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/text/objects/{file_id}/span:
+    get:
+      tags:
+        - text
+      summary: Read a canonical grounded text span
+      description: |
+        Returns a grounded text slice over canonical object text stored in:
+
+        `objects/<file_id>/text.txt`
+
+        Notes:
+
+        - `char_start` and `char_end` are required
+        - `char_end` is effectively exclusive
+        - bounds are validated against canonical object text
+        - current invalid-range behavior may return a JSON error body with HTTP 200 rather than strict 4xx semantics
+      operationId: getObjectTextSpan
+      parameters:
+        - $ref: '#/components/parameters/FileIdPathParam'
+        - $ref: '#/components/parameters/CharStartQueryParam'
+        - $ref: '#/components/parameters/CharEndQueryParam'
+      responses:
+        '200':
+          description: Canonical grounded text span or implementation-aligned JSON error body
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/CanonicalSpanResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                success:
+                  value:
+                    file_id: sha256-test123
+                    char_start: 0
+                    char_end: 10
+                    text: Thermal ca
+                invalid_range:
+                  value:
+                    error: Invalid span range
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/text/objects/{file_id}/span/context:
+    get:
+      tags:
+        - text
+      summary: Read context around a canonical grounded text span
+      description: |
+        Returns left and right context around a grounded text span over canonical object text.
+
+        Notes:
+
+        - `char_start` and `char_end` are required
+        - `context_chars` is optional and currently defaults to `200`
+        - current invalid-range behavior may return a JSON error body with HTTP 200 rather than strict 4xx semantics
+      operationId: getObjectTextSpanContext
+      parameters:
+        - $ref: '#/components/parameters/FileIdPathParam'
+        - $ref: '#/components/parameters/CharStartQueryParam'
+        - $ref: '#/components/parameters/CharEndQueryParam'
+        - $ref: '#/components/parameters/ContextCharsQueryParam'
+      responses:
+        '200':
+          description: Text span context or implementation-aligned JSON error body
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/CanonicalSpanContextResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                success:
+                  value:
+                    file_id: sha256-test123
+                    char_start: 0
+                    char_end: 10
+                    match_text: Thermal ca
+                    before_text: ""
+                    after_text: librat
+                    window_start: 0
+                    window_end: 15
+                invalid_range:
+                  value:
+                    error: Invalid span range
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/enrichments/list:
+    post:
+      tags:
+        - enrichments
+      summary: List enrichments available for a scope
+      description: |
+        Returns a flat list of enrichments for the requested scope.
+
+        Supported request variants are:
+
+        - root
+        - folder by `folder_id`
+        - collection by `collection_id`
+        - object by `file_id`
+
+        Enrichments are derived, durable-on-disk, rebuildable, and optional. They are not canonical extraction artifacts.
+      operationId: listEnrichments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScopeDescribeRequest'
+            examples:
+              root:
+                value:
+                  scope_type: root
+              folder:
+                value:
+                  scope_type: folder
+                  folder_id: folder-root
+              collection:
+                value:
+                  scope_type: collection
+                  collection_id: col-abc123def456
+              object:
+                value:
+                  scope_type: object
+                  file_id: sha256-test123
+      responses:
+        '200':
+          description: Enrichments available for the requested scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrichmentsListResponse'
+              examples:
+                object_scope:
+                  value:
+                    scope:
+                      scope_type: object
+                      file_id: sha256-test123
+                    enrichments:
+                      - name: keywords--stats_keywords.json
+                        kind: file
+                        relpath: objects/sha256-test123/enrichments/keywords--stats_keywords.json
+                mixed_scope_entries:
+                  value:
+                    scope:
+                      scope_type: collection
+                      collection_id: col-abc123def456
+                    enrichments:
+                      - name: keywords--stats_keywords.json
+                        kind: file
+                        relpath: objects/sha256-test123/enrichments/keywords--stats_keywords.json
+                      - name: wiki--llm_wiki_stub
+                        kind: bundle
+                        relpath: collections/col-abc123def456/enrichments/wiki--llm_wiki_stub
+                        files:
+                          - name: index.md
+                            relpath: collections/col-abc123def456/enrichments/wiki--llm_wiki_stub/index.md
+                            is_dir: false
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/enrichments/objects/{file_id}/{filename}:
+    get:
+      tags:
+        - enrichments
+      summary: Read a JSON-backed object enrichment payload
+      description: |
+        Reads an object-level enrichment from a backend-known enrichment directory.
+
+        Current behavior:
+
+        - returns a JSON-wrapped response
+        - reads known object enrichment payloads
+        - is not a generic arbitrary file-serving endpoint
+        - is not currently a bundle-member file-serving route
+      operationId: getObjectEnrichmentPayload
+      parameters:
+        - $ref: '#/components/parameters/FileIdPathParam'
+        - $ref: '#/components/parameters/FilenamePathParam'
+      responses:
+        '200':
+          description: JSON-backed object enrichment payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectEnrichmentPayloadResponse'
+              examples:
+                default:
+                  value:
+                    file_id: sha256-test123
+                    filename: keywords--stats_keywords.json
+                    relpath: objects/sha256-test123/enrichments/keywords--stats_keywords.json
+                    data:
+                      keywords:
+                        - term: thermal
+                          count: 1
+                      input_object_count: 1
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/search:
+    get:
+      tags:
+        - search
+      summary: Public semantic search over derived chunks with canonical grounding fields
+      description: |
+        Simple compatibility search route.
+
+        Searches over derived embedding chunks and returns retrieval-oriented results with canonical grounding coordinates.
+
+        Important semantics:
+
+        - this route is semantic-only
+        - `faiss_id` is an internal retrieval identifier
+        - `chunk_id` identifies a derived retrieval chunk, not a canonical extraction segment
+        - `file_id`, `char_start`, and `char_end` are the canonical grounding fields most relevant for downstream navigation
+
+        The preferred public route for richer scope-aware search is `POST /api/search`.
+      operationId: search
+      parameters:
+        - $ref: '#/components/parameters/SearchQueryParam'
+        - $ref: '#/components/parameters/TopKQueryParam'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+              examples:
+                default:
+                  value:
+                    query: thermal calibration drift
+                    top_k: 5
+                    results:
+                      - faiss_id: 0
+                        chunk_id: chunk-sha256-test123-000001
+                        file_id: sha256-test123
+                        source_relpath: reports/example.pdf
+                        chunk_method: paragraph
+                        chunk_index: 1
+                        char_start: 0
+                        char_end: 38
+                        source_text_representation: canonical
+                        source_text_kind: canonical_extracted_text
+                        truncated: false
+                        score: 0.8123
+                empty:
+                  value:
+                    query: thermal calibration drift
+                    top_k: 5
+                    results: []
+        default:
+          $ref: '#/components/responses/GenericError'
+
+    post:
+      tags:
+        - search
+      summary: Scope-aware search over derived chunks with selectable retrieval mode
+      description: |
+        Preferred public search route.
+
+        Searches over derived retrieval units and returns richer result objects with canonical grounding coordinates and scope echo.
+
+        Request semantics:
+
+        - `query` is the free-text search query
+        - `mode` selects retrieval behavior and defaults to `semantic`
+        - `top_k` limits the number of returned results
+        - `scope` restricts search to a supported scope
+        - `group_by` controls result grouping behavior
+
+        Supported scope request variants are:
+
+        - root
+        - folder by `folder_id`
+        - collection by `collection_id`
+        - object by `file_id`
+
+        Important result semantics:
+
+        - search may rank using derived chunks
+        - `snippet` is intended to be the matched chunk text or grounded excerpt
+        - canonical grounding fields remain `file_id`, `char_start`, and `char_end`
+        - `source_origin` provides implementation-aligned grounding metadata for the matched result
+        - when `group_by = file`, the backend returns one primary result per file based on the best hit in that file
+        - `retrieval_mode_used` may differ from requested `mode` when hybrid degrades to lexical because semantic index artifacts are unavailable
+      operationId: searchPost
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+            examples:
+              grouped_by_file:
+                value:
+                  query: calibration drift
+                  mode: hybrid
+                  top_k: 10
+                  scope:
+                    scope_type: root
+                  group_by: file
+              object_semantic_default_mode:
+                value:
+                  query: calibration findings
+                  top_k: 5
+                  scope:
+                    scope_type: object
+                    file_id: sha256-test123
+      responses:
+        '200':
+          description: Search results with echoed mode, actual retrieval mode used, scope, and grouping mode
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchScopedResponse'
+              examples:
+                default:
+                  value:
+                    query: calibration drift
+                    mode: hybrid
+                    retrieval_mode_used: lexical
+                    top_k: 10
+                    scope:
+                      scope_type: root
+                    group_by: file
+                    results:
+                      - file_id: sha256-...
+                        filename: example.pdf
+                        source_relpath: reports/example.pdf
+                        snippet: Thermal calibration drift was reduced during the updated correction workflow...
+                        score: 12.3
+                        match_type: hybrid
+                        chunk_id: chunk-sha256-...-000014
+                        chunk_method: paragraph
+                        chunk_index: 14
+                        char_start: 1042
+                        char_end: 1188
+                        source_text_representation: canonical
+                        source_text_kind: canonical_extracted_text
+                        source_origin:
+                          grounding_type: text_span
+                          char_start: 1042
+                          char_end: 1188
+                        collections: []
+                empty:
+                  value:
+                    query: calibration drift
+                    mode: hybrid
+                    retrieval_mode_used: lexical
+                    top_k: 10
+                    scope:
+                      scope_type: root
+                    group_by: file
+                    results: []
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/extractors:
+    get:
+      tags:
+        - discovery
+      summary: List available extractors
+      operationId: listExtractors
+      responses:
+        '200':
+          description: Extractor descriptors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtractorListResponse'
+              examples:
+                default:
+                  value:
+                    extractors:
+                      - name: pdf_default
+                        display_name: Default PDF Extractor
+                        description: Renders PDF pages to images, sends them to Nemotron Parse, writes page text and picture artifacts.
+                        version: '1.0'
+                        scope: object
+                        mode: extraction
+                        domain: generic
+                      - name: textract
+                        display_name: Textract Extractor
+                        description: Uses Shirty-hosted Textract extraction for plain document text.
+                        version: '1.0'
+                        scope: object
+                        mode: extraction
+                        domain: generic
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/synthesizers:
+    get:
+      tags:
+        - discovery
+      summary: List available object synthesizers
+      operationId: listSynthesizers
+      responses:
+        '200':
+          description: Object synthesizer descriptors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SynthesizerListResponse'
+              examples:
+                default:
+                  value:
+                    synthesizers:
+                      - name: firstN
+                        display_name: FirstN Synthesizer
+                        description: Concatenates extracted text and writes the first N characters.
+                        version: '1.0'
+                        scope: object
+                        mode: synthesis
+                        domain: generic
+                      - name: recursive
+                        display_name: Recursive Synthesizer
+                        description: Recursively synthesizes extracted text by chunking and combining.
+                        version: '1.0'
+                        scope: object
+                        mode: synthesis
+                        domain: generic
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/folder-synthesizers:
+    get:
+      tags:
+        - discovery
+      summary: List available folder synthesizers
+      operationId: listFolderSynthesizers
+      responses:
+        '200':
+          description: Folder synthesizer descriptors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderSynthesizerListResponse'
+              examples:
+                default:
+                  value:
+                    folder_synthesizers:
+                      - name: firstN_folder
+                        display_name: FirstN Folder Synthesizer
+                        description: Builds a folder-level synthesis from child syntheses and fallback extracted text.
+                        version: '1.0'
+                        scope: folder
+                        mode: synthesis
+                        domain: generic
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/synthesis/objects/{file_id}:
+    post:
+      tags:
+        - synthesis-jobs
+      summary: Start synthesis for an existing object
+      description: |
+        Starts a synthesis job over an existing canonical object bundle.
+
+        This route is intended for rerunning synthesis with a chosen synthesizer
+        and optional synthesizer configuration over a file that has already been extracted.
+      operationId: synthesizeObject
+      parameters:
+        - $ref: '#/components/parameters/FileIdPathParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ObjectSynthesisRequest'
+            examples:
+              default:
+                value:
+                  synthesizer_name: firstN
+                  expert_context: Focus on calibration methods and final findings.
+                  synthesizer_config:
+                    max_chars: 1000
+      responses:
+        '200':
+          description: Synthesis job started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectSynthesisJobResponse'
+              examples:
+                default:
+                  value:
+                    run_id: abc123
+                    status: pending
+                    file_id: sha256-test123
+                    synthesizer_name: firstN
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/enrichment-jobs/run:
+    post:
+      tags:
+        - enrichment-jobs
+      summary: Start an enrichment job over a scope
+      description: |
+        Starts an enrichment job over one supported scope.
+
+        Supported scopes include:
+        - root
+        - folder
+        - collection
+        - object
+      operationId: runEnrichment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrichmentJobRequest'
+            examples:
+              object_scope:
+                value:
+                  enricher_name: stats_keywords
+                  scope:
+                    scope_type: object
+                    file_id: sha256-test123
+                  enricher_config:
+                    top_k: 10
+              collection_scope:
+                value:
+                  enricher_name: llm_wiki_stub
+                  scope:
+                    scope_type: collection
+                    collection_id: col-abc123def456
+                  enricher_config: {}
+      responses:
+        '200':
+          description: Enrichment job started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrichmentJobResponse'
+              examples:
+                default:
+                  value:
+                    run_id: abc123
+                    status: pending
+                    scope:
+                      scope_type: object
+                      file_id: sha256-test123
+                    enricher_name: stats_keywords
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/runs:
+    post:
+      tags:
+        - runs
+      summary: Launch an ingestion run
+      description: |
+        Launches extraction over resolved input files and may optionally perform object synthesis depending on the request body.
+
+        Existing implementation-aligned examples include extraction-only and extraction-plus-synthesis requests.
+      operationId: createRun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunLaunchRequest'
+            examples:
+              extraction_only:
+                value:
+                  queue_paths:
+                    - .\data_volume\my_data
+                  include_subfolders: true
+                  show_hidden: false
+                  include_patterns: "*.pdf\n*.docx"
+                  exclude_patterns: ""
+                  context: ""
+                  intake_name: full-build
+              extraction_plus_synthesis:
+                value:
+                  queue_paths:
+                    - .\data_volume\my_data
+                  include_subfolders: true
+                  show_hidden: false
+                  include_patterns: "*.pdf\n*.docx"
+                  exclude_patterns: ""
+                  context: Focus on thermal calibration details.
+                  intake_name: thermal-build
+                  synthesizer_name: firstN
+                  synthesizer_config:
+                    max_chars: 4000
+      responses:
+        '200':
+          description: Run launched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunLaunchResponse'
+              examples:
+                default:
+                  value:
+                    run_id: c6b6d8...
+                    status: pending
+                    resolved_count: 12
+                    preview:
+                      matched_count: 12
+                      total_size: 15322122
+                      total_size_human: 14.6 MB
+                      sample: []
+                      stopped_reason: null
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/runs/{run_id}:
+    get:
+      tags:
+        - runs
+      summary: Get run status
+      operationId: getRun
+      parameters:
+        - $ref: '#/components/parameters/RunIdPathParam'
+      responses:
+        '200':
+          description: Run status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunStatusResponse'
+              examples:
+                default:
+                  value:
+                    id: c6b6d8...
+                    status: running
+                    completed: 3
+                    total: 12
+                    items:
+                      - path: C:\...\Q2_Status_Report.pdf
+                        display: my_data/reports/Q2_Status_Report.pdf
+                        status: done
+                        extractor: pdf_default
+                        synthesizer: firstN
+                        file_id: sha256-...
+                        osii: objects/sha256-...
+                        synthesis: objects/sha256-.../synth.txt
+                        error: null
+                    logs: []
+                    manifest_name: intake-manifest-...
+                    manifest_path: C:\...\.osii\manifests\...
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/runs/{run_id}/logs:
+    get:
+      tags:
+        - runs
+      summary: Get run logs
+      operationId: getRunLogs
+      parameters:
+        - $ref: '#/components/parameters/RunIdPathParam'
+      responses:
+        '200':
+          description: Run logs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunLogsResponse'
+              examples:
+                default:
+                  value:
+                    run_id: c6b6d8...
+                    logs:
+                      - '[12:15:01] Run started.'
+                      - "[12:15:04] Processing Q2_Status_Report.pdf with extractor 'pdf_default'"
+                      - '[12:15:18] Extraction complete: Q2_Status_Report.pdf'
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/embeddings/build:
+    post:
+      tags:
+        - embeddings
+      summary: Start an embeddings build
+      description: |
+        Starts a derived embeddings build over extracted content.
+
+        Current implementation details:
+
+        - embeddings are rebuildable
+        - FAISS and mapping files are used
+        - chunking metadata such as chunk method and chunk manifest are part of the current implementation
+      operationId: buildEmbeddings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmbeddingsBuildRequest'
+            examples:
+              default:
+                value:
+                  batch_size: 1
+      responses:
+        '200':
+          description: Embeddings build started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmbeddingsBuildResponse'
+              examples:
+                default:
+                  value:
+                    job_id: segments
+                    status: running
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/embeddings/build/{job_id}:
+    get:
+      tags:
+        - embeddings
+      summary: Get embeddings build status
+      operationId: getEmbeddingsBuild
+      parameters:
+        - $ref: '#/components/parameters/JobIdPathParam'
+      responses:
+        '200':
+          description: Embeddings build status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmbeddingsBuildStatusResponse'
+              examples:
+                default:
+                  value:
+                    job_id: segments
+                    status: running
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /api/embeddings/meta:
+    get:
+      tags:
+        - embeddings
+      summary: Get embeddings metadata
+      description: Returns implementation-aligned metadata about the current embeddings build artifacts.
+      operationId: getEmbeddingsMeta
+      responses:
+        '200':
+          description: Embeddings metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmbeddingsMetaResponse'
+              examples:
+                default:
+                  value:
+                    index_path: C:\...\.osii\embeddings\segments.faiss
+                    mapping_path: C:\...\.osii\embeddings\segments.mapping.jsonl
+                    meta_path: C:\...\.osii\embeddings\segments.meta.toml
+                    meta_text: "[embeddings]\nmodel = \"sentence-transformers/all-MiniLM-L6-v2\"\n..."
+                    chunk_manifest_path: C:\...\.osii\embeddings\chunks\chunks.jsonl
+                    chunk_method: paragraph
+        default:
+          $ref: '#/components/responses/GenericError'
+
+  /artifact/{file_path}:
+    get:
+      tags:
+        - artifacts
+      summary: Serve an OSII-relative artifact path
+      description: |
+        Serves OSII-relative artifact paths only.
+
+        Security and behavior notes:
+
+        - this is not arbitrary filesystem serving
+        - path traversal protections are enforced
+        - the route is intended for known artifact files under the OSII store
+      operationId: getArtifact
+      parameters:
+        - $ref: '#/components/parameters/ArtifactFilePathParam'
+      responses:
+        '200':
+          description: Artifact content
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        default:
+          $ref: '#/components/responses/GenericError'
+
+components:
+  parameters:
+    FileIdPathParam:
+      name: file_id
+      in: path
+      required: true
+      description: Stable object identifier
+      schema:
+        type: string
+        examples:
+          - sha256-test123
+
+    CollectionIdPathParam:
+      name: collection_id
+      in: path
+      required: true
+      description: Stable collection identifier
+      schema:
+        type: string
+        examples:
+          - col-abc123def456
+
+    RunIdPathParam:
+      name: run_id
+      in: path
+      required: true
+      description: Ingestion run identifier
+      schema:
+        type: string
+
+    JobIdPathParam:
+      name: job_id
+      in: path
+      required: true
+      description: Background job identifier
+      schema:
+        type: string
+
+    FilenamePathParam:
+      name: filename
+      in: path
+      required: true
+      description: Filename relative to a known object enrichment directory
+      schema:
+        type: string
+
+    ArtifactFilePathParam:
+      name: file_path
+      in: path
+      required: true
+      description: OSII-relative artifact path
+      schema:
+        type: string
+
+    CharStartQueryParam:
+      name: char_start
+      in: query
+      required: true
+      description: Inclusive start offset into canonical object text
+      schema:
+        type: integer
+        minimum: 0
+
+    CharEndQueryParam:
+      name: char_end
+      in: query
+      required: true
+      description: Exclusive end offset into canonical object text
+      schema:
+        type: integer
+        minimum: 0
+
+    ContextCharsQueryParam:
+      name: context_chars
+      in: query
+      required: false
+      description: Number of context characters to include around the requested span
+      schema:
+        type: integer
+        minimum: 0
+        default: 200
+
+    SearchQueryParam:
+      name: q
+      in: query
+      required: true
+      description: Free-text semantic search query
+      schema:
+        type: string
+
+    SearchGroupBy:
+      type: string
+      enum:
+        - file
+      example: file
+
+    TopKQueryParam:
+      name: top_k
+      in: query
+      required: false
+      description: Maximum number of search results to return
+      schema:
+        type: integer
+        minimum: 1
+        default: 5
+
+  schemas:
+    ErrorResponse:
+      type: object
+      description: |
+        Generic JSON error envelope.
+
+        Note: some currently implemented routes may return error-like JSON bodies with HTTP 200 rather than strict 4xx semantics. That behavior is implementation-aligned and should be normalized later.
+      properties:
+        error:
+          type: string
+        detail:
+          oneOf:
+            - type: string
+            - type: object
+            - type: array
+              items: {}
+      additionalProperties: true
+
+    ScopeType:
+      type: string
+      enum:
+        - root
+        - folder
+        - collection
+        - object
+    ScopeArtifactsRequest:
+      type: object
+      required:
+        - scope
+      properties:
+        scope:
+          $ref: '#/components/schemas/ScopeDescribeRequest'
+      additionalProperties: false
+
+    ScopeSynthesisArtifact:
+      type: object
+      required:
+        - name
+        - relpath
+      properties:
+        name:
+          type: string
+          example: current
+        relpath:
+          type: string
+          example: folders/folder-folder-root.synth.txt
+      additionalProperties: false
+
+    ScopeArtifactSummary:
+      type: object
+      required:
+        - member_count
+        - has_synthesis
+        - synthesis_preview
+        - syntheses
+        - has_enrichments
+        - enrichments
+      properties:
+        member_count:
+          type: integer
+          minimum: 0
+          example: 12
+        has_synthesis:
+          type: boolean
+          example: true
+        synthesis_preview:
+          type:
+            - string
+            - 'null'
+          example: This folder appears to contain one experiment run with calibration outputs and supporting notes.
+        syntheses:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScopeSynthesisArtifact'
+        has_enrichments:
+          type: boolean
+          example: false
+        enrichments:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnrichmentListEntry'
+      additionalProperties: false
+
+    ScopeArtifactActions:
+      type: object
+      required:
+        - can_synthesize
+        - can_enrich
+      properties:
+        can_synthesize:
+          type: boolean
+          example: true
+        can_enrich:
+          type: boolean
+          example: true
+      additionalProperties: false
+
+    ScopeArtifactsResponse:
+      type: object
+      required:
+        - scope
+        - artifact_summary
+        - actions
+      properties:
+        scope:
+          $ref: '#/components/schemas/ScopeDescriptor'
+        artifact_summary:
+          $ref: '#/components/schemas/ScopeArtifactSummary'
+        actions:
+          $ref: '#/components/schemas/ScopeArtifactActions'
+      additionalProperties: false
+      
+    RootScopeDescriptor:
+      type: object
+      required:
+        - scope_type
+        - scope_id
+        - label
+      properties:
+        scope_type:
+          type: string
+          const: root
+        scope_id:
+          type: string
+          const: root
+        label:
+          type: string
+          example: root
+      additionalProperties: false
+
+    FolderScopeDescriptor:
+      type: object
+      required:
+        - scope_type
+        - scope_id
+        - folder_id
+        - path
+        - label
+      properties:
+        scope_type:
+          type: string
+          const: folder
+        scope_id:
+          type: string
+          example: folder-root
+        folder_id:
+          type: string
+          example: folder-root
+        path:
+          type: string
+          description: Canonical relpath for the folder scope, rooted at the shared data root
+          example: ""
+        label:
+          type: string
+          example: root-folder
+      additionalProperties: false
+        EditedTextSegment:
+      type: object
+      required:
+        - id
+        - text
+      properties:
+        id:
+          type: string
+          description: Stable canonical manifest segment identifier
+          example: seg-000001
+        text:
+          type: string
+          example: Corrected text for this segment.
+      additionalProperties: false
+
+    EditedTextStaleFlags:
+      type: object
+      required:
+        - embeddings
+        - search_chunks
+      properties:
+        embeddings:
+          type: boolean
+          example: true
+        search_chunks:
+          type: boolean
+          example: true
+      additionalProperties: false
+
+    EditedTextReadResponse:
+      type: object
+      required:
+        - file_id
+        - exists
+        - representation
+        - segments
+      properties:
+        file_id:
+          type: string
+          example: sha256-test123
+        exists:
+          type: boolean
+          example: true
+        representation:
+          type: string
+          const: edited
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/EditedTextSegment'
+      additionalProperties: false
+
+    EditedTextWriteRequest:
+      type: object
+      required:
+        - segments
+      properties:
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/EditedTextSegment'
+          example:
+            - id: seg-000001
+              text: Corrected text for this segment.
+      additionalProperties: false
+
+    EditedTextWriteResponse:
+      type: object
+      required:
+        - file_id
+        - representation
+        - updated
+        - segments
+        - stale
+      properties:
+        file_id:
+          type: string
+          example: sha256-test123
+        representation:
+          type: string
+          const: edited
+        updated:
+          type: boolean
+          example: true
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/EditedTextSegment'
+        stale:
+          $ref: '#/components/schemas/EditedTextStaleFlags'
+      additionalProperties: false
+
+    EditedTextDeleteResponse:
+      type: object
+      required:
+        - file_id
+        - representation
+        - removed
+        - stale
+      properties:
+        file_id:
+          type: string
+          example: sha256-test123
+        representation:
+          type: string
+          const: edited
+        removed:
+          type: boolean
+          example: true
+        stale:
+          $ref: '#/components/schemas/EditedTextStaleFlags'
+      additionalProperties: false
+      
+    CollectionScopeDescriptor:
+      type: object
+      required:
+        - scope_type
+        - scope_id
+        - collection_id
+        - label
+      properties:
+        scope_type:
+          type: string
+          const: collection
+        scope_id:
+          type: string
+          example: col-abc123def456
+        collection_id:
+          type: string
+          example: col-abc123def456
+        label:
+          type: string
+          example: sensor-calibration-review
+        kind:
+          type:
+            - string
+            - 'null'
+          example: file-list
+        description:
+          type:
+            - string
+            - 'null'
+          example: Documents related to calibration methods and drift analysis.
+        document_count:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+          example: 2
+      additionalProperties: false
+
+    ObjectScopeDescriptor:
+      type: object
+      required:
+        - scope_type
+        - scope_id
+        - file_id
+        - label
+      properties:
+        scope_type:
+          type: string
+          const: object
+        scope_id:
+          type: string
+          example: sha256-test123
+        file_id:
+          type: string
+          example: sha256-test123
+        label:
+          type: string
+          example: sha256-test123
+      additionalProperties: false
+
+    ScopeDescriptor:
+      oneOf:
+        - $ref: '#/components/schemas/RootScopeDescriptor'
+        - $ref: '#/components/schemas/FolderScopeDescriptor'
+        - $ref: '#/components/schemas/CollectionScopeDescriptor'
+        - $ref: '#/components/schemas/ObjectScopeDescriptor'
+      discriminator:
+        propertyName: scope_type
+        mapping:
+          root: '#/components/schemas/RootScopeDescriptor'
+          folder: '#/components/schemas/FolderScopeDescriptor'
+          collection: '#/components/schemas/CollectionScopeDescriptor'
+          object: '#/components/schemas/ObjectScopeDescriptor'
+
+    ScopeDescribeRequestRoot:
+      type: object
+      required:
+        - scope_type
+      properties:
+        scope_type:
+          type: string
+          const: root
+      additionalProperties: false
+
+    ScopeDescribeRequestFolder:
+      type: object
+      required:
+        - scope_type
+        - folder_id
+      properties:
+        scope_type:
+          type: string
+          const: folder
+        folder_id:
+          type: string
+          example: folder-root
+      additionalProperties: false
+
+    ScopeDescribeRequestCollection:
+      type: object
+      required:
+        - scope_type
+        - collection_id
+      properties:
+        scope_type:
+          type: string
+          const: collection
+        collection_id:
+          type: string
+          example: col-abc123def456
+      additionalProperties: false
+
+    ScopeDescribeRequestObject:
+      type: object
+      required:
+        - scope_type
+        - file_id
+      properties:
+        scope_type:
+          type: string
+          const: object
+        file_id:
+          type: string
+          example: sha256-test123
+      additionalProperties: false
+
+    ScopeDescribeRequest:
+      oneOf:
+        - $ref: '#/components/schemas/ScopeDescribeRequestRoot'
+        - $ref: '#/components/schemas/ScopeDescribeRequestFolder'
+        - $ref: '#/components/schemas/ScopeDescribeRequestCollection'
+        - $ref: '#/components/schemas/ScopeDescribeRequestObject'
+      discriminator:
+        propertyName: scope_type
+        mapping:
+          root: '#/components/schemas/ScopeDescribeRequestRoot'
+          folder: '#/components/schemas/ScopeDescribeRequestFolder'
+          collection: '#/components/schemas/ScopeDescribeRequestCollection'
+          object: '#/components/schemas/ScopeDescribeRequestObject'
+
+    ScopeMembersResponse:
+      type: object
+      required:
+        - scope
+        - member_file_ids
+      properties:
+        scope:
+          $ref: '#/components/schemas/ScopeDescriptor'
+        member_file_ids:
+          type: array
+          items:
+            type: string
+          examples:
+            - [sha256-test123]
+      additionalProperties: false
+
+    ScopeSummariesRequest:
+      type: object
+      required:
+        - scope
+      properties:
+        scope:
+          $ref: '#/components/schemas/ScopeDescribeRequest'
+      additionalProperties: false
+
+    ScopeSummariesResponse:
+      type: object
+      required:
+        - scope
+        - summaries
+      properties:
+        scope:
+          type: object
+          additionalProperties: true
+          description: Scope echo as returned by the implementation
+        summaries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ObjectSummary'
+      additionalProperties: false
+
+    FolderScopeListResponse:
+      type: object
+      required:
+        - scopes
+      properties:
+        scopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/FolderScopeDescriptor'
+      additionalProperties: false
+
+    CollectionScopeListResponse:
+      type: object
+      required:
+        - scopes
+      properties:
+        scopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/CollectionScopeDescriptor'
+      additionalProperties: false
+
+    CollectionResource:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - kind
+        - color
+        - document_count
+        - created_utc
+        - updated_utc
+      properties:
+        id:
+          type: string
+          example: col-abc123def456
+        name:
+          type: string
+          example: sensor-calibration-review
+        description:
+          type:
+            - string
+            - 'null'
+          example: Documents related to calibration methods and drift analysis.
+        kind:
+          type:
+            - string
+            - 'null'
+          example: file-list
+        color:
+          type:
+            - string
+            - 'null'
+          example: '#3366ff'
+        document_count:
+          type: integer
+          minimum: 0
+          example: 2
+        created_utc:
+          type: string
+          format: date-time
+          example: '2026-06-18T12:00:00Z'
+        updated_utc:
+          type: string
+          format: date-time
+          example: '2026-06-18T12:05:00Z'
+      additionalProperties: false
+
+    CollectionReference:
+      type: object
+      required:
+        - id
+        - name
+        - kind
+      properties:
+        id:
+          type: string
+          example: col-abc123def456
+        name:
+          type: string
+          example: sensor-calibration-review
+        kind:
+          type:
+            - string
+            - 'null'
+          example: file-list
+      additionalProperties: false
+
+    CollectionListResponse:
+      type: object
+      required:
+        - collections
+      properties:
+        collections:
+          type: array
+          items:
+            $ref: '#/components/schemas/CollectionResource'
+      additionalProperties: false
+
+    CollectionEnvelope:
+      type: object
+      required:
+        - collection
+      properties:
+        collection:
+          $ref: '#/components/schemas/CollectionResource'
+      additionalProperties: false
+
+    CollectionCreateRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          example: sensor-calibration-review
+        description:
+          type:
+            - string
+            - 'null'
+          example: Documents related to calibration methods and drift analysis.
+        kind:
+          type:
+            - string
+            - 'null'
+          example: file-list
+        color:
+          type:
+            - string
+            - 'null'
+          example: '#3366ff'
+      additionalProperties: false
+
+    CollectionUpdateRequest:
+      type: object
+      properties:
+        name:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+        description:
+          type:
+            - string
+            - 'null'
+        kind:
+          type:
+            - string
+            - 'null'
+        color:
+          type:
+            - string
+            - 'null'
+      additionalProperties: false
+
+    CollectionMembersResponse:
+      type: object
+      required:
+        - collection
+        - file_ids
+      properties:
+        collection:
+          $ref: '#/components/schemas/CollectionResource'
+        file_ids:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+
+    CollectionMembersAddRequest:
+      type: object
+      required:
+        - file_ids
+      properties:
+        file_ids:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          example:
+            - sha256-test123
+      additionalProperties: false
+
+    CollectionMembersAddResponse:
+      type: object
+      required:
+        - collection_id
+        - added
+        - already_present
+      properties:
+        collection_id:
+          type: string
+          example: col-abc123def456
+        added:
+          type: array
+          items:
+            type: string
+        already_present:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+
+    CollectionMemberRemoveResponse:
+      type: object
+      required:
+        - collection_id
+        - file_id
+        - removed
+      properties:
+        collection_id:
+          type: string
+          example: col-abc123def456
+        file_id:
+          type: string
+          example: sha256-test123
+        removed:
+          type: boolean
+      additionalProperties: false
+
+    CollectionSynthesisArtifact:
+      type: object
+      required:
+        - name
+        - relpath
+      properties:
+        name:
+          type: string
+          example: collection_firstn.txt
+        relpath:
+          type: string
+          example: collections/col-abc123def456/syntheses/collection_firstn.txt
+      additionalProperties: false
+
+    CollectionArtifacts:
+      type: object
+      required:
+        - member_count
+        - has_synthesis
+        - has_enrichments
+        - syntheses
+        - enrichments
+      properties:
+        member_count:
+          type: integer
+          minimum: 0
+          example: 2
+        has_synthesis:
+          type: boolean
+          example: true
+        has_enrichments:
+          type: boolean
+          example: true
+        syntheses:
+          type: array
+          items:
+            $ref: '#/components/schemas/CollectionSynthesisArtifact'
+        enrichments:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnrichmentListEntry'
+      additionalProperties: false
+
+    CollectionArtifactActionFlags:
+      type: object
+      required:
+        - can_synthesize
+        - can_enrich
+      properties:
+        can_synthesize:
+          type: boolean
+          example: true
+        can_enrich:
+          type: boolean
+          example: true
+      additionalProperties: false
+
+    CollectionArtifactSummary:
+      type: object
+      required:
+        - collection_id
+        - artifacts
+        - actions
+      properties:
+        collection_id:
+          type: string
+          example: col-abc123def456
+        artifacts:
+          $ref: '#/components/schemas/CollectionArtifacts'
+        actions:
+          $ref: '#/components/schemas/CollectionArtifactActionFlags'
+      additionalProperties: false
+
+    CollectionDetailResponse:
+      type: object
+      required:
+        - collection
+        - artifact_summary
+      properties:
+        collection:
+          $ref: '#/components/schemas/CollectionResource'
+        artifact_summary:
+          $ref: '#/components/schemas/CollectionArtifactSummary'
+      additionalProperties: false
+
+    CollectionSynthesesResponse:
+      type: object
+      required:
+        - collection
+        - syntheses
+      properties:
+        collection:
+          $ref: '#/components/schemas/CollectionResource'
+        syntheses:
+          type: array
+          items:
+            $ref: '#/components/schemas/CollectionSynthesisArtifact'
+      additionalProperties: false
+
+    FileMeta:
+      type: object
+      required:
+        - source_relpath
+        - filename
+        - mime
+        - size_bytes
+        - mtime_utc
+      properties:
+        source_relpath:
+          type: string
+          example: reports/example.pdf
+        filename:
+          type: string
+          example: example.pdf
+        mime:
+          type:
+            - string
+            - 'null'
+          example: application/pdf
+        size_bytes:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+          example: 1234
+        mtime_utc:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          example: '2026-05-21T00:00:00Z'
+      additionalProperties: false
+
+    HashMeta:
+      type: object
+      required:
+        - sha256
+      properties:
+        sha256:
+          type: string
+          example: test123
+      additionalProperties: false
+
+    ObjectMeta:
+      type: object
+      required:
+        - file
+        - hash
+      properties:
+        file:
+          $ref: '#/components/schemas/FileMeta'
+        hash:
+          $ref: '#/components/schemas/HashMeta'
+      additionalProperties: false
+
+    Span:
+      type: object
+      required:
+        - char_start
+        - char_end
+      properties:
+        char_start:
+          type: integer
+          minimum: 0
+          example: 0
+        char_end:
+          type: integer
+          minimum: 0
+          example: 38
+      additionalProperties: false
+
+    SourceOrigin:
+      type: object
+      properties:
+        source_type:
+          type:
+            - string
+            - 'null'
+          example: pdf
+        unit_type:
+          type:
+            - string
+            - 'null'
+          example: page
+        page:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          example: 1
+      additionalProperties: true
+
+    ManifestRecord:
+      type: object
+      required:
+        - kind
+        - id
+        - path
+      properties:
+        kind:
+          type: string
+          example: text
+        id:
+          type: string
+          example: seg-000001
+        path:
+          type: string
+          example: text.txt
+        type:
+          type:
+            - string
+            - 'null'
+          example: page
+        span:
+          oneOf:
+            - $ref: '#/components/schemas/Span'
+            - type: 'null'
+        source_origin:
+          oneOf:
+            - $ref: '#/components/schemas/SourceOrigin'
+            - type: 'null'
+        related_ids:
+          type: array
+          items:
+            type: string
+      additionalProperties: true
+    ObjectOverview:
+      type: object
+      required:
+        - file_id
+        - meta
+        - text_count
+        - image_count
+        - has_synth
+        - text_items
+        - image_items
+      properties:
+        file_id:
+          type: string
+          example: sha256-test123
+        meta:
+          $ref: '#/components/schemas/ObjectMeta'
+        text_count:
+          type: integer
+          minimum: 0
+          example: 1
+        image_count:
+          type: integer
+          minimum: 0
+          example: 0
+        has_synth:
+          type: boolean
+          example: true
+        text_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManifestRecord'
+        image_items:
+          type: array
+          items:
+            type: object
+      additionalProperties: true
+
+    ProcessingToolRef:
+      type: object
+      required:
+        - name
+        - display_name
+      properties:
+        name:
+          type:
+            - string
+            - 'null'
+          example: pdf_default
+        display_name:
+          type:
+            - string
+            - 'null'
+          example: Default PDF Extractor
+      additionalProperties: false
+
+    ProcessingCapabilities:
+      type: object
+      properties:
+        supports_markdown_render:
+          type: boolean
+          example: false
+      additionalProperties: true
+
+    ObjectProcessing:
+      type: object
+      required:
+        - extractor
+        - synthesizer
+        - canonical_text_path
+        - editable_text_path
+        - has_editable_text
+        - capabilities
+      properties:
+        extractor:
+          $ref: '#/components/schemas/ProcessingToolRef'
+        synthesizer:
+          $ref: '#/components/schemas/ProcessingToolRef'
+        canonical_text_path:
+          type: string
+          example: objects/sha256-test123/text.txt
+        editable_text_path:
+          type:
+            - string
+            - 'null'
+          example: objects/sha256-test123/editable_text.txt
+        has_editable_text:
+          type: boolean
+          example: false
+        capabilities:
+          $ref: '#/components/schemas/ProcessingCapabilities'
+      additionalProperties: false
+
+    EnrichmentBundleFileEntry:
+      type: object
+      required:
+        - name
+        - relpath
+        - is_dir
+      properties:
+        name:
+          type: string
+          example: index.md
+        relpath:
+          type: string
+          example: collections/col-abc123def456/enrichments/wiki--llm_wiki_stub/index.md
+        is_dir:
+          type: boolean
+          example: false
+      additionalProperties: false
+
+    EnrichmentListEntryFile:
+      type: object
+      required:
+        - name
+        - kind
+        - relpath
+      properties:
+        name:
+          type: string
+          example: keywords--stats_keywords.json
+        kind:
+          type: string
+          const: file
+        relpath:
+          type: string
+          example: objects/sha256-test123/enrichments/keywords--stats_keywords.json
+      additionalProperties: false
+
+    EnrichmentListEntryBundle:
+      type: object
+      required:
+        - name
+        - kind
+        - relpath
+        - files
+      properties:
+        name:
+          type: string
+          example: wiki--llm_wiki_stub
+        kind:
+          type: string
+          const: bundle
+        relpath:
+          type: string
+          example: collections/col-abc123def456/enrichments/wiki--llm_wiki_stub
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnrichmentBundleFileEntry'
+      additionalProperties: false
+
+    EnrichmentListEntry:
+      oneOf:
+        - $ref: '#/components/schemas/EnrichmentListEntryFile'
+        - $ref: '#/components/schemas/EnrichmentListEntryBundle'
+      discriminator:
+        propertyName: kind
+        mapping:
+          file: '#/components/schemas/EnrichmentListEntryFile'
+          bundle: '#/components/schemas/EnrichmentListEntryBundle'
+
+    ObjectSourceState:
+      type: object
+      required:
+        - file_id
+        - status
+        - source_relpath
+      properties:
+        file_id:
+          type: string
+          example: sha256-test123
+        status:
+          type: string
+          example: active
+        source_relpath:
+          type:
+            - string
+            - 'null'
+          example: reports/example.pdf
+      additionalProperties: false
+
+    ObjectSynthesisArtifact:
+      type: object
+      required:
+        - name
+        - text_path
+        - toml_path
+        - scope
+      properties:
+        name:
+          type: string
+          example: current
+        text_path:
+          type: string
+          example: C:\...\ .osii\objects\sha256-test123\synth.txt
+        toml_path:
+          type: string
+          example: C:\...\ .osii\objects\sha256-test123\synth.toml
+        scope:
+          type: string
+          example: object
+      additionalProperties: false
+
+    TextRepresentation:
+      type: object
+      required:
+        - name
+        - kind
+        - path
+        - exists
+        - preferred
+      properties:
+        name:
+          type: string
+          example: canonical
+        kind:
+          type: string
+          example: canonical_extracted_text
+        path:
+          type: string
+          example: objects/sha256-test123/text.txt
+        exists:
+          type: boolean
+          example: true
+        preferred:
+          type: boolean
+          example: true
+      additionalProperties: false
+
+    ArtifactActionFlags:
+      type: object
+      required:
+        - can_extract
+        - can_synthesize
+        - can_enrich
+        - source_is_active
+      properties:
+        can_extract:
+          type: boolean
+          example: true
+        can_synthesize:
+          type: boolean
+          example: true
+        can_enrich:
+          type: boolean
+          example: true
+        source_is_active:
+          type: boolean
+          example: true
+      additionalProperties: false
+
+    ObjectArtifacts:
+      type: object
+      required:
+        - has_extraction
+        - has_synthesis
+        - has_enrichments
+        - manifest_record_count
+        - text_representations
+        - syntheses
+        - enrichments
+      properties:
+        has_extraction:
+          type: boolean
+          example: true
+        has_synthesis:
+          type: boolean
+          example: true
+        has_enrichments:
+          type: boolean
+          example: true
+        manifest_record_count:
+          type: integer
+          minimum: 0
+          example: 1
+        text_representations:
+          type: array
+          items:
+            $ref: '#/components/schemas/TextRepresentation'
+        syntheses:
+          type: array
+          items:
+            $ref: '#/components/schemas/ObjectSynthesisArtifact'
+        enrichments:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnrichmentListEntry'
+      additionalProperties: false
+
+    ObjectArtifactSummary:
+      type: object
+      required:
+        - file_id
+        - source_state
+        - artifacts
+        - actions
+      properties:
+        file_id:
+          type: string
+          example: sha256-test123
+        source_state:
+          $ref: '#/components/schemas/ObjectSourceState'
+        artifacts:
+          $ref: '#/components/schemas/ObjectArtifacts'
+        actions:
+          $ref: '#/components/schemas/ArtifactActionFlags'
+      additionalProperties: false
+
+    ObjectAggregate:
+      type: object
+      required:
+        - file_id
+        - meta
+        - overview
+        - collections
+        - processing
+        - enrichments
+        - artifact_summary
+      properties:
+        file_id:
+          type: string
+          example: sha256-test123
+        meta:
+          $ref: '#/components/schemas/ObjectMeta'
+        overview:
+          $ref: '#/components/schemas/ObjectOverview'
+        collections:
+          type: array
+          items:
+            $ref: '#/components/schemas/CollectionReference'
+        processing:
+          $ref: '#/components/schemas/ObjectProcessing'
+        enrichments:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnrichmentListEntry'
+        artifact_summary:
+          $ref: '#/components/schemas/ObjectArtifactSummary'
+      additionalProperties: false
+
+    ObjectSummary:
+      type: object
+      required:
+        - file_id
+        - collections
+        - processing
+        - has_preferred_text
+        - has_synthesis
+        - has_enrichments
+        - preview_available
+      properties:
+        file_id:
+          type: string
+          example: sha256-test123
+        filename:
+          type:
+            - string
+            - 'null'
+          example: example.pdf
+        source_relpath:
+          type:
+            - string
+            - 'null'
+          example: reports/example.pdf
+        source_file_relpath:
+          type:
+            - string
+            - 'null'
+          example: reports/example.pdf
+        mime:
+          type:
+            - string
+            - 'null'
+          example: application/pdf
+        collections:
+          type: array
+          items:
+            $ref: '#/components/schemas/CollectionReference'
+        processing:
+          $ref: '#/components/schemas/ObjectProcessing'
+        source_state:
+          oneOf:
+            - $ref: '#/components/schemas/ObjectSourceState'
+            - type: 'null'
+        has_preferred_text:
+          type: boolean
+          example: true
+        preferred_text_kind:
+          type:
+            - string
+            - 'null'
+          example: canonical_extracted_text
+        has_synthesis:
+          type: boolean
+          example: true
+        has_enrichments:
+          type: boolean
+          example: true
+        synthesis_preview:
+          type:
+            - string
+            - 'null'
+          example: This appears to be a technical report about thermal calibration drift.
+        preview_available:
+          type: boolean
+          example: true
+      additionalProperties: false
+
+    ObjectSummariesRequest:
+      type: object
+      required:
+        - file_ids
+      properties:
+        file_ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          example:
+            - sha256-a
+            - sha256-b
+      additionalProperties: false
+
+    ObjectSummariesResponse:
+      type: object
+      required:
+        - summaries
+      properties:
+        summaries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ObjectSummary'
+      additionalProperties: false
+
+    ObjectManifestResponse:
+      type: object
+      required:
+        - file_id
+        - records
+      properties:
+        file_id:
+          type: string
+          example: sha256-test123
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManifestRecord'
+      additionalProperties: false
+
+    ObjectTextsResponse:
+      type: object
+      required:
+        - file_id
+        - representations
+        - segments
+      properties:
+        file_id:
+          type: string
+          example: sha256-test123
+        representations:
+          type: array
+          items:
+            $ref: '#/components/schemas/TextRepresentation'
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManifestRecord'
+      additionalProperties: false
+
+    PreferredTextResponse:
+      type: object
+      required:
+        - file_id
+        - representation
+        - kind
+        - text
+        - path
+      properties:
+        file_id:
+          type: string
+          example: sha256-test123
+        representation:
+          type: string
+          example: canonical
+        kind:
+          type: string
+          example: canonical_extracted_text
+        text:
+          type: string
+          example: Thermal calibration drift was reduced.
+        path:
+          type: string
+          example: objects/sha256-test123/text.txt
+      additionalProperties: false
+
+    CurrentSynthesisToml:
+      type: object
+      description: Current structured synthesis content as returned by the implementation
+      additionalProperties: true
+      example:
+        path:
+          source_relpath: reports/example.pdf
+        synthesis:
+          synthesis: Technical report about thermal calibration drift.
+          doc_type: technical report
+          quality: default
+        details:
+          description: This appears to be a technical report about thermal calibration drift.
+
+    SynthesisListingEntry:
+      type: object
+      required:
+        - name
+        - text_path
+        - toml_path
+        - scope
+      properties:
+        name:
+          type: string
+          example: current
+        text_path:
+          type: string
+          description: Current implementation returns an absolute backend path
+          example: C:\...\ .osii\objects\sha256-test123\synth.txt
+        toml_path:
+          type: string
+          description: Current implementation returns an absolute backend path
+          example: C:\...\ .osii\objects\sha256-test123\synth.toml
+        scope:
+          type: string
+          example: object
+      additionalProperties: false
+
+    ObjectSynthesesResponse:
+      type: object
+      required:
+        - file_id
+        - current_text
+        - current_toml
+        - syntheses
+      properties:
+        file_id:
+          type: string
+          example: sha256-test123
+        current_text:
+          type:
+            - string
+            - 'null'
+          example: This appears to be a technical report about thermal calibration drift.
+        current_toml:
+          oneOf:
+            - $ref: '#/components/schemas/CurrentSynthesisToml'
+            - type: 'null'
+        syntheses:
+          type: array
+          items:
+            $ref: '#/components/schemas/SynthesisListingEntry'
+      additionalProperties: false
+
+    CanonicalSpanResponse:
+      type: object
+      required:
+        - file_id
+        - char_start
+        - char_end
+        - text
+      properties:
+        file_id:
+          type: string
+          example: sha256-test123
+        char_start:
+          type: integer
+          minimum: 0
+          example: 0
+        char_end:
+          type: integer
+          minimum: 0
+          example: 10
+        text:
+          type: string
+          example: Thermal ca
+      additionalProperties: false
+
+    CanonicalSpanContextResponse:
+      type: object
+      required:
+        - file_id
+        - char_start
+        - char_end
+        - match_text
+        - before_text
+        - after_text
+        - window_start
+        - window_end
+      properties:
+        file_id:
+          type: string
+          example: sha256-test123
+        char_start:
+          type: integer
+          minimum: 0
+          example: 0
+        char_end:
+          type: integer
+          minimum: 0
+          example: 10
+        match_text:
+          type: string
+          example: Thermal ca
+        before_text:
+          type: string
+          example: ""
+        after_text:
+          type: string
+          example: librat
+        window_start:
+          type: integer
+          minimum: 0
+          example: 0
+        window_end:
+          type: integer
+          minimum: 0
+          example: 15
+      additionalProperties: false
+
+    ObjectEnrichmentPayloadResponse:
+      type: object
+      required:
+        - file_id
+        - filename
+        - relpath
+        - data
+      properties:
+        file_id:
+          type: string
+          example: sha256-test123
+        filename:
+          type: string
+          example: keywords--stats_keywords.json
+        relpath:
+          type: string
+          example: objects/sha256-test123/enrichments/keywords--stats_keywords.json
+        data: {}
+      additionalProperties: false
+
+    EnrichmentsListResponse:
+      type: object
+      required:
+        - scope
+        - enrichments
+      properties:
+        scope:
+          type: object
+          additionalProperties: true
+          description: Scope echo as returned by the implementation
+        enrichments:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnrichmentListEntry'
+      additionalProperties: false
+
+    SearchMode:
+      type: string
+      enum:
+        - semantic
+        - lexical
+        - hybrid
+      default: semantic
+      example: hybrid
+
+    SearchRequest:
+      type: object
+      required:
+        - query
+        - scope
+      properties:
+        query:
+          type: string
+          example: calibration drift
+        mode:
+          $ref: '#/components/schemas/SearchMode'
+        top_k:
+          type: integer
+          minimum: 1
+          default: 5
+          example: 10
+        scope:
+          $ref: '#/components/schemas/ScopeDescribeRequest'
+        group_by:
+          $ref: '#/components/schemas/SearchGroupBy'
+      additionalProperties: false
+
+    SearchResult:
+      type: object
+      required:
+        - faiss_id
+        - chunk_id
+        - file_id
+        - source_relpath
+        - chunk_method
+        - chunk_index
+        - char_start
+        - char_end
+        - source_text_representation
+        - source_text_kind
+        - truncated
+        - score
+      properties:
+        faiss_id:
+          type: integer
+          description: Internal retrieval identifier from the FAISS-backed index
+          example: 0
+        chunk_id:
+          type: string
+          description: Derived retrieval chunk identifier, not a canonical extraction segment identifier
+          example: chunk-sha256-test123-000001
+        file_id:
+          type: string
+          example: sha256-test123
+        source_relpath:
+          type: string
+          example: reports/example.pdf
+        chunk_method:
+          type:
+            - string
+            - 'null'
+          example: paragraph
+        chunk_index:
+          type:
+            - integer
+            - 'null'
+          example: 1
+        char_start:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+          example: 0
+        char_end:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+          example: 38
+        source_text_representation:
+          type:
+            - string
+            - 'null'
+          example: canonical
+        source_text_kind:
+          type:
+            - string
+            - 'null'
+          example: canonical_extracted_text
+        truncated:
+          type: boolean
+          example: false
+        score:
+          type: number
+          format: float
+          example: 0.8123
+      additionalProperties: true
+
+    SearchResponse:
+      type: object
+      required:
+        - query
+        - top_k
+        - results
+      properties:
+        query:
+          type: string
+          example: thermal calibration drift
+        top_k:
+          type: integer
+          minimum: 1
+          example: 5
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+      additionalProperties: false
+
+    SearchResultSourceOrigin:
+      type: object
+      required:
+        - grounding_type
+        - char_start
+        - char_end
+      properties:
+        grounding_type:
+          type: string
+          example: text_span
+        char_start:
+          type: integer
+          minimum: 0
+          example: 0
+        char_end:
+          type: integer
+          minimum: 0
+          example: 38
+      additionalProperties: true
+
+    SearchScopedResult:
+      type: object
+      required:
+        - file_id
+        - filename
+        - source_relpath
+        - snippet
+        - score
+        - match_type
+        - chunk_id
+        - chunk_method
+        - chunk_index
+        - char_start
+        - char_end
+        - source_text_representation
+        - source_text_kind
+        - source_origin
+        - collections
+      properties:
+        file_id:
+          type: string
+          example: sha256-test123
+        filename:
+          type:
+            - string
+            - 'null'
+          example: example.pdf
+        source_relpath:
+          type:
+            - string
+            - 'null'
+          example: reports/example.pdf
+        snippet:
+          type:
+            - string
+            - 'null'
+          example: Thermal calibration drift was reduced.
+        score:
+          type: number
+          format: float
+          example: 0.9
+        match_type:
+          type:
+            - string
+            - 'null'
+          example: hybrid
+        chunk_id:
+          type:
+            - string
+            - 'null'
+          example: chunk-sha256-test123-000001
+        chunk_method:
+          type:
+            - string
+            - 'null'
+          example: paragraph
+        chunk_index:
+          type:
+            - integer
+            - 'null'
+          example: 1
+        char_start:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+          example: 0
+        char_end:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+          example: 38
+        source_text_representation:
+          type:
+            - string
+            - 'null'
+          example: canonical
+        source_text_kind:
+          type:
+            - string
+            - 'null'
+          example: canonical_extracted_text
+        source_origin:
+          oneOf:
+            - $ref: '#/components/schemas/SearchResultSourceOrigin'
+            - type: 'null'
+        collections:
+          type: array
+          items:
+            $ref: '#/components/schemas/CollectionReference'
+      additionalProperties: true
+
+    SearchScopedResponse:
+      type: object
+      required:
+        - query
+        - mode
+        - retrieval_mode_used
+        - top_k
+        - scope
+        - group_by
+        - results
+      properties:
+        query:
+          type: string
+          example: calibration drift
+        mode:
+          $ref: '#/components/schemas/SearchMode'
+        retrieval_mode_used:
+          $ref: '#/components/schemas/SearchMode'
+        top_k:
+          type: integer
+          minimum: 1
+          example: 10
+        scope:
+          type: object
+          additionalProperties: true
+          description: Scope echo as returned by the implementation
+        group_by:
+          $ref: '#/components/schemas/SearchGroupBy'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchScopedResult'
+      additionalProperties: false
+      
+    ExtractorDescriptor:
+      type: object
+      required:
+        - name
+        - display_name
+        - description
+        - version
+        - scope
+        - mode
+        - domain
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        version:
+          type: string
+        scope:
+          type: string
+          example: object
+        mode:
+          type: string
+          example: extraction
+        domain:
+          type: string
+          example: generic
+      additionalProperties: true
+
+    ExtractorListResponse:
+      type: object
+      required:
+        - extractors
+      properties:
+        extractors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtractorDescriptor'
+      additionalProperties: false
+
+    SynthesizerDescriptor:
+      type: object
+      required:
+        - name
+        - display_name
+        - description
+        - version
+        - scope
+        - mode
+        - domain
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        version:
+          type: string
+        scope:
+          type: string
+        mode:
+          type: string
+        domain:
+          type: string
+      additionalProperties: true
+
+    SynthesizerListResponse:
+      type: object
+      required:
+        - synthesizers
+      properties:
+        synthesizers:
+          type: array
+          items:
+            $ref: '#/components/schemas/SynthesizerDescriptor'
+      additionalProperties: false
+
+    FolderSynthesizerListResponse:
+      type: object
+      required:
+        - folder_synthesizers
+      properties:
+        folder_synthesizers:
+          type: array
+          items:
+            $ref: '#/components/schemas/SynthesizerDescriptor'
+      additionalProperties: false
+
+    ObjectSynthesisRequest:
+      type: object
+      required:
+        - synthesizer_name
+      properties:
+        synthesizer_name:
+          type: string
+          example: firstN
+        expert_context:
+          type:
+            - string
+            - 'null'
+          example: Focus on calibration methods and final findings.
+        synthesizer_config:
+          type: object
+          additionalProperties: true
+          example:
+            max_chars: 1000
+      additionalProperties: false
+
+    ObjectSynthesisJobResponse:
+      type: object
+      required:
+        - run_id
+        - status
+        - file_id
+        - synthesizer_name
+      properties:
+        run_id:
+          type: string
+          example: abc123
+        status:
+          type: string
+          example: pending
+        file_id:
+          type: string
+          example: sha256-test123
+        synthesizer_name:
+          type: string
+          example: firstN
+      additionalProperties: false
+
+    CollectionSynthesisRequest:
+      type: object
+      required:
+        - synthesizer_name
+      properties:
+        synthesizer_name:
+          type: string
+          example: collection_firstn
+        synthesizer_config:
+          type: object
+          additionalProperties: true
+          example:
+            max_chars: 4000
+      additionalProperties: false
+
+    CollectionSynthesisJobResponse:
+      type: object
+      required:
+        - run_id
+        - status
+        - collection_id
+        - synthesizer_name
+      properties:
+        run_id:
+          type: string
+          example: abc123
+        status:
+          type: string
+          example: pending
+        collection_id:
+          type: string
+          example: col-abc123def456
+        synthesizer_name:
+          type: string
+          example: collection_firstn
+      additionalProperties: false
+
+    EnrichmentJobRequest:
+      type: object
+      required:
+        - enricher_name
+        - scope
+      properties:
+        enricher_name:
+          type: string
+          example: stats_keywords
+        scope:
+          $ref: '#/components/schemas/ScopeDescribeRequest'
+        enricher_config:
+          type: object
+          additionalProperties: true
+          example:
+            top_k: 10
+      additionalProperties: false
+
+    EnrichmentJobResponse:
+      type: object
+      required:
+        - run_id
+        - status
+        - scope
+        - enricher_name
+      properties:
+        run_id:
+          type: string
+          example: abc123
+        status:
+          type: string
+          example: pending
+        scope:
+          type: object
+          additionalProperties: true
+          description: Scope echo as returned by the implementation
+        enricher_name:
+          type: string
+          example: stats_keywords
+      additionalProperties: false
+
+    PreviewSummary:
+      type: object
+      properties:
+        matched_count:
+          type:
+            - integer
+            - 'null'
+        total_size:
+          type:
+            - integer
+            - 'null'
+        total_size_human:
+          type:
+            - string
+            - 'null'
+        sample:
+          type: array
+          items: {}
+        stopped_reason:
+          type:
+            - string
+            - 'null'
+      additionalProperties: true
+
+    RunLaunchRequest:
+      type: object
+      properties:
+        queue_paths:
+          type: array
+          items:
+            type: string
+        include_subfolders:
+          type: boolean
+        show_hidden:
+          type: boolean
+        include_patterns:
+          type: string
+        exclude_patterns:
+          type: string
+        context:
+          type: string
+        intake_name:
+          type: string
+        synthesizer_name:
+          type:
+            - string
+            - 'null'
+        synthesizer_config:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+
+    RunLaunchResponse:
+      type: object
+      required:
+        - run_id
+        - status
+        - resolved_count
+      properties:
+        run_id:
+          type: string
+        status:
+          type: string
+        resolved_count:
+          type: integer
+        preview:
+          $ref: '#/components/schemas/PreviewSummary'
+      additionalProperties: true
+
+    RunItemStatus:
+      type: object
+      properties:
+        path:
+          type: string
+        display:
+          type: string
+        status:
+          type: string
+        extractor:
+          type:
+            - string
+            - 'null'
+        synthesizer:
+          type:
+            - string
+            - 'null'
+        file_id:
+          type:
+            - string
+            - 'null'
+        osii:
+          type:
+            - string
+            - 'null'
+        synthesis:
+          type:
+            - string
+            - 'null'
+        error:
+          type:
+            - string
+            - 'null'
+      additionalProperties: true
+
+    RunStatusResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        completed:
+          type: integer
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunItemStatus'
+        logs:
+          type: array
+          items:
+            type: string
+        manifest_name:
+          type:
+            - string
+            - 'null'
+        manifest_path:
+          type:
+            - string
+            - 'null'
+      additionalProperties: true
+
+    RunLogsResponse:
+      type: object
+      required:
+        - run_id
+        - logs
+      properties:
+        run_id:
+          type: string
+        logs:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+
+    EmbeddingsBuildRequest:
+      type: object
+      properties:
+        batch_size:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+      additionalProperties: true
+
+    EmbeddingsBuildResponse:
+      type: object
+      required:
+        - job_id
+        - status
+      properties:
+        job_id:
+          type: string
+          example: segments
+        status:
+          type: string
+          example: running
+      additionalProperties: true
+
+    EmbeddingsBuildStatusResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+      additionalProperties: true
+
+    EmbeddingsMetaResponse:
+      type: object
+      properties:
+        index_path:
+          type:
+            - string
+            - 'null'
+        mapping_path:
+          type:
+            - string
+            - 'null'
+        meta_path:
+          type:
+            - string
+            - 'null'
+        meta_text:
+          type:
+            - string
+            - 'null'
+        chunk_manifest_path:
+          type:
+            - string
+            - 'null'
+        chunk_method:
+          type:
+            - string
+            - 'null'
+      additionalProperties: true
+
+  responses:
+    GenericError:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

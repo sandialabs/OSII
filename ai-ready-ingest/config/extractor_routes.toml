@@ -1,0 +1,14 @@
+[[routes]]
+name = "default-textract"
+extractor = "textract"
+extensions = [".pdf"]
+
+[[routes]]
+name = "docx-default-textract"
+extractor = "textract"
+extensions = [".docx", ".doc"]
+
+[[routes]]
+name = "tika-catchall"
+extractor = "tika"
+extensions = ["*"]

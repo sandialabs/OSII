@@ -1,0 +1,60 @@
+site_name: OSII Documentation
+site_description: Use, extend, and operate the On-Store Intelligence Index.
+site_url: https://heidikmkv.github.io/osii/
+repo_url: https://github.com/heidikmkv/osii
+repo_name: heidikmkv/osii
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.indexes
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - search.suggest
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - pymdownx.details
+  - pymdownx.superfences
+
+nav:
+  - Start here: index.md
+  - Install and use:
+      - Single-file walkthrough: tutorials/single-file.md
+      - CLI cheat sheet: reference/cli.md
+  - Understand OSII:
+      - Architecture: concepts/architecture.md
+      - Extraction: concepts/extraction.md
+      - Synthesis: concepts/synthesis.md
+      - Store structure: reference/osii-store.md
+  - Extend OSII:
+      - Choose an extension: extending/index.md
+      - Hello table enricher: extending/hello-enricher.md
+      - Processor development: extending/processor-development.md
+      - Processor API v1:
+          - Overview: reference/processor-api/index.md
+          - Extraction: reference/processor-api/extraction.md
+          - Synthesis: reference/processor-api/synthesis.md
+          - Embedding: reference/processor-api/embedding.md
+          - Enrichment: reference/processor-api/enrichment.md
+          - Standard artifacts: reference/processor-api/standard-artifacts.md
+  - Operate offline:
+      - Local-first operation: operations/local-first.md
+      - Extractor routing: reference/extractor-routing.md
+  - API and formats:
+      - REST API:
+          - Overview: reference/api/index.md
+          - Resource model: reference/api/resource-model.md
+          - Search semantics: reference/api/search-semantics.md
+          - Compatibility: reference/api/compatibility.md
+      - Collection format: reference/collection-file-format.md
+  - Contribute: contributing/developer-guide.md
+

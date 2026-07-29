@@ -1,0 +1,26 @@
+# This file defines a logical collection of objects in the OSII store.
+#
+# A collection is independent of the source folder hierarchy.
+# It is used to group documents that should be searched, summarized,
+# or analyzed together.
+#
+# Member entries may identify objects in either of two ways:
+#   1. by file_id
+#   2. by source_relpath
+#
+# source_relpath is the path of the source file relative to the ingested
+# data root, not relative to the repository root.
+
+[collection]
+name = "sensor-calibration-review"
+description = "Documents related to sensor calibration methods, drift characterization, and supporting analysis notes."
+kind = "file-list"
+color = "#3366ff"
+
+# This member is resolved by source path under the ingested data root.
+[[members]]
+source_relpath = "example_data/purcell.pdf"
+
+# This member is resolved directly by stable object identifier.
+[[members]]
+file_id = "sha256-test123"

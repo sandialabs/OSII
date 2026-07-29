@@ -1,0 +1,64 @@
+# Environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+certs/
+**/certs/
+tls-ca-bundle.pem
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+site/
+
+# Node
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+
+# OSII runtime data
+.osii/
+**/.osii/
+# Keep the empty default source folder in Git, but never commit user files.
+osii-data/*
+!osii-data/source/
+osii-data/source/*
+!osii-data/source/.gitkeep
+data_volume/
+**/data_volume/
+*.faiss
+*.sqlite
+*.sqlite3
+
+# Notebooks and tools
+.ipynb_checkpoints/
+.cache/
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local logs and generated reports
+*.log
+coverage.xml
+repo_for_ai.txt

@@ -1,0 +1,5 @@
+# Minimal environment for the notebook repo
+ipykernel
+
+# Editable install of the sibling package
+-e ../ai-ready-ingest

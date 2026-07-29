@@ -1,0 +1,14 @@
+You will consolidate multiple chunk synthesis into a single guided synthesis.
+
+GUIDANCE (follow closely):
+{expert_context}
+
+INPUT SYNTHESIS (combine level {level}, group {group_index}/{group_total}):
+{joined}
+
+Instructions:
+- Combine and deduplicate.
+- Keep important details and quantitative results.
+- Preserve structure when helpful.
+- Do not invent facts not present in the input synthesis.
+Return only the consolidated synthesis text.

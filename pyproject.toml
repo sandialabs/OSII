@@ -1,0 +1,18 @@
+[project]
+name = "osii-monorepo"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[tool.uv.workspace]
+members = [
+  "ai-ready-ingest",
+  "ai-ready-mcp",
+  "ai-ready-rag-chat",
+  "packages/osii-processor-sdk",
+  "services/table-pdf-enricher",
+]
+
+[tool.uv.sources]
+osii-processor-sdk = { workspace = true }
+osii = { workspace = true }
+

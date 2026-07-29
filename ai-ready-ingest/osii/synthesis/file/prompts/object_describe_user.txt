@@ -1,0 +1,28 @@
+You are given extracted text and metadata from one source artifact.
+
+Metadata:
+{metadata}
+
+Expert context:
+{expert_context}
+
+Extracted text:
+"""{text}"""
+
+Write TOML with the following structure:
+
+[synthesis]
+synthesis = "One-sentence description of what this object appears to be."
+doc_type = "Best-guess document type."
+quality = "low | default | high"
+
+[details]
+description = "Longer description when helpful."
+
+Guidance:
+- Use quality=low for placeholder, junky, or badly extracted content.
+- Use quality=default for typical usable documents.
+- Use quality=high for highly informative guiding documents such as readmes, overviews, or summaries.
+- Be explicit when uncertain.
+- Do not invent facts.
+- Return TOML only.

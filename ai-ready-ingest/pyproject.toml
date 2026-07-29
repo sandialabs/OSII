@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "osii"
+version = "0.1.0"
+description = "On-Store Intelligence Index (OSII) core backend for ingestion, synthesis, enrichment, and search."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.116.1",
+  "uvicorn[standard]==0.35.0",
+  "python-multipart==0.0.20",
+  "requests==2.33.1",
+  "antiword==0.1.0",
+  "tomli-w==1.2.0",
+  "pdfminer.six>=20231228",
+  "docx2txt>=0.8",
+  "PyMuPDF>=1.24",
+  "Pillow>=10",
+  "jinja2>=3.1",
+  "bm25s>=0.2",
+  "tqdm>=4.66",
+  "faiss-cpu",
+  "numpy"
+]
+
+[project.optional-dependencies]
+connected = ["shirty[client]==0.13.0"]
+dev = [
+  "httpx>=0.27,<1",
+  "pytest>=8,<9",
+]
+
+[tool.setuptools.packages.find]
+include = ["osii*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

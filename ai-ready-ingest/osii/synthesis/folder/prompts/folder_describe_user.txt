@@ -1,0 +1,25 @@
+You are given a compact overview of one folder in an OSII hierarchy.
+
+Overview:
+{overview}
+
+Expert context:
+{expert_context}
+
+Write TOML with the following structure:
+
+[synthesis]
+synthesis = "One-sentence description of what this folder appears to represent."
+kind = "experiment | simulation-results | report-set | literature | mixed | other"
+quality = "low | default | high"
+
+[details]
+description = "Longer interpretive description that helps a user know what to inspect next."
+
+Guidance:
+- Prefer qualitative interpretation over merely repeating filenames.
+- Mention important child file types or signals when relevant.
+- If this appears to be one run among many, say so.
+- If important details likely live in artifacts or child outputs, say so.
+- Do not invent facts.
+- Return TOML only.

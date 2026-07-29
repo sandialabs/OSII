@@ -1,0 +1,9 @@
+First time: 
+npm install
+
+
+To run:
+npm run dev
+
+Open the Vite URL:
+http://localhost:5173

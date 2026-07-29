@@ -1,0 +1,14 @@
+[[routes]]
+name = "reports-describe"
+synthesizer = "describe"
+extensions = [".pdf", ".docx"]
+
+[[routes]]
+name = "generic-describe"
+synthesizer = "describe"
+extensions = ["*"]
+
+[[routes]]
+name = "generic-image-describe"
+synthesizer = "image_describe"
+extensions = [".png", ".jpg", ".jpeg", ".gif", ".webp"]

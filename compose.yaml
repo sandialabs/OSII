@@ -1,0 +1,131 @@
+name: osii
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: ai-ready-ingest/Dockerfile
+    environment:
+      OSII_ROOT: /data/.osii
+      SHARED_VOLUME_ROOT: /data/source
+      UPLOAD_ORIGINALS_ROOT: /data/uploads
+      OSII_PROCESSORS: ${OSII_PROCESSORS:-http://table-pdf-enricher:8091}
+      TIKA_URL: http://tika:9998
+      OSII_TESSERACT_URL: http://tesseract:8080
+    ports:
+      - "${OSII_API_PORT:-8511}:8511"
+    volumes:
+      - osii-data:/data
+      - "${OSII_SOURCE_DIR:-./osii-data/source}:/data/source:ro"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8511/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    build:
+      context: .
+      dockerfile: ai-ready-ingest/Dockerfile
+    command: ["python", "-m", "osii.worker"]
+    environment:
+      OSII_ROOT: /data/.osii
+      SHARED_VOLUME_ROOT: /data/source
+      UPLOAD_ORIGINALS_ROOT: /data/uploads
+      TIKA_URL: http://tika:9998
+      OSII_TESSERACT_URL: http://tesseract:8080
+      OSII_WORKER_POLL_SECONDS: ${OSII_WORKER_POLL_SECONDS:-1}
+    volumes:
+      - osii-data:/data
+      - "${OSII_SOURCE_DIR:-./osii-data/source}:/data/source:ro"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  dashboard:
+    build:
+      context: osii-dashboard/dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "${OSII_DASHBOARD_PORT:-5173}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  chat:
+    build:
+      context: ai-ready-rag-chat
+      dockerfile: Dockerfile
+    environment:
+      OSII_BACKEND_BASE_URL: http://api:8511
+      CHAT_PROVIDER: ${CHAT_PROVIDER:-extractive}
+      CHAT_MODEL: ${CHAT_MODEL:-openai/gpt-oss-120b}
+      OLLAMA_BASE_URL: http://ollama:11434
+    ports:
+      - "${OSII_CHAT_PORT:-8611}:8611"
+    depends_on:
+      api:
+        condition: service_healthy
+    profiles: ["chat"]
+
+  ollama:
+    image: ollama/ollama:0.12.0
+    ports:
+      - "${OSII_OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    profiles: ["ollama"]
+
+  mcp:
+    build:
+      context: .
+      dockerfile: ai-ready-mcp/Dockerfile
+    environment:
+      OSII_ROOT: /data/.osii
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8021
+      DEBUG: ${MCP_DEBUG:-true}
+      ATLAS_MCP_TOKEN: ${ATLAS_MCP_TOKEN:-local-development}
+    ports:
+      - "${OSII_MCP_PORT:-8021}:8021"
+    volumes:
+      - osii-data:/data:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    profiles: ["agents"]
+
+  table-pdf-enricher:
+    build:
+      context: .
+      dockerfile: services/table-pdf-enricher/Dockerfile
+    ports:
+      - "${OSII_EXAMPLE_PROCESSOR_PORT:-8091}:8091"
+    profiles: ["examples"]
+
+  tesseract:
+    build:
+      context: ai-ready-tool-shelf/osii-tesseract
+    ports:
+      - "${OSII_TESSERACT_PORT:-8080}:8080"
+    profiles: ["ocr"]
+
+  tika:
+    image: apache/tika:3.2.3.0-full
+    ports:
+      - "${OSII_TIKA_PORT:-9998}:9998"
+    profiles: ["ocr"]
+
+  embeddings:
+    build:
+      context: ai-ready-tool-shelf/embedding-service-jina
+    ports:
+      - "${OSII_EMBEDDINGS_PORT:-8085}:8085"
+    volumes:
+      - model-cache:/models
+    profiles: ["embeddings"]
+
+volumes:
+  osii-data:
+  model-cache:
+  ollama-models:

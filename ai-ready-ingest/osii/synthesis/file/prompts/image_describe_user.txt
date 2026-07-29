@@ -1,0 +1,36 @@
+You are given an image artifact, metadata from its source document, and possibly a description of the source document's textual contents.
+
+Metadata:
+{metadata}
+
+Expert context:
+{expert_context}
+
+Document description:
+{synthesis}
+
+Task:
+Generate a best-effort description of what the image appears to depict, using the metadata, expert context, and document description when helpful.
+
+If the expert context and document description conflict, defer to the expert context.
+
+Write TOML with the following structure:
+
+[synthesis]
+synthesis = "One-sentence description of what this image appears to show."
+image_type = "Best-guess image type."
+quality = "low | default | high"
+
+[details]
+description = "Longer visual description when helpful."
+
+Guidance:
+- Focus first on what the image visibly contains.
+- Use the document description only as supporting context, not as a substitute for visual evidence.
+- If the expert context and document description conflict, prefer the expert context.
+- Use quality=low for unclear, corrupted, placeholder, or poorly extracted images.
+- Use quality=default for typical usable images.
+- Use quality=high for especially informative images such as diagrams, annotated figures, plots, schematics, or summary visuals.
+- Be explicit when uncertain.
+- Do not invent facts.
+- Return TOML only.

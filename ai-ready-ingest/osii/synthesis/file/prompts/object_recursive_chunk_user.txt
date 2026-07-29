@@ -1,0 +1,14 @@
+You will synthesize a chunk of a larger document.
+
+GUIDANCE (follow closely):
+{expert_context}
+
+CHUNK ({chunk_index}/{chunk_total}):
+"""{chunk}"""
+
+Instructions:
+- Produce a chunk synthesis faithful to the chunk content.
+- Prefer bullets unless the guidance requests otherwise.
+- Capture key facts, definitions, assumptions, and any numbers.
+- If the chunk seems partial or mid-thought, note that briefly.
+Return only the synthesis text.

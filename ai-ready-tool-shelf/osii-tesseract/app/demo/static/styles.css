@@ -1,0 +1,131 @@
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f5f6f8;
+    color: #1f2937;
+}
+
+.app-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.app-header {
+    background: #1f2937;
+    color: #ffffff;
+    padding: 12px 20px;
+}
+
+.app-header h1 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.app-main {
+    display: grid;
+    grid-template-columns: 320px 1fr 420px;
+    gap: 16px;
+    padding: 16px;
+    align-items: start;
+}
+
+.panel {
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+.controls-panel {
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+}
+
+.controls-panel label {
+    display: block;
+    margin-top: 10px;
+    font-weight: 600;
+}
+
+.controls-panel input[type="range"],
+.controls-panel select,
+.controls-panel input[type="file"],
+.controls-panel button {
+    width: 100%;
+    margin-top: 4px;
+}
+
+.checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+}
+
+.checkbox-row input {
+    width: auto;
+    margin: 0;
+}
+
+.status {
+    margin-top: 8px;
+    min-height: 20px;
+    color: #374151;
+}
+
+.preview-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.preview-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 8px;
+    background: #fafafa;
+}
+
+.preview-card-wide {
+    grid-column: span 2;
+}
+
+.preview-card img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border: 1px solid #d1d5db;
+    background: #ffffff;
+}
+
+.results-panel {
+    overflow: hidden;
+}
+
+.stats {
+    margin-bottom: 12px;
+    font-size: 14px;
+    color: #374151;
+}
+
+#resultsTable {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+#resultsTable th,
+#resultsTable td {
+    border: 1px solid #d1d5db;
+    padding: 6px;
+    vertical-align: top;
+    text-align: left;
+}
+
+#resultsTable tbody tr:nth-child(even) {
+    background: #f9fafb;
+}
