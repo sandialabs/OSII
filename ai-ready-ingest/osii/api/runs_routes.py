@@ -50,7 +50,7 @@ def load_parser_routes(config_path: Path) -> list[dict]:
     import tomllib
 
     if not config_path.exists():
-        return [{"name": "default-textract", "extractor": "textract", "extensions": ["*"]}]
+        return [{"name": "default-tika", "extractor": "tika", "extensions": ["*"]}]
 
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     return data.get("routes", [])
@@ -62,7 +62,7 @@ def choose_parser(path: Path, routes: list[dict]) -> str:
         exts = route.get("extensions", [])
         if "*" in exts or suffix in [e.lower() for e in exts]:
             return route["extractor"]
-    return "textract"
+    return "tika"
 
 
 def get_synthesizer(name: str):
@@ -194,7 +194,6 @@ def run_worker(
     osii_store: Path,
     shared_root: Path,
     upload_root: Path,
-    shirty_api_key: str | None,
     parser_routes_path: Path,
     shared_root_host_path: str | None,
     synthesizer_name: str | None,
@@ -268,17 +267,13 @@ def run_worker(
             append_log(run_id, f"Processing {src.name} with extractor '{extractor_name}'")
 
             try:
-                extractor_config = {}
-                if shirty_api_key:
-                    extractor_config["shirty_api_key"] = shirty_api_key
-
                 extract_result = dispatch_extract(
                     extractor_name=extractor_name,
                     source_path=src,
                     data_volume_root=data_volume_root,
                     osii_store=osii_store,
                     expert_context=context or None,
-                    extractor_config=extractor_config,
+                    extractor_config={},
                 )
 
                 run = get_run(run_id)
@@ -402,7 +397,6 @@ async def start_run(request: Request, payload: dict):
     max_total_size_mb = payload.get("max_total_size_mb")
     context = payload.get("context", "")
     intake_name = payload.get("intake_name", "")
-    shirty_api_key = payload.get("shirty_api_key", "")
     synthesizer_name = payload.get("synthesizer_name") or None
     synthesizer_config = payload.get("synthesizer_config") or {}
 
@@ -458,7 +452,6 @@ async def start_run(request: Request, payload: dict):
             "osii_store": str(osii_store),
             "shared_root": str(shared_root),
             "upload_root": str(upload_root),
-            "shirty_api_key": shirty_api_key,
             "parser_routes_path": str(parser_routes_path),
             "shared_root_host_path": shared_root_host_path,
             "synthesizer_name": synthesizer_name,

@@ -1,11 +1,11 @@
 [[routes]]
-name = "default-textract"
-extractor = "textract"
+name = "pdf-local-tika"
+extractor = "tika"
 extensions = [".pdf"]
 
 [[routes]]
-name = "docx-default-textract"
-extractor = "textract"
+name = "office-local-tika"
+extractor = "tika"
 extensions = [".docx", ".doc"]
 
 [[routes]]

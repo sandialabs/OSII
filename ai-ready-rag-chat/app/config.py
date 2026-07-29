@@ -12,6 +12,8 @@ class Settings:
     fallback_search_mode: str
     chat_provider: str
     ollama_base_url: str
+    openai_compatible_base_url: str
+    openai_compatible_api_key: str
 
 
 def get_settings() -> Settings:
@@ -24,4 +26,6 @@ def get_settings() -> Settings:
         fallback_search_mode=os.getenv("FALLBACK_SEARCH_MODE", "lexical"),
         chat_provider=os.getenv("CHAT_PROVIDER", "extractive").strip().lower(),
         ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/"),
+        openai_compatible_base_url=os.getenv("OSII_CHAT_BASE_URL", os.getenv("OSII_MODEL_BASE_URL", "")).rstrip("/"),
+        openai_compatible_api_key=os.getenv("OSII_MODEL_API_KEY", ""),
     )

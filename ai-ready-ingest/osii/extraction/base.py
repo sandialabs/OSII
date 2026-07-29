@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 
 @dataclass
@@ -37,6 +37,20 @@ class ExtractionState:
     error: str | None = None
 
 
+class DocumentExtractor(Protocol):
+    """Capability contract for a document-to-OSII extraction implementation."""
+
+    def extract(
+        self,
+        *,
+        source_path: Path,
+        data_volume_root: Path,
+        osii_store: Path,
+        expert_context: str | None = None,
+        extractor_config: dict | None = None,
+    ) -> dict: ...
+
+
 class BaseExtractor(ABC):
     name: str = "base"
     version: str = "1.0"
@@ -51,6 +65,7 @@ class BaseExtractor(ABC):
         data_volume_root: Path,
         osii_store: Path,
         expert_context: str | None = None,
+        extractor_config: dict | None = None,
     ) -> dict:
         raise NotImplementedError
     

@@ -1,7 +1,7 @@
 from pathlib import Path
 import tomllib
 
-from osii.model_clients import create_shirty_client
+from osii.model_clients import create_chat_client
 
 from osii.domain.artifacts.folder_overview import build_folder_overview
 from osii.domain.artifacts.synth_artifacts import write_folder_synthesis_variant
@@ -73,8 +73,7 @@ class FolderDescribeSynthesizer(BaseFolderSynthesizer):
         return data
 
     def _call_model(self, model: str, system: str, user: str) -> str:
-        client = create_shirty_client()
-        completion = client.chat.completions.create(
+        return create_chat_client().complete(
             model=model,
             messages=[
                 {"role": "system", "content": system},
@@ -82,8 +81,6 @@ class FolderDescribeSynthesizer(BaseFolderSynthesizer):
             ],
             max_tokens=700,
         )
-        msg = completion.choices[0].message if completion and completion.choices else None
-        return (_msg_content(msg) or "").strip()
 
     def synthesize_folder(
         self,

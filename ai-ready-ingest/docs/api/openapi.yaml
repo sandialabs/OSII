@@ -1656,9 +1656,9 @@ paths:
                         scope: object
                         mode: extraction
                         domain: generic
-                      - name: textract
-                        display_name: Textract Extractor
-                        description: Uses Shirty-hosted Textract extraction for plain document text.
+                      - name: tika
+                        display_name: Tika Catchall Extractor
+                        description: Uses bundled Apache Tika for local text extraction.
                         version: '1.0'
                         scope: object
                         mode: extraction

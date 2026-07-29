@@ -50,6 +50,7 @@ response models plus the FastAPI endpoints.
 - [Search semantics](reference/api/search-semantics.md)
 - [API compatibility](reference/api/compatibility.md)
 - [Processor API v1](reference/processor-api/index.md)
+- [Model-provider capabilities](reference/model-providers.md)
 - [Collection file format](reference/collection-file-format.md)
 
 ## Contribute

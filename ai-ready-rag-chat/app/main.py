@@ -67,6 +67,8 @@ async def chat(request: ChatRequest):
         answer = run_chat_completion(
             provider=settings.chat_provider,
             ollama_base_url=settings.ollama_base_url,
+            openai_compatible_base_url=settings.openai_compatible_base_url,
+            openai_compatible_api_key=settings.openai_compatible_api_key,
             model=settings.chat_model,
             max_tokens=settings.chat_max_tokens,
             query=request.query,

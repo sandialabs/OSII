@@ -10,7 +10,7 @@ from typing import List, Tuple
 from tqdm import tqdm
 from typing import Any
 
-from osii.model_clients import create_shirty_client
+from osii.model_clients import ChatClient, create_chat_client
 
 from osii.domain.storage.synth import write_object_synth
 from osii.synthesis.file.base import BaseSynthesizer, SynthesisState
@@ -169,11 +169,11 @@ def _msg_content(msg) -> str:
     return getattr(msg, "content", None) or ""
 
 
-def chat_complete(client: Any, system: str, user: str, max_tokens: int):
+def chat_complete(client: ChatClient, system: str, user: str, max_tokens: int):
     prompt_chars = len(system) + len(user)
     prompt_tokens_est = approx_tokens_from_chars(prompt_chars)
 
-    completion = client.chat.completions.create(
+    output = client.complete(
         model=MODEL,
         messages=[
             {"role": "system", "content": system},
@@ -181,8 +181,7 @@ def chat_complete(client: Any, system: str, user: str, max_tokens: int):
         ],
         max_tokens=max_tokens,
     )
-    msg = completion.choices[0].message if completion and completion.choices else None
-    return _msg_content(msg), prompt_chars, prompt_tokens_est
+    return output, prompt_chars, prompt_tokens_est
 
 
 class RecursiveSynthesizer(BaseSynthesizer):
@@ -272,7 +271,7 @@ class RecursiveSynthesizer(BaseSynthesizer):
                 state.warnings.append("No text content available for synthesis.")
                 final_synthesis = ""
             else:
-                client = create_shirty_client()
+                client = create_chat_client()
                 chunk_synthesis: List[str] = []
 
                 chunk_system_template = load_prompt("object_recursive_chunk_system.txt")

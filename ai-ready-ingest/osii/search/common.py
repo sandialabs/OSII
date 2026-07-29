@@ -3,7 +3,7 @@ import json
 
 import faiss
 import numpy as np
-from osii.model_clients import create_shirty_client
+from osii.model_clients import create_embedding_client
 
 from osii.indexing.common import (
     embeddings_index_path,
@@ -34,14 +34,10 @@ def load_mapping(osii_root: Path) -> list[dict]:
 
 
 def embed_query(text: str, model: str | None = None) -> np.ndarray:
-    client = create_shirty_client()
+    client = create_embedding_client()
     model_name = get_embedding_model(model)
 
-    response = client.embeddings.create(
-        model=model_name,
-        input=[text],
-    )
-    vec = np.array([response.data[0].embedding], dtype="float32")
+    vec = np.array([client.embed(model=model_name, texts=[text])[0]], dtype="float32")
     faiss.normalize_L2(vec)
     return vec
 

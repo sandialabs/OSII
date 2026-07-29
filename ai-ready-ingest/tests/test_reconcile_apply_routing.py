@@ -44,4 +44,4 @@ def test_apply_reconciliation_uses_routing_for_new_files(monkeypatch, temp_data_
 
     assert applied["extracted_new"] == 1
     assert len(calls) == 1
-    assert calls[0]["extractor_name"] in {"pdf_default", "tika", "textract"}
+    assert calls[0]["extractor_name"] in {"pdf_default", "tika"}

@@ -10,7 +10,7 @@ import tomli_w
 
 from typing import Any
 
-from osii.model_clients import create_shirty_client
+from osii.model_clients import create_embedding_client
 
 from osii.domain.storage.store import (
     embeddings_chunks_manifest_path,
@@ -20,7 +20,7 @@ from osii.indexing.chunking import write_chunk_manifest
 from osii.search.lexical import build_bm25_index
 
 
-DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_EMBEDDING_MODEL = "jinaai/jina-embeddings-v2-base-en"
 APPROX_CHARS_PER_TOKEN = 4
 
 MODEL_TOKEN_LIMITS = {
@@ -162,11 +162,7 @@ def _embed_batch(client: Any, model: str, batch: list[str], retries: int = 3):
     last_exc = None
     for attempt in range(retries):
         try:
-            response = client.embeddings.create(
-                model=model,
-                input=batch,
-            )
-            return [row.embedding for row in response.data]
+            return client.embed(model=model, texts=batch)
         except Exception as exc:
             last_exc = exc
             if attempt < retries - 1:
@@ -268,7 +264,7 @@ def embed_collection_resumable(
     chunk_size: int = 1200,
     chunk_overlap: int = 200,
 ) -> tuple[Path, Path, Path]:
-    client = create_shirty_client()
+    client = create_embedding_client()
 
     items, warnings = collect_text_chunks(
         osii_root,

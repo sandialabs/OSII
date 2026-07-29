@@ -14,6 +14,8 @@ def run_chat_completion(
     *,
     provider: str,
     ollama_base_url: str | None = None,
+    openai_compatible_base_url: str | None = None,
+    openai_compatible_api_key: str | None = None,
     model: str,
     max_tokens: int,
     query: str,
@@ -39,9 +41,7 @@ def run_chat_completion(
             + "\n\nThis answer uses the offline extractive fallback; verify the cited passages for interpretation."
         )
 
-    if provider != "shirty":
-        if provider != "ollama":
-            raise ValueError(f"Unsupported CHAT_PROVIDER: {provider}")
+    if provider == "ollama":
         response = requests.post(
             f"{(ollama_base_url or 'http://localhost:11434').rstrip('/')}/api/chat",
             json={
@@ -58,30 +58,28 @@ def run_chat_completion(
         response.raise_for_status()
         return (response.json().get("message", {}).get("content") or "").strip() or "[EMPTY_MODEL_OUTPUT]"
 
-    try:
-        from shirty.client import ShirtyClient
-    except ImportError as exc:
-        raise RuntimeError(
-            "CHAT_PROVIDER=shirty requires the optional connected dependencies"
-        ) from exc
-    client = ShirtyClient()
+    if provider not in {"openai", "openai_compatible"}:
+        raise ValueError(f"Unsupported CHAT_PROVIDER: {provider}")
+    if not openai_compatible_base_url:
+        raise ValueError("CHAT_PROVIDER=openai requires OSII_CHAT_BASE_URL or OSII_MODEL_BASE_URL.")
 
-    completion = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": build_system_prompt()},
-            {
-                "role": "user",
-                "content": build_user_prompt(
-                    query=query,
-                    scope=scope,
-                    history=history,
-                    evidence=evidence,
-                ),
-            },
-        ],
-        max_tokens=max_tokens,
+    headers = {"Content-Type": "application/json"}
+    if openai_compatible_api_key:
+        headers["Authorization"] = f"Bearer {openai_compatible_api_key}"
+    response = requests.post(
+        f"{openai_compatible_base_url.rstrip('/')}/chat/completions",
+        json={
+            "model": model,
+            "messages": [
+                {"role": "system", "content": build_system_prompt()},
+                {"role": "user", "content": build_user_prompt(query=query, scope=scope, history=history, evidence=evidence)},
+            ],
+            "max_tokens": max_tokens,
+        },
+        headers=headers,
+        timeout=120,
     )
-
-    msg = completion.choices[0].message if completion and completion.choices else None
-    return (_message_content(msg) or "").strip() or "[EMPTY_MODEL_OUTPUT]"
+    response.raise_for_status()
+    choices = response.json().get("choices") or []
+    message = choices[0].get("message") if choices and isinstance(choices[0], dict) else None
+    return (_message_content(message) or "").strip() or "[EMPTY_MODEL_OUTPUT]"

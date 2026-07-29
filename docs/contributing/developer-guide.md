@@ -60,6 +60,10 @@ shared renderer rather than processor-specific pages.
 
 From the repository root:
 
+OSII development uses Python 3.11 through 3.13. `uv` reads the included
+`.python-version` file and selects Python 3.13 automatically; Python 3.14 is
+not yet supported by the pinned FastAPI/Pydantic dependency set.
+
 ```bash
 make test
 ```
@@ -74,4 +78,3 @@ mkdocs build --strict
 
 Do not commit runtime stores, source documents, generated sites, caches,
 credentials, or model weights.
-

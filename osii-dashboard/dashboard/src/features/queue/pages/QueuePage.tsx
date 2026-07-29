@@ -28,7 +28,7 @@ export function QueuePage() {
   const [queuedPaths, setQueuedPaths] = useState<string[]>([]);
   const [includeSubfolders, setIncludeSubfolders] = useState(true);
   const [synthesize, setSynthesize] = useState(true);
-  const [embed, setEmbed] = useState(false);
+  const [embed, setEmbed] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [starting, setStarting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -93,7 +93,7 @@ export function QueuePage() {
       <Stack spacing={0.5}>
         <Typography variant="h5" fontWeight={700}>Processing queue</Typography>
         <Typography color="text.secondary">
-          Add shared-volume folders or one-off uploads, then run extraction, optional synthesis, and optional embeddings.
+          Add shared-volume folders or one-off uploads. Processing extracts text, creates local previews, and builds search embeddings by default.
         </Typography>
       </Stack>
 
@@ -137,8 +137,14 @@ export function QueuePage() {
             </List>
             <Divider />
             <FormControlLabel control={<Checkbox checked={includeSubfolders} onChange={(event) => setIncludeSubfolders(event.target.checked)} />} label="Include subfolders" />
-            <FormControlLabel control={<Checkbox checked={synthesize} onChange={(event) => setSynthesize(event.target.checked)} />} label="Create local baseline synthesis" />
-            <FormControlLabel control={<Checkbox checked={embed} onChange={(event) => setEmbed(event.target.checked)} />} label="Build embeddings after extraction" />
+            <FormControlLabel control={<Checkbox checked={synthesize} onChange={(event) => setSynthesize(event.target.checked)} />} label="Create local text previews (no AI model)" />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+              Creates short, inspectable previews from extracted text for files and folders.
+            </Typography>
+            <FormControlLabel control={<Checkbox checked={embed} onChange={(event) => setEmbed(event.target.checked)} />} label="Build search embeddings" />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+              Uses the bundled local embedding service after extraction so semantic search is ready.
+            </Typography>
             <Button variant="contained" startIcon={<PlayArrowOutlinedIcon />} disabled={!queuedPaths.length || starting} onClick={() => void start()}>
               {starting ? "Queueing…" : "Start processing"}
             </Button>

@@ -6,7 +6,7 @@ AI Ready Chat is a thin backend-for-frontend service.
 
 It depends on:
 - the OSII backend for retrieval and grounded content access
-- Shirty for model invocation
+- an optional OpenAI-compatible endpoint for model invocation
 
 ## Responsibility split
 

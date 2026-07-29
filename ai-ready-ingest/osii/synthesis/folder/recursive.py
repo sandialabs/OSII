@@ -10,7 +10,7 @@ from typing import List
 from tqdm import tqdm
 from typing import Any
 
-from osii.model_clients import create_shirty_client
+from osii.model_clients import ChatClient, create_chat_client
 
 from osii.domain.storage.store import folder_overview_path
 from osii.domain.storage.synth import write_folder_synth
@@ -84,11 +84,11 @@ def _msg_content(msg) -> str:
     return getattr(msg, "content", None) or ""
 
 
-def chat_complete(client: Any, system: str, user: str, max_tokens: int):
+def chat_complete(client: ChatClient, system: str, user: str, max_tokens: int):
     prompt_chars = len(system) + len(user)
     prompt_tokens_est = approx_tokens_from_chars(prompt_chars)
 
-    completion = client.chat.completions.create(
+    output = client.complete(
         model=MODEL,
         messages=[
             {"role": "system", "content": system},
@@ -96,8 +96,7 @@ def chat_complete(client: Any, system: str, user: str, max_tokens: int):
         ],
         max_tokens=max_tokens,
     )
-    msg = completion.choices[0].message if completion and completion.choices else None
-    return _msg_content(msg), prompt_chars, prompt_tokens_est
+    return output, prompt_chars, prompt_tokens_est
 
 
 class FolderRecursiveSynthesizer(BaseFolderSynthesizer):
@@ -150,7 +149,7 @@ class FolderRecursiveSynthesizer(BaseFolderSynthesizer):
                 state.warnings.append("No usable overview content found for this folder.")
                 final_text = ""
             else:
-                client = create_shirty_client()
+                client = create_chat_client()
                 system = load_prompt("folder", "folder_describe_system.txt")
                 chunk_template = load_prompt("folder_describe_user.txt")
 

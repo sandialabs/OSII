@@ -1,7 +1,7 @@
 [project]
 name = "osii-monorepo"
 version = "0.1.0"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 
 [tool.uv.workspace]
 members = [
@@ -15,4 +15,3 @@ members = [
 [tool.uv.sources]
 osii-processor-sdk = { workspace = true }
 osii = { workspace = true }
-

@@ -159,8 +159,27 @@ def write_folder_synth_text(
     *,
     osii_store: Path,
     folder_id: str,
-    text: str,
+    text: str | None = None,
+    folder_label: str | None = None,
+    direct_doc_count: int | None = None,
+    direct_subfolder_count: int | None = None,
 ) -> Path:
+    """Write folder synthesis text, with a deterministic local fallback.
+
+    ``text`` is used by custom folder synthesizers. The optional count fields
+    keep the processing pipeline useful without an LLM by creating a small,
+    inspectable folder description.
+    """
+    if text is None:
+        label = folder_label or "This folder"
+        document_count = direct_doc_count or 0
+        subfolder_count = direct_subfolder_count or 0
+        document_word = "document" if document_count == 1 else "documents"
+        subfolder_word = "subfolder" if subfolder_count == 1 else "subfolders"
+        text = (
+            f"{label} contains {document_count} direct {document_word} and "
+            f"{subfolder_count} direct {subfolder_word}."
+        )
     path = folder_synth_path(osii_store, folder_id)
     path.write_text(text, encoding="utf-8")
     return path

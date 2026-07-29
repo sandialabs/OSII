@@ -6,7 +6,7 @@ It is responsible for:
 
 - calling the OSII backend for retrieval and grounded text access
 - assembling prompt context
-- calling a chat model through Shirty
+- calling an optional OpenAI-compatible chat endpoint
 - returning answer text plus citations
 
 It is not responsible for:
@@ -19,6 +19,10 @@ It is not responsible for:
 - search index construction
 
 Those remain in the OSII backend.
+
+`CHAT_PROVIDER=extractive` is the local default. To use any compatible model
+gateway, set `CHAT_PROVIDER=openai`, `OSII_CHAT_BASE_URL` to its `/v1` URL,
+and `OSII_MODEL_API_KEY` when authentication is required.
 
 ## Run locally
 

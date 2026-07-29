@@ -1,6 +1,5 @@
 fastapi==0.116.1
 uvicorn[standard]==0.35.0
 requests==2.33.1
-shirty[client]==0.13.0
 pydantic==2.11.7
 python-dotenv==1.1.1

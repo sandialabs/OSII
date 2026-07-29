@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from osii.domain.processing.jobs import (
+    append_log,
     claim_next_queue_job,
     complete_queue_job,
     configure_job_store,
@@ -35,7 +36,6 @@ def execute_job(job: dict) -> None:
         osii_store=osii_root,
         shared_root=Path(payload["shared_root"]),
         upload_root=Path(payload["upload_root"]),
-        shirty_api_key=payload.get("shirty_api_key") or None,
         parser_routes_path=Path(payload["parser_routes_path"]),
         shared_root_host_path=payload.get("shared_root_host_path") or None,
         synthesizer_name=payload.get("synthesizer_name") or None,
@@ -56,6 +56,15 @@ def execute_job(job: dict) -> None:
         ]
         try:
             build_vector_index_main()
+            append_log(job["run_id"], "Local search embeddings built.")
+        except Exception as exc:
+            run = get_run(job["run_id"])
+            if run:
+                run["status"] = "error"
+                run["error"] = f"Embedding build failed: {exc}"
+                save_run(run)
+            append_log(job["run_id"], f"Embedding build failed: {exc}")
+            raise
         finally:
             sys.argv = old_argv
 

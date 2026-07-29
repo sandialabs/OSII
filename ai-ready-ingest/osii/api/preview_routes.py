@@ -30,7 +30,7 @@ def safe_resolve_user_path(raw: str | None, fallback: Path) -> Path:
 
 def load_parser_routes(config_path: Path) -> list[dict]:
     if not config_path.exists():
-        return [{"name": "default-textract", "extractor": "textract", "extensions": ["*"]}]
+        return [{"name": "default-tika", "extractor": "tika", "extensions": ["*"]}]
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     return data.get("routes", [])
 
@@ -48,7 +48,7 @@ def choose_parser(path: Path, routes: list[dict]) -> str:
         exts = route.get("extensions", [])
         if "*" in exts or suffix in [e.lower() for e in exts]:
             return route["extractor"]
-    return "textract"
+    return "tika"
 
 
 @router.post("/preview/extractors")

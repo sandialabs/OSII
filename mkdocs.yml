@@ -57,4 +57,5 @@ nav:
           - Search semantics: reference/api/search-semantics.md
           - Compatibility: reference/api/compatibility.md
       - Collection format: reference/collection-file-format.md
+      - Model-provider capabilities: reference/model-providers.md
   - Contribute: contributing/developer-guide.md

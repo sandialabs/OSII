@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from osii.model_clients import create_shirty_client
+from osii.model_clients import create_chat_client
 
 from osii.domain.read.root import get_root_synth_text
 from osii.domain.read.folder_synthesis import get_folder_synthesis_text
@@ -132,8 +132,7 @@ Instructions:
 
 
 def _call_llm(query: str, scope_info: dict, history: list[dict], citations: list[dict], model: str) -> str:
-    client = create_shirty_client()
-    completion = client.chat.completions.create(
+    return create_chat_client().complete(
         model=model,
         messages=[
             {"role": "system", "content": _build_system_prompt()},
@@ -141,12 +140,6 @@ def _call_llm(query: str, scope_info: dict, history: list[dict], citations: list
         ],
         max_tokens=700,
     )
-    msg = completion.choices[0].message if completion and completion.choices else None
-    if msg is None:
-        return ""
-    if isinstance(msg, dict):
-        return (msg.get("content") or "").strip()
-    return (getattr(msg, "content", None) or "").strip()
 
 
 def dashboard_chat(

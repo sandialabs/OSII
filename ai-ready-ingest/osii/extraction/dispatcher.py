@@ -2,7 +2,6 @@ from pathlib import Path
 
 from osii.extraction.osii_tesseract_extractor import OsiiTesseractExtractor
 from osii.extraction.banyan_extractor import PdfDefaultExtractor
-from osii.extraction.textract_extractor import TextractExtractor
 from osii.extraction.tika_extractor import TikaCatchallExtractor
 
 
@@ -19,12 +18,13 @@ def dispatch_extract(
         extractor = TikaCatchallExtractor()
     elif extractor_name in {"banyan_ingest", "banyan-extract", "banyan", "pdf_default"}:
         extractor = PdfDefaultExtractor()
-    elif extractor_name == "textract":
-        extractor = TextractExtractor()
     elif extractor_name == "osii_tesseract":
         extractor = OsiiTesseractExtractor()
     else:
-        raise RuntimeError(f"Extractor '{extractor_name}' is not supported.")
+        raise RuntimeError(
+            f"Extractor '{extractor_name}' is not available in OSII core. "
+            "Use a bundled local extractor or register an external processor service."
+        )
 
     return extractor.extract(
         source_path=source_path,

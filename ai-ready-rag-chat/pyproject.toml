@@ -7,7 +7,7 @@ name = "ai-ready-chat"
 version = "0.1.0"
 description = "Thin RAG/chat service over the OSII backend."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = [
   "fastapi==0.116.1",
   "uvicorn[standard]==0.35.0",
@@ -15,9 +15,6 @@ dependencies = [
   "pydantic==2.11.7",
   "python-dotenv==1.1.1"
 ]
-
-[project.optional-dependencies]
-connected = ["shirty[client]==0.13.0"]
 
 [tool.setuptools.packages.find]
 include = ["app*"]

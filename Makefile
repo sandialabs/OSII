@@ -25,8 +25,9 @@ logs:
 
 test:
 	uv sync --package osii --extra dev
+	uv run --package osii --extra dev pytest ai-ready-ingest/tests
 	uv sync --package osii-processor-sdk --extra dev
-	uv run --package osii pytest ai-ready-ingest/tests packages/osii-processor-sdk/tests
+	uv run --package osii-processor-sdk --extra dev pytest packages/osii-processor-sdk/tests
 	cd osii-dashboard/dashboard && npm test --if-present && npm run build
 
 build:

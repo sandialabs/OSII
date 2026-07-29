@@ -29,7 +29,7 @@ def validate_extractors(payload: dict) -> tuple[list[str], list[str]]:
 
     seen_ids = set()
     allowed_auth_types = {"none", "api_key"}
-    allowed_types = {"http", "shirty"}
+    allowed_types = {"http"}
 
     for i, extractor in enumerate(extractors):
         if not isinstance(extractor, dict):
@@ -71,8 +71,6 @@ def validate_extractors(payload: dict) -> tuple[list[str], list[str]]:
         if extractor_type == "http" and enabled and not base_url:
             warnings.append(f"extractor '{extractor_id}' is enabled but has no base_url configured.")
 
-        if extractor_type == "shirty" and base_url:
-            warnings.append(f"extractor '{extractor_id}' is type 'shirty'; base_url may not be used.")
 
     return errors, warnings
 
@@ -90,14 +88,6 @@ def healthcheck_extractor(extractor: dict) -> dict:
             "status": "disabled",
             "ok": False,
             "detail": "extractor is disabled.",
-        }
-
-    if extractor_type == "shirty":
-        return {
-            "id": extractor_id,
-            "status": "configured",
-            "ok": True,
-            "detail": "Shirty-backed extractor configured. Runtime API key may still be required.",
         }
 
     if extractor_type == "http":

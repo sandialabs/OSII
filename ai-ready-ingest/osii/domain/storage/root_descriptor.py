@@ -5,6 +5,7 @@ import tomli_w
 
 from osii.domain.storage.ids import new_intake_id
 from osii.domain.storage.store import root_toml_path
+from osii.domain.storage.synth import write_root_synth
 
 
 def write_root_toml(
@@ -73,11 +74,19 @@ def write_collection_synthesis(
     top_level_subfolder_count: int,
     note: str | None = None,
 ) -> Path:
-    return write_root_synthesis(
-        osii_store=osii_store,
-        root_label=root_folder_label,
-        total_files=total_files,
-        top_level_doc_count=top_level_doc_count,
-        top_level_subfolder_count=top_level_subfolder_count,
-        note=note,
+    document_word = "document" if total_files == 1 else "documents"
+    folder_word = "subfolder" if top_level_subfolder_count == 1 else "subfolders"
+    text = (
+        f"{root_folder_label} contains {total_files} {document_word}, "
+        f"including {top_level_doc_count} at the top level and "
+        f"{top_level_subfolder_count} top-level {folder_word}."
     )
+    if note:
+        text = f"{text}\n\nContext: {note}"
+    _, path = write_root_synth(
+        osii_root=osii_store,
+        synthesis=text,
+        kind="deterministic-folder-inventory",
+        quality="local",
+    )
+    return path

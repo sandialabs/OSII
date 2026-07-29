@@ -2,7 +2,7 @@ from pathlib import Path
 import tomllib
 import base64
 
-from osii.model_clients import create_shirty_client
+from osii.model_clients import create_chat_client
 
 from osii.domain.artifacts.synth_artifacts import write_image_synthesis_variant
 from osii.domain.storage.store import meta_toml_path, object_synth_path, object_dir
@@ -107,10 +107,9 @@ class ImageDescribeSynthesizer(BaseSynthesizer):
         return data
 
     def _call_model(self, model: str, system: str, user: str, image_path: Path) -> str:
-        client = create_shirty_client()
         image_data_url = _image_file_to_data_url(image_path)
 
-        completion = client.chat.completions.create(
+        return create_chat_client().complete(
             model=model,
             messages=[
                 {"role": "system", "content": system},
@@ -129,8 +128,6 @@ class ImageDescribeSynthesizer(BaseSynthesizer):
             ],
             max_tokens=700,
         )
-        msg = completion.choices[0].message if completion and completion.choices else None
-        return (_msg_content(msg) or "").strip()
     
 
     def synthesize(

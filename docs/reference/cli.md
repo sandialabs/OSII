@@ -26,14 +26,13 @@ python -m osii.extraction.cli `
   --extractor pdf_default
 ```
 
-### Textract extractor
+### Tika document extractor
 ```powershell
 python -m osii.extraction.cli `
   ".\osii-data\source\reports\example.docx" `
   --data-root ".\osii-data\source" `
   --osii-root ".\osii-data\.osii" `
-  --extractor textract `
-  --option max_words=2000
+  --extractor tika
 ```
 
 ### Tika catchall
@@ -137,7 +136,7 @@ python -m osii.build_collection `
 python -m osii.build_collection `
   --data-root "./osii-data/source" `
   --osii-root "./osii-data/.osii" `
-  --extractor textract
+  --extractor tika
 ```
 
 ### Add context
@@ -297,7 +296,7 @@ python -m osii.rescan `
   --data-root ".\osii-data\source" `
   --osii-root ".\osii-data\.osii" `
   --apply `
-  --extractor textract
+  --extractor tika
 ```
 
 ## Rescan apply mode with automatic routing
@@ -319,7 +318,7 @@ python -m osii.rescan `
   --data-root ".\osii-data\source" `
   --osii-root ".\osii-data\.osii" `
   --apply `
-  --extractor textract
+  --extractor tika
 ```
 
 ## Build lexical search index without embeddings
@@ -360,7 +359,7 @@ The backend provides a single CLI entry point for running the full pipeline:
 
 Default behavior uses:
 
-- extractor: `textract`
+- extractor: `tika`
 - file synthesizer: `describe`
 - folder synthesizer: `describe_folder`
 - collection synthesizer: `collection_firstn`

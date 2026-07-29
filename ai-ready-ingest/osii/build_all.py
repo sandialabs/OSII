@@ -26,7 +26,7 @@ def main():
     parser.add_argument("--exclude-pattern", action="append", default=[], help="Exclude glob pattern (repeatable)")
     parser.add_argument("--max-files", type=int, default=None, help="Optional max files limit")
 
-    parser.add_argument("--extractor", default="textract", help="Extractor override for all files")
+    parser.add_argument("--extractor", default="tika", help="Extractor override for all files")
     parser.add_argument("--synthesizer", default="describe", help="File/object synthesizer")
     parser.add_argument("--folder-synthesizer", default="describe_folder", help="Folder synthesizer")
     parser.add_argument("--context", default="", help="Optional expert context")

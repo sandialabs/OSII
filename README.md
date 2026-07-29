@@ -17,7 +17,7 @@ dashboard and available to agents.
 ## Getting started
 
 OSII uses Podman by default. The shortcuts below start the dashboard together
-with its API, worker, local chat fallback, Tika, and Tesseract—so the frontend
+with its API, worker, local chat fallback, local embeddings, Tika, and Tesseract—so the frontend
 has backend features available immediately.
 
 ### 1. Choose where your files live
