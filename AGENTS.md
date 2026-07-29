@@ -35,6 +35,13 @@ required for the basic browse, search, processing, and grounded-chat workflow.
 - Preserve the standard table, knowledge-graph, entity-list, and wiki-Markdown
   artifact formats so dashboard and agent support stays generic.
 
+## Planned cleanup
+
+- `ai-ready-ingest` is a transitional directory name. Plan a dedicated,
+  reviewable rename to `osii-code`, including workspace metadata, container
+  paths, tests, documentation, and component-export mappings. Do not mix that
+  repository-wide rename into unrelated feature work.
+
 ## Validation and handoff
 
 - Run focused tests and the relevant frontend build after changes when the
