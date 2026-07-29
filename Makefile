@@ -5,14 +5,14 @@ COMPOSE ?= podman-compose
 .PHONY: dev run dev-examples dev-all down logs test build docs docs-serve
 
 dev:
-	$(COMPOSE) --profile chat --profile ocr up --build api worker dashboard chat tika tesseract
+	$(COMPOSE) --profile chat --profile ocr up --build embeddings api worker chat dashboard tika tesseract
 
 # Start the normal integrated stack from existing images, without rebuilding.
 run:
-	$(COMPOSE) --profile chat --profile ocr up api worker dashboard chat tika tesseract
+	$(COMPOSE) --profile chat --profile ocr up embeddings api worker chat dashboard tika tesseract
 
 dev-examples:
-	$(COMPOSE) --profile examples up --build api dashboard table-pdf-enricher
+	$(COMPOSE) --profile examples --profile ocr up --build embeddings api worker chat dashboard tika tesseract table-pdf-enricher
 
 dev-all:
 	$(COMPOSE) --profile examples --profile chat --profile agents --profile ocr --profile embeddings --profile ollama up --build

@@ -81,6 +81,8 @@ make dev
 ```
 
 `make dev` builds images when needed and starts the normal integrated stack.
+If you pull a change that adds or changes a service, run `make down` once
+before `make dev`; this stops containers but preserves your OSII data volume.
 After the images already exist, start it without rebuilding:
 
 ```bash

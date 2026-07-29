@@ -42,6 +42,10 @@ required for the basic browse, search, processing, and grounded-chat workflow.
 - At the end of every code-change response, give the human a concise,
   copy-pasteable Git commit command and message. Do not stage, commit, push, or
   open pull requests unless explicitly asked.
+- At the end of every code-change response, also give the human a concise,
+  copy-pasteable command to apply or launch the change and view its result.
+  Include required rebuild/restart steps when container code or configuration
+  changed; do not imply that an already-running container updates itself.
 
 ## Notebook safety
 

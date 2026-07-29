@@ -36,13 +36,13 @@ Push-Location $RepositoryRoot
 try {
     switch ($Command) {
         "dev" {
-            Invoke-OsiiCompose @("--profile", "chat", "--profile", "ocr", "up", "--build", "api", "worker", "dashboard", "chat", "tika", "tesseract")
+            Invoke-OsiiCompose @("--profile", "chat", "--profile", "ocr", "up", "--build", "embeddings", "api", "worker", "chat", "dashboard", "tika", "tesseract")
         }
         "run" {
-            Invoke-OsiiCompose @("--profile", "chat", "--profile", "ocr", "up", "api", "worker", "dashboard", "chat", "tika", "tesseract")
+            Invoke-OsiiCompose @("--profile", "chat", "--profile", "ocr", "up", "embeddings", "api", "worker", "chat", "dashboard", "tika", "tesseract")
         }
         "dev-examples" {
-            Invoke-OsiiCompose @("--profile", "examples", "up", "--build", "api", "dashboard", "table-pdf-enricher")
+            Invoke-OsiiCompose @("--profile", "examples", "--profile", "ocr", "up", "--build", "embeddings", "api", "worker", "chat", "dashboard", "tika", "tesseract", "table-pdf-enricher")
         }
         "dev-all" {
             Invoke-OsiiCompose @("--profile", "examples", "--profile", "chat", "--profile", "agents", "--profile", "ocr", "--profile", "embeddings", "--profile", "ollama", "up", "--build")
