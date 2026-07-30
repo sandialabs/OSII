@@ -86,11 +86,21 @@ cd /path/to/osii
 make dev
 ```
 
-`make dev` starts only Tika and Tesseract in Podman. It runs Jina embeddings,
-the API, worker, local chat service, and Vite dashboard from source. The
-launcher checks Python and Node dependencies, reloads backend services when
-Python changes, and lets Vite update the browser as frontend code changes.
-Generated development data and downloaded model files stay under `osii-data/`.
+`make dev` starts only Tika and Tesseract in Podman. It runs the API, worker,
+local chat service, and Vite dashboard from source. The launcher checks ports
+and dependencies, reloads backend services when Python changes, and lets Vite
+update the browser as frontend code changes. Generated development data stays
+under `osii-data/`.
+
+Embeddings are optional during normal development. Start the same editable
+stack with the local Jina service only when testing semantic search:
+
+```bash
+make dev-embeddings
+```
+
+On Windows, use `.\scripts\osii.ps1 dev-embeddings`. The first embedding start
+downloads the model into `osii-data/models/`; later starts reuse it.
 
 On Windows PowerShell, use the equivalent launcher:
 
@@ -99,9 +109,8 @@ cd C:\path\to\osii
 .\scripts\osii.ps1 dev
 ```
 
-The first development startup takes longer while dependencies and the local
-embedding model are cached. Later starts reuse them. When the terminal output
-settles, open:
+The first development startup may take longer while dependencies are checked.
+Later starts reuse them. When the terminal output settles, open:
 
 - **OSII dashboard:** <http://localhost:5173>
 - **Backend status:** <http://localhost:8511/health>
@@ -137,6 +146,8 @@ run the normal integrated container stack.
 
 ### Useful shortcuts
 
+- `make dev-embeddings` / `.\scripts\osii.ps1 dev-embeddings`: run editable
+  OSII with the optional local embedding service.
 - `make dev-services` / `.\scripts\osii.ps1 dev-services`: start only the
   Podman services needed by bare-metal development.
 - `make dev-examples` / `.\scripts\osii.ps1 dev-examples`: run editable OSII

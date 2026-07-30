@@ -26,11 +26,20 @@ For development, start the editable local system:
 make dev
 ```
 
-`make dev` keeps only Tika and Tesseract in Podman. Jina embeddings, the API,
-local worker, extractive chat, and Vite dashboard run directly from source with
-reload support. Development state is written to
+`make dev` keeps only Tika and Tesseract in Podman. The API, local worker,
+extractive chat, and Vite dashboard run directly from source with reload
+support. Development state is written to
 `osii-data/.osii/state/jobs.sqlite3`; the worker can survive API reloads without
 Redis, RabbitMQ, or network access.
+
+Embeddings are deliberately excluded from the fast development path. Enable
+the local Jina service only while testing semantic search:
+
+```bash
+make dev-embeddings
+```
+
+The PowerShell equivalent is `.\scripts\osii.ps1 dev-embeddings`.
 
 To run only the supporting containers:
 

@@ -28,7 +28,7 @@ export function QueuePage() {
   const [queuedPaths, setQueuedPaths] = useState<string[]>([]);
   const [includeSubfolders, setIncludeSubfolders] = useState(true);
   const [synthesize, setSynthesize] = useState(true);
-  const [embed, setEmbed] = useState(true);
+  const [embed, setEmbed] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [starting, setStarting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -93,7 +93,7 @@ export function QueuePage() {
       <Stack spacing={0.5}>
         <Typography variant="h5" fontWeight={700}>Processing queue</Typography>
         <Typography color="text.secondary">
-          Add shared-volume folders or one-off uploads. Processing extracts text, creates local previews, and builds search embeddings by default.
+          Add shared-volume folders or one-off uploads. Processing extracts text and creates local previews; search embeddings are optional.
         </Typography>
       </Stack>
 
@@ -143,7 +143,7 @@ export function QueuePage() {
             </Typography>
             <FormControlLabel control={<Checkbox checked={embed} onChange={(event) => setEmbed(event.target.checked)} />} label="Build search embeddings" />
             <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
-              Uses the bundled local embedding service after extraction so semantic search is ready.
+              Requires a configured embedding service. Normal development uses lexical search without one.
             </Typography>
             <Button variant="contained" startIcon={<PlayArrowOutlinedIcon />} disabled={!queuedPaths.length || starting} onClick={() => void start()}>
               {starting ? "Queueing…" : "Start processing"}

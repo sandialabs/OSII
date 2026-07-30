@@ -3,12 +3,15 @@
 COMPOSE ?= podman-compose
 UV ?= uv
 
-.PHONY: dev dev-services dev-examples containers-dev run dev-all down logs test build docs docs-serve
+.PHONY: dev dev-embeddings dev-services dev-examples containers-dev run dev-all down logs test build docs docs-serve
 
-# Fast development: only OCR dependencies use containers. The embedding
-# service, API, worker, chat service, and Vite dashboard run from source.
+# Fast development: only OCR dependencies use containers. The API, worker,
+# chat service, and Vite dashboard run from source; embeddings are opt-in.
 dev: dev-services
 	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py
+
+dev-embeddings: dev-services
+	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py --embeddings
 
 dev-services:
 	$(COMPOSE) --profile ocr up -d tika tesseract

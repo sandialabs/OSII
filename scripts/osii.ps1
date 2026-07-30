@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("dev", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build")]
+    [ValidateSet("dev", "dev-embeddings", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
@@ -55,6 +55,10 @@ try {
         "dev" {
             Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
             Invoke-OsiiDevLauncher
+        }
+        "dev-embeddings" {
+            Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
+            Invoke-OsiiDevLauncher @("--embeddings")
         }
         "dev-services" {
             Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")

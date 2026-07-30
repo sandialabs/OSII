@@ -16,6 +16,7 @@ from pathlib import Path
 import shlex
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -29,6 +30,7 @@ class Service:
     name: str
     command: tuple[str, ...]
     working_directory: Path
+    port: int
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
@@ -61,7 +63,7 @@ def command_path(name: str) -> str:
     return resolved
 
 
-def build_environment(examples: bool) -> dict[str, str]:
+def build_environment(examples: bool, embeddings: bool) -> dict[str, str]:
     env = os.environ.copy()
     for key, value in load_dotenv(REPOSITORY_ROOT / ".env").items():
         env.setdefault(key, value)
@@ -93,19 +95,28 @@ def build_environment(examples: bool) -> dict[str, str]:
             "UPLOAD_ORIGINALS_ROOT": str(uploads_root),
             "TIKA_URL": f"http://127.0.0.1:{tika_port}",
             "OSII_TESSERACT_URL": f"http://127.0.0.1:{tesseract_port}",
-            "OSII_EMBEDDING_BASE_URL": f"http://127.0.0.1:{embeddings_port}/v1",
             "OSII_BACKEND_BASE_URL": f"http://127.0.0.1:{api_port}",
-            "MODEL_NAME": env.get(
-                "MODEL_NAME",
-                env.get(
-                    "EMBEDDING_MODEL", "jinaai/jina-embeddings-v2-base-en"
-                ),
-            ),
-            "HF_HOME": str(model_root / "huggingface"),
-            "TRANSFORMERS_CACHE": str(model_root / "huggingface"),
-            "SENTENCE_TRANSFORMERS_HOME": str(model_root / "sentence-transformers"),
         }
     )
+    if embeddings:
+        env.update(
+            {
+                "OSII_EMBEDDING_BASE_URL": (
+                    f"http://127.0.0.1:{embeddings_port}/v1"
+                ),
+                "MODEL_NAME": env.get(
+                    "MODEL_NAME",
+                    env.get(
+                        "EMBEDDING_MODEL",
+                        "jinaai/jina-embeddings-v2-base-en",
+                    ),
+                ),
+                "HF_HOME": str(model_root / "huggingface"),
+                "SENTENCE_TRANSFORMERS_HOME": str(
+                    model_root / "sentence-transformers"
+                ),
+            }
+        )
     if examples and not env.get("OSII_PROCESSORS"):
         processor_port = env.get("OSII_EXAMPLE_PROCESSOR_PORT", "8091")
         env["OSII_PROCESSORS"] = f"http://127.0.0.1:{processor_port}"
@@ -149,7 +160,12 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str]) -> None:
         print("[setup] Dashboard packages are current.")
 
 
-def service_commands(uv: str, npm: str, env: dict[str, str]) -> list[Service]:
+def service_commands(
+    uv: str,
+    npm: str,
+    env: dict[str, str],
+    embeddings: bool,
+) -> list[Service]:
     api_port = env.get("OSII_API_PORT", "8511")
     chat_port = env.get("OSII_CHAT_PORT", "8611")
     dashboard_port = env.get("OSII_DASHBOARD_PORT", "5173")
@@ -158,26 +174,7 @@ def service_commands(uv: str, npm: str, env: dict[str, str]) -> list[Service]:
         REPOSITORY_ROOT / "ai-ready-tool-shelf" / "embedding-service-jina"
     )
 
-    return [
-        Service(
-            "embeddings",
-            (
-                uv,
-                "run",
-                "--no-project",
-                "--python",
-                "3.11",
-                "--with-requirements",
-                str(embedding_root / "requirements.txt"),
-                "uvicorn",
-                "app.main:app",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                embeddings_port,
-            ),
-            embedding_root,
-        ),
+    services = [
         Service(
             "api",
             (
@@ -196,6 +193,7 @@ def service_commands(uv: str, npm: str, env: dict[str, str]) -> list[Service]:
                 "osii",
             ),
             REPOSITORY_ROOT / "ai-ready-ingest",
+            int(api_port),
         ),
         Service(
             "worker",
@@ -211,6 +209,7 @@ def service_commands(uv: str, npm: str, env: dict[str, str]) -> list[Service]:
                 "osii",
             ),
             REPOSITORY_ROOT / "ai-ready-ingest",
+            0,
         ),
         Service(
             "chat",
@@ -230,6 +229,7 @@ def service_commands(uv: str, npm: str, env: dict[str, str]) -> list[Service]:
                 "app",
             ),
             REPOSITORY_ROOT / "ai-ready-rag-chat",
+            int(chat_port),
         ),
         Service(
             "dashboard",
@@ -244,8 +244,54 @@ def service_commands(uv: str, npm: str, env: dict[str, str]) -> list[Service]:
                 dashboard_port,
             ),
             REPOSITORY_ROOT / "osii-dashboard" / "dashboard",
+            int(dashboard_port),
         ),
     ]
+    if embeddings:
+        services.insert(
+            0,
+            Service(
+                "embeddings",
+                (
+                    uv,
+                    "run",
+                    "--no-project",
+                    "--python",
+                    "3.11",
+                    "--with-requirements",
+                    str(embedding_root / "requirements.txt"),
+                    "uvicorn",
+                    "app.main:app",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    embeddings_port,
+                ),
+                embedding_root,
+                int(embeddings_port),
+            ),
+        )
+    return services
+
+
+def ensure_ports_available(services: list[Service]) -> None:
+    occupied: list[Service] = []
+    for service in services:
+        if service.port <= 0:
+            continue
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(0.2)
+            if probe.connect_ex(("127.0.0.1", service.port)) == 0:
+                occupied.append(service)
+
+    if occupied:
+        details = ", ".join(
+            f"{service.name} ({service.port})" for service in occupied
+        )
+        raise RuntimeError(
+            f"Cannot start because these ports are already in use: {details}. "
+            "Stop the previous OSII development stack, then run this command again."
+        )
 
 
 def render_command(service: Service) -> str:
@@ -262,8 +308,6 @@ def start_service(service: Service, env: dict[str, str]) -> subprocess.Popen[byt
     }
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-    else:
-        kwargs["start_new_session"] = True
     return subprocess.Popen(**kwargs)  # type: ignore[arg-type]
 
 
@@ -274,7 +318,7 @@ def stop_service(process: subprocess.Popen[bytes]) -> None:
         if os.name == "nt":
             process.send_signal(signal.CTRL_BREAK_EVENT)
         else:
-            os.killpg(process.pid, signal.SIGTERM)
+            process.terminate()
         process.wait(timeout=5)
     except (OSError, subprocess.TimeoutExpired):
         if process.poll() is None:
@@ -282,18 +326,25 @@ def stop_service(process: subprocess.Popen[bytes]) -> None:
             process.wait(timeout=5)
 
 
-def run(examples: bool, dry_run: bool, skip_setup: bool) -> int:
+def run(
+    examples: bool,
+    embeddings: bool,
+    dry_run: bool,
+    skip_setup: bool,
+) -> int:
     try:
         uv = command_path("uv")
         npm = command_path("npm")
-        env = build_environment(examples)
-        services = service_commands(uv, npm, env)
+        env = build_environment(examples, embeddings)
+        services = service_commands(uv, npm, env, embeddings)
 
         if dry_run:
             print("[dev] Bare-metal service plan:")
             for service in services:
                 print(render_command(service))
             return 0
+
+        ensure_ports_available(services)
 
         if not skip_setup:
             prepare_dependencies(uv, npm, env)
@@ -307,7 +358,16 @@ def run(examples: bool, dry_run: bool, skip_setup: bool) -> int:
         print(f"[dev] Dashboard: http://localhost:{dashboard_port}")
         print(f"[dev] API health: http://localhost:{api_port}/health")
         print("[dev] Press Ctrl+C to stop host processes.")
-        print("[dev] The first embedding start downloads the model; later starts reuse it.")
+        if embeddings:
+            print(
+                "[dev] The first embedding start downloads the model; "
+                "later starts reuse it."
+            )
+        else:
+            print(
+                "[dev] Embeddings are disabled. Use make dev-embeddings "
+                "when testing semantic search."
+            )
 
         while True:
             for name, (_, process) in processes.items():
@@ -339,6 +399,11 @@ def main() -> int:
         help="Connect the example processor at its localhost port.",
     )
     parser.add_argument(
+        "--embeddings",
+        action="store_true",
+        help="Start the optional local embedding service.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the host service plan without installing or starting anything.",
@@ -349,7 +414,12 @@ def main() -> int:
         help="Skip Python and dashboard dependency checks.",
     )
     args = parser.parse_args()
-    return run(args.examples, args.dry_run, args.skip_setup)
+    return run(
+        args.examples,
+        args.embeddings,
+        args.dry_run,
+        args.skip_setup,
+    )
 
 
 if __name__ == "__main__":
