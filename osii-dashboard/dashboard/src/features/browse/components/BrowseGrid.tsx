@@ -1,6 +1,6 @@
 // src/features/browse/components/BrowseGrid.tsx
 import {
-  Grid,
+  Box,
   Stack,
   Typography,
 } from "@mui/material";
@@ -16,6 +16,12 @@ type BrowseGridProps = {
   selectedFolderId?: string | null;
   onOpenFolder: (folder: FolderScopeDescriptor) => void;
   onOpenFile: (fileId: string) => void;
+};
+
+const tileGridSx = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(min(220px, 100%), 1fr))",
+  gap: 1.5,
 };
 
 export function BrowseGrid({
@@ -41,17 +47,17 @@ export function BrowseGrid({
             Folders
           </Typography>
 
-          <Grid container spacing={1.5}>
+          <Box sx={tileGridSx}>
             {folders.map((folder) => (
-              <Grid item xs={12} sm={6} md={4} lg={3} xl={2} key={folder.folder_id}>
+              <Box key={folder.folder_id}>
                 <FolderTile
                   folder={folder}
                   selected={selectedFolderId === folder.folder_id}
                   onOpen={() => onOpenFolder(folder)}
                 />
-              </Grid>
+              </Box>
             ))}
-          </Grid>
+          </Box>
         </Stack>
       ) : null}
 
@@ -61,13 +67,13 @@ export function BrowseGrid({
             Files
           </Typography>
 
-          <Grid container spacing={1.5}>
+          <Box sx={tileGridSx}>
             {files.map((file) => (
-              <Grid item xs={12} sm={6} md={4} lg={3} xl={2} key={file.fileId}>
+              <Box key={file.fileId}>
                 <FileTile file={file} onOpen={onOpenFile} />
-              </Grid>
+              </Box>
             ))}
-          </Grid>
+          </Box>
         </Stack>
       ) : null}
     </Stack>

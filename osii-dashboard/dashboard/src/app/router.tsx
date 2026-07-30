@@ -27,7 +27,8 @@ export function AppRouter() {
         <Route path="/collections" element={<CollectionsPage />} />
         <Route path="/collections/:collectionId" element={<CollectionPage />} />
         <Route path="/files/:fileId" element={<FilePage />} />
-        <Route path="/queue" element={<QueuePage />} />
+        <Route path="/intake" element={<QueuePage />} />
+        <Route path="/queue" element={<Navigate to="/intake" replace />} />
         <Route path="/admin/processors" element={<ProcessorsPage />} />
         <Route path="/home" element={<Navigate to="/" replace />} />
         <Route path="*" element={<NotFoundPage />} />

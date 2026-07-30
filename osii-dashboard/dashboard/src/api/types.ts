@@ -471,6 +471,27 @@ export type UploadResponse = {
   uploads: Array<{ name: string; path: string; display: string; size_bytes: number; source: "upload" }>;
 };
 
+export type IntakePreview = {
+  matched_count: number;
+  processed_count: number;
+  unprocessed_count: number;
+  total_size: number;
+  total_size_human: string;
+  sample: Array<{ path: string; display: string }>;
+  stopped_reason?: string | null;
+};
+
+export type IntakeResolveResponse = {
+  queue_items: Array<{
+    path: string;
+    display: string;
+    kind: "file" | "folder";
+    source: "shared" | "upload";
+  }>;
+  resolved_files: Array<{ path: string; display: string }>;
+  preview: IntakePreview;
+};
+
 export type ProcessingRun = {
   id: string;
   status: "pending" | "queued" | "running" | "done" | "error" | string;
@@ -483,6 +504,8 @@ export type ProcessingRun = {
   logs?: string[];
   queue_job_id?: string;
   error?: string | null;
+  resolved_count?: number;
+  preview?: IntakePreview;
 };
 
 export type ProcessorEndpoint = {

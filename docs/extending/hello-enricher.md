@@ -95,7 +95,7 @@ processor from another container.
 
 ## 4. Produce and view the artifact
 
-1. Open **Processing**, select the sample file, and run extraction.
+1. Open **Intake**, choose a broad folder or the sample file, and start intake.
 2. Open the resulting file in the dashboard.
 3. In the file action area, choose `example.table-pdf` and run enrichment.
 4. Open the **Enrichments** tab.
@@ -119,4 +119,3 @@ Copy `services/table-pdf-enricher` to a new service directory, then:
 Choose one of the four
 [standard artifact formats](../reference/processor-api/standard-artifacts.md)
 so the dashboard and agents understand the result automatically.
-

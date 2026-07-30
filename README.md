@@ -115,10 +115,10 @@ Later starts reuse them. When the terminal output settles, open:
 - **OSII dashboard:** <http://localhost:5173>
 - **Backend status:** <http://localhost:8511/health>
 
-In the dashboard, select **Processing** in the sidebar. Choose files from the
-shared folder or use **Upload files**, select the operations you want, and
-press **Start processing**. Progress and recent messages appear on the same
-page.
+In the dashboard, select **Intake** in the first sidebar section. The entire
+shared volume is selected by default; narrow it with file-type or filename
+patterns only when needed. One-off uploads have their own section. Review the
+matched, new, and already-processed counts, then select **Start intake**.
 
 Keep the terminal window open while using OSII. Stop host processes with
 <kbd>Ctrl</kbd>+<kbd>C</kbd>. Stop the supporting containers with `make down`

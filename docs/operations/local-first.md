@@ -41,6 +41,11 @@ make dev-embeddings
 
 The PowerShell equivalent is `.\scripts\osii.ps1 dev-embeddings`.
 
+In the dashboard, **Intake** starts with the entire shared source volume selected.
+Use the file-type or glob filters to exclude broad classes of files rather than
+selecting documents one by one. One-off uploads are intentionally shown as a
+separate workflow.
+
 To run only the supporting containers:
 
 ```bash

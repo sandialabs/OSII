@@ -6,7 +6,13 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 
-from osii.domain.processing.intake import expand_queue_to_files, parse_patterns
+from osii.domain.processing.intake import (
+    add_processed_counts,
+    expand_queue_to_files,
+    is_source_processed,
+    parse_patterns,
+    processed_source_relpaths,
+)
 from osii.domain.processing.pathing import display_rel, path_within
 
 router = APIRouter(prefix="/api", tags=["intake"])
@@ -37,27 +43,11 @@ def safe_resolve_user_path(raw: str | None, fallback: Path) -> Path:
         return fallback.resolve()
 
 
-def derive_artifact_path_for_source(path: Path, data_volume_root: Path, osii_root: Path) -> Path:
-    p = path.resolve()
-    try:
-        rel = p.relative_to(data_volume_root.resolve())
-        return osii_root.resolve() / rel.parent / f"{p.stem}.txt"
-    except Exception:
-        return osii_root.resolve() / f"{p.stem}.txt"
-
-
-def artifact_exists_for_source(path: Path, data_volume_root: Path, osii_root: Path) -> bool:
-    try:
-        return derive_artifact_path_for_source(path, data_volume_root, osii_root).exists()
-    except Exception:
-        return False
-
-
 @router.get("/browse")
 async def browse(
     request: Request,
     path: str | None = Query(default=None),
-    include_patterns: str = Query(default="*.pdf\n*.docx\n*.txt"),
+    include_patterns: str = Query(default=""),
     exclude_patterns: str = Query(default=""),
     show_hidden: bool = Query(default=False),
 ):
@@ -78,6 +68,7 @@ async def browse(
 
     include_list = parse_patterns(include_patterns)
     exclude_list = parse_patterns(exclude_patterns)
+    processed_relpaths = processed_source_relpaths(osii_root)
 
     for child in children:
         if not show_hidden and child.name.startswith("."):
@@ -99,10 +90,16 @@ async def browse(
 
             rel_posix = rel_match.replace("\\", "/")
 
-            if include_list and not any(fnmatch.fnmatch(rel_posix, pattern) for pattern in include_list):
+            if include_list and not any(
+                fnmatch.fnmatch(rel_posix.lower(), pattern.lower())
+                for pattern in include_list
+            ):
                 continue
 
-            if exclude_list and any(fnmatch.fnmatch(rel_posix, pattern) for pattern in exclude_list):
+            if exclude_list and any(
+                fnmatch.fnmatch(rel_posix.lower(), pattern.lower())
+                for pattern in exclude_list
+            ):
                 continue
 
         try:
@@ -117,7 +114,14 @@ async def browse(
                 "path": str(child),
                 "type": "folder" if is_dir else "file",
                 "size_bytes": size,
-                "processed": is_file and artifact_exists_for_source(child, data_volume_root, osii_root),
+                "processed": (
+                    is_file
+                    and is_source_processed(
+                        child,
+                        data_volume_root,
+                        processed_relpaths,
+                    )
+                ),
             }
         )
 
@@ -173,6 +177,7 @@ async def resolve_queue(request: Request, payload: dict):
         shared_root=shared_root,
         upload_root=upload_root,
     )
+    add_processed_counts(preview, resolved_files, shared_root.parent, request.app.state.osii_root)
 
     return {
         "queue_items": queue_items,

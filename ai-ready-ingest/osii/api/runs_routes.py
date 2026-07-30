@@ -3,7 +3,11 @@ from pathlib import Path
 
 from fastapi import APIRouter, Request
 
-from osii.domain.processing.intake import expand_queue_to_files, parse_patterns
+from osii.domain.processing.intake import (
+    add_processed_counts,
+    expand_queue_to_files,
+    parse_patterns,
+)
 from osii.domain.processing.jobs import (
     append_log,
     create_run_record,
@@ -427,6 +431,7 @@ async def start_run(request: Request, payload: dict):
         shared_root=shared_root,
         upload_root=upload_root,
     )
+    add_processed_counts(preview, resolved_files, data_volume_root, osii_store)
 
     run = create_run_record(
         resolved_files,

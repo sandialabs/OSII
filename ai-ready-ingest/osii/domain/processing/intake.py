@@ -1,6 +1,8 @@
 import fnmatch
 from pathlib import Path
 
+from osii.domain.read.catalog import load_files_catalog
+
 from .pathing import display_rel, path_within
 
 
@@ -25,13 +27,63 @@ def human_size(size: int) -> str:
 def match_any(rel_path: str, patterns: list[str]) -> bool:
     if not patterns:
         return True
-    rel_posix = rel_path.replace("\\", "/")
-    return any(fnmatch.fnmatch(rel_posix, pattern) for pattern in patterns)
+    rel_posix = rel_path.replace("\\", "/").lower()
+    return any(fnmatch.fnmatch(rel_posix, pattern.lower()) for pattern in patterns)
 
 
 def excluded(rel_path: str, patterns: list[str]) -> bool:
-    rel_posix = rel_path.replace("\\", "/")
-    return any(fnmatch.fnmatch(rel_posix, pattern) for pattern in patterns)
+    rel_posix = rel_path.replace("\\", "/").lower()
+    return any(fnmatch.fnmatch(rel_posix, pattern.lower()) for pattern in patterns)
+
+
+def processed_source_relpaths(osii_root: Path) -> set[str]:
+    return {
+        str(entry.get("source_relpath") or "")
+        .strip()
+        .replace("\\", "/")
+        .strip("/")
+        .lower()
+        for entry in load_files_catalog(osii_root)
+        if entry.get("source_relpath")
+    }
+
+
+def source_relpath(path: Path, data_volume_root: Path) -> str:
+    try:
+        return (
+            path.resolve()
+            .relative_to(data_volume_root.resolve())
+            .as_posix()
+            .strip("/")
+            .lower()
+        )
+    except ValueError:
+        return path.name.lower()
+
+
+def is_source_processed(
+    path: Path,
+    data_volume_root: Path,
+    processed_relpaths: set[str],
+) -> bool:
+    return source_relpath(path, data_volume_root) in processed_relpaths
+
+
+def add_processed_counts(
+    preview: dict,
+    resolved_files: list[Path],
+    data_volume_root: Path,
+    osii_root: Path,
+) -> dict:
+    processed_relpaths = processed_source_relpaths(osii_root)
+    processed_count = sum(
+        1
+        for path in resolved_files
+        if is_source_processed(path, data_volume_root, processed_relpaths)
+    )
+    preview["processed_count"] = processed_count
+    preview["unprocessed_count"] = len(resolved_files) - processed_count
+    return preview
 
 
 def serialize_queue_items(paths: list[Path], shared_root: Path, upload_root: Path) -> list[dict]:

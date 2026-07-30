@@ -6,6 +6,7 @@ import {
   List,
   ListItemButton,
   ListItemText,
+  ListSubheader,
   Toolbar,
   Typography,
 } from "@mui/material";
@@ -14,9 +15,9 @@ import FolderOutlinedIcon from "@mui/icons-material/FolderOutlined";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import ChatOutlinedIcon from "@mui/icons-material/ChatOutlined";
 import CollectionsBookmarkOutlinedIcon from "@mui/icons-material/CollectionsBookmarkOutlined";
-import QueueOutlinedIcon from "@mui/icons-material/QueueOutlined";
+import MoveToInboxOutlinedIcon from "@mui/icons-material/MoveToInboxOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 type SidebarNavProps = {
   drawerWidth: number;
@@ -24,6 +25,7 @@ type SidebarNavProps = {
 
 export function SidebarNav({ drawerWidth }: SidebarNavProps) {
   const navigate = useNavigate();
+  const location = useLocation();
 
   return (
     <Drawer
@@ -48,38 +50,91 @@ export function SidebarNav({ drawerWidth }: SidebarNavProps) {
 
       <Divider />
 
-      <List dense>
-        <ListItemButton dense onClick={() => navigate("/")}>
+      <List
+        dense
+        subheader={(
+          <ListSubheader disableSticky component="div">
+            Bring documents in
+          </ListSubheader>
+        )}
+      >
+        <ListItemButton
+          dense
+          selected={location.pathname === "/intake"}
+          onClick={() => navigate("/intake")}
+        >
+          <MoveToInboxOutlinedIcon fontSize="small" style={{ marginRight: 12 }} />
+          <ListItemText primary="Intake" primaryTypographyProps={{ variant: "body2" }} />
+        </ListItemButton>
+      </List>
+
+      <Divider />
+
+      <List
+        dense
+        subheader={(
+          <ListSubheader disableSticky component="div">
+            Work with documents
+          </ListSubheader>
+        )}
+      >
+        <ListItemButton dense selected={location.pathname === "/"} onClick={() => navigate("/")}>
           <HomeOutlinedIcon fontSize="small" style={{ marginRight: 12 }} />
           <ListItemText primary="Files" primaryTypographyProps={{ variant: "body2" }} />
         </ListItemButton>
 
-        <ListItemButton dense onClick={() => navigate("/browse")}>
+        <ListItemButton
+          dense
+          selected={location.pathname === "/browse"}
+          onClick={() => navigate("/browse")}
+        >
           <FolderOutlinedIcon fontSize="small" style={{ marginRight: 12 }} />
           <ListItemText primary="Browse" primaryTypographyProps={{ variant: "body2" }} />
         </ListItemButton>
 
-        <ListItemButton dense onClick={() => navigate("/search")}>
+        <ListItemButton
+          dense
+          selected={location.pathname === "/search"}
+          onClick={() => navigate("/search")}
+        >
           <SearchOutlinedIcon fontSize="small" style={{ marginRight: 12 }} />
           <ListItemText primary="Search" primaryTypographyProps={{ variant: "body2" }} />
         </ListItemButton>
 
-        <ListItemButton dense onClick={() => navigate("/chat")}>
+        <ListItemButton
+          dense
+          selected={location.pathname === "/chat"}
+          onClick={() => navigate("/chat")}
+        >
           <ChatOutlinedIcon fontSize="small" style={{ marginRight: 12 }} />
           <ListItemText primary="Chat" primaryTypographyProps={{ variant: "body2" }} />
         </ListItemButton>
 
-        <ListItemButton dense onClick={() => navigate("/collections")}>
+        <ListItemButton
+          dense
+          selected={location.pathname.startsWith("/collections")}
+          onClick={() => navigate("/collections")}
+        >
           <CollectionsBookmarkOutlinedIcon fontSize="small" style={{ marginRight: 12 }} />
           <ListItemText primary="Collections" primaryTypographyProps={{ variant: "body2" }} />
         </ListItemButton>
+      </List>
 
-        <ListItemButton dense onClick={() => navigate("/queue")}>
-          <QueueOutlinedIcon fontSize="small" style={{ marginRight: 12 }} />
-          <ListItemText primary="Processing" primaryTypographyProps={{ variant: "body2" }} />
-        </ListItemButton>
+      <Divider />
 
-        <ListItemButton dense onClick={() => navigate("/admin/processors")}>
+      <List
+        dense
+        subheader={(
+          <ListSubheader disableSticky component="div">
+            System
+          </ListSubheader>
+        )}
+      >
+        <ListItemButton
+          dense
+          selected={location.pathname.startsWith("/admin")}
+          onClick={() => navigate("/admin/processors")}
+        >
           <SettingsOutlinedIcon fontSize="small" style={{ marginRight: 12 }} />
           <ListItemText primary="Admin" primaryTypographyProps={{ variant: "body2" }} />
         </ListItemButton>
