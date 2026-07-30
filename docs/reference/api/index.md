@@ -112,6 +112,9 @@ Collection membership must reference stable object identifiers such as `file_id`
 
 ### Ingestion and derived-data workflows
 
+- `GET /api/intake/readiness`
+- `GET /api/browse`
+- `POST /api/resolve`
 - `GET /api/extractors`
 - `GET /api/synthesizers`
 - `GET /api/folder-synthesizers`
@@ -844,6 +847,9 @@ The backend also exposes discovery and orchestration routes for extraction, synt
 
 These include:
 
+- `GET /api/intake/readiness`
+- `GET /api/browse`
+- `POST /api/resolve`
 - `GET /api/extractors`
 - `GET /api/synthesizers`
 - `GET /api/folder-synthesizers`

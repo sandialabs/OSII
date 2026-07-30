@@ -50,6 +50,76 @@ def test_browse_and_preview_report_processed_files(
     assert preview.json()["preview"]["matched_count"] == 1
     assert preview.json()["preview"]["processed_count"] == 1
     assert preview.json()["preview"]["unprocessed_count"] == 0
+    assert preview.json()["preview"]["extractor_plan"] == [
+        {
+            "extension": ".pdf",
+            "extractor": "tika",
+            "count": 1,
+            "sample": ["finished.PDF"],
+        }
+    ]
+
+    overridden = client.post(
+        "/api/resolve",
+        json={
+            "queue_paths": [str(temp_data_root)],
+            "include_patterns": "*.pdf",
+            "extractor_overrides": {".pdf": "osii_tesseract"},
+        },
+    )
+    assert overridden.status_code == 200
+    assert overridden.json()["preview"]["extractor_plan"][0]["extractor"] == "osii_tesseract"
+
+
+def test_intake_readiness_reports_bundled_tools(
+    client,
+    monkeypatch,
+):
+    from osii.domain.processing import capability_readiness
+
+    class Response:
+        ok = True
+        status_code = 200
+        text = "ok"
+
+    monkeypatch.setattr(
+        capability_readiness.requests,
+        "get",
+        lambda *args, **kwargs: Response(),
+    )
+    monkeypatch.delenv("OSII_EMBEDDING_BASE_URL", raising=False)
+    monkeypatch.delenv("OSII_MODEL_BASE_URL", raising=False)
+
+    response = client.get("/api/intake/readiness")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["extractors"][0]["id"] == "tika"
+    assert payload["extractors"][0]["available"] is True
+    assert payload["synthesizers"][0]["available"] is True
+    assert payload["embedders"][0]["available"] is False
+
+
+def test_embedding_cannot_be_queued_without_a_tested_embedder(
+    client,
+    temp_data_root: Path,
+    monkeypatch,
+):
+    source_file = temp_data_root / "notes.txt"
+    source_file.write_text("local text", encoding="utf-8")
+    monkeypatch.delenv("OSII_EMBEDDING_BASE_URL", raising=False)
+    monkeypatch.delenv("OSII_MODEL_BASE_URL", raising=False)
+
+    response = client.post(
+        "/api/runs",
+        json={
+            "queue_paths": [str(source_file)],
+            "build_embeddings": True,
+        },
+    )
+
+    assert response.status_code == 409
+    assert "no tested embedder is available" in response.json()["detail"]
 
 
 def test_upload_then_enqueue_returns_durable_run(client, temp_upload_root: Path):

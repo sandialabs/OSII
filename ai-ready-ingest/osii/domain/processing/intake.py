@@ -3,6 +3,7 @@ from pathlib import Path
 
 from osii.domain.read.catalog import load_files_catalog
 
+from .extractor_selection import choose_extractor_for_path, load_extractor_routes
 from .pathing import display_rel, path_within
 
 
@@ -83,6 +84,43 @@ def add_processed_counts(
     )
     preview["processed_count"] = processed_count
     preview["unprocessed_count"] = len(resolved_files) - processed_count
+    return preview
+
+
+def add_extractor_plan(
+    preview: dict,
+    resolved_files: list[Path],
+    extractor_overrides: dict[str, str] | None = None,
+) -> dict:
+    routes = load_extractor_routes()
+    overrides = {
+        str(extension).lower(): str(extractor)
+        for extension, extractor in (extractor_overrides or {}).items()
+        if extractor
+    }
+    groups: dict[tuple[str, str], dict] = {}
+
+    for path in resolved_files:
+        extension = path.suffix.lower() or "(no extension)"
+        extractor = overrides.get(extension) or choose_extractor_for_path(path, routes)
+        key = (extension, extractor)
+        group = groups.setdefault(
+            key,
+            {
+                "extension": extension,
+                "extractor": extractor,
+                "count": 0,
+                "sample": [],
+            },
+        )
+        group["count"] += 1
+        if len(group["sample"]) < 3:
+            group["sample"].append(path.name)
+
+    preview["extractor_plan"] = sorted(
+        groups.values(),
+        key=lambda item: (item["extension"], item["extractor"]),
+    )
     return preview
 
 

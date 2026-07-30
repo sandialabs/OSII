@@ -12,7 +12,6 @@ import {
   Button,
   Checkbox,
   Chip,
-  Divider,
   FormControlLabel,
   LinearProgress,
   List,
@@ -29,12 +28,16 @@ import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
 import FolderOutlinedIcon from "@mui/icons-material/FolderOutlined";
 import PlayArrowOutlinedIcon from "@mui/icons-material/PlayArrowOutlined";
+import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 
 import {
   browseIntake,
   createProcessingRun,
+  getIntakeReadiness,
   listProcessingRuns,
   resolveIntake,
   uploadQueueFiles,
@@ -91,6 +94,7 @@ function parentDisplay(display: string): string {
 
 export function QueuePage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [path, setPath] = useState("");
   const [includeSharedRoot, setIncludeSharedRoot] = useState(true);
   const [selectedSharedItems, setSelectedSharedItems] = useState<SelectedSharedItem[]>([]);
@@ -102,6 +106,7 @@ export function QueuePage() {
   const [showHidden, setShowHidden] = useState(false);
   const [synthesize, setSynthesize] = useState(true);
   const [embed, setEmbed] = useState(false);
+  const [extractorOverrides, setExtractorOverrides] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState(false);
   const [starting, setStarting] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -142,6 +147,11 @@ export function QueuePage() {
       (run) => ["queued", "pending", "running"].includes(run.status),
     ) ? 1500 : 5000,
   });
+  const readiness = useQuery({
+    queryKey: ["intake", "readiness"],
+    queryFn: getIntakeReadiness,
+    staleTime: 30_000,
+  });
 
   const sharedRootPath = rootBrowse.data?.current_path ?? "";
   const queuePaths = useMemo(() => {
@@ -168,6 +178,7 @@ export function QueuePage() {
       deferredIncludePatterns,
       deferredExcludePatterns,
       showHidden,
+      extractorOverrides,
     ],
     queryFn: () => resolveIntake({
       queue_paths: queuePaths,
@@ -175,6 +186,7 @@ export function QueuePage() {
       include_patterns: deferredIncludePatterns,
       exclude_patterns: deferredExcludePatterns,
       show_hidden: showHidden,
+      extractor_overrides: extractorOverrides,
     }),
     enabled: queuePaths.length > 0,
   });
@@ -246,6 +258,7 @@ export function QueuePage() {
         include_patterns: includePatterns,
         exclude_patterns: excludePatterns,
         show_hidden: showHidden,
+        extractor_overrides: extractorOverrides,
         synthesizer_name: synthesize ? "firstN" : null,
         build_embeddings: embed,
       });
@@ -268,6 +281,21 @@ export function QueuePage() {
   };
 
   const matchedCount = preview.data?.preview.matched_count ?? 0;
+  const embeddingStatus = readiness.data?.embedders[0];
+  const embeddingAvailable = Boolean(embeddingStatus?.available);
+  const extractorStatus = (name: string) => readiness.data?.extractors.find(
+    (extractor) => (
+      extractor.id === name
+      || extractor.aliases?.includes(name)
+    ),
+  );
+  const unavailableExtractorPlan = preview.data?.preview.extractor_plan.filter(
+    (plan) => !extractorStatus(plan.extractor)?.available,
+  ) ?? [];
+  const extractorPlanReady = (
+    Boolean(readiness.data)
+    && unavailableExtractorPlan.length === 0
+  );
 
   return (
     <Stack spacing={3}>
@@ -283,14 +311,152 @@ export function QueuePage() {
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={2}>
           <Stack
+            direction={{ xs: "column", md: "row" }}
+            justifyContent="space-between"
+            spacing={1}
+          >
+            <Stack spacing={0.25}>
+              <Typography fontWeight={700}>1. Tools and extraction routing</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Confirm the tools this intake will use. Every matched file must have an available extractor before the run can start.
+              </Typography>
+            </Stack>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<RefreshOutlinedIcon />}
+                onClick={() => void queryClient.invalidateQueries({
+                  queryKey: ["intake", "readiness"],
+                })}
+              >
+                Retest tools
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<SettingsOutlinedIcon />}
+                onClick={() => navigate("/admin/processors")}
+              >
+                Manage tools
+              </Button>
+            </Stack>
+          </Stack>
+
+          {readiness.isLoading ? <LinearProgress /> : null}
+          {readiness.isError ? (
+            <Alert severity="error">
+              Tool readiness could not be tested. Intake is paused until the tools can be checked.
+            </Alert>
+          ) : null}
+
+          {readiness.data ? (
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <Chip
+                color={extractorPlanReady ? "success" : "error"}
+                variant="outlined"
+                label={extractorPlanReady ? "Extractors ready" : "Extractor unavailable"}
+              />
+              <Chip color="success" variant="outlined" label="Local preview ready" />
+              <Chip
+                color={embeddingAvailable ? "success" : "default"}
+                variant="outlined"
+                label={embeddingAvailable ? "Embedder ready" : "No embedder"}
+              />
+              <Chip
+                color="success"
+                variant="outlined"
+                label={`${readiness.data.enrichers.filter((item) => item.available).length} enrichers ready after intake`}
+              />
+            </Stack>
+          ) : null}
+
+          <Stack spacing={1}>
+            <Typography variant="subtitle2">Extractor rules for matched files</Typography>
+            {(preview.data?.preview.extractor_plan ?? []).map((plan) => {
+              const selectedStatus = extractorStatus(plan.extractor);
+              return (
+                <Paper key={plan.extension} variant="outlined" sx={{ p: 1.5 }}>
+                  <Stack
+                    direction={{ xs: "column", md: "row" }}
+                    alignItems={{ md: "center" }}
+                    justifyContent="space-between"
+                    spacing={1.5}
+                  >
+                    <Stack minWidth={0}>
+                      <Typography fontWeight={600}>
+                        {plan.extension} · {plan.count} file{plan.count === 1 ? "" : "s"}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" noWrap>
+                        {plan.sample.join(", ")}
+                      </Typography>
+                    </Stack>
+                    <TextField
+                      select
+                      size="small"
+                      label="Extractor"
+                      value={selectedStatus?.id ?? plan.extractor}
+                      onChange={(event) => setExtractorOverrides((current) => ({
+                        ...current,
+                        [plan.extension]: event.target.value,
+                      }))}
+                      sx={{ minWidth: 240 }}
+                    >
+                      {(readiness.data?.extractors ?? []).map((extractor) => (
+                        <MenuItem
+                          key={extractor.id}
+                          value={extractor.id}
+                          disabled={!extractor.available}
+                        >
+                          {extractor.display_name}
+                          {extractor.available ? "" : " — unavailable"}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                    <Chip
+                      size="small"
+                      color={selectedStatus?.available ? "success" : "error"}
+                      label={selectedStatus?.available ? "Ready" : "Unavailable"}
+                      sx={{ alignSelf: { xs: "flex-start", md: "center" } }}
+                    />
+                  </Stack>
+                </Paper>
+              );
+            })}
+            {preview.isLoading ? <LinearProgress /> : null}
+            {!preview.isLoading && !(preview.data?.preview.extractor_plan.length) ? (
+              <Typography variant="body2" color="text.secondary">
+                Extractor routing appears after files match the source scope and rules below.
+              </Typography>
+            ) : null}
+          </Stack>
+
+          {unavailableExtractorPlan.length ? (
+            <Alert severity="error">
+              Start the required extractor service or choose another ready extractor.
+            </Alert>
+          ) : null}
+          {readiness.data?.external.length ? (
+            <Typography variant="caption" color="text.secondary">
+              {readiness.data.external.filter((item) => item.available).length} of{" "}
+              {readiness.data.external.length} registered external tools responded.
+              Use Manage tools to run their full contract tests.
+            </Typography>
+          ) : null}
+        </Stack>
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Stack spacing={2}>
+          <Stack
             direction={{ xs: "column", sm: "row" }}
             justifyContent="space-between"
             spacing={1}
           >
             <Stack spacing={0.25}>
-              <Typography fontWeight={700}>1. Shared volume</Typography>
+              <Typography fontWeight={700}>2. Shared-volume scope</Typography>
               <Typography variant="body2" color="text.secondary">
-                Intake the corpus as a whole. Choose individual paths only when a broad folder selection is not suitable.
+                The default scope is every file under the shared root. Choose individual paths only when a broad folder selection is not suitable.
               </Typography>
             </Stack>
             {preview.data ? (
@@ -451,7 +617,7 @@ export function QueuePage() {
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
           <Stack spacing={0.25}>
-            <Typography fontWeight={700}>2. One-off uploads</Typography>
+            <Typography fontWeight={700}>3. One-off uploads</Typography>
             <Typography variant="body2" color="text.secondary">
               Upload files that do not belong in the shared corpus. Uploading switches this intake to those files only.
             </Typography>
@@ -498,9 +664,9 @@ export function QueuePage() {
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={2}>
           <Stack spacing={0.25}>
-            <Typography fontWeight={700}>3. Filters and outputs</Typography>
+            <Typography fontWeight={700}>4. Intake rules</Typography>
             <Typography variant="body2" color="text.secondary">
-              Filters apply across the selected folders. Patterns use filename globs, one per line.
+              Rules narrow the source scope above; they never replace it. The default is all files under the shared root with no include rule.
             </Typography>
           </Stack>
 
@@ -544,7 +710,6 @@ export function QueuePage() {
             />
           ) : null}
 
-          <Divider />
           <Stack>
             <FormControlLabel
               control={(
@@ -564,27 +729,6 @@ export function QueuePage() {
               )}
               label="Include hidden files"
             />
-            <FormControlLabel
-              control={(
-                <Checkbox
-                  checked={synthesize}
-                  onChange={(event) => setSynthesize(event.target.checked)}
-                />
-              )}
-              label="Create local text previews"
-            />
-            <FormControlLabel
-              control={(
-                <Checkbox
-                  checked={embed}
-                  onChange={(event) => setEmbed(event.target.checked)}
-                />
-              )}
-              label="Build search embeddings"
-            />
-            <Typography variant="caption" color="text.secondary">
-              Embeddings require a configured embedding service. Lexical search works without one.
-            </Typography>
           </Stack>
         </Stack>
       </Paper>
@@ -592,7 +736,45 @@ export function QueuePage() {
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
           <Stack spacing={0.25}>
-            <Typography fontWeight={700}>4. Review and start</Typography>
+            <Typography fontWeight={700}>5. Derived outputs</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Extraction always produces canonical OSII text. These optional steps create additional representations.
+            </Typography>
+          </Stack>
+          <FormControlLabel
+            control={(
+              <Checkbox
+                checked={synthesize}
+                onChange={(event) => setSynthesize(event.target.checked)}
+              />
+            )}
+            label="Create local text previews"
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+            Uses the bundled deterministic FirstN synthesizer; no model service is required.
+          </Typography>
+          <FormControlLabel
+            control={(
+              <Checkbox
+                checked={embed}
+                disabled={!embeddingAvailable}
+                onChange={(event) => setEmbed(event.target.checked)}
+              />
+            )}
+            label="Build search embeddings"
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+            {embeddingAvailable
+              ? `Ready${embeddingStatus?.model ? `: ${embeddingStatus.model}` : ""}.`
+              : "Unavailable and cannot be queued. Lexical search remains available without an embedder."}
+          </Typography>
+        </Stack>
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Stack spacing={1.5}>
+          <Stack spacing={0.25}>
+            <Typography fontWeight={700}>6. Review and start</Typography>
             <Typography variant="body2" color="text.secondary">
               Existing files are refreshed so changed source content and derived artifacts stay current.
             </Typography>
@@ -632,14 +814,22 @@ export function QueuePage() {
           ) : null}
           {preview.data && matchedCount === 0 ? (
             <Alert severity="warning">
-              No files match the current selection and filters.
+              No files match the current source scope and intake rules.
             </Alert>
           ) : null}
 
           <Button
             variant="contained"
             startIcon={<PlayArrowOutlinedIcon />}
-            disabled={!queuePaths.length || !matchedCount || starting || preview.isLoading}
+            disabled={
+              !queuePaths.length
+              || !matchedCount
+              || starting
+              || preview.isLoading
+              || readiness.isLoading
+              || !extractorPlanReady
+              || (embed && !embeddingAvailable)
+            }
             onClick={() => void start()}
             sx={{ alignSelf: "flex-start" }}
           >

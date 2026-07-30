@@ -40,6 +40,7 @@ def execute_job(job: dict) -> None:
         shared_root_host_path=payload.get("shared_root_host_path") or None,
         synthesizer_name=payload.get("synthesizer_name") or None,
         synthesizer_config=payload.get("synthesizer_config") or {},
+        extractor_overrides=payload.get("extractor_overrides") or {},
     )
 
     if payload.get("build_embeddings"):

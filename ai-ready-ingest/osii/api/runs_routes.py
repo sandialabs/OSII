@@ -1,9 +1,11 @@
 from datetime import datetime, UTC
 from pathlib import Path
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
+from osii.domain.processing.capability_readiness import embedding_readiness
 from osii.domain.processing.intake import (
+    add_extractor_plan,
     add_processed_counts,
     expand_queue_to_files,
     parse_patterns,
@@ -202,6 +204,7 @@ def run_worker(
     shared_root_host_path: str | None,
     synthesizer_name: str | None,
     synthesizer_config: dict | None,
+    extractor_overrides: dict[str, str] | None = None,
 ) -> None:
     try:
         ensure_osii_store_layout(osii_store)
@@ -263,7 +266,11 @@ def run_worker(
             if run is None:
                 return
 
-            extractor_name = choose_parser(src, parser_routes)
+            extension = src.suffix.lower() or "(no extension)"
+            extractor_name = (
+                (extractor_overrides or {}).get(extension)
+                or choose_parser(src, parser_routes)
+            )
             run["items"][index]["status"] = "running"
             run["items"][index]["extractor"] = extractor_name
             run["items"][index]["synthesizer"] = synthesizer_name
@@ -403,6 +410,12 @@ async def start_run(request: Request, payload: dict):
     intake_name = payload.get("intake_name", "")
     synthesizer_name = payload.get("synthesizer_name") or None
     synthesizer_config = payload.get("synthesizer_config") or {}
+    extractor_overrides = {
+        str(extension).lower(): str(extractor)
+        for extension, extractor in (payload.get("extractor_overrides") or {}).items()
+        if extractor
+    }
+    build_embeddings = bool(payload.get("build_embeddings", False))
 
     max_files_int = int(max_files) if max_files not in (None, "") else None
     max_total_size = int(float(max_total_size_mb) * 1024 * 1024) if max_total_size_mb not in (None, "") else None
@@ -432,6 +445,18 @@ async def start_run(request: Request, payload: dict):
         upload_root=upload_root,
     )
     add_processed_counts(preview, resolved_files, data_volume_root, osii_store)
+    add_extractor_plan(preview, resolved_files, extractor_overrides)
+
+    if build_embeddings:
+        embedding_status = embedding_readiness()
+        if not embedding_status["available"]:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Search embeddings cannot be queued because no tested embedder "
+                    f"is available. {embedding_status['detail']}"
+                ),
+            )
 
     run = create_run_record(
         resolved_files,
@@ -461,7 +486,8 @@ async def start_run(request: Request, payload: dict):
             "shared_root_host_path": shared_root_host_path,
             "synthesizer_name": synthesizer_name,
             "synthesizer_config": synthesizer_config,
-            "build_embeddings": bool(payload.get("build_embeddings", False)),
+            "extractor_overrides": extractor_overrides,
+            "build_embeddings": build_embeddings,
             "embedding_batch_size": int(payload.get("embedding_batch_size", 64)),
         },
     )

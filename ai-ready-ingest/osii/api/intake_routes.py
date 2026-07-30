@@ -7,12 +7,14 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 
 from osii.domain.processing.intake import (
+    add_extractor_plan,
     add_processed_counts,
     expand_queue_to_files,
     is_source_processed,
     parse_patterns,
     processed_source_relpaths,
 )
+from osii.domain.processing.capability_readiness import intake_capability_readiness
 from osii.domain.processing.pathing import display_rel, path_within
 
 router = APIRouter(prefix="/api", tags=["intake"])
@@ -41,6 +43,11 @@ def safe_resolve_user_path(raw: str | None, fallback: Path) -> Path:
         return p.resolve()
     except Exception:
         return fallback.resolve()
+
+
+@router.get("/intake/readiness")
+async def intake_readiness(request: Request):
+    return intake_capability_readiness(request.app.state.osii_root.resolve())
 
 
 @router.get("/browse")
@@ -143,6 +150,7 @@ async def resolve_queue(request: Request, payload: dict):
 
     raw_include = payload.get("include_patterns", "")
     raw_exclude = payload.get("exclude_patterns", "")
+    extractor_overrides = payload.get("extractor_overrides") or {}
 
     include_patterns = parse_patterns("\n".join(raw_include) if isinstance(raw_include, list) else raw_include)
     exclude_patterns = parse_patterns("\n".join(raw_exclude) if isinstance(raw_exclude, list) else raw_exclude)
@@ -178,6 +186,7 @@ async def resolve_queue(request: Request, payload: dict):
         upload_root=upload_root,
     )
     add_processed_counts(preview, resolved_files, shared_root.parent, request.app.state.osii_root)
+    add_extractor_plan(preview, resolved_files, extractor_overrides)
 
     return {
         "queue_items": queue_items,

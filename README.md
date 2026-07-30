@@ -115,10 +115,13 @@ Later starts reuse them. When the terminal output settles, open:
 - **OSII dashboard:** <http://localhost:5173>
 - **Backend status:** <http://localhost:8511/health>
 
-In the dashboard, select **Intake** in the first sidebar section. The entire
-shared volume is selected by default; narrow it with file-type or filename
-patterns only when needed. One-off uploads have their own section. Review the
-matched, new, and already-processed counts, then select **Start intake**.
+In the dashboard, select **Intake** in the first sidebar section. Intake first
+tests the required tools and shows the extractor selected for each matched file
+type. The entire shared volume is the default scope; file-type and glob rules
+narrow that scope rather than replacing it. One-off uploads have their own
+section. Review the matched, new, and already-processed counts, then select
+**Start intake**. Model-backed outputs cannot be selected unless their service
+passes its readiness test.
 
 Keep the terminal window open while using OSII. Stop host processes with
 <kbd>Ctrl</kbd>+<kbd>C</kbd>. Stop the supporting containers with `make down`

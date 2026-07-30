@@ -1,6 +1,7 @@
 import { apiJson, buildApiUrl } from "./client";
 import type {
   IntakeResolveResponse,
+  IntakeReadiness,
   ProcessingRun,
   ProcessorEndpoint,
   QueueBrowseResponse,
@@ -37,6 +38,10 @@ export async function createProcessingRun(payload: Record<string, unknown>): Pro
 
 export async function resolveIntake(payload: Record<string, unknown>): Promise<IntakeResolveResponse> {
   return apiJson<IntakeResolveResponse>("/api/resolve", { method: "POST", json: payload });
+}
+
+export async function getIntakeReadiness(): Promise<IntakeReadiness> {
+  return apiJson<IntakeReadiness>("/api/intake/readiness");
 }
 
 export async function listProcessingRuns(): Promise<{ runs: ProcessingRun[]; queue: Array<Record<string, unknown>> }> {

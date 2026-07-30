@@ -42,9 +42,12 @@ make dev-embeddings
 The PowerShell equivalent is `.\scripts\osii.ps1 dev-embeddings`.
 
 In the dashboard, **Intake** starts with the entire shared source volume selected.
-Use the file-type or glob filters to exclude broad classes of files rather than
-selecting documents one by one. One-off uploads are intentionally shown as a
-separate workflow.
+File-type and glob rules narrow that scope; they do not replace it. Intake tests
+the required services, previews extractor routing by file extension, and lets
+the user override an extension with another available bundled extractor.
+One-off uploads are intentionally shown as a separate workflow. An embedding
+build cannot be selected or queued until the configured embedding endpoint
+returns a valid test vector.
 
 To run only the supporting containers:
 
@@ -62,6 +65,12 @@ extractor. Use **Admin → Processors** to register compatible custom
 processor containers and verify their health and contract with a small request.
 Registered enabled endpoints are also included in processor discovery; secrets
 are intentionally never stored in the registry.
+
+Lexical search is the zero-model baseline and remains useful when no embedder is
+connected. Very small static sentence embedders such as Model2Vec are promising
+for a future optional local provider, but OSII does not silently substitute one:
+changing embedding models changes retrieval behavior and requires rebuilding
+the vector index.
 
 Start all bundled services as deployment-style containers:
 

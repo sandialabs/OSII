@@ -478,7 +478,34 @@ export type IntakePreview = {
   total_size: number;
   total_size_human: string;
   sample: Array<{ path: string; display: string }>;
+  extractor_plan: Array<{
+    extension: string;
+    extractor: string;
+    count: number;
+    sample: string[];
+  }>;
   stopped_reason?: string | null;
+};
+
+export type CapabilityReadiness = {
+  id: string;
+  display_name: string;
+  kind?: "extractor" | "synthesizer" | "embedder" | "enricher";
+  aliases?: string[];
+  description?: string;
+  available: boolean;
+  detail: string;
+  bundled: boolean;
+  model?: string;
+  base_url?: string;
+};
+
+export type IntakeReadiness = {
+  extractors: CapabilityReadiness[];
+  synthesizers: CapabilityReadiness[];
+  embedders: CapabilityReadiness[];
+  enrichers: CapabilityReadiness[];
+  external: CapabilityReadiness[];
 };
 
 export type IntakeResolveResponse = {
