@@ -308,6 +308,17 @@ export function QueuePage() {
 
       {notice ? <Alert severity={notice.severity}>{notice.text}</Alert> : null}
 
+      <Alert
+        severity="info"
+        action={(
+          <Button color="inherit" size="small" onClick={() => navigate("/admin/processors")}>
+            Open Tools
+          </Button>
+        )}
+      >
+        Before your first Intake, review Tools and test any external processors you expect to use. Bundled local extraction and text previews require no setup.
+      </Alert>
+
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={2}>
           <Stack
@@ -318,7 +329,7 @@ export function QueuePage() {
             <Stack spacing={0.25}>
               <Typography fontWeight={700}>1. Tools and extraction routing</Typography>
               <Typography variant="body2" color="text.secondary">
-                Confirm the tools this intake will use. Every matched file must have an available extractor before the run can start.
+                Confirm the tools this intake will use. Every matched file must have an available extractor before the run can start; completed files become browsable one at a time while Intake continues.
               </Typography>
             </Stack>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
@@ -841,6 +852,11 @@ export function QueuePage() {
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
           <Typography fontWeight={700}>Recent intake runs</Typography>
+          {recentRuns.some((run) => ["queued", "pending", "running"].includes(run.status)) ? (
+            <Alert severity="success">
+              Intake runs sequentially. Open Files at any time to browse documents that have already completed.
+            </Alert>
+          ) : null}
           {recentRuns.map((run) => (
             <Paper key={run.id} variant="outlined" sx={{ p: 1.5 }}>
               <Stack

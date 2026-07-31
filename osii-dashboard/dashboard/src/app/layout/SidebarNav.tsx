@@ -54,10 +54,18 @@ export function SidebarNav({ drawerWidth }: SidebarNavProps) {
         dense
         subheader={(
           <ListSubheader disableSticky component="div">
-            Bring documents in
+            Set up and intake
           </ListSubheader>
         )}
       >
+        <ListItemButton
+          dense
+          selected={location.pathname.startsWith("/admin")}
+          onClick={() => navigate("/admin/processors")}
+        >
+          <SettingsOutlinedIcon fontSize="small" style={{ marginRight: 12 }} />
+          <ListItemText primary="Tools" primaryTypographyProps={{ variant: "body2" }} />
+        </ListItemButton>
         <ListItemButton
           dense
           selected={location.pathname === "/intake"}
@@ -120,25 +128,6 @@ export function SidebarNav({ drawerWidth }: SidebarNavProps) {
         </ListItemButton>
       </List>
 
-      <Divider />
-
-      <List
-        dense
-        subheader={(
-          <ListSubheader disableSticky component="div">
-            System
-          </ListSubheader>
-        )}
-      >
-        <ListItemButton
-          dense
-          selected={location.pathname.startsWith("/admin")}
-          onClick={() => navigate("/admin/processors")}
-        >
-          <SettingsOutlinedIcon fontSize="small" style={{ marginRight: 12 }} />
-          <ListItemText primary="Admin" primaryTypographyProps={{ variant: "body2" }} />
-        </ListItemButton>
-      </List>
     </Drawer>
   );
 }

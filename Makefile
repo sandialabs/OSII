@@ -1,17 +1,25 @@
 # Podman is the default local container runtime. Override per invocation for
-# Docker Desktop, for example: make COMPOSE='docker compose' dev
+# Docker Desktop, for example: make COMPOSE='docker compose' dev-containers
 COMPOSE ?= podman-compose
 UV ?= uv
 
-.PHONY: dev dev-embeddings dev-services dev-examples containers-dev run dev-all down logs test build docs docs-serve
+.PHONY: dev dev-host dev-containers dev-embeddings dev-services dev-examples containers-dev run dev-all down logs test build docs docs-serve
 
-# Fast development: only OCR dependencies use containers. The API, worker,
-# chat service, and Vite dashboard run from source; embeddings are opt-in.
-dev: dev-services
+# Default development path: API, worker, chat, MCP, dashboard, and extraction
+# all run from source on the host. No container runtime is required.
+dev: dev-host
+
+dev-host:
+	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py --native-extraction
+
+# Optional host-native embedding process. This can still be memory intensive.
+dev-embeddings:
+	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py --native-extraction --embeddings
+
+# Hybrid development for deployment-parity extraction: Tika and Tesseract use
+# containers while the application services continue to run from source.
+dev-containers: dev-services
 	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py
-
-dev-embeddings: dev-services
-	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py --embeddings
 
 dev-services:
 	$(COMPOSE) --profile ocr up -d tika tesseract

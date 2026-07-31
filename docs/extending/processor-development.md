@@ -67,11 +67,10 @@ for exact payloads.
 
 ## Register and verify
 
-Register the service base URL under **Admin → Processors**. **Health** verifies
+Register the service base URL under **Tools**. **Health** verifies
 liveness. **Test** reads the descriptor, checks that its kind matches the
 registration, and sends a small contract-valid operation request.
 
 Remote enrichers currently execute end to end. External extractors,
 synthesizers, and embedders can be registered and contract-tested, but their
 core commit adapters are still incomplete.
-

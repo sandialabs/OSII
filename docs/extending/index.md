@@ -27,9 +27,15 @@ turning that recovered text into an experiment-results table is enrichment.
 4. Implement the one method for its processor kind.
 5. Test representative, redistributable examples locally.
 6. Package the service in a container.
-7. Register its base URL under **Admin → Processors**.
+7. Register its base URL under **Tools**.
 8. Use **Health** to test liveness and **Test** to validate the v1 contract.
 9. Run it against an ingested file and inspect the result in the dashboard.
+
+When developing both services on the host, register a loopback base URL such
+as `http://127.0.0.1:8091`. When the OSII API is packaged, use a Compose service
+name for another service on the same network, or `host.containers.internal`
+for a processor running on the host. Enter only the base URL; OSII appends the
+health, descriptor, and operation paths.
 
 ## What OSII handles for you
 
@@ -51,4 +57,3 @@ extractors, synthesizers, and embedders can implement, expose, register, and
 contract-test the v1 API today, but OSII does not yet commit their returned
 results into the canonical store. Keep those services experimental until the
 corresponding core adapters land.
-

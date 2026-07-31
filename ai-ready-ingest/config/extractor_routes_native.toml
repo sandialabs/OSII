@@ -1,0 +1,32 @@
+[[routes]]
+name = "host-native-development"
+extractor = "native_text"
+extensions = [
+  ".cfg",
+  ".conf",
+  ".css",
+  ".csv",
+  ".docx",
+  ".htm",
+  ".html",
+  ".ini",
+  ".js",
+  ".json",
+  ".jsonl",
+  ".log",
+  ".md",
+  ".pdf",
+  ".pptx",
+  ".py",
+  ".rst",
+  ".rtf",
+  ".sql",
+  ".toml",
+  ".ts",
+  ".tsv",
+  ".txt",
+  ".xlsx",
+  ".xml",
+  ".yaml",
+  ".yml",
+]

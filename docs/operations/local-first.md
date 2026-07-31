@@ -11,7 +11,7 @@ Face access at runtime. Bare-metal development caches the same model under
 
 | Capability | Fully local option | Connected enhancement |
 |---|---|---|
-| Extraction | Tika and OSII Tesseract | specialist/corporate extractors |
+| Extraction | native Python extractor | Tika, Tesseract, or specialist extractors |
 | Synthesis | deterministic FirstN synthesizer | configured local or corporate LLM |
 | Embedding | bundled CPU Jina service | alternative embedding endpoint |
 | Enrichment | statistics/keywords and custom SDK containers | LLM-backed enrichers |
@@ -26,11 +26,22 @@ For development, start the editable local system:
 make dev
 ```
 
-`make dev` keeps only Tika and Tesseract in Podman. The API, local worker,
-extractive chat, and Vite dashboard run directly from source with reload
-support. Development state is written to
+`make dev` is fully host-native: the API, local worker, extractive chat, MCP
+server, Vite dashboard, and lightweight Python extractor run directly from
+source with reload support. Podman and Docker are not invoked. Development state is written to
 `osii-data/.osii/state/jobs.sqlite3`; the worker can survive API reloads without
 Redis, RabbitMQ, or network access.
+
+The host-native extractor handles text-layer PDFs, DOCX, PPTX, XLSX, and common
+text files. It does not OCR scanned PDFs and intentionally fails clearly on
+unsupported binary formats. Exclude those formats while iterating, or use the
+deployment-parity path when you need Tika or Tesseract:
+
+```bash
+make dev-containers
+```
+
+The PowerShell equivalent is `.\scripts\osii.ps1 dev-containers`.
 
 Embeddings are deliberately excluded from the fast development path. Enable
 the local Jina service only while testing semantic search:
@@ -39,7 +50,9 @@ the local Jina service only while testing semantic search:
 make dev-embeddings
 ```
 
-The PowerShell equivalent is `.\scripts\osii.ps1 dev-embeddings`.
+The PowerShell equivalent is `.\scripts\osii.ps1 dev-embeddings`. This starts
+the current embedding model on the host, so it avoids container-image storage
+but can still consume significant model disk and RAM.
 
 In the dashboard, **Intake** starts with the entire shared source volume selected.
 File-type and glob rules narrow that scope; they do not replace it. Intake tests
@@ -47,7 +60,17 @@ the required services, previews extractor routing by file extension, and lets
 the user override an extension with another available bundled extractor.
 One-off uploads are intentionally shown as a separate workflow. An embedding
 build cannot be selected or queued until the configured embedding endpoint
-returns a valid test vector.
+returns a valid test vector. The worker processes one file at a time. Each
+completed object becomes visible under **Files** while the rest of the intake
+continues; file grids page large result sets and generate at most two PDF
+thumbnails concurrently.
+
+Use **Tools** before Intake to register optional Processor API v1 services.
+When both OSII and the processor run on the host, register the processor's
+loopback URL (for example, `http://127.0.0.1:8091`). A packaged API container
+must use the processor's Compose service name, or `host.containers.internal`
+for a service running on the host. **Health** verifies reachability and
+**Test** validates the descriptor and operation contract.
 
 To run only the supporting containers:
 
@@ -58,10 +81,10 @@ make dev-services
 To test packaged images instead, use `make build` followed by `make run`.
 `make containers-dev` explicitly rebuilds and runs the packaged core stack.
 
-The worker chooses extractors by file extension using
-`ai-ready-ingest/config/extractor_routes.toml`. The default routes use bundled
-Tika for PDF and Office files, so normal processing does not need a corporate
-extractor. Use **Admin → Processors** to register compatible custom
+The worker chooses extractors by file extension. `make dev` points it to
+`ai-ready-ingest/config/extractor_routes_native.toml`; packaged deployments use
+`ai-ready-ingest/config/extractor_routes.toml`, whose default routes use bundled
+Tika for PDF and Office files. Use **Tools** to register compatible custom
 processor containers and verify their health and contract with a small request.
 Registered enabled endpoints are also included in processor discovery; secrets
 are intentionally never stored in the registry.

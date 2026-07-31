@@ -68,16 +68,61 @@ def load_folders_catalog(osii_store: Path) -> list[dict]:
 
 def load_files_catalog(osii_store: Path) -> list[dict]:
     entries = []
+    seen_file_ids: set[str] = set()
+    seen_source_relpaths: set[str] = set()
+
+    def add_entry(source_relpath: str | None, file_id: str | None) -> None:
+        if not file_id:
+            return
+        normalized_relpath = str(source_relpath or "").replace("\\", "/").strip("/")
+        if file_id in seen_file_ids:
+            return
+        if normalized_relpath and normalized_relpath in seen_source_relpaths:
+            return
+        entries.append(
+            {
+                "source_relpath": source_relpath,
+                "file_id": file_id,
+            }
+        )
+        seen_file_ids.add(file_id)
+        if normalized_relpath:
+            seen_source_relpaths.add(normalized_relpath)
+
     for path in _folder_manifest_paths(osii_store):
         data = _read_folder_manifest(path)
         if not data:
             continue
         for doc in data.get("docs", []):
-            entries.append(
-                {
-                    "source_relpath": doc.get("source_relpath"),
-                    "file_id": doc.get("file_id"),
-                }
+            add_entry(doc.get("source_relpath"), doc.get("file_id"))
+
+    # Extraction commits an object bundle before the end-of-run folder rebuild.
+    # Include only completed/partial bundles so Files can update after each
+    # document without exposing a text file while an extractor is writing it.
+    objects_dir = (osii_store / "objects").resolve()
+    if objects_dir.exists():
+        for object_path in sorted(objects_dir.iterdir()):
+            if not object_path.is_dir():
+                continue
+            if object_path.name in seen_file_ids:
+                continue
+            meta_path = object_path / "meta.toml"
+            provenance_path = object_path / "provenance.toml"
+            if not meta_path.is_file() or not provenance_path.is_file():
+                continue
+            try:
+                meta = tomllib.loads(meta_path.read_text(encoding="utf-8"))
+                provenance = tomllib.loads(
+                    provenance_path.read_text(encoding="utf-8")
+                )
+            except Exception:
+                continue
+            status = provenance.get("provenance", {}).get("status")
+            if status not in {"done", "partial"}:
+                continue
+            add_entry(
+                meta.get("file", {}).get("source_relpath"),
+                object_path.name,
             )
     return entries
 

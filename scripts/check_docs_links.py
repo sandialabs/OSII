@@ -37,7 +37,14 @@ def markdown_files() -> list[Path]:
     for path in ROOT.rglob("README.md"):
         relative = path.relative_to(ROOT)
         if any(
-            part in {".git", ".pytest_cache", "node_modules", "site"}
+            part in {
+                ".git",
+                ".pytest_cache",
+                ".venv",
+                "node_modules",
+                "site",
+                "venv",
+            }
             or part == "__pycache__"
             for part in relative.parts
         ):

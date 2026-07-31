@@ -116,6 +116,18 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
 
     extractors = [
         {
+            "id": "native_text",
+            "aliases": ["native_text"],
+            "display_name": "Native Python Text Extractor",
+            "description": (
+                "Container-free extraction for text-layer PDFs, modern Office "
+                "documents, and common text formats."
+            ),
+            "available": True,
+            "detail": "Bundled in the OSII Python package.",
+            "bundled": True,
+        },
+        {
             "id": "tika",
             "aliases": ["tika", "tika_catchall"],
             "display_name": "Apache Tika",

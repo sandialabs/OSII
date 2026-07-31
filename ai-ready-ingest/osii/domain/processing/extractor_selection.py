@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import tomllib
 
 
 def extractor_routes_path() -> Path:
-    return Path("config/extractor_routes.toml").resolve()
+    configured = os.getenv(
+        "OSII_EXTRACTOR_ROUTES_PATH",
+        "config/extractor_routes.toml",
+    )
+    return Path(configured).expanduser().resolve()
 
 
 def load_extractor_routes(config_path: Path | None = None) -> list[dict]:

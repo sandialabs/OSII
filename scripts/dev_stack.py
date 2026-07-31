@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Run the editable OSII application stack on the host.
-
-Podman supplies only the system-level OCR dependencies in development. This
-launcher supervises the Python services and Vite so source changes are visible
-without rebuilding deployment images.
-"""
+"""Run the editable OSII application stack directly on the host."""
 
 from __future__ import annotations
 
@@ -63,7 +58,11 @@ def command_path(name: str) -> str:
     return resolved
 
 
-def build_environment(examples: bool, embeddings: bool) -> dict[str, str]:
+def build_environment(
+    examples: bool,
+    embeddings: bool,
+    native_extraction: bool,
+) -> dict[str, str]:
     env = os.environ.copy()
     for key, value in load_dotenv(REPOSITORY_ROOT / ".env").items():
         env.setdefault(key, value)
@@ -85,10 +84,25 @@ def build_environment(examples: bool, embeddings: bool) -> dict[str, str]:
     embeddings_port = env.get("OSII_EMBEDDINGS_PORT", "8085")
     tesseract_port = env.get("OSII_TESSERACT_PORT", "8080")
     tika_port = env.get("OSII_TIKA_PORT", "9998")
+    mcp_port = env.get("OSII_MCP_PORT", "8021")
+    workspace_python_path = os.pathsep.join(
+        (
+            str(REPOSITORY_ROOT / "ai-ready-ingest"),
+            str(REPOSITORY_ROOT / "ai-ready-mcp"),
+        )
+    )
+    if env.get("PYTHONPATH"):
+        workspace_python_path = os.pathsep.join(
+            (workspace_python_path, env["PYTHONPATH"])
+        )
 
     env.update(
         {
             "PYTHONUNBUFFERED": "1",
+            # The MCP package declares `osii` as a workspace dependency. Keep
+            # editable source importable even when an older uv-created .pth
+            # file is present in the shared development environment.
+            "PYTHONPATH": workspace_python_path,
             "SHARED_VOLUME_ROOT": str(source_root),
             "SHARED_VOLUME_HOST_PATH": str(source_root),
             "OSII_ROOT": str(osii_root),
@@ -96,8 +110,20 @@ def build_environment(examples: bool, embeddings: bool) -> dict[str, str]:
             "TIKA_URL": f"http://127.0.0.1:{tika_port}",
             "OSII_TESSERACT_URL": f"http://127.0.0.1:{tesseract_port}",
             "OSII_BACKEND_BASE_URL": f"http://127.0.0.1:{api_port}",
+            "MCP_HOST": "127.0.0.1",
+            "MCP_PORT": mcp_port,
+            "DEBUG": "true",
         }
     )
+    if native_extraction:
+        env["OSII_EXTRACTOR_ROUTES_PATH"] = str(
+            (
+                REPOSITORY_ROOT
+                / "ai-ready-ingest"
+                / "config"
+                / "extractor_routes_native.toml"
+            ).resolve()
+        )
     if embeddings:
         env.update(
             {
@@ -133,6 +159,8 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str]) -> None:
             "osii",
             "--package",
             "ai-ready-chat",
+            "--package",
+            "osii-mcp",
         ],
         cwd=REPOSITORY_ROOT,
         env=env,
@@ -169,6 +197,7 @@ def service_commands(
     api_port = env.get("OSII_API_PORT", "8511")
     chat_port = env.get("OSII_CHAT_PORT", "8611")
     dashboard_port = env.get("OSII_DASHBOARD_PORT", "5173")
+    mcp_port = env.get("OSII_MCP_PORT", "8021")
     embeddings_port = env.get("OSII_EMBEDDINGS_PORT", "8085")
     embedding_root = (
         REPOSITORY_ROOT / "ai-ready-tool-shelf" / "embedding-service-jina"
@@ -230,6 +259,18 @@ def service_commands(
             ),
             REPOSITORY_ROOT / "ai-ready-rag-chat",
             int(chat_port),
+        ),
+        Service(
+            "mcp",
+            (
+                uv,
+                "run",
+                "--package",
+                "osii-mcp",
+                "osii-mcp",
+            ),
+            REPOSITORY_ROOT / "ai-ready-mcp",
+            int(mcp_port),
         ),
         Service(
             "dashboard",
@@ -329,13 +370,14 @@ def stop_service(process: subprocess.Popen[bytes]) -> None:
 def run(
     examples: bool,
     embeddings: bool,
+    native_extraction: bool,
     dry_run: bool,
     skip_setup: bool,
 ) -> int:
     try:
         uv = command_path("uv")
         npm = command_path("npm")
-        env = build_environment(examples, embeddings)
+        env = build_environment(examples, embeddings, native_extraction)
         services = service_commands(uv, npm, env, embeddings)
 
         if dry_run:
@@ -357,7 +399,13 @@ def run(
         print()
         print(f"[dev] Dashboard: http://localhost:{dashboard_port}")
         print(f"[dev] API health: http://localhost:{api_port}/health")
+        print(f"[dev] MCP: http://localhost:{env.get('OSII_MCP_PORT', '8021')}/mcp")
         print("[dev] Press Ctrl+C to stop host processes.")
+        if native_extraction:
+            print(
+                "[dev] Extraction is container-free. Text-layer PDFs, DOCX, "
+                "PPTX, XLSX, and common text files use the native Python extractor."
+            )
         if embeddings:
             print(
                 "[dev] The first embedding start downloads the model; "
@@ -404,6 +452,11 @@ def main() -> int:
         help="Start the optional local embedding service.",
     )
     parser.add_argument(
+        "--native-extraction",
+        action="store_true",
+        help="Use the bundled Python extractor instead of Tika and OCR services.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the host service plan without installing or starting anything.",
@@ -417,6 +470,7 @@ def main() -> int:
     return run(
         args.examples,
         args.embeddings,
+        args.native_extraction,
         args.dry_run,
         args.skip_setup,
     )

@@ -73,12 +73,6 @@ text, queue status, and indexes are also kept separately from your originals.
 
 ### 2. Develop OSII with live reload
 
-Make sure the Podman machine is running on macOS or Windows:
-
-```bash
-podman machine start
-```
-
 On macOS or Linux, start the editable stack:
 
 ```bash
@@ -86,11 +80,13 @@ cd /path/to/osii
 make dev
 ```
 
-`make dev` starts only Tika and Tesseract in Podman. It runs the API, worker,
-local chat service, and Vite dashboard from source. The launcher checks ports
-and dependencies, reloads backend services when Python changes, and lets Vite
-update the browser as frontend code changes. Generated development data stays
-under `osii-data/`.
+`make dev` requires no container runtime. It runs the API, worker, local chat,
+MCP server, dashboard, and a lightweight Python extractor directly from source.
+The native extractor supports text-layer PDFs, DOCX, PPTX, XLSX, and common
+text formats. Scanned PDFs still require OCR and should be tested later with the
+container-compatible workflow. The launcher checks ports and dependencies,
+reloads backend services when source changes, and keeps generated data under
+`osii-data/`.
 
 Embeddings are optional during normal development. Start the same editable
 stack with the local Jina service only when testing semantic search:
@@ -99,8 +95,9 @@ stack with the local Jina service only when testing semantic search:
 make dev-embeddings
 ```
 
-On Windows, use `.\scripts\osii.ps1 dev-embeddings`. The first embedding start
-downloads the model into `osii-data/models/`; later starts reuse it.
+On Windows, use `.\scripts\osii.ps1 dev-embeddings`. This is also
+container-free, but the current Jina model can still require substantial disk
+and memory. Normal development does not require it.
 
 On Windows PowerShell, use the equivalent launcher:
 
@@ -121,11 +118,19 @@ type. The entire shared volume is the default scope; file-type and glob rules
 narrow that scope rather than replacing it. One-off uploads have their own
 section. Review the matched, new, and already-processed counts, then select
 **Start intake**. Model-backed outputs cannot be selected unless their service
-passes its readiness test.
+passes its readiness test. Files are processed sequentially and appear under
+**Files** as each extraction completes; the whole intake does not need to
+finish first. File grids reveal results in groups and limit concurrent PDF
+thumbnail rendering so a large corpus remains responsive.
+
+Open **Tools** before the first intake to register optional Processor API v1
+services. For host-native development, use a base URL such as
+`http://127.0.0.1:8091`; a packaged API container should use the processor's
+Compose service name or `host.containers.internal` for a host service. Run
+**Health**, then **Test**, and return to Intake to select **Retest tools**.
 
 Keep the terminal window open while using OSII. Stop host processes with
-<kbd>Ctrl</kbd>+<kbd>C</kbd>. Stop the supporting containers with `make down`
-or `.\scripts\osii.ps1 down`.
+<kbd>Ctrl</kbd>+<kbd>C</kbd>. There are no containers to stop after `make dev`.
 
 ### Run the packaged container stack
 
@@ -149,10 +154,15 @@ run the normal integrated container stack.
 
 ### Useful shortcuts
 
+- `make dev` / `make dev-host` / `.\scripts\osii.ps1 dev`: run the complete
+  editable development stack without containers.
 - `make dev-embeddings` / `.\scripts\osii.ps1 dev-embeddings`: run editable
-  OSII with the optional local embedding service.
+  OSII with the optional host-native embedding service.
+- `make dev-containers` / `.\scripts\osii.ps1 dev-containers`: run application
+  services from source while Tika and Tesseract run in Podman for deployment
+  parity.
 - `make dev-services` / `.\scripts\osii.ps1 dev-services`: start only the
-  Podman services needed by bare-metal development.
+  Podman OCR services used by `dev-containers`.
 - `make dev-examples` / `.\scripts\osii.ps1 dev-examples`: run editable OSII
   plus the example table enricher.
 - `make dev-all` / `.\scripts\osii.ps1 dev-all`: include optional agents,
@@ -167,11 +177,11 @@ run the normal integrated container stack.
 Docker is supported as an override when it is your local container runtime:
 
 ```bash
-make COMPOSE='docker compose' dev
+make COMPOSE='docker compose' dev-containers
 ```
 
 ```powershell
-.\scripts\osii.ps1 dev -Runtime Docker
+.\scripts\osii.ps1 dev-containers -Runtime Docker
 ```
 
 See the [documentation index](docs/index.md) for guided paths through usage,

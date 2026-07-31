@@ -94,8 +94,10 @@ def test_intake_readiness_reports_bundled_tools(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["extractors"][0]["id"] == "tika"
+    assert payload["extractors"][0]["id"] == "native_text"
     assert payload["extractors"][0]["available"] is True
+    tika = next(item for item in payload["extractors"] if item["id"] == "tika")
+    assert tika["available"] is True
     assert payload["synthesizers"][0]["available"] is True
     assert payload["embedders"][0]["available"] is False
 

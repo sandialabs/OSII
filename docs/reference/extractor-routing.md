@@ -5,6 +5,7 @@
 Extractor routing determines which extractor processes each source file during an ingest run.
 
 Current extractors:
+- `native_text`
 - `tika_catchall`
 - `pdf_default`
 
@@ -99,6 +100,7 @@ extensions = ["*"]
 ## Supported extractor names
 
 Current expected extractor identifiers:
+- `native_text`
 - `pdf_default`
 - `tika_catchall`
 
@@ -111,6 +113,13 @@ ai-ready-ingest/osii/extraction/dispatcher.py
 ---
 
 ## Current implementation behavior
+
+### `native_text`
+- runs inside the OSII Python process with no service or container
+- extracts text-layer PDFs with PyMuPDF
+- handles DOCX, PPTX, XLSX, and common text formats
+- is the default route for `make dev`, but not for deployment containers
+- does not provide OCR for scanned PDFs
 
 ### `pdf_default`
 - intended for PDFs

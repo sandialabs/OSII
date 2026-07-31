@@ -44,5 +44,5 @@ is present.
 
 Keep any nonstandard corporate extraction API in its own container/repository.
 Implement the OSII Processor API extraction contract, deploy it beside OSII,
-then register its HTTP endpoint through **Admin → Processors**. This leaves the
+then register its HTTP endpoint through **Tools**. This leaves the
 core, dashboard, MCP server, and local distribution free of proprietary SDKs.

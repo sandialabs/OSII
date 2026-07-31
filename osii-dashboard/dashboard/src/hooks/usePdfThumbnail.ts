@@ -10,6 +10,34 @@ type UsePdfThumbnailResult = {
   error: Error | null;
 };
 
+const MAX_CONCURRENT_THUMBNAILS = 2;
+let activeThumbnailJobs = 0;
+const thumbnailJobs: Array<() => void> = [];
+
+function runNextThumbnailJob() {
+  while (
+    activeThumbnailJobs < MAX_CONCURRENT_THUMBNAILS
+    && thumbnailJobs.length > 0
+  ) {
+    activeThumbnailJobs += 1;
+    thumbnailJobs.shift()?.();
+  }
+}
+
+function scheduleThumbnail<T>(work: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    thumbnailJobs.push(() => {
+      void work()
+        .then(resolve, reject)
+        .finally(() => {
+          activeThumbnailJobs -= 1;
+          runNextThumbnailJob();
+        });
+    });
+    runNextThumbnailJob();
+  });
+}
+
 export function usePdfThumbnail(
   sourceUrl: string | null,
   enabled = true,
@@ -44,7 +72,12 @@ export function usePdfThumbnail(
           return;
         }
 
-        const dataUrl = await generatePdfThumbnailDataUrl(sourceUrl);
+        const dataUrl = await scheduleThumbnail(() => {
+          if (cancelled) {
+            throw new Error("Thumbnail request was cancelled");
+          }
+          return generatePdfThumbnailDataUrl(sourceUrl);
+        });
         await setCachedThumbnail(cacheKey, dataUrl);
 
         if (!cancelled) {

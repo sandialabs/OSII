@@ -26,6 +26,7 @@ from osii.domain.storage.synth import write_folder_synth_text
 from osii.domain.storage.ids import compute_file_id
 from osii.domain.storage.store import ensure_osii_store_layout
 from osii.domain.processing.pathing import display_rel, path_within
+from osii.domain.processing.extractor_selection import extractor_routes_path
 from osii.extraction.dispatcher import dispatch_extract
 from osii.synthesis.file.firstn import FirstNSynthesizer
 from osii.synthesis.file.recursive import RecursiveSynthesizer
@@ -258,6 +259,7 @@ def run_worker(
 
         run["manifest_name"] = manifest_path.name
         run["manifest_path"] = str(manifest_path)
+        save_run(run)
 
         append_log(run_id, f"Run manifest saved: {manifest_path.name}")
 
@@ -274,6 +276,7 @@ def run_worker(
             run["items"][index]["status"] = "running"
             run["items"][index]["extractor"] = extractor_name
             run["items"][index]["synthesizer"] = synthesizer_name
+            save_run(run)
 
             append_log(run_id, f"Processing {src.name} with extractor '{extractor_name}'")
 
@@ -325,6 +328,7 @@ def run_worker(
                 run["items"][index]["synthesis_error"] = synthesis_error
                 run["items"][index]["error"] = extract_result.get("error") or synthesis_error
                 run["completed"] += 1
+                save_run(run)
 
                 append_log(run_id, f"Done: {src.name}")
 
@@ -341,6 +345,7 @@ def run_worker(
                 run["items"][index]["status"] = "error"
                 run["items"][index]["error"] = str(exc)
                 run["completed"] += 1
+                save_run(run)
 
                 append_log(run_id, f"Error: {src.name} -> {exc}")
 
@@ -465,7 +470,7 @@ async def start_run(request: Request, payload: dict):
         osii_root=osii_store,
     )
 
-    parser_routes_path = Path("config/extractor_routes.toml").resolve()
+    parser_routes_path = extractor_routes_path()
     shared_root_host_path = getattr(request.app.state, "shared_volume_host_path", "")
 
     queue_job = enqueue_run(

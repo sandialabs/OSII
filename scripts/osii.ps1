@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("dev", "dev-embeddings", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build")]
+    [ValidateSet("dev", "dev-host", "dev-containers", "dev-embeddings", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
@@ -20,12 +20,11 @@ else {
     $ComposePrefix = @()
 }
 
-if (-not (Get-Command $ComposeExecutable -ErrorAction SilentlyContinue)) {
-    throw "$ComposeExecutable was not found. Install $Runtime Desktop/CLI, then try again."
-}
-
 function Invoke-OsiiCompose {
     param([string[]]$Arguments)
+    if (-not (Get-Command $ComposeExecutable -ErrorAction SilentlyContinue)) {
+        throw "$ComposeExecutable was not found. Install $Runtime Desktop/CLI, then try again."
+    }
     & $ComposeExecutable @ComposePrefix @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "Compose command failed with exit code $LASTEXITCODE."
@@ -53,12 +52,17 @@ Push-Location $RepositoryRoot
 try {
     switch ($Command) {
         "dev" {
+            Invoke-OsiiDevLauncher @("--native-extraction")
+        }
+        "dev-host" {
+            Invoke-OsiiDevLauncher @("--native-extraction")
+        }
+        "dev-containers" {
             Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
             Invoke-OsiiDevLauncher
         }
         "dev-embeddings" {
-            Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
-            Invoke-OsiiDevLauncher @("--embeddings")
+            Invoke-OsiiDevLauncher @("--native-extraction", "--embeddings")
         }
         "dev-services" {
             Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
