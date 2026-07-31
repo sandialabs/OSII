@@ -80,24 +80,23 @@ cd /path/to/osii
 make dev
 ```
 
-`make dev` requires no container runtime. It runs the API, worker, local chat,
-MCP server, dashboard, and a lightweight Python extractor directly from source.
-The native extractor supports text-layer PDFs, DOCX, PPTX, XLSX, and common
-text formats. Scanned PDFs still require OCR and should be tested later with the
-container-compatible workflow. The launcher checks ports and dependencies,
+`make dev` requires no container runtime or model download. It runs the API,
+worker, local chat, MCP server, dashboard, and four independent Processor API
+services directly from source: native-text extraction, cited extractive
+previews, 384-dimensional lexical hashing embeddings, and statistics/keyword
+enrichment. Scanned PDFs still require optional OCR. The launcher checks ports and dependencies,
 reloads backend services when source changes, and keeps generated data under
 `osii-data/`.
 
-Embeddings are optional during normal development. Start the same editable
-stack with the local Jina service only when testing semantic search:
+Hashing embeddings are enabled by default and require almost no memory. To use
+an optional staged Model2Vec model under `osii-data/models/`, run:
 
 ```bash
-make dev-embeddings
+make dev-model2vec
 ```
 
-On Windows, use `.\scripts\osii.ps1 dev-embeddings`. This is also
-container-free, but the current Jina model can still require substantial disk
-and memory. Normal development does not require it.
+On Windows, use `.\scripts\osii.ps1 dev-model2vec`. OSII never silently switches
+vector spaces: changing providers requires rebuilding the vector index.
 
 On Windows PowerShell, use the equivalent launcher:
 
@@ -111,6 +110,11 @@ Later starts reuse them. When the terminal output settles, open:
 
 - **OSII dashboard:** <http://localhost:5173>
 - **Backend status:** <http://localhost:8511/health>
+- **Extractor docs:** <http://localhost:8092/docs>
+- **Synthesizer docs:** <http://localhost:8093/docs>
+- **Embedder docs:** <http://localhost:8085/docs>
+- **Enricher docs:** <http://localhost:8094/docs>
+- **MCP server:** <http://localhost:8022/mcp>
 
 In the dashboard, select **Intake** in the first sidebar section. Intake first
 tests the required tools and shows the extractor selected for each matched file
@@ -156,8 +160,12 @@ run the normal integrated container stack.
 
 - `make dev` / `make dev-host` / `.\scripts\osii.ps1 dev`: run the complete
   editable development stack without containers.
-- `make dev-embeddings` / `.\scripts\osii.ps1 dev-embeddings`: run editable
-  OSII with the optional host-native embedding service.
+- `make dev-core` / `.\scripts\osii.ps1 dev-core`: run application services
+  without processors for external-integration testing.
+- `make dev-model2vec` / `.\scripts\osii.ps1 dev-model2vec`: use a separately
+  staged Model2Vec model instead of hashing.
+- `make dev-extractor`, `dev-synthesizer`, `dev-embedder`, or `dev-enricher`
+  (and matching PowerShell commands): run one processor independently.
 - `make dev-containers` / `.\scripts\osii.ps1 dev-containers`: run application
   services from source while Tika and Tesseract run in Podman for deployment
   parity.
@@ -194,6 +202,7 @@ Important documentation:
 - [Standard artifact formats](docs/reference/processor-api/standard-artifacts.md)
 - [Architecture](docs/concepts/architecture.md)
 - [Local operation](docs/operations/local-first.md)
+- [Guaranteed local processors](docs/operations/local-processors.md)
 
 The repository currently includes:
 

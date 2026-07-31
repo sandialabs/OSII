@@ -77,7 +77,8 @@ def get_synthesizer(name: str):
         return FirstNSynthesizer()
     if name == "recursive":
         return RecursiveSynthesizer()
-    raise RuntimeError(f"synthesizer '{name}' is not supported.")
+    from osii.processors.remote import RemoteSynthesizer, resolve_remote_processor
+    return RemoteSynthesizer(resolve_remote_processor(name, "synthesizer"))
 
 
 def relpath_under(root: Path, path: Path) -> str:

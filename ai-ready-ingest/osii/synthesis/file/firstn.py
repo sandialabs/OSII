@@ -33,10 +33,10 @@ class FirstNSynthesizer(BaseSynthesizer):
         osii_store: Path,
         file_id: str,
         expert_context: str | None = None,
-        Synthesizer_config: dict | None = None,
+        synthesizer_config: dict | None = None,
     ) -> dict:
-        Synthesizer_config = Synthesizer_config or {}
-        max_chars = int(Synthesizer_config.get("max_chars", 4000))
+        synthesizer_config = synthesizer_config or {}
+        max_chars = int(synthesizer_config.get("max_chars", 4000))
 
         state = SynthesisState()
 
@@ -70,6 +70,7 @@ class FirstNSynthesizer(BaseSynthesizer):
 
         return {
             "file_id": file_id,
-            "synth_rel": f"objects/{file_id}/synth.txt",
+            "synthesis_rel": f"objects/{file_id}/synth.txt",
+            "provenance_rel": f"objects/{file_id}/provenance.toml",
             "error": None,
         }

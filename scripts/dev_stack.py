@@ -60,8 +60,8 @@ def command_path(name: str) -> str:
 
 def build_environment(
     examples: bool,
-    embeddings: bool,
-    native_extraction: bool,
+    model2vec: bool,
+    core_only: bool,
 ) -> dict[str, str]:
     env = os.environ.copy()
     for key, value in load_dotenv(REPOSITORY_ROOT / ".env").items():
@@ -84,7 +84,7 @@ def build_environment(
     embeddings_port = env.get("OSII_EMBEDDINGS_PORT", "8085")
     tesseract_port = env.get("OSII_TESSERACT_PORT", "8080")
     tika_port = env.get("OSII_TIKA_PORT", "9998")
-    mcp_port = env.get("OSII_MCP_PORT", "8021")
+    mcp_port = env.get("OSII_MCP_PORT", "8022")
     workspace_python_path = os.pathsep.join(
         (
             str(REPOSITORY_ROOT / "ai-ready-ingest"),
@@ -99,6 +99,9 @@ def build_environment(
     env.update(
         {
             "PYTHONUNBUFFERED": "1",
+            # Pin the host workflow independently of whichever newer Python a
+            # developer's package manager currently exposes by default.
+            "UV_PYTHON": "3.11",
             # The MCP package declares `osii` as a workspace dependency. Keep
             # editable source importable even when an older uv-created .pth
             # file is present in the shared development environment.
@@ -115,44 +118,36 @@ def build_environment(
             "DEBUG": "true",
         }
     )
-    if native_extraction:
-        env["OSII_EXTRACTOR_ROUTES_PATH"] = str(
-            (
-                REPOSITORY_ROOT
-                / "ai-ready-ingest"
-                / "config"
-                / "extractor_routes_native.toml"
-            ).resolve()
-        )
-    if embeddings:
-        env.update(
-            {
-                "OSII_EMBEDDING_BASE_URL": (
-                    f"http://127.0.0.1:{embeddings_port}/v1"
-                ),
-                "MODEL_NAME": env.get(
-                    "MODEL_NAME",
-                    env.get(
-                        "EMBEDDING_MODEL",
-                        "jinaai/jina-embeddings-v2-base-en",
-                    ),
-                ),
-                "HF_HOME": str(model_root / "huggingface"),
-                "SENTENCE_TRANSFORMERS_HOME": str(
-                    model_root / "sentence-transformers"
-                ),
-            }
-        )
+    env["OSII_EXTRACTOR_ROUTES_PATH"] = str(
+        (REPOSITORY_ROOT / "ai-ready-ingest" / "config" / "extractor_routes_native.toml").resolve()
+    )
+    if not core_only:
+        local_urls = [
+            f"http://127.0.0.1:{env.get('OSII_LOCAL_EXTRACTOR_PORT', '8092')}",
+            f"http://127.0.0.1:{env.get('OSII_LOCAL_SYNTHESIZER_PORT', '8093')}",
+            f"http://127.0.0.1:{embeddings_port}",
+            f"http://127.0.0.1:{env.get('OSII_LOCAL_ENRICHER_PORT', '8094')}",
+        ]
+        configured = [item for item in env.get("OSII_PROCESSORS", "").split(",") if item]
+        env.update({
+            "OSII_PROCESSORS": ",".join(local_urls + configured),
+            "OSII_DEFAULT_EXTRACTOR": "local.native-text",
+            "OSII_DEFAULT_SYNTHESIZER": "local.extractive-preview",
+            "OSII_DEFAULT_EMBEDDER": "local.model2vec" if model2vec else "local.hashing",
+            "OSII_DEFAULT_ENRICHER": "local.stats-keywords",
+            "OSII_LOCAL_EMBEDDING_PROVIDER": "model2vec" if model2vec else "hashing",
+            "OSII_MODEL2VEC_MODEL": env.get("OSII_MODEL2VEC_MODEL", str(model_root / "model2vec")),
+            "EMBEDDING_MODEL": env.get("OSII_MODEL2VEC_MODEL", str(model_root / "model2vec")) if model2vec else "osii-local-hashing-v1",
+        })
     if examples and not env.get("OSII_PROCESSORS"):
         processor_port = env.get("OSII_EXAMPLE_PROCESSOR_PORT", "8091")
         env["OSII_PROCESSORS"] = f"http://127.0.0.1:{processor_port}"
     return env
 
 
-def prepare_dependencies(uv: str, npm: str, env: dict[str, str]) -> None:
+def prepare_dependencies(uv: str, npm: str, env: dict[str, str], model2vec: bool) -> None:
     print("[setup] Checking editable Python packages...")
-    subprocess.run(
-        [
+    sync_command = [
             uv,
             "sync",
             "--package",
@@ -161,7 +156,15 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str]) -> None:
             "ai-ready-chat",
             "--package",
             "osii-mcp",
-        ],
+            "--package", "osii-local-extractor",
+            "--package", "osii-local-synthesizer",
+            "--package", "osii-local-embedder",
+            "--package", "osii-local-enricher",
+        ]
+    if model2vec:
+        sync_command.extend(["--extra", "model2vec"])
+    subprocess.run(
+        sync_command,
         cwd=REPOSITORY_ROOT,
         env=env,
         check=True,
@@ -192,16 +195,13 @@ def service_commands(
     uv: str,
     npm: str,
     env: dict[str, str],
-    embeddings: bool,
+    core_only: bool,
 ) -> list[Service]:
     api_port = env.get("OSII_API_PORT", "8511")
     chat_port = env.get("OSII_CHAT_PORT", "8611")
     dashboard_port = env.get("OSII_DASHBOARD_PORT", "5173")
-    mcp_port = env.get("OSII_MCP_PORT", "8021")
+    mcp_port = env.get("OSII_MCP_PORT", "8022")
     embeddings_port = env.get("OSII_EMBEDDINGS_PORT", "8085")
-    embedding_root = (
-        REPOSITORY_ROOT / "ai-ready-tool-shelf" / "embedding-service-jina"
-    )
 
     services = [
         Service(
@@ -288,30 +288,16 @@ def service_commands(
             int(dashboard_port),
         ),
     ]
-    if embeddings:
-        services.insert(
-            0,
-            Service(
-                "embeddings",
-                (
-                    uv,
-                    "run",
-                    "--no-project",
-                    "--python",
-                    "3.11",
-                    "--with-requirements",
-                    str(embedding_root / "requirements.txt"),
-                    "uvicorn",
-                    "app.main:app",
-                    "--host",
-                    "127.0.0.1",
-                    "--port",
-                    embeddings_port,
-                ),
-                embedding_root,
-                int(embeddings_port),
-            ),
+    if not core_only:
+        processors = (
+            ("extractor", "osii-local-extractor", "8092", "OSII_LOCAL_EXTRACTOR_PORT", "local-extractor"),
+            ("synthesizer", "osii-local-synthesizer", "8093", "OSII_LOCAL_SYNTHESIZER_PORT", "local-synthesizer"),
+            ("embedder", "osii-local-embedder", "8085", "OSII_EMBEDDINGS_PORT", "local-embedder"),
+            ("enricher", "osii-local-enricher", "8094", "OSII_LOCAL_ENRICHER_PORT", "local-enricher"),
         )
+        for name, package, default_port, env_name, directory in reversed(processors):
+            port = env.get(env_name, default_port)
+            services.insert(0, Service(name, (uv, "run", "--package", package, "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "services" / directory, int(port)))
     return services
 
 
@@ -369,16 +355,22 @@ def stop_service(process: subprocess.Popen[bytes]) -> None:
 
 def run(
     examples: bool,
-    embeddings: bool,
-    native_extraction: bool,
+    model2vec: bool,
+    core_only: bool,
     dry_run: bool,
     skip_setup: bool,
 ) -> int:
     try:
         uv = command_path("uv")
         npm = command_path("npm")
-        env = build_environment(examples, embeddings, native_extraction)
-        services = service_commands(uv, npm, env, embeddings)
+        env = build_environment(examples, model2vec, core_only)
+        services = service_commands(uv, npm, env, core_only)
+        if model2vec:
+            services = [
+                Service(service.name, service.command[:4] + ("--extra", "model2vec") + service.command[4:], service.working_directory, service.port)
+                if service.name == "embedder" else service
+                for service in services
+            ]
 
         if dry_run:
             print("[dev] Bare-metal service plan:")
@@ -389,7 +381,7 @@ def run(
         ensure_ports_available(services)
 
         if not skip_setup:
-            prepare_dependencies(uv, npm, env)
+            prepare_dependencies(uv, npm, env, model2vec)
 
         processes: dict[str, tuple[Service, subprocess.Popen[bytes]]] = {}
         for service in services:
@@ -399,23 +391,11 @@ def run(
         print()
         print(f"[dev] Dashboard: http://localhost:{dashboard_port}")
         print(f"[dev] API health: http://localhost:{api_port}/health")
-        print(f"[dev] MCP: http://localhost:{env.get('OSII_MCP_PORT', '8021')}/mcp")
+        print(f"[dev] MCP: http://localhost:{env.get('OSII_MCP_PORT', '8022')}/mcp")
         print("[dev] Press Ctrl+C to stop host processes.")
-        if native_extraction:
-            print(
-                "[dev] Extraction is container-free. Text-layer PDFs, DOCX, "
-                "PPTX, XLSX, and common text files use the native Python extractor."
-            )
-        if embeddings:
-            print(
-                "[dev] The first embedding start downloads the model; "
-                "later starts reuse it."
-            )
-        else:
-            print(
-                "[dev] Embeddings are disabled. Use make dev-embeddings "
-                "when testing semantic search."
-            )
+        if not core_only:
+            print("[dev] Local processors: extractor 8092, synthesizer 8093, embedder 8085, enricher 8094")
+            print("[dev] Embeddings: Model2Vec (staged model required)" if model2vec else "[dev] Embeddings: deterministic 384-dimensional lexical hashing")
 
         while True:
             for name, (_, process) in processes.items():
@@ -446,16 +426,8 @@ def main() -> int:
         action="store_true",
         help="Connect the example processor at its localhost port.",
     )
-    parser.add_argument(
-        "--embeddings",
-        action="store_true",
-        help="Start the optional local embedding service.",
-    )
-    parser.add_argument(
-        "--native-extraction",
-        action="store_true",
-        help="Use the bundled Python extractor instead of Tika and OCR services.",
-    )
+    parser.add_argument("--model2vec", action="store_true", help="Use a staged Model2Vec model instead of hashing.")
+    parser.add_argument("--core-only", action="store_true", help="Start app services without local processors.")
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -469,8 +441,8 @@ def main() -> int:
     args = parser.parse_args()
     return run(
         args.examples,
-        args.embeddings,
-        args.native_extraction,
+        args.model2vec,
+        args.core_only,
         args.dry_run,
         args.skip_setup,
     )

@@ -9,6 +9,7 @@ description = "On-Store Intelligence Index (OSII) core backend for ingestion, sy
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
+  "osii-processor-sdk",
   "fastapi==0.116.1",
   "uvicorn[standard]==0.35.0",
   "python-multipart==0.0.20",
@@ -25,6 +26,9 @@ dependencies = [
   "faiss-cpu",
   "numpy"
 ]
+
+[tool.uv.sources]
+osii-processor-sdk = { workspace = true }
 
 [project.optional-dependencies]
 dev = [

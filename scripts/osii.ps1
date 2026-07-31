@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("dev", "dev-host", "dev-containers", "dev-embeddings", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build")]
+    [ValidateSet("dev", "dev-host", "dev-core", "dev-model2vec", "dev-extractor", "dev-synthesizer", "dev-embedder", "dev-enricher", "dev-containers", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
@@ -52,23 +52,38 @@ Push-Location $RepositoryRoot
 try {
     switch ($Command) {
         "dev" {
-            Invoke-OsiiDevLauncher @("--native-extraction")
+            Invoke-OsiiDevLauncher
         }
         "dev-host" {
-            Invoke-OsiiDevLauncher @("--native-extraction")
+            Invoke-OsiiDevLauncher
+        }
+        "dev-core" {
+            Invoke-OsiiDevLauncher @("--core-only")
+        }
+        "dev-model2vec" {
+            Invoke-OsiiDevLauncher @("--model2vec")
+        }
+        "dev-extractor" {
+            & uv run --package osii-local-extractor uvicorn app.main:app --app-dir services/local-extractor --host 127.0.0.1 --port 8092 --reload
+        }
+        "dev-synthesizer" {
+            & uv run --package osii-local-synthesizer uvicorn app.main:app --app-dir services/local-synthesizer --host 127.0.0.1 --port 8093 --reload
+        }
+        "dev-embedder" {
+            & uv run --package osii-local-embedder uvicorn app.main:app --app-dir services/local-embedder --host 127.0.0.1 --port 8085 --reload
+        }
+        "dev-enricher" {
+            & uv run --package osii-local-enricher uvicorn app.main:app --app-dir services/local-enricher --host 127.0.0.1 --port 8094 --reload
         }
         "dev-containers" {
             Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
             Invoke-OsiiDevLauncher
         }
-        "dev-embeddings" {
-            Invoke-OsiiDevLauncher @("--native-extraction", "--embeddings")
-        }
         "dev-services" {
             Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
         }
         "run" {
-            Invoke-OsiiCompose @("--profile", "chat", "--profile", "ocr", "up", "embeddings", "api", "worker", "chat", "dashboard", "tika", "tesseract")
+            Invoke-OsiiCompose @("--profile", "chat", "--profile", "ocr", "up", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "api", "worker", "chat", "dashboard", "tika", "tesseract")
         }
         "dev-examples" {
             Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
@@ -76,7 +91,7 @@ try {
             Invoke-OsiiDevLauncher @("--examples")
         }
         "containers-dev" {
-            Invoke-OsiiCompose @("--profile", "chat", "--profile", "ocr", "up", "--build", "embeddings", "api", "worker", "chat", "dashboard", "tika", "tesseract")
+            Invoke-OsiiCompose @("--profile", "chat", "--profile", "ocr", "up", "--build", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "api", "worker", "chat", "dashboard", "tika", "tesseract")
         }
         "dev-all" {
             Invoke-OsiiCompose @("--profile", "examples", "--profile", "chat", "--profile", "agents", "--profile", "ocr", "--profile", "embeddings", "--profile", "ollama", "up", "--build")

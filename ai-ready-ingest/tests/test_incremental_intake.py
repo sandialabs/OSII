@@ -37,6 +37,9 @@ def test_completed_document_is_browsable_while_next_document_runs(
             second_started.set()
             if not release_second.wait(timeout=5):
                 raise TimeoutError("test did not release the second extraction")
+        # This test isolates incremental commit behavior from the separately
+        # contract-tested Processor API transport.
+        kwargs["extractor_name"] = "native_text"
         return original_dispatch(**kwargs)
 
     monkeypatch.setattr(runs_routes, "dispatch_extract", staged_dispatch)

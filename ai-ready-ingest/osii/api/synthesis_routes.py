@@ -42,7 +42,7 @@ def _run_object_synthesis_job(
         run["completed"] = 1
         run["items"][0]["status"] = "done"
         run["items"][0]["file_id"] = file_id
-        run["items"][0]["synthesis"] = result.get("synth_rel")
+        run["items"][0]["synthesis"] = result.get("synthesis_rel") or result.get("synth_rel")
         append_log(run_id, "Synthesis complete.")
 
     except Exception as exc:

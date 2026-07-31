@@ -10,6 +10,10 @@ members = [
   "ai-ready-rag-chat",
   "packages/osii-processor-sdk",
   "services/table-pdf-enricher",
+  "services/local-extractor",
+  "services/local-synthesizer",
+  "services/local-embedder",
+  "services/local-enricher",
 ]
 
 [tool.uv.sources]

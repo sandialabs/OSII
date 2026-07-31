@@ -6,6 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN addgroup --system osii && adduser --system --ingroup osii osii
 WORKDIR /app
 
+COPY packages/osii-processor-sdk /workspace/packages/osii-processor-sdk
+RUN pip install --no-cache-dir /workspace/packages/osii-processor-sdk
 COPY ai-ready-ingest/pyproject.toml ai-ready-ingest/README.md ./
 COPY ai-ready-ingest/osii ./osii
 COPY ai-ready-ingest/config ./config

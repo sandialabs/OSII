@@ -41,6 +41,7 @@ response models plus the FastAPI endpoints.
 ## Operate offline
 
 - [Local and intermittently connected operation](operations/local-first.md)
+- [Guaranteed container-free processor services](operations/local-processors.md)
 - [Extractor routing](reference/extractor-routing.md)
 - [Export components for separate repositories](operations/component-export.md)
 

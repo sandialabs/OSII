@@ -498,9 +498,21 @@ export type CapabilityReadiness = {
   bundled: boolean;
   model?: string;
   base_url?: string;
+  lexical?: boolean;
+  provider?: string;
+  dimensions?: number;
+  index_compatible?: boolean;
+  index_rebuild_required?: boolean;
+  indexed_model?: string;
 };
 
 export type IntakeReadiness = {
+  defaults: {
+    extractor: string;
+    synthesizer: string;
+    embedder: string;
+    enricher: string;
+  };
   extractors: CapabilityReadiness[];
   synthesizers: CapabilityReadiness[];
   embedders: CapabilityReadiness[];

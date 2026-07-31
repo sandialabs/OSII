@@ -49,6 +49,7 @@ nav:
           - Standard artifacts: reference/processor-api/standard-artifacts.md
   - Operate offline:
       - Local-first operation: operations/local-first.md
+      - Guaranteed local processors: operations/local-processors.md
       - Extractor routing: reference/extractor-routing.md
       - Export components: operations/component-export.md
   - API and formats:

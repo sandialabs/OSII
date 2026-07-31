@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Any
 
 import requests
+import tomllib
+
+from osii.processors.remote import discover_remote_processors
 
 
 def _service_probe(url: str, *, timeout: float = 3.0) -> tuple[bool, str]:
@@ -19,6 +22,45 @@ def _service_probe(url: str, *, timeout: float = 3.0) -> tuple[bool, str]:
 
 
 def _embedding_probe() -> dict[str, Any]:
+    selected = os.getenv("OSII_DEFAULT_EMBEDDER", "").strip()
+    if selected:
+        for descriptor in discover_remote_processors(include_errors=True):
+            if descriptor.get("name") != selected:
+                continue
+            available = not descriptor.get("error")
+            model = selected
+            dimensions = None
+            provider = selected
+            detail = "Descriptor validated."
+            if available:
+                try:
+                    probe = requests.post(
+                        f"{descriptor['base_url']}/v1/embed",
+                        json={"request_id": "readiness", "inputs": [{"id": "probe", "text": "OSII readiness probe"}]},
+                        timeout=8,
+                    )
+                    probe.raise_for_status()
+                    payload = probe.json()
+                    model = payload["model"]
+                    provider = payload["processor"]["name"]
+                    dimensions = payload["vectors"][0]["dimensions"]
+                    detail = f"Descriptor and {dimensions}-dimensional vector validated."
+                except (requests.RequestException, ValueError, KeyError, IndexError) as exc:
+                    available = False
+                    detail = f"Embedding operation test failed: {exc}"
+            return {
+                "id": selected,
+                "display_name": descriptor.get("display_name", selected),
+                "kind": "embedder",
+                "available": available,
+                "detail": detail if available else descriptor.get("error", detail),
+                "model": model,
+                "provider": provider,
+                "dimensions": dimensions,
+                "base_url": descriptor.get("base_url"),
+                "bundled": selected.startswith("local."),
+                "lexical": selected == "local.hashing",
+            }
     base_url = (
         os.getenv("OSII_EMBEDDING_BASE_URL")
         or os.getenv("OSII_MODEL_BASE_URL")
@@ -176,9 +218,48 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
             }
         )
 
+    remote_by_kind: dict[str, list[dict[str, Any]]] = {kind: [] for kind in ("extractor", "synthesizer", "embedder", "enricher")}
+    for descriptor in discover_remote_processors(include_errors=True):
+        kind = descriptor.get("kind")
+        if kind not in remote_by_kind:
+            continue
+        remote_by_kind[kind].append({
+            "id": descriptor.get("name", descriptor.get("base_url")),
+            "display_name": descriptor.get("display_name", descriptor.get("base_url")),
+            "description": descriptor.get("description", "Processor API service"),
+            "kind": kind,
+            "available": not descriptor.get("error"),
+            "detail": "Descriptor validated." if not descriptor.get("error") else descriptor["error"],
+            "base_url": descriptor.get("base_url"),
+            "bundled": str(descriptor.get("name", "")).startswith("local."),
+            "descriptor": descriptor if not descriptor.get("error") else None,
+        })
+
+    embedding = embedding_readiness()
+    index_metadata: dict[str, Any] = {}
+    try:
+        index_metadata = tomllib.loads((osii_root / "embeddings" / "segments.meta.toml").read_text(encoding="utf-8")).get("embeddings", {})
+    except (OSError, tomllib.TOMLDecodeError):
+        pass
+    if index_metadata and embedding.get("available"):
+        expected_model = embedding.get("model")
+        embedding["index_compatible"] = (
+            index_metadata.get("model") == expected_model
+            and index_metadata.get("provider") == embedding.get("provider")
+            and index_metadata.get("dimension") == embedding.get("dimensions")
+        )
+        embedding["index_rebuild_required"] = not embedding["index_compatible"]
+        embedding["indexed_model"] = index_metadata.get("model")
+
     return {
-        "extractors": extractors,
-        "synthesizers": [
+        "defaults": {
+            "extractor": os.getenv("OSII_DEFAULT_EXTRACTOR", "native_text"),
+            "synthesizer": os.getenv("OSII_DEFAULT_SYNTHESIZER", "firstN"),
+            "embedder": os.getenv("OSII_DEFAULT_EMBEDDER", ""),
+            "enricher": os.getenv("OSII_DEFAULT_ENRICHER", "stats_keywords"),
+        },
+        "extractors": remote_by_kind["extractor"] + extractors,
+        "synthesizers": remote_by_kind["synthesizer"] + [
             {
                 "id": "firstN",
                 "display_name": "Local text preview",
@@ -188,8 +269,8 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
                 "bundled": True,
             }
         ],
-        "embedders": [embedding_readiness()],
-        "enrichers": [
+        "embedders": [embedding] if embedding.get("id") else remote_by_kind["embedder"],
+        "enrichers": remote_by_kind["enricher"] + [
             {
                 "id": "stats_keywords",
                 "display_name": "Statistics and keywords",

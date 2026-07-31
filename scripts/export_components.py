@@ -48,12 +48,36 @@ COMPONENTS: dict[str, tuple[ExportEntry, ...]] = {
         ExportEntry("ai-ready-tool-shelf", "tools"),
         ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
         ExportEntry("services/table-pdf-enricher", "services/table-pdf-enricher"),
+        ExportEntry("services/local-extractor", "services/local-extractor"),
+        ExportEntry("services/local-synthesizer", "services/local-synthesizer"),
+        ExportEntry("services/local-embedder", "services/local-embedder"),
+        ExportEntry("services/local-enricher", "services/local-enricher"),
         ExportEntry("docs/extending", "docs/extending"),
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
     "notebooks": (
         ExportEntry("osii-demo-notebooks", "."),
         ExportEntry("docs/tutorials", "docs/tutorials"),
+    ),
+    "local-extractor": (
+        ExportEntry("services/local-extractor", "."),
+        ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
+        ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
+    ),
+    "local-synthesizer": (
+        ExportEntry("services/local-synthesizer", "."),
+        ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
+        ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
+    ),
+    "local-embedder": (
+        ExportEntry("services/local-embedder", "."),
+        ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
+        ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
+    ),
+    "local-enricher": (
+        ExportEntry("services/local-enricher", "."),
+        ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
+        ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
 }
 
@@ -122,6 +146,21 @@ def adapt_container_files(component: str, component_root: Path) -> None:
             dockerfile.read_text(encoding="utf-8").replace(
                 "COPY ai-ready-ingest /workspace/ai-ready-ingest\nCOPY ai-ready-mcp /workspace/ai-ready-mcp\nRUN pip install --no-cache-dir /workspace/ai-ready-ingest /workspace/ai-ready-mcp",
                 "COPY . /workspace/osii-mcp\nRUN pip install --no-cache-dir /workspace/osii-mcp",
+            ),
+            encoding="utf-8",
+        )
+    if component.startswith("local-") and dockerfile.exists():
+        dockerfile.write_text(
+            dockerfile.read_text(encoding="utf-8")
+            .replace(f"COPY services/{component} /workspace/services/{component}", "COPY . /workspace/service")
+            .replace(f"/workspace/services/{component}", "/workspace/service"),
+            encoding="utf-8",
+        )
+        pyproject = component_root / "pyproject.toml"
+        pyproject.write_text(
+            pyproject.read_text(encoding="utf-8").replace(
+                "osii-processor-sdk = { workspace = true }",
+                'osii-processor-sdk = { path = "packages/osii-processor-sdk" }',
             ),
             encoding="utf-8",
         )

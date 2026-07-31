@@ -9,11 +9,15 @@ services:
       OSII_ROOT: /data/.osii
       SHARED_VOLUME_ROOT: /data/source
       UPLOAD_ORIGINALS_ROOT: /data/uploads
-      OSII_PROCESSORS: ${OSII_PROCESSORS:-http://table-pdf-enricher:8091}
+      OSII_PROCESSORS: ${OSII_PROCESSORS:-http://local-extractor:8092,http://local-synthesizer:8093,http://local-embedder:8085,http://local-enricher:8094}
+      OSII_DEFAULT_EXTRACTOR: ${OSII_DEFAULT_EXTRACTOR:-local.native-text}
+      OSII_DEFAULT_SYNTHESIZER: ${OSII_DEFAULT_SYNTHESIZER:-local.extractive-preview}
+      OSII_DEFAULT_EMBEDDER: ${OSII_DEFAULT_EMBEDDER:-local.hashing}
+      OSII_DEFAULT_ENRICHER: ${OSII_DEFAULT_ENRICHER:-local.stats-keywords}
+      OSII_EXTRACTOR_ROUTES_PATH: /app/config/extractor_routes_native.toml
       TIKA_URL: http://tika:9998
       OSII_TESSERACT_URL: http://tesseract:8080
-      OSII_EMBEDDING_BASE_URL: http://embeddings:8085/v1
-      EMBEDDING_MODEL: jinaai/jina-embeddings-v2-base-en
+      EMBEDDING_MODEL: osii-local-hashing-v1
       OSII_MODEL_BASE_URL: ${OSII_MODEL_BASE_URL:-}
       OSII_CHAT_BASE_URL: ${OSII_CHAT_BASE_URL:-}
       OSII_MODEL_API_KEY: ${OSII_MODEL_API_KEY:-}
@@ -23,7 +27,7 @@ services:
       - osii-data:/data
       - "${OSII_SOURCE_DIR:-./osii-data/source}:/data/source:ro"
     depends_on:
-      embeddings:
+      local-embedder:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8511/health')"]
@@ -42,8 +46,13 @@ services:
       UPLOAD_ORIGINALS_ROOT: /data/uploads
       TIKA_URL: http://tika:9998
       OSII_TESSERACT_URL: http://tesseract:8080
-      OSII_EMBEDDING_BASE_URL: http://embeddings:8085/v1
-      EMBEDDING_MODEL: jinaai/jina-embeddings-v2-base-en
+      OSII_PROCESSORS: ${OSII_PROCESSORS:-http://local-extractor:8092,http://local-synthesizer:8093,http://local-embedder:8085,http://local-enricher:8094}
+      OSII_DEFAULT_EXTRACTOR: ${OSII_DEFAULT_EXTRACTOR:-local.native-text}
+      OSII_DEFAULT_SYNTHESIZER: ${OSII_DEFAULT_SYNTHESIZER:-local.extractive-preview}
+      OSII_DEFAULT_EMBEDDER: ${OSII_DEFAULT_EMBEDDER:-local.hashing}
+      OSII_DEFAULT_ENRICHER: ${OSII_DEFAULT_ENRICHER:-local.stats-keywords}
+      OSII_EXTRACTOR_ROUTES_PATH: /app/config/extractor_routes_native.toml
+      EMBEDDING_MODEL: osii-local-hashing-v1
       OSII_MODEL_BASE_URL: ${OSII_MODEL_BASE_URL:-}
       OSII_CHAT_BASE_URL: ${OSII_CHAT_BASE_URL:-}
       OSII_MODEL_API_KEY: ${OSII_MODEL_API_KEY:-}
@@ -54,7 +63,7 @@ services:
     depends_on:
       api:
         condition: service_healthy
-      embeddings:
+      local-embedder:
         condition: service_healthy
 
   dashboard:
@@ -105,11 +114,11 @@ services:
     environment:
       OSII_ROOT: /data/.osii
       MCP_HOST: 0.0.0.0
-      MCP_PORT: 8021
+      MCP_PORT: 8022
       DEBUG: ${MCP_DEBUG:-true}
       ATLAS_MCP_TOKEN: ${ATLAS_MCP_TOKEN:-local-development}
     ports:
-      - "${OSII_MCP_PORT:-8021}:8021"
+      - "${OSII_MCP_PORT:-8022}:8022"
     volumes:
       - osii-data:/data:ro
     depends_on:
@@ -150,6 +159,43 @@ services:
       interval: 10s
       timeout: 5s
       retries: 30
+    profiles: ["jina"]
+
+  local-extractor:
+    build:
+      context: .
+      dockerfile: services/local-extractor/Dockerfile
+    ports: ["${OSII_LOCAL_EXTRACTOR_PORT:-8092}:8092"]
+    healthcheck: &processor-health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:' + __import__('os').environ['PORT'] + '/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    environment: {PORT: "8092"}
+
+  local-synthesizer:
+    build:
+      context: .
+      dockerfile: services/local-synthesizer/Dockerfile
+    ports: ["${OSII_LOCAL_SYNTHESIZER_PORT:-8093}:8093"]
+    healthcheck: *processor-health
+    environment: {PORT: "8093"}
+
+  local-embedder:
+    build:
+      context: .
+      dockerfile: services/local-embedder/Dockerfile
+    ports: ["${OSII_EMBEDDINGS_PORT:-8085}:8085"]
+    healthcheck: *processor-health
+    environment: {PORT: "8085"}
+
+  local-enricher:
+    build:
+      context: .
+      dockerfile: services/local-enricher/Dockerfile
+    ports: ["${OSII_LOCAL_ENRICHER_PORT:-8094}:8094"]
+    healthcheck: *processor-health
+    environment: {PORT: "8094"}
 
 volumes:
   osii-data:

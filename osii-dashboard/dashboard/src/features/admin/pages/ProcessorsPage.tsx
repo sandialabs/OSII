@@ -3,13 +3,14 @@ import { Alert, Button, Chip, MenuItem, Paper, Stack, TextField, Typography } fr
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 
-import { checkProcessorEndpoint, createProcessorEndpoint, listProcessorEndpoints } from "../../../api/queue";
+import { checkProcessorEndpoint, createProcessorEndpoint, getIntakeReadiness, listProcessorEndpoints } from "../../../api/queue";
 import type { ProcessorEndpoint } from "../../../api/types";
 
 export function ProcessorsPage() {
   const client = useQueryClient();
   const navigate = useNavigate();
   const processors = useQuery({ queryKey: ["admin", "processors"], queryFn: listProcessorEndpoints });
+  const readiness = useQuery({ queryKey: ["intake", "readiness"], queryFn: getIntakeReadiness });
   const [form, setForm] = useState<Omit<ProcessorEndpoint, "id"> & { id: string }>({
     id: "", display_name: "", kind: "extractor", base_url: "http://", enabled: true,
   });
@@ -65,11 +66,31 @@ export function ProcessorsPage() {
             With <code>make dev</code>, a service running on this computer normally uses a URL such as <code>http://127.0.0.1:8091</code>. From the packaged container stack, use its Compose service name or <code>host.containers.internal</code> when calling a service on the host.
           </Alert>
           <Typography variant="caption" color="text.secondary">
-            Registration and Test validate every processor kind. Remote enrichers are currently the fully integrated external execution path; adapters that commit external extractor, synthesizer, and embedder results are still being completed.
+            Core commits validated results from every Processor API kind. Processor services never write the `.osii` store directly.
           </Typography>
           <Button variant="outlined" onClick={() => navigate("/intake")} sx={{ alignSelf: "flex-start" }}>
             Return to Intake
           </Button>
+        </Stack>
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Stack spacing={1.25}>
+          <Typography fontWeight={700}>Selected and bundled services</Typography>
+          {readiness.data ? ([
+            ...readiness.data.extractors,
+            ...readiness.data.synthesizers,
+            ...readiness.data.embedders,
+            ...readiness.data.enrichers,
+          ].filter((item, index, items) => item.bundled && items.findIndex((candidate) => candidate.id === item.id) === index).map((item) => (
+            <Stack key={item.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}>
+              <Stack>
+                <Typography fontWeight={600}>{item.display_name}</Typography>
+                <Typography variant="caption" color="text.secondary">{item.id} · {item.base_url ?? "in-process compatibility fallback"}</Typography>
+              </Stack>
+              <Chip size="small" color={item.available ? "success" : "error"} label={item.available ? item.detail : "Unavailable"} />
+            </Stack>
+          ))) : <Typography variant="body2">Testing local services…</Typography>}
         </Stack>
       </Paper>
 

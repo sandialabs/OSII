@@ -56,16 +56,23 @@ def execute_job(job: dict) -> None:
             str(payload.get("embedding_batch_size", 64)),
         ]
         try:
+            run = get_run(job["run_id"])
+            if run:
+                run["indexing_status"] = "running"
+                save_run(run)
             build_vector_index_main()
             append_log(job["run_id"], "Local search embeddings built.")
+            run = get_run(job["run_id"])
+            if run:
+                run["indexing_status"] = "done"
+                save_run(run)
         except Exception as exc:
             run = get_run(job["run_id"])
             if run:
-                run["status"] = "error"
-                run["error"] = f"Embedding build failed: {exc}"
+                run["indexing_status"] = "error"
+                run["indexing_error"] = str(exc)
                 save_run(run)
-            append_log(job["run_id"], f"Embedding build failed: {exc}")
-            raise
+            append_log(job["run_id"], f"Embedding backfill failed; extracted documents remain available: {exc}")
         finally:
             sys.argv = old_argv
 

@@ -60,7 +60,7 @@ def test_native_routes_leave_unsupported_binaries_for_explicit_handling(
     monkeypatch.setenv("OSII_EXTRACTOR_ROUTES_PATH", str(config))
     routes = load_extractor_routes()
 
-    assert choose_extractor_for_path(Path("report.pdf"), routes) == "native_text"
+    assert choose_extractor_for_path(Path("report.pdf"), routes) == "local.native-text"
     assert choose_extractor_for_path(Path("archive.bin"), routes) == "tika"
 
 

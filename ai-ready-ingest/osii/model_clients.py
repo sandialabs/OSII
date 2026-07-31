@@ -94,6 +94,10 @@ def create_chat_client() -> ChatClient:
 
 
 def create_embedding_client() -> EmbeddingClient:
+    processor_name = os.getenv("OSII_DEFAULT_EMBEDDER", "").strip()
+    if processor_name:
+        from osii.processors.remote import ProcessorEmbeddingClient, resolve_remote_processor
+        return ProcessorEmbeddingClient(resolve_remote_processor(processor_name, "embedder"))
     base_url = _configured_url("OSII_EMBEDDING_BASE_URL", "OSII_MODEL_BASE_URL")
     if not base_url:
         raise ModelCapabilityUnavailable(

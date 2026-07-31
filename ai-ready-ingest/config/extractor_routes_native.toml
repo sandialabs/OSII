@@ -1,6 +1,6 @@
 [[routes]]
 name = "host-native-development"
-extractor = "native_text"
+extractor = "local.native-text"
 extensions = [
   ".cfg",
   ".conf",

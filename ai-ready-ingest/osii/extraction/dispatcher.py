@@ -24,10 +24,8 @@ def dispatch_extract(
     elif extractor_name == "osii_tesseract":
         extractor = OsiiTesseractExtractor()
     else:
-        raise RuntimeError(
-            f"Extractor '{extractor_name}' is not available in OSII core. "
-            "Use a bundled local extractor or register an external processor service."
-        )
+        from osii.processors.remote import RemoteExtractor, resolve_remote_processor
+        extractor = RemoteExtractor(resolve_remote_processor(extractor_name, "extractor"))
 
     return extractor.extract(
         source_path=source_path,

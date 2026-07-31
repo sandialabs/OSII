@@ -20,7 +20,7 @@ from osii.indexing.chunking import write_chunk_manifest
 from osii.search.lexical import build_bm25_index
 
 
-DEFAULT_EMBEDDING_MODEL = "jinaai/jina-embeddings-v2-base-en"
+DEFAULT_EMBEDDING_MODEL = "osii-local-hashing-v1"
 APPROX_CHARS_PER_TOKEN = 4
 
 MODEL_TOKEN_LIMITS = {
@@ -207,6 +207,7 @@ def finalize_outputs(
     chunking_method: str,
     chunk_size: int,
     chunk_overlap: int,
+    provider: str | None = None,
 ) -> tuple[Path, Path, Path]:
     final_index = embeddings_index_path(osii_root)
     final_mapping = embeddings_mapping_path(osii_root)
@@ -221,6 +222,7 @@ def finalize_outputs(
     payload = {
         "embeddings": {
             "model": model,
+            "provider": provider or "openai-compatible",
             "count": len(final_mapping_rows),
             "dimension": index.d,
             "normalized": True,
@@ -305,6 +307,7 @@ def embed_collection_resumable(
             chunking_method=chunking_method,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
+            provider=getattr(client, "provider", None),
         )
 
     index = None
@@ -385,4 +388,5 @@ def embed_collection_resumable(
         chunking_method=chunking_method,
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
+        provider=getattr(client, "provider", None),
     )

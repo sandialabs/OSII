@@ -105,7 +105,7 @@ export function QueuePage() {
   const [includeSubfolders, setIncludeSubfolders] = useState(true);
   const [showHidden, setShowHidden] = useState(false);
   const [synthesize, setSynthesize] = useState(true);
-  const [embed, setEmbed] = useState(false);
+  const [embed, setEmbed] = useState(true);
   const [extractorOverrides, setExtractorOverrides] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -259,7 +259,9 @@ export function QueuePage() {
         exclude_patterns: excludePatterns,
         show_hidden: showHidden,
         extractor_overrides: extractorOverrides,
-        synthesizer_name: synthesize ? "firstN" : null,
+        synthesizer_name: synthesize
+          ? (readiness.data?.defaults.synthesizer ?? "local.extractive-preview")
+          : null,
         build_embeddings: embed,
       });
       setNotice({
@@ -759,11 +761,16 @@ export function QueuePage() {
                 onChange={(event) => setSynthesize(event.target.checked)}
               />
             )}
-            label="Create local text previews"
+            label="Create extractive previews"
           />
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
-            Uses the bundled deterministic FirstN synthesizer; no model service is required.
+            Uses grounded excerpts with citations; this is deterministic preview text, not AI-generated synthesis.
           </Typography>
+          {embeddingStatus?.index_rebuild_required ? (
+            <Alert severity="warning">
+              The existing index uses {embeddingStatus.indexed_model}; this intake will rebuild it for {embeddingStatus.model}.
+            </Alert>
+          ) : null}
           <FormControlLabel
             control={(
               <Checkbox
@@ -772,11 +779,11 @@ export function QueuePage() {
                 onChange={(event) => setEmbed(event.target.checked)}
               />
             )}
-            label="Build search embeddings"
+            label="Build embeddings after extraction"
           />
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
             {embeddingAvailable
-              ? `Ready${embeddingStatus?.model ? `: ${embeddingStatus.model}` : ""}.`
+              ? `Ready${embeddingStatus?.model ? `: ${embeddingStatus.model}` : ""}.${embeddingStatus?.lexical ? " Hashing vectors provide approximate lexical similarity, not semantic understanding." : ""}`
               : "Unavailable and cannot be queued. Lexical search remains available without an embedder."}
           </Typography>
         </Stack>
