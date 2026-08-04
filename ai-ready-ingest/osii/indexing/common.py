@@ -1,6 +1,9 @@
 from pathlib import Path
+from datetime import UTC, datetime
+import hashlib
 import json
 import os
+import re
 import shutil
 import time
 
@@ -18,15 +21,14 @@ from osii.domain.storage.store import (
 )
 from osii.indexing.chunking import write_chunk_manifest
 from osii.search.lexical import build_bm25_index
+from osii.domain.catalog_db import rebuild_catalog
+from osii.domain.storage.atomic import atomic_write_text
 
 
 DEFAULT_EMBEDDING_MODEL = "osii-local-hashing-v1"
 APPROX_CHARS_PER_TOKEN = 4
 
-MODEL_TOKEN_LIMITS = {
-    "sentence-transformers/all-MiniLM-L6-v2": 256,
-    "sentence-transformers/all-MiniLM-L6-v2": 384,
-}
+MODEL_TOKEN_LIMITS: dict[str, int] = {}
 
 
 def get_embedding_model(explicit_model: str | None = None) -> str:
@@ -41,8 +43,18 @@ def get_model_char_limit(model: str) -> int:
     return get_model_token_limit(model) * APPROX_CHARS_PER_TOKEN
 
 
+def embedding_namespace(model: str | None = None, provider: str | None = None) -> tuple[str, str]:
+    provider_name = provider or os.getenv("OSII_DEFAULT_EMBEDDER", "local.hashing")
+    model_name = model or get_embedding_model()
+    safe_provider = re.sub(r"[^A-Za-z0-9_.-]+", "-", provider_name).strip("-") or "unknown"
+    safe_model = re.sub(r"[^A-Za-z0-9_.-]+", "-", model_name).strip("-")[:48] or "unknown"
+    digest = hashlib.sha256(model_name.encode("utf-8")).hexdigest()[:12]
+    return safe_provider, f"{safe_model}-{digest}"
+
+
 def ensure_embeddings_dir(osii_root: Path) -> Path:
-    path = osii_embeddings_dir(osii_root).resolve()
+    provider, model = embedding_namespace()
+    path = (osii_embeddings_dir(osii_root).resolve() / "providers" / provider / model)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -180,8 +192,39 @@ def load_partial_mapping(osii_root: Path) -> list[dict]:
         line = line.strip()
         if not line:
             continue
-        rows.append(json.loads(line))
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            # A process can stop halfway through its final append. The FAISS
+            # checkpoint remains the authority for how many rows are durable.
+            break
     return rows
+
+
+def _write_partial_mapping(osii_root: Path, rows: list[dict]) -> None:
+    content = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
+    atomic_write_text(build_mapping_tmp_path(osii_root), content)
+
+
+def load_resumable_checkpoint(osii_root: Path):
+    """Return only mapping rows committed in the matching FAISS checkpoint."""
+    rows = load_partial_mapping(osii_root)
+    index_path = build_index_tmp_path(osii_root)
+    if not index_path.exists():
+        if rows:
+            _write_partial_mapping(osii_root, [])
+        return None, []
+
+    index = faiss.read_index(str(index_path))
+    if index.ntotal > len(rows):
+        raise RuntimeError(
+            "FAISS checkpoint contains more vectors than its partial mapping; "
+            "remove this provider/model build directory and rebuild the index."
+        )
+    if len(rows) != index.ntotal:
+        rows = rows[: index.ntotal]
+        _write_partial_mapping(osii_root, rows)
+    return index, rows
 
 
 def append_partial_mapping_row(osii_root: Path, row: dict) -> None:
@@ -208,6 +251,9 @@ def finalize_outputs(
     chunk_size: int,
     chunk_overlap: int,
     provider: str | None = None,
+    model_digest: str | None = None,
+    endpoint_type: str | None = None,
+    semantic: bool | None = None,
 ) -> tuple[Path, Path, Path]:
     final_index = embeddings_index_path(osii_root)
     final_mapping = embeddings_mapping_path(osii_root)
@@ -223,11 +269,16 @@ def finalize_outputs(
         "embeddings": {
             "model": model,
             "provider": provider or "openai-compatible",
+            "provider_id": provider or "openai-compatible",
+            **({"model_digest": model_digest} if model_digest else {}),
+            **({"endpoint_type": endpoint_type} if endpoint_type else {}),
+            "semantic": bool(semantic) if semantic is not None else (provider != "local.hashing"),
             "count": len(final_mapping_rows),
             "dimension": index.d,
             "normalized": True,
             "index_type": "faiss.IndexFlatIP",
             "unit": "derived-text-chunk",
+            "created_utc": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
             "max_tokens": get_model_token_limit(model),
             "approx_chars_per_token": APPROX_CHARS_PER_TOKEN,
             "max_chars": get_model_char_limit(model),
@@ -252,6 +303,7 @@ def finalize_outputs(
     final_meta.write_text(tomli_w.dumps(payload), encoding="utf-8")
 
     shutil.rmtree(build_dir(osii_root), ignore_errors=True)
+    rebuild_catalog(osii_root)
 
     return final_index, final_mapping, final_meta
 
@@ -275,7 +327,7 @@ def embed_collection_resumable(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
     )
-    partial_rows = load_partial_mapping(osii_root)
+    index, partial_rows = load_resumable_checkpoint(osii_root)
     already_done = len(partial_rows)
 
     skipped: list[str] = []
@@ -293,13 +345,12 @@ def embed_collection_resumable(
             print(f"  ... and {len(warnings) - 20} more")
 
     if already_done >= len(items):
-        if not build_index_tmp_path(osii_root).exists():
+        if index is None:
             raise RuntimeError("Partial mapping exists but FAISS checkpoint is missing.")
-        index = faiss.read_index(str(build_index_tmp_path(osii_root)))
         build_bm25_index(osii_root)
         return finalize_outputs(
             osii_root,
-            model=model,
+            model=getattr(client, "model_name", None) or model,
             index=index,
             final_mapping_rows=final_rows,
             warnings=warnings,
@@ -308,11 +359,10 @@ def embed_collection_resumable(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             provider=getattr(client, "provider", None),
+            model_digest=getattr(client, "model_digest", None),
+            endpoint_type=getattr(client, "endpoint_type", None),
+            semantic=getattr(client, "semantic", None),
         )
-
-    index = None
-    if build_index_tmp_path(osii_root).exists():
-        index = faiss.read_index(str(build_index_tmp_path(osii_root)))
 
     success_since_checkpoint = 0
 
@@ -332,6 +382,11 @@ def embed_collection_resumable(
 
                 if index is None:
                     index = faiss.IndexFlatIP(vec.shape[1])
+                elif index.d != vec.shape[1]:
+                    raise IncompatibleIndexError(
+                        f"Embedding dimensions changed from {index.d} to {vec.shape[1]}; "
+                        "the checkpoint cannot be resumed in a different vector space."
+                    )
 
                 index.add(vec)
 
@@ -357,6 +412,8 @@ def embed_collection_resumable(
                 break
 
             except Exception as exc:
+                if isinstance(exc, IncompatibleIndexError):
+                    raise
                 last_exc = exc
                 if not is_context_length_error(exc):
                     break
@@ -380,7 +437,7 @@ def embed_collection_resumable(
 
     return finalize_outputs(
         osii_root,
-        model=model,
+        model=getattr(client, "model_name", None) or model,
         index=index,
         final_mapping_rows=final_rows,
         warnings=warnings,
@@ -389,4 +446,11 @@ def embed_collection_resumable(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         provider=getattr(client, "provider", None),
+        model_digest=getattr(client, "model_digest", None),
+        endpoint_type=getattr(client, "endpoint_type", None),
+        semantic=getattr(client, "semantic", None),
     )
+
+
+class IncompatibleIndexError(RuntimeError):
+    pass

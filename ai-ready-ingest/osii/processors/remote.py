@@ -16,6 +16,7 @@ from osii_processor_sdk import (
     EmbeddingRequest,
     ExtractionRequest,
     ProcessorClient,
+    ProcessorClientError,
     ScopeInput,
     SynthesisRequest,
 )
@@ -51,7 +52,8 @@ def configured_processor_urls() -> list[str]:
     ]
     osii_root = os.getenv("OSII_ROOT")
     if osii_root:
-        registry_path = Path(osii_root).expanduser() / "state" / "processor_endpoints.json"
+        state_path = Path(osii_root).expanduser() / "state"
+        registry_path = state_path / "processor_endpoints.json"
         try:
             endpoints = json.loads(registry_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -59,6 +61,20 @@ def configured_processor_urls() -> list[str]:
         for endpoint in endpoints:
             if endpoint.get("enabled") and endpoint.get("base_url"):
                 configured.append(str(endpoint["base_url"]).rstrip("/"))
+        try:
+            providers = json.loads((state_path / "model_providers.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            providers = []
+        bridge_url = os.getenv("OSII_MODEL_BRIDGE_URL", "http://127.0.0.1:8095").rstrip("/")
+        shirty_bridge_url = os.getenv("OSII_SHIRTY_BRIDGE_URL", "http://127.0.0.1:8096").rstrip("/")
+        for provider in providers:
+            if not provider.get("enabled"):
+                continue
+            provider_type = provider.get("type")
+            if provider_type in {"ollama", "openai"}:
+                configured.extend([f"{bridge_url}/{provider_type}/embedder", f"{bridge_url}/{provider_type}/synthesizer"])
+            elif provider_type == "shirty":
+                configured.extend([f"{shirty_bridge_url}/extractor", f"{shirty_bridge_url}/embedder", f"{shirty_bridge_url}/synthesizer"])
 
     # An endpoint may be configured in both places; only probe it once.
     return list(dict.fromkeys(configured))
@@ -100,6 +116,10 @@ def resolve_remote_processor(name: str, kind: str) -> dict[str, Any]:
     raise RuntimeError(f"Processor '{name}' ({kind}) is not registered or unavailable.")
 
 
+class RemoteProcessorUnavailable(RuntimeError):
+    """A remote operation failed before core began a canonical commit."""
+
+
 class RemoteExtractor:
     def __init__(self, descriptor: dict[str, Any]) -> None:
         self._descriptor = descriptor
@@ -124,19 +144,8 @@ class RemoteExtractor:
     ) -> dict:
         doc_ctx = init_doc_context(source_path, data_volume_root)
         state = ExtractionState()
-        initialize_bundle(osii_store=osii_store, doc_ctx=doc_ctx)
-        update_provenance(
-            osii_store=osii_store,
-            doc_ctx=doc_ctx,
-            extractor_name=self.name,
-            extractor_version=self.version,
-            status="running",
-            tools={"processor_url": self.base_url},
-            config=extractor_config or {},
-            state=state,
-        )
+        request_id = str(uuid.uuid4())
         try:
-            request_id = str(uuid.uuid4())
             response = self._client.extract(ExtractionRequest(
                 request_id=request_id,
                 document=DocumentInput(
@@ -149,6 +158,20 @@ class RemoteExtractor:
                 expert_context=expert_context,
                 config=extractor_config or {},
             ))
+        except ProcessorClientError as exc:
+            raise RemoteProcessorUnavailable(str(exc)) from exc
+        initialize_bundle(osii_store=osii_store, doc_ctx=doc_ctx)
+        update_provenance(
+            osii_store=osii_store,
+            doc_ctx=doc_ctx,
+            extractor_name=self.name,
+            extractor_version=self.version,
+            status="running",
+            tools={"processor_url": self.base_url},
+            config=extractor_config or {},
+            state=state,
+        )
+        try:
             if response.request_id != request_id:
                 raise RuntimeError("Extractor returned a mismatched request_id.")
             if not response.segments:
@@ -331,6 +354,10 @@ class ProcessorEmbeddingClient:
         self.model_name = descriptor["name"]
         self.provider = descriptor["name"]
         self.dimensions: int | None = None
+        self.model_digest: str | None = None
+        self.normalized: bool | None = None
+        self.endpoint_type: str | None = None
+        self.semantic: bool | None = None
 
     def embed(self, *, model: str, texts) -> list[list[float]]:
         request_id = str(uuid.uuid4())
@@ -338,6 +365,7 @@ class ProcessorEmbeddingClient:
         response = self._client.embed(EmbeddingRequest(
             request_id=request_id,
             inputs=[EmbeddingInput(id=identifier, text=text) for identifier, text in zip(identifiers, texts)],
+            config={"model": model} if model else {},
         ))
         if response.request_id != request_id:
             raise RuntimeError("Embedder returned a mismatched request_id.")
@@ -350,6 +378,10 @@ class ProcessorEmbeddingClient:
         self.model_name = response.model
         self.provider = response.processor.name
         self.dimensions = next(iter(dimensions))
+        self.model_digest = response.metadata.get("model_digest")
+        self.normalized = response.normalized
+        self.endpoint_type = response.metadata.get("endpoint_type")
+        self.semantic = response.metadata.get("semantic")
         return [by_id[identifier].vector for identifier in identifiers]
 
 

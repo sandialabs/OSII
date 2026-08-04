@@ -35,3 +35,6 @@ class CitationModel(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     citations: list[CitationModel]
+    provider: str
+    fallback_used: bool = False
+    retrieval_mode: str

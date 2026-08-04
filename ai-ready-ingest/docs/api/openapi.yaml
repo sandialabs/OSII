@@ -2033,7 +2033,7 @@ paths:
                     index_path: C:\...\.osii\embeddings\segments.faiss
                     mapping_path: C:\...\.osii\embeddings\segments.mapping.jsonl
                     meta_path: C:\...\.osii\embeddings\segments.meta.toml
-                    meta_text: "[embeddings]\nmodel = \"sentence-transformers/all-MiniLM-L6-v2\"\n..."
+                    meta_text: "[embeddings]\nmodel = \"osii-local-hashing-v1\"\n..."
                     chunk_manifest_path: C:\...\.osii\embeddings\chunks\chunks.jsonl
                     chunk_method: paragraph
         default:

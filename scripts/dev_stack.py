@@ -60,7 +60,7 @@ def command_path(name: str) -> str:
 
 def build_environment(
     examples: bool,
-    model2vec: bool,
+    provider_profile: str,
     core_only: bool,
 ) -> dict[str, str]:
     env = os.environ.copy()
@@ -76,8 +76,7 @@ def build_environment(
 
     osii_root = runtime_root / ".osii"
     uploads_root = runtime_root / "uploads"
-    model_root = runtime_root / "models"
-    for path in (source_root, osii_root, uploads_root, model_root):
+    for path in (source_root, osii_root, uploads_root):
         path.mkdir(parents=True, exist_ok=True)
 
     api_port = env.get("OSII_API_PORT", "8511")
@@ -121,6 +120,8 @@ def build_environment(
     env["OSII_EXTRACTOR_ROUTES_PATH"] = str(
         (REPOSITORY_ROOT / "ai-ready-ingest" / "config" / "extractor_routes_native.toml").resolve()
     )
+    if provider_profile == "corporate":
+        env["OSII_EXTRACTOR_ROUTES_PATH"] = str((REPOSITORY_ROOT / "ai-ready-ingest" / "config" / "extractor_routes_corporate.toml").resolve())
     if not core_only:
         local_urls = [
             f"http://127.0.0.1:{env.get('OSII_LOCAL_EXTRACTOR_PORT', '8092')}",
@@ -129,23 +130,33 @@ def build_environment(
             f"http://127.0.0.1:{env.get('OSII_LOCAL_ENRICHER_PORT', '8094')}",
         ]
         configured = [item for item in env.get("OSII_PROCESSORS", "").split(",") if item]
+        if provider_profile == "ollama":
+            local_urls.extend(["http://127.0.0.1:8095/ollama/embedder", "http://127.0.0.1:8095/ollama/synthesizer"])
+        elif provider_profile == "corporate":
+            shirty_url = env.get("OSII_SHIRTY_BRIDGE_URL", "http://127.0.0.1:8096").rstrip("/")
+            local_urls.extend([f"{shirty_url}/extractor", f"{shirty_url}/embedder", f"{shirty_url}/synthesizer", "http://127.0.0.1:8095/ollama/embedder", "http://127.0.0.1:8095/ollama/synthesizer"])
         env.update({
             "OSII_PROCESSORS": ",".join(local_urls + configured),
-            "OSII_DEFAULT_EXTRACTOR": "local.native-text",
+            "OSII_DEFAULT_EXTRACTOR": "corporate.shirty-textract" if provider_profile == "corporate" else "local.native-text",
             "OSII_DEFAULT_SYNTHESIZER": "local.extractive-preview",
-            "OSII_DEFAULT_EMBEDDER": "local.model2vec" if model2vec else "local.hashing",
+            "OSII_DEFAULT_EMBEDDER": "corporate.shirty-embedding" if provider_profile == "corporate" else ("ollama.embedder" if provider_profile == "ollama" else "local.hashing"),
             "OSII_DEFAULT_ENRICHER": "local.stats-keywords",
-            "OSII_LOCAL_EMBEDDING_PROVIDER": "model2vec" if model2vec else "hashing",
-            "OSII_MODEL2VEC_MODEL": env.get("OSII_MODEL2VEC_MODEL", str(model_root / "model2vec")),
-            "EMBEDDING_MODEL": env.get("OSII_MODEL2VEC_MODEL", str(model_root / "model2vec")) if model2vec else "osii-local-hashing-v1",
+            "EMBEDDING_MODEL": env.get("OLLAMA_EMBEDDING_MODEL", "") if provider_profile == "ollama" else (env.get("SHIRTY_EMBEDDING_MODEL", "") if provider_profile == "corporate" else "osii-local-hashing-v1"),
         })
+        if provider_profile == "ollama":
+            env.update({"CHAT_PROVIDER": "ollama", "CHAT_PROVIDER_CHAIN": "ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "ollama.synthesizer,local.extractive-preview,firstN"})
+        elif provider_profile == "corporate":
+            shirty_url = env.get("OSII_SHIRTY_BRIDGE_URL", "http://127.0.0.1:8096").rstrip("/")
+            env.update({"CHAT_PROVIDER": "openai", "CHAT_PROVIDER_CHAIN": "openai,ollama,extractive", "OSII_CHAT_BASE_URL": f"{shirty_url}/v1", "OSII_SYNTHESIZER_FALLBACKS": "corporate.shirty-synthesis,ollama.synthesizer,local.extractive-preview,firstN"})
+        else:
+            env.update({"CHAT_PROVIDER": "extractive", "CHAT_PROVIDER_CHAIN": "extractive"})
     if examples and not env.get("OSII_PROCESSORS"):
         processor_port = env.get("OSII_EXAMPLE_PROCESSOR_PORT", "8091")
         env["OSII_PROCESSORS"] = f"http://127.0.0.1:{processor_port}"
     return env
 
 
-def prepare_dependencies(uv: str, npm: str, env: dict[str, str], model2vec: bool) -> None:
+def prepare_dependencies(uv: str, npm: str, env: dict[str, str]) -> None:
     print("[setup] Checking editable Python packages...")
     sync_command = [
             uv,
@@ -160,9 +171,8 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str], model2vec: bool
             "--package", "osii-local-synthesizer",
             "--package", "osii-local-embedder",
             "--package", "osii-local-enricher",
+            "--package", "osii-model-provider-bridge",
         ]
-    if model2vec:
-        sync_command.extend(["--extra", "model2vec"])
     subprocess.run(
         sync_command,
         cwd=REPOSITORY_ROOT,
@@ -298,6 +308,8 @@ def service_commands(
         for name, package, default_port, env_name, directory in reversed(processors):
             port = env.get(env_name, default_port)
             services.insert(0, Service(name, (uv, "run", "--package", package, "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "services" / directory, int(port)))
+        bridge_port = env.get("OSII_MODEL_BRIDGE_PORT", "8095")
+        services.insert(4, Service("model-bridge", (uv, "run", "--package", "osii-model-provider-bridge", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", bridge_port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "services" / "model-provider-bridge", int(bridge_port)))
     return services
 
 
@@ -355,7 +367,7 @@ def stop_service(process: subprocess.Popen[bytes]) -> None:
 
 def run(
     examples: bool,
-    model2vec: bool,
+    provider_profile: str,
     core_only: bool,
     dry_run: bool,
     skip_setup: bool,
@@ -363,14 +375,8 @@ def run(
     try:
         uv = command_path("uv")
         npm = command_path("npm")
-        env = build_environment(examples, model2vec, core_only)
+        env = build_environment(examples, provider_profile, core_only)
         services = service_commands(uv, npm, env, core_only)
-        if model2vec:
-            services = [
-                Service(service.name, service.command[:4] + ("--extra", "model2vec") + service.command[4:], service.working_directory, service.port)
-                if service.name == "embedder" else service
-                for service in services
-            ]
 
         if dry_run:
             print("[dev] Bare-metal service plan:")
@@ -381,7 +387,7 @@ def run(
         ensure_ports_available(services)
 
         if not skip_setup:
-            prepare_dependencies(uv, npm, env, model2vec)
+            prepare_dependencies(uv, npm, env)
 
         processes: dict[str, tuple[Service, subprocess.Popen[bytes]]] = {}
         for service in services:
@@ -395,7 +401,7 @@ def run(
         print("[dev] Press Ctrl+C to stop host processes.")
         if not core_only:
             print("[dev] Local processors: extractor 8092, synthesizer 8093, embedder 8085, enricher 8094")
-            print("[dev] Embeddings: Model2Vec (staged model required)" if model2vec else "[dev] Embeddings: deterministic 384-dimensional lexical hashing")
+            print(f"[dev] Provider profile: {provider_profile}; models are never downloaded automatically")
 
         while True:
             for name, (_, process) in processes.items():
@@ -426,7 +432,7 @@ def main() -> int:
         action="store_true",
         help="Connect the example processor at its localhost port.",
     )
-    parser.add_argument("--model2vec", action="store_true", help="Use a staged Model2Vec model instead of hashing.")
+    parser.add_argument("--provider-profile", choices=("baseline", "ollama", "corporate"), default="baseline")
     parser.add_argument("--core-only", action="store_true", help="Start app services without local processors.")
     parser.add_argument(
         "--dry-run",
@@ -441,7 +447,7 @@ def main() -> int:
     args = parser.parse_args()
     return run(
         args.examples,
-        args.model2vec,
+        args.provider_profile,
         args.core_only,
         args.dry_run,
         args.skip_setup,

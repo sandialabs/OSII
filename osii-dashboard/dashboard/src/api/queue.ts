@@ -4,6 +4,7 @@ import type {
   IntakeReadiness,
   ProcessingRun,
   ProcessorEndpoint,
+  ModelProvider,
   QueueBrowseResponse,
   UploadResponse,
 } from "./types";
@@ -59,6 +60,21 @@ export async function createProcessorEndpoint(payload: Omit<ProcessorEndpoint, "
 export async function checkProcessorEndpoint(id: string, test = false) {
   return apiJson<{ ok: boolean; status: number | null; detail: string }>(
     `/api/admin/processors/${encodeURIComponent(id)}/${test ? "test" : "health"}`,
+    { method: "POST", json: {} },
+  );
+}
+
+export async function listModelProviders(): Promise<{ providers: ModelProvider[] }> {
+  return apiJson("/api/admin/model-providers");
+}
+
+export async function createModelProvider(payload: ModelProvider) {
+  return apiJson<{ provider: ModelProvider }>(`/api/admin/model-providers/${encodeURIComponent(payload.id)}`, { method: "PUT", json: payload });
+}
+
+export async function checkModelProvider(id: string) {
+  return apiJson<{ ok: boolean; models: string[]; missing_models: string[]; pull_commands: string[]; detail?: string }>(
+    `/api/admin/model-providers/${encodeURIComponent(id)}/health`,
     { method: "POST", json: {} },
   );
 }

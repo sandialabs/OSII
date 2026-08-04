@@ -1,6 +1,9 @@
 from pathlib import Path
 import re
+import sqlite3
 import tomllib
+
+from osii.domain.catalog_db import list_documents, list_folders
 
 
 FOLDER_MANIFEST_RE = re.compile(r"^folder-[A-Za-z0-9_.-]+\.toml$")
@@ -28,7 +31,7 @@ def _read_folder_manifest(path: Path) -> dict | None:
         return None
 
 
-def load_folders_catalog(osii_store: Path) -> list[dict]:
+def scan_folders_catalog(osii_store: Path) -> list[dict]:
     entries = []
     seen_folder_ids = set()
     seen_paths = set()
@@ -66,7 +69,7 @@ def load_folders_catalog(osii_store: Path) -> list[dict]:
     return entries
 
 
-def load_files_catalog(osii_store: Path) -> list[dict]:
+def scan_files_catalog(osii_store: Path) -> list[dict]:
     entries = []
     seen_file_ids: set[str] = set()
     seen_source_relpaths: set[str] = set()
@@ -125,6 +128,32 @@ def load_files_catalog(osii_store: Path) -> list[dict]:
                 object_path.name,
             )
     return entries
+
+
+def load_folders_catalog(osii_store: Path) -> list[dict]:
+    """Read the derived catalog, retaining a filesystem path during rebuilds."""
+    try:
+        return list_folders(osii_store)
+    except (OSError, sqlite3.DatabaseError, RuntimeError):
+        return scan_folders_catalog(osii_store)
+
+
+def load_files_catalog(osii_store: Path) -> list[dict]:
+    """Read the derived catalog in the compatibility shape used by existing APIs."""
+    try:
+        page = list_documents(osii_store, limit=500)
+        entries = page["items"]
+        cursor = page["next_cursor"]
+        while cursor:
+            page = list_documents(osii_store, limit=500, cursor=cursor)
+            entries.extend(page["items"])
+            cursor = page["next_cursor"]
+        return [
+            {"source_relpath": item["source_relpath"], "file_id": item["file_id"]}
+            for item in entries
+        ]
+    except (OSError, sqlite3.DatabaseError, RuntimeError, ValueError):
+        return scan_files_catalog(osii_store)
 
 
 def resolve_relpath_to_folder_id(osii_store: Path, relpath: str) -> str | None:

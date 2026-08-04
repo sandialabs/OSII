@@ -14,6 +14,7 @@ members = [
   "services/local-synthesizer",
   "services/local-embedder",
   "services/local-enricher",
+  "services/model-provider-bridge",
 ]
 
 [tool.uv.sources]

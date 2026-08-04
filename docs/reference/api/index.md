@@ -53,12 +53,14 @@ The shared data root is typically:
 .\osii-data\source
 ```
 
-Collection curation metadata is stored inside the OSII operational store,
-typically at:
+Canonical collection metadata is stored inside the OSII store, typically at:
 
 ```text
-.\osii-data\.osii\.collections\collections.sqlite
+.\osii-data\.osii\collections\<collection-id>\collection.toml
 ```
+
+The disposable `.osii\state\catalog.sqlite3` database accelerates API reads and
+can always be rebuilt from canonical files.
 
 Collection metadata must survive:
 

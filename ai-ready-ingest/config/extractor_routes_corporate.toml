@@ -1,0 +1,4 @@
+[[routes]]
+name = "corporate-shirty-primary"
+extractor = "corporate.shirty-textract"
+extensions = ["*"]

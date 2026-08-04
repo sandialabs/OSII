@@ -1,4 +1,4 @@
-"""Interface example only; use the bundled Jina service for real retrieval."""
+"""Processor API embedder example; deploy any vector model behind this contract."""
 
 import hashlib
 import math
@@ -43,4 +43,3 @@ class ToyLocalEmbedder(Embedder):
 
 
 app = create_processor_app(ToyLocalEmbedder())
-

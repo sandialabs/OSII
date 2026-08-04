@@ -1,11 +1,13 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("dev", "dev-host", "dev-core", "dev-model2vec", "dev-extractor", "dev-synthesizer", "dev-embedder", "dev-enricher", "dev-containers", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build")]
+    [ValidateSet("dev", "dev-host", "dev-core", "dev-ollama", "dev-corporate", "dev-extractor", "dev-synthesizer", "dev-embedder", "dev-enricher", "dev-model-bridge", "dev-containers", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build", "doctor", "catalog-rebuild", "catalog-verify")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
-    [string]$Runtime = "Podman"
+    [string]$Runtime = "Podman",
+
+    [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,7 +44,11 @@ function Invoke-OsiiDevLauncher {
         throw "npm was not found. The bare-metal developer workflow requires Node.js/npm."
     }
 
-    & $UvExecutable.Source run --no-project --python 3.11 python scripts/dev_stack.py @Arguments
+    $LauncherArguments = @($Arguments)
+    if ($DryRun) {
+        $LauncherArguments += "--dry-run"
+    }
+    & $UvExecutable.Source run --no-project --python 3.11 python scripts/dev_stack.py @LauncherArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Bare-metal development stack exited with code $LASTEXITCODE."
     }
@@ -60,20 +66,26 @@ try {
         "dev-core" {
             Invoke-OsiiDevLauncher @("--core-only")
         }
-        "dev-model2vec" {
-            Invoke-OsiiDevLauncher @("--model2vec")
+        "dev-ollama" {
+            Invoke-OsiiDevLauncher @("--provider-profile", "ollama")
+        }
+        "dev-corporate" {
+            Invoke-OsiiDevLauncher @("--provider-profile", "corporate")
         }
         "dev-extractor" {
-            & uv run --package osii-local-extractor uvicorn app.main:app --app-dir services/local-extractor --host 127.0.0.1 --port 8092 --reload
+            & uv run --python 3.11 --package osii-local-extractor uvicorn app.main:app --app-dir services/local-extractor --host 127.0.0.1 --port 8092 --reload
         }
         "dev-synthesizer" {
-            & uv run --package osii-local-synthesizer uvicorn app.main:app --app-dir services/local-synthesizer --host 127.0.0.1 --port 8093 --reload
+            & uv run --python 3.11 --package osii-local-synthesizer uvicorn app.main:app --app-dir services/local-synthesizer --host 127.0.0.1 --port 8093 --reload
         }
         "dev-embedder" {
-            & uv run --package osii-local-embedder uvicorn app.main:app --app-dir services/local-embedder --host 127.0.0.1 --port 8085 --reload
+            & uv run --python 3.11 --package osii-local-embedder uvicorn app.main:app --app-dir services/local-embedder --host 127.0.0.1 --port 8085 --reload
         }
         "dev-enricher" {
-            & uv run --package osii-local-enricher uvicorn app.main:app --app-dir services/local-enricher --host 127.0.0.1 --port 8094 --reload
+            & uv run --python 3.11 --package osii-local-enricher uvicorn app.main:app --app-dir services/local-enricher --host 127.0.0.1 --port 8094 --reload
+        }
+        "dev-model-bridge" {
+            & uv run --python 3.11 --package osii-model-provider-bridge uvicorn app.main:app --app-dir services/model-provider-bridge --host 127.0.0.1 --port 8095 --reload
         }
         "dev-containers" {
             Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
@@ -83,7 +95,7 @@ try {
             Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
         }
         "run" {
-            Invoke-OsiiCompose @("--profile", "chat", "--profile", "ocr", "up", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "api", "worker", "chat", "dashboard", "tika", "tesseract")
+            Invoke-OsiiCompose @("--profile", "chat", "--profile", "agents", "--profile", "ocr", "up", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "chat", "mcp", "dashboard", "tika", "tesseract")
         }
         "dev-examples" {
             Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
@@ -91,19 +103,28 @@ try {
             Invoke-OsiiDevLauncher @("--examples")
         }
         "containers-dev" {
-            Invoke-OsiiCompose @("--profile", "chat", "--profile", "ocr", "up", "--build", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "api", "worker", "chat", "dashboard", "tika", "tesseract")
+            Invoke-OsiiCompose @("--profile", "chat", "--profile", "agents", "--profile", "ocr", "up", "--build", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "chat", "mcp", "dashboard", "tika", "tesseract")
         }
         "dev-all" {
-            Invoke-OsiiCompose @("--profile", "examples", "--profile", "chat", "--profile", "agents", "--profile", "ocr", "--profile", "embeddings", "--profile", "ollama", "up", "--build")
+            Invoke-OsiiCompose @("--profile", "examples", "--profile", "chat", "--profile", "agents", "--profile", "ocr", "up", "--build")
         }
         "down" {
-            Invoke-OsiiCompose @("--profile", "examples", "--profile", "chat", "--profile", "agents", "--profile", "ocr", "--profile", "embeddings", "--profile", "ollama", "down")
+            Invoke-OsiiCompose @("--profile", "examples", "--profile", "chat", "--profile", "agents", "--profile", "ocr", "down")
         }
         "logs" {
             Invoke-OsiiCompose @("logs", "-f")
         }
         "build" {
-            Invoke-OsiiCompose @("--profile", "examples", "--profile", "chat", "--profile", "agents", "--profile", "ocr", "--profile", "embeddings", "build")
+            Invoke-OsiiCompose @("--profile", "examples", "--profile", "chat", "--profile", "agents", "--profile", "ocr", "build")
+        }
+        "doctor" {
+            & uv run --no-project --python 3.11 python scripts/disk_usage.py
+        }
+        "catalog-rebuild" {
+            & uv run --python 3.11 --package osii python -m osii.catalog_cli rebuild
+        }
+        "catalog-verify" {
+            & uv run --python 3.11 --package osii python -m osii.catalog_cli verify
         }
     }
 }

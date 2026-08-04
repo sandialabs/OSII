@@ -25,12 +25,10 @@ similarity and verifies the vector-index pipeline, but it is not a semantic
 language model. Every index records provider, model, dimension, and
 normalization metadata. Switching vector spaces requires rebuilding.
 
-## Optional Model2Vec
-
-Install and stage a Model2Vec model under `osii-data/models/model2vec`, set
-`OSII_MODEL2VEC_MODEL` if needed, then run `make dev-model2vec` or
-`.\scripts\osii.ps1 dev-model2vec`. Normal `make dev` never downloads or selects
-it silently.
+Experimental Jina and Model2Vec services live in the separate
+[OSII model tool chest](https://github.com/heidikmkv/osii-model-tool-chest).
+They are not part of the OSII dependency lock, images, profiles, or recommended
+runtime. Review their dependency and remote-code risks independently.
 
 ## Moving a processor to its own repository
 

@@ -7,16 +7,49 @@ on:
 
 jobs:
   python:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - run: uv sync --package osii --extra dev
-      - run: uv sync --package osii-processor-sdk --extra dev
-      - run: uv run --package osii pytest ai-ready-ingest/tests packages/osii-processor-sdk/tests
+          python-version: "3.11"
+      - run: uv sync --python 3.11 --package osii --package osii-processor-sdk --extra dev
+      - run: uv run --python 3.11 --package osii python -m pytest ai-ready-ingest/tests
+      - run: uv run --python 3.11 --package osii-processor-sdk python -m pytest packages/osii-processor-sdk/tests
+
+  processor-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --python 3.11 --package ai-ready-chat --package osii-local-extractor --package osii-local-synthesizer --package osii-local-embedder --package osii-local-enricher --package osii-model-provider-bridge --extra dev
+      - run: cd ai-ready-rag-chat && uv run --python 3.11 --package ai-ready-chat python -m pytest tests
+      - run: cd services/local-extractor && uv run --python 3.11 --package osii-local-extractor python -m pytest tests
+      - run: cd services/local-synthesizer && uv run --python 3.11 --package osii-local-synthesizer python -m pytest tests
+      - run: cd services/local-embedder && uv run --python 3.11 --package osii-local-embedder python -m pytest tests
+      - run: cd services/local-enricher && uv run --python 3.11 --package osii-local-enricher python -m pytest tests
+      - run: cd services/model-provider-bridge && uv run --python 3.11 --package osii-model-provider-bridge python -m pytest tests
+
+  windows-powershell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - shell: pwsh
+        run: |
+          .\scripts\osii.ps1 dev -DryRun
+          .\scripts\osii.ps1 dev-core -DryRun
+          .\scripts\osii.ps1 dev-ollama -DryRun
+          .\scripts\osii.ps1 dev-corporate -DryRun
+      - shell: pwsh
+        run: uv run --no-project --python 3.11 python scripts/export_components.py --output "$env:RUNNER_TEMP\osii-export" --components backend,frontend,mcp,chat,tools,local-extractor,local-synthesizer,local-embedder,local-enricher,model-provider-bridge
 
   dashboard:
     runs-on: ubuntu-latest
@@ -38,7 +71,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker compose --profile examples config --quiet
-      - run: docker compose --profile examples build api dashboard table-pdf-enricher
+      - run: docker compose --profile examples build api dashboard table-pdf-enricher local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge
 
   documentation:
     runs-on: ubuntu-latest

@@ -1,4 +1,5 @@
 import argparse
+import os
 from pathlib import Path
 
 from osii.indexing.common import (
@@ -57,6 +58,9 @@ def main():
         raise RuntimeError(f"OSII root does not exist: {osii_root}")
 
     model_name = get_embedding_model(args.embedding_model)
+    # All path helpers use this explicit identity so checkpoints and reads stay
+    # inside one provider/model vector space.
+    os.environ["EMBEDDING_MODEL"] = model_name
 
     print(f"Building embeddings under {osii_root}")
     print(f"Model: {model_name}")

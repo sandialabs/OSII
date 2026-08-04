@@ -1,9 +1,11 @@
 from datetime import datetime, UTC
+import os
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
 from osii.domain.processing.capability_readiness import embedding_readiness
+from osii.domain.catalog_db import rebuild_catalog, upsert_document
 from osii.domain.processing.intake import (
     add_extractor_plan,
     add_processed_counts,
@@ -72,13 +74,33 @@ def choose_parser(path: Path, routes: list[dict]) -> str:
     return "tika"
 
 
-def get_synthesizer(name: str):
+class FallbackSynthesizer:
+    def __init__(self, names: list[str]) -> None:
+        self.names = names
+
+    def synthesize(self, **kwargs):
+        failures: list[str] = []
+        for name in self.names:
+            try:
+                return _get_one_synthesizer(name).synthesize(**kwargs)
+            except Exception as exc:
+                failures.append(f"{name}: {exc}")
+        raise RuntimeError("All synthesis providers failed: " + "; ".join(failures))
+
+
+def _get_one_synthesizer(name: str):
     if name == "firstN":
         return FirstNSynthesizer()
     if name == "recursive":
         return RecursiveSynthesizer()
     from osii.processors.remote import RemoteSynthesizer, resolve_remote_processor
     return RemoteSynthesizer(resolve_remote_processor(name, "synthesizer"))
+
+
+def get_synthesizer(name: str):
+    configured = [item.strip() for item in os.getenv("OSII_SYNTHESIZER_FALLBACKS", "").split(",") if item.strip()]
+    chain = list(dict.fromkeys([name, *configured, "firstN"]))
+    return FallbackSynthesizer(chain)
 
 
 def relpath_under(root: Path, path: Path) -> str:
@@ -296,6 +318,7 @@ def run_worker(
                     return
 
                 file_id = extract_result["file_id"]
+                upsert_document(osii_store, file_id)
                 run["items"][index]["file_id"] = file_id
                 run["items"][index]["extract_error"] = extract_result.get("error")
                 append_log(run_id, f"Extraction complete: {src.name}")
@@ -359,6 +382,7 @@ def run_worker(
         )
 
         append_log(run_id, "Folder manifests and synthesis updated.")
+        rebuild_catalog(osii_store)
 
         write_collection_synthesis(
             osii_store=osii_store,

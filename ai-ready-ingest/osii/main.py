@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
 from osii.api.collection_synthesis_routes import router as collection_synthesis_router
+from osii.api.catalog_routes import router as catalog_router
 from osii.api.collections_routes import router as collections_router
 from osii.api.embedding_routes import router as embedding_router
 from osii.api.enrichment_jobs_routes import router as enrichment_jobs_router
@@ -20,6 +21,7 @@ from osii.api.extractors import router as extractors_router
 from osii.api.preview_routes import router as preview_router
 from osii.api.processors_routes import router as processors_router
 from osii.api.processor_admin_routes import router as processor_admin_router
+from osii.api.model_provider_routes import router as model_provider_router
 from osii.api.runs_routes import router as runs_router
 from osii.api.scopes_routes import router as scopes_router
 from osii.api.search_routes import router as search_router
@@ -27,6 +29,7 @@ from osii.api.synthesis_routes import router as synthesis_router
 from osii.api.synthesizer_routes import router as synthesizer_router
 from osii.api.text_routes import router as text_router
 from osii.domain.processing.jobs import configure_job_store
+from osii.domain.catalog_db import ensure_catalog
 
 app = FastAPI(
     title="OSII Backend",
@@ -50,6 +53,7 @@ app.state.upload_originals_root = Path(
 ).resolve()
 app.state.upload_originals_root.mkdir(parents=True, exist_ok=True)
 configure_job_store(app.state.osii_root)
+ensure_catalog(app.state.osii_root)
 
 app.include_router(intake_router)
 app.include_router(runs_router)
@@ -67,12 +71,14 @@ app.include_router(scopes_router)
 app.include_router(objects_router)
 app.include_router(collections_router)
 app.include_router(collection_synthesis_router)
+app.include_router(catalog_router)
 app.include_router(enrichments_router)
 app.include_router(text_router)
 app.include_router(synthesis_router)
 app.include_router(enrichment_jobs_router)
 app.include_router(processors_router)
 app.include_router(processor_admin_router)
+app.include_router(model_provider_router)
 
 @app.get("/health")
 async def health():

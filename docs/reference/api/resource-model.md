@@ -155,20 +155,23 @@ Syntheses are useful for downstream summarization and browsing, but they are not
 
 ## Collections
 
-Collections are curated overlays stored separately from canonical OSII artifacts.
+Collections are curated canonical overlays stored alongside other OSII artifacts.
 
 Collections:
 
 - are not canonical hierarchy nodes
-- are backed by separate SQLite metadata
+- are stored as inspectable `collection.toml` and `members.jsonl` files
 - should reference stable object identifiers such as `file_id`
 - must survive extraction reruns, synthesis reruns, and embedding rebuilds
 
 Typical storage location:
 
 ```text
-.\osii-data\.osii\.collections\collections.sqlite
+.\osii-data\.osii\collections\<collection-id>\collection.toml
 ```
+
+The rebuildable `state/catalog.sqlite3` indexes them for fast reads but is not
+authoritative.
 
 ## Enrichments
 

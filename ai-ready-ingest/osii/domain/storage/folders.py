@@ -3,6 +3,7 @@ from pathlib import Path
 import tomllib
 
 import tomli_w
+from osii.domain.storage.atomic import atomic_write_text
 
 from osii.domain.storage.ids import new_folder_id
 from osii.domain.storage.store import folder_manifest_path
@@ -60,8 +61,7 @@ def write_folder_manifest(
     if entrypoints:
         payload["entrypoints"] = entrypoints
 
-    path.write_text(tomli_w.dumps(payload), encoding="utf-8")
-    return path
+    return atomic_write_text(path, tomli_w.dumps(payload))
 
 
 

@@ -52,6 +52,7 @@ COMPONENTS: dict[str, tuple[ExportEntry, ...]] = {
         ExportEntry("services/local-synthesizer", "services/local-synthesizer"),
         ExportEntry("services/local-embedder", "services/local-embedder"),
         ExportEntry("services/local-enricher", "services/local-enricher"),
+        ExportEntry("services/model-provider-bridge", "services/model-provider-bridge"),
         ExportEntry("docs/extending", "docs/extending"),
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
@@ -77,6 +78,12 @@ COMPONENTS: dict[str, tuple[ExportEntry, ...]] = {
     "local-enricher": (
         ExportEntry("services/local-enricher", "."),
         ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
+        ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
+    ),
+    "model-provider-bridge": (
+        ExportEntry("services/model-provider-bridge", "."),
+        ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
+        ExportEntry("docs/reference/model-providers.md", "docs/model-providers.md"),
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
 }
@@ -105,6 +112,10 @@ def copy_entry(component_root: Path, entry: ExportEntry) -> None:
     destination = component_root / entry.destination
     if not source.exists():
         raise FileNotFoundError(f"Export source is missing: {source}")
+    if source.is_file():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        return
     if entry.destination == ".":
         destination.mkdir(parents=True, exist_ok=True)
         for child in source.iterdir():
@@ -149,7 +160,7 @@ def adapt_container_files(component: str, component_root: Path) -> None:
             ),
             encoding="utf-8",
         )
-    if component.startswith("local-") and dockerfile.exists():
+    if (component.startswith("local-") or component == "model-provider-bridge") and dockerfile.exists():
         dockerfile.write_text(
             dockerfile.read_text(encoding="utf-8")
             .replace(f"COPY services/{component} /workspace/services/{component}", "COPY . /workspace/service")

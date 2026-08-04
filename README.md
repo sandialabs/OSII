@@ -67,9 +67,9 @@ On Windows, use a forward-slash path such as:
 OSII_SOURCE_DIR=C:/Users/your-name/Documents/my-files
 ```
 
-Files added with the dashboard's **Upload files** button are stored separately
-in a container-managed upload volume. OSII's generated database, extracted
-text, queue status, and indexes are also kept separately from your originals.
+Files added with the dashboard's **Upload files** button are stored separately.
+Canonical extracted text and provenance stay as inspectable `.osii` files;
+queue state and the rebuildable SQLite catalog stay under `.osii/state/`.
 
 ### 2. Develop OSII with live reload
 
@@ -88,15 +88,10 @@ enrichment. Scanned PDFs still require optional OCR. The launcher checks ports a
 reloads backend services when source changes, and keeps generated data under
 `osii-data/`.
 
-Hashing embeddings are enabled by default and require almost no memory. To use
-an optional staged Model2Vec model under `osii-data/models/`, run:
-
-```bash
-make dev-model2vec
-```
-
-On Windows, use `.\scripts\osii.ps1 dev-model2vec`. OSII never silently switches
-vector spaces: changing providers requires rebuilding the vector index.
+Hashing embeddings are enabled by default and require almost no memory. They
+are an explicit lexical baseline, not a semantic model. Optional semantic
+models are reached over HTTP through Ollama or an OpenAI-compatible provider;
+OSII does not install provider SDKs or download models.
 
 On Windows PowerShell, use the equivalent launcher:
 
@@ -114,6 +109,8 @@ Later starts reuse them. When the terminal output settles, open:
 - **Synthesizer docs:** <http://localhost:8093/docs>
 - **Embedder docs:** <http://localhost:8085/docs>
 - **Enricher docs:** <http://localhost:8094/docs>
+- **Model-provider bridge docs:** <http://localhost:8095/docs>
+- **Chat health/docs:** <http://localhost:8611/health> · <http://localhost:8611/docs>
 - **MCP server:** <http://localhost:8022/mcp>
 
 In the dashboard, select **Intake** in the first sidebar section. Intake first
@@ -127,8 +124,9 @@ passes its readiness test. Files are processed sequentially and appear under
 finish first. File grids reveal results in groups and limit concurrent PDF
 thumbnail rendering so a large corpus remains responsive.
 
-Open **Tools** before the first intake to register optional Processor API v1
-services. For host-native development, use a base URL such as
+Open **Tools** before the first intake. It separates guaranteed local
+capabilities, model providers, and OSII Processor API services. For a domain
+processor running on the host, use a base URL such as
 `http://127.0.0.1:8091`; a packaged API container should use the processor's
 Compose service name or `host.containers.internal` for a host service. Run
 **Health**, then **Test**, and return to Intake to select **Retest tools**.
@@ -162,10 +160,14 @@ run the normal integrated container stack.
   editable development stack without containers.
 - `make dev-core` / `.\scripts\osii.ps1 dev-core`: run application services
   without processors for external-integration testing.
-- `make dev-model2vec` / `.\scripts\osii.ps1 dev-model2vec`: use a separately
-  staged Model2Vec model instead of hashing.
+- `make dev-ollama` / `.\scripts\osii.ps1 dev-ollama`: enable configured Ollama
+  adapters. Exact installed model names must still be selected explicitly.
+- `make dev-corporate` / `.\scripts\osii.ps1 dev-corporate`: prefer the
+  separately running Shirty bridge, then Ollama, then extractive fallbacks.
 - `make dev-extractor`, `dev-synthesizer`, `dev-embedder`, or `dev-enricher`
   (and matching PowerShell commands): run one processor independently.
+- `make dev-model-bridge` / `.\scripts\osii.ps1 dev-model-bridge`: run only the
+  HTTP-only Ollama/OpenAI-compatible bridge.
 - `make dev-containers` / `.\scripts\osii.ps1 dev-containers`: run application
   services from source while Tika and Tesseract run in Podman for deployment
   parity.
@@ -173,13 +175,17 @@ run the normal integrated container stack.
   Podman OCR services used by `dev-containers`.
 - `make dev-examples` / `.\scripts\osii.ps1 dev-examples`: run editable OSII
   plus the example table enricher.
-- `make dev-all` / `.\scripts\osii.ps1 dev-all`: include optional agents,
-  embeddings, Ollama, and all example services in containers.
+- `make dev-all` / `.\scripts\osii.ps1 dev-all`: include optional agents, OCR,
+  and all example services in containers. Ollama remains separately managed.
 - `make containers-dev` / `.\scripts\osii.ps1 containers-dev`: rebuild and
   run the normal deployment-style container stack.
 - `make logs` / `.\scripts\osii.ps1 logs`: follow service logs.
 - `make down` / `.\scripts\osii.ps1 down`: stop the stack without deleting
   your data volume.
+- `make doctor` / `.\scripts\osii.ps1 doctor`: report generated environments,
+  model caches, `node_modules`, OSII data, and container storage without deleting anything.
+- `make catalog-rebuild` and `make catalog-verify` (with matching PowerShell
+  commands): manage the disposable `.osii/state/catalog.sqlite3` read index.
 - [Export components for separate corporate repositories](docs/operations/component-export.md).
 
 Docker is supported as an override when it is your local container runtime:
@@ -222,11 +228,11 @@ At a high level, the system works in three stages:
 
 ## Local-first operation
 
-Browsing, lexical retrieval, extractive grounded chat, baseline synthesis, and
-baseline enrichment can run without a model connection. Bundled Tika,
-Tesseract, and Jina containers provide local extraction/OCR and embeddings.
-Connected model services enhance these capabilities but are not required for
-the basic user experience.
+Browsing, lexical retrieval, hashing-vector retrieval, extractive grounded
+chat, baseline synthesis, and baseline enrichment run without a model
+connection. Tika and Tesseract remain optional OCR/deployment services. Ollama,
+OpenAI-compatible services, Shirty, and domain processors enhance capabilities
+without becoming dependencies of the basic user experience.
 
 The repository remains under active development. Processor API v1 is the
 compatibility boundary for new extensions.

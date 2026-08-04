@@ -38,7 +38,9 @@ Every input must produce exactly one vector with the same ID. All vectors in a
 response must use one model and dimension. The core rejects mismatches before
 updating an index.
 
-The bundled Jina service remains the local production option. The SDK example
-uses a deterministic toy vector only to explain the interface.
+The guaranteed `local.hashing` service implements this contract without a
+model; it is lexical rather than semantic. The HTTP-only provider bridge maps
+explicitly selected Ollama and OpenAI-compatible models to the same contract.
+The SDK example uses a deterministic toy vector only to explain the interface.
 
 See `examples/embedder.py`.

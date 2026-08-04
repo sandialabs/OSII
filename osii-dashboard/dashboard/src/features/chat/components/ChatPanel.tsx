@@ -43,6 +43,8 @@ type ChatPanelProps = {
 
 type DisplayChatMessage = ChatMessage & {
   citations?: ChatCitation[];
+  provider?: string;
+  fallbackUsed?: boolean;
 };
 
 function scopeLabel(scope: ScopeDescribeRequest): string {
@@ -166,6 +168,8 @@ export function ChatPanel({ scope }: ChatPanelProps) {
           role: "assistant",
           content: response.answer,
           citations: response.citations,
+          provider: response.provider,
+          fallbackUsed: response.fallback_used,
         },
       ]);
     } catch (error) {
@@ -299,7 +303,7 @@ export function ChatPanel({ scope }: ChatPanelProps) {
               <CardContent sx={{ py: 1.25 }}>
                 <Stack spacing={0.75}>
                   <Typography variant="caption" color="text.secondary">
-                    {message.role === "user" ? "You" : "Assistant"}
+                    {message.role === "user" ? "You" : `Assistant · ${message.provider ?? "unknown provider"}${message.fallbackUsed ? " (fallback)" : ""}`}
                   </Typography>
 
                   {message.role === "assistant" ? (

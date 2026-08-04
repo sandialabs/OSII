@@ -4,6 +4,7 @@ from pathlib import Path
 
 import tomli_w
 import tomllib
+from osii.domain.storage.atomic import atomic_write_text
 
 from osii.domain.storage.store import (
     artifacts_dir,
@@ -59,8 +60,7 @@ def write_meta_toml(
     if extra_meta:
         payload["meta"] = extra_meta
 
-    path.write_text(tomli_w.dumps(payload), encoding="utf-8")
-    return path
+    return atomic_write_text(path, tomli_w.dumps(payload))
 
 
 def write_provenance_toml(
@@ -103,8 +103,7 @@ def write_provenance_toml(
     if errors:
         payload["errors"] = {k: v for k, v in errors.items() if v is not None}
 
-    path.write_text(tomli_w.dumps(payload), encoding="utf-8")
-    return path
+    return atomic_write_text(path, tomli_w.dumps(payload))
 
 
 def update_synthesis_provenance(
@@ -135,8 +134,7 @@ def update_synthesis_provenance(
             k: v for k, v in config.items() if v is not None
         }
 
-    path.write_text(tomli_w.dumps(payload), encoding="utf-8")
-    return path
+    return atomic_write_text(path, tomli_w.dumps(payload))
 
 
 def append_manifest_record(osii_store: Path, file_id: str, record: dict) -> Path:

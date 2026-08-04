@@ -17,8 +17,14 @@ async def root():
     return {"message": "AI Ready Chat"}
 
 
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "osii-chat"}
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
+    runtime_settings = get_settings()
     try:
         retrieval_mode, search_result = retrieve_with_fallback(
             osii_client=osii_client,
@@ -64,25 +70,41 @@ async def chat(request: ChatRequest):
         citations.append(CitationModel(**evidence_item))
 
     try:
-        answer = run_chat_completion(
-            provider=settings.chat_provider,
-            ollama_base_url=settings.ollama_base_url,
-            openai_compatible_base_url=settings.openai_compatible_base_url,
-            openai_compatible_api_key=settings.openai_compatible_api_key,
-            model=settings.chat_model,
-            max_tokens=settings.chat_max_tokens,
-            query=request.query,
-            scope={
-                **request.scope.model_dump(),
-                "retrieval_mode": retrieval_mode,
-            },
-            history=[turn.model_dump() for turn in request.history],
-            evidence=evidence,
-        )
+        failures = []
+        answer = ""
+        used_provider = "extractive"
+        for provider in runtime_settings.chat_provider_chain:
+            try:
+                model = runtime_settings.chat_model
+                if provider == "ollama" and runtime_settings.ollama_chat_model:
+                    model = runtime_settings.ollama_chat_model
+                elif provider in {"openai", "openai_compatible"} and runtime_settings.openai_chat_model:
+                    model = runtime_settings.openai_chat_model
+                answer = run_chat_completion(
+                    provider=provider,
+                    ollama_base_url=runtime_settings.ollama_base_url,
+                    openai_compatible_base_url=runtime_settings.openai_compatible_base_url,
+                    openai_compatible_api_key=runtime_settings.openai_compatible_api_key,
+                    model=model,
+                    max_tokens=runtime_settings.chat_max_tokens,
+                    query=request.query,
+                    scope={**request.scope.model_dump(), "retrieval_mode": retrieval_mode},
+                    history=[turn.model_dump() for turn in request.history],
+                    evidence=evidence,
+                )
+                used_provider = provider
+                break
+            except Exception as exc:
+                failures.append(f"{provider}: {exc}")
+        if not answer:
+            raise RuntimeError("; ".join(failures))
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Failed to generate chat response: {exc}") from exc
 
     return ChatResponse(
         answer=answer,
         citations=citations,
+        provider=used_provider,
+        fallback_used=used_provider != runtime_settings.chat_provider_chain[0],
+        retrieval_mode=retrieval_mode,
     )

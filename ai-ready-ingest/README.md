@@ -450,7 +450,7 @@ python -m osii.build_synthesis `
 ```powershell
 python -m osii.build_vector_index `
   --osii-root "./osii-data/.osii" `
-  --embedding-model "sentence-transformers/all-MiniLM-L6-v2" `
+  --embedding-model "osii-local-hashing-v1" `
   --batch-size 1 `
   --checkpoint-every 50
 ```

@@ -518,6 +518,19 @@ export type IntakeReadiness = {
   embedders: CapabilityReadiness[];
   enrichers: CapabilityReadiness[];
   external: CapabilityReadiness[];
+  semantic_indexes?: Array<{
+    index_id: string;
+    provider_id: string;
+    endpoint_type?: string | null;
+    model: string;
+    model_digest?: string | null;
+    dimensions?: number | null;
+    normalized: boolean;
+    semantic: boolean;
+    relpath: string;
+    created_utc?: string | null;
+    compatible: boolean;
+  }>;
 };
 
 export type IntakeResolveResponse = {
@@ -553,6 +566,19 @@ export type ProcessorEndpoint = {
   kind: "extractor" | "synthesizer" | "embedder" | "enricher";
   base_url: string;
   enabled: boolean;
+};
+
+export type ModelProvider = {
+  id: string;
+  type: "ollama" | "openai" | "shirty";
+  base_url: string;
+  enabled: boolean;
+  priority: number;
+  embedding_model: string;
+  synthesis_model: string;
+  chat_model: string;
+  credential_env: string;
+  credential_present?: boolean;
 };
 
 export type EditedTextSegment = {
@@ -656,6 +682,9 @@ export type ChatRequest = {
 export type ChatResponse = {
   answer: string;
   citations: ChatCitation[];
+  provider: string;
+  fallback_used: boolean;
+  retrieval_mode: string;
 };
 
 export type SearchGroupBy = "file";

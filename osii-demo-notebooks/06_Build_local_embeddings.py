@@ -1,7 +1,7 @@
 # %% [markdown]
 # # 06 — Build local embeddings
 #
-# The normal Compose stack provides a local Jina service. This script calls the
+# The guaranteed local hashing service requires no model download. This script calls the
 # `EmbeddingClient` capability through its OpenAI-compatible `/v1/embeddings`
 # endpoint and writes a FAISS index beside the lexical artifacts.
 

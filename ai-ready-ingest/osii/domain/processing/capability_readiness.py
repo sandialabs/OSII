@@ -7,6 +7,8 @@ from typing import Any
 
 import requests
 import tomllib
+from osii.indexing.common import embeddings_meta_path
+from osii.domain.catalog_db import list_semantic_indexes
 
 from osii.processors.remote import discover_remote_processors
 
@@ -68,7 +70,7 @@ def _embedding_probe() -> dict[str, Any]:
     ).strip().rstrip("/")
     model = os.getenv(
         "EMBEDDING_MODEL",
-        "jinaai/jina-embeddings-v2-base-en",
+        "osii-local-hashing-v1",
     ).strip()
     if not base_url:
         return {
@@ -238,7 +240,7 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
     embedding = embedding_readiness()
     index_metadata: dict[str, Any] = {}
     try:
-        index_metadata = tomllib.loads((osii_root / "embeddings" / "segments.meta.toml").read_text(encoding="utf-8")).get("embeddings", {})
+        index_metadata = tomllib.loads(embeddings_meta_path(osii_root).read_text(encoding="utf-8")).get("embeddings", {})
     except (OSError, tomllib.TOMLDecodeError):
         pass
     if index_metadata and embedding.get("available"):
@@ -250,6 +252,9 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
         )
         embedding["index_rebuild_required"] = not embedding["index_compatible"]
         embedding["indexed_model"] = index_metadata.get("model")
+    elif embedding.get("available"):
+        embedding["index_compatible"] = False
+        embedding["index_rebuild_required"] = True
 
     return {
         "defaults": {
@@ -289,4 +294,5 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
             },
         ],
         "external": external,
+        "semantic_indexes": list_semantic_indexes(osii_root),
     }

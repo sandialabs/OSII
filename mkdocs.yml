@@ -36,6 +36,7 @@ nav:
       - Extraction: concepts/extraction.md
       - Synthesis: concepts/synthesis.md
       - Store structure: reference/osii-store.md
+      - Rebuildable catalog: reference/catalog.md
   - Extend OSII:
       - Choose an extension: extending/index.md
       - Hello table enricher: extending/hello-enricher.md

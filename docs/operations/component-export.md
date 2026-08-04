@@ -8,23 +8,24 @@ change the monorepo, initialize Git repositories, or copy generated data.
 Preview the default export:
 
 ```bash
-python scripts/export_components.py --output ../osii-component-export --dry-run
+uv run --no-project --python 3.11 python scripts/export_components.py --output ../osii-component-export --dry-run
 ```
 
 Create all exports:
 
 ```bash
-python scripts/export_components.py --output ../osii-component-export
+uv run --no-project --python 3.11 python scripts/export_components.py --output ../osii-component-export
 ```
 
 Export only selected components:
 
 ```bash
-python scripts/export_components.py --output ../osii-component-export --components backend,frontend,mcp
+uv run --no-project --python 3.11 python scripts/export_components.py --output ../osii-component-export --components backend,frontend,mcp
 ```
 
-The output contains `backend`, `frontend`, `mcp`, `chat`, `tools`, and
-`notebooks` directories plus `EXPORT_MANIFEST.json`. The backend Dockerfile is
+The output contains `backend`, `frontend`, `mcp`, `chat`, `tools`, `notebooks`,
+the four local processors, and the HTTP-only `model-provider-bridge` directory,
+plus `EXPORT_MANIFEST.json`. The backend Dockerfile is
 adapted to use its exported directory as its build context. The MCP export is
 prepared to install `osii` from the receiving environment's package registry.
 

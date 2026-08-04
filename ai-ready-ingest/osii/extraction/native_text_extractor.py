@@ -157,6 +157,7 @@ class NativeTextExtractor(BaseExtractor):
             "chunk_chars": chunk_chars,
             "expert_context_used": bool(expert_context),
             "segment_storage": "shared_text_file",
+            **({"fallback_from": config["fallback_from"]} if config.get("fallback_from") else {}),
         }
 
         initialize_bundle(osii_store=osii_store, doc_ctx=doc_ctx)

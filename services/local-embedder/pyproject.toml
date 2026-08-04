@@ -5,12 +5,11 @@ build-backend = "hatchling.build"
 [project]
 name = "osii-local-embedder"
 version = "0.1.0"
-description = "Zero-download hashing and optional Model2Vec embedding service for OSII."
+description = "Zero-download hashing embedding service for OSII."
 requires-python = ">=3.11,<3.14"
 dependencies = ["osii-processor-sdk", "uvicorn[standard]>=0.35,<1"]
 
 [project.optional-dependencies]
-model2vec = ["model2vec>=0.8,<0.9"]
 dev = ["httpx>=0.27,<1", "pytest>=8,<9"]
 
 [tool.uv.sources]
