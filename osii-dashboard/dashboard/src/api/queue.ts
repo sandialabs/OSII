@@ -5,6 +5,9 @@ import type {
   ProcessingRun,
   ProcessorEndpoint,
   ModelProvider,
+  ModelProviderHealth,
+  ModelPullJob,
+  OllamaRecommendation,
   QueueBrowseResponse,
   UploadResponse,
 } from "./types";
@@ -64,7 +67,7 @@ export async function checkProcessorEndpoint(id: string, test = false) {
   );
 }
 
-export async function listModelProviders(): Promise<{ providers: ModelProvider[] }> {
+export async function listModelProviders(): Promise<{ providers: ModelProvider[]; ollama_recommendations: OllamaRecommendation[] }> {
   return apiJson("/api/admin/model-providers");
 }
 
@@ -73,8 +76,19 @@ export async function createModelProvider(payload: ModelProvider) {
 }
 
 export async function checkModelProvider(id: string) {
-  return apiJson<{ ok: boolean; models: string[]; missing_models: string[]; pull_commands: string[]; detail?: string }>(
+  return apiJson<ModelProviderHealth>(
     `/api/admin/model-providers/${encodeURIComponent(id)}/health`,
     { method: "POST", json: {} },
   );
+}
+
+export async function pullOllamaModel(id: string, model: string): Promise<ModelPullJob> {
+  return apiJson<ModelPullJob>(`/api/admin/model-providers/${encodeURIComponent(id)}/models/pull`, {
+    method: "POST",
+    json: { model },
+  });
+}
+
+export async function getOllamaPullStatus(id: string, jobId: string): Promise<ModelPullJob> {
+  return apiJson<ModelPullJob>(`/api/admin/model-providers/${encodeURIComponent(id)}/models/pull/${encodeURIComponent(jobId)}`);
 }

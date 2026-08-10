@@ -478,7 +478,7 @@ async def start_run(request: Request, payload: dict):
     add_extractor_plan(preview, resolved_files, extractor_overrides)
 
     if build_embeddings:
-        embedding_status = embedding_readiness()
+        embedding_status = embedding_readiness(osii_store)
         if not embedding_status["available"]:
             raise HTTPException(
                 status_code=409,

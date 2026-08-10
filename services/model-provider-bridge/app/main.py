@@ -126,7 +126,10 @@ def _model(provider: str, capability: str, config: dict[str, Any] | None = None)
     configured = _configured_provider(provider) or {}
     selected = str(configured.get(f"{capability}_model") or "").strip()
     prefix = "OLLAMA" if provider == "ollama" else "OSII"
-    value = explicit or selected or os.getenv(f"{prefix}_{capability.upper()}_MODEL", "").strip()
+    default = ""
+    if provider == "ollama":
+        default = "all-minilm" if capability == "embedding" else "llama3.2:1b"
+    value = explicit or selected or os.getenv(f"{prefix}_{capability.upper()}_MODEL", "").strip() or default
     if not value:
         raise ValueError(f"No {capability} model is selected for {provider}.")
     return value

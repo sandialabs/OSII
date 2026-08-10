@@ -12,6 +12,7 @@ tls-ca-bundle.pem
 __pycache__/
 *.py[cod]
 .venv/
+osii-env/
 venv/
 *.egg-info/
 build/

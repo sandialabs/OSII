@@ -2,6 +2,8 @@
 # Docker Desktop, for example: make COMPOSE='docker compose' dev-containers
 COMPOSE ?= podman-compose
 UV ?= uv
+export UV_PROJECT_ENVIRONMENT := $(CURDIR)/osii-env
+unexport VIRTUAL_ENV
 
 .PHONY: dev dev-host dev-core dev-ollama dev-corporate dev-extractor dev-synthesizer dev-embedder dev-enricher dev-model-bridge dev-containers dev-services dev-examples containers-dev run dev-all down logs test build docs docs-serve doctor catalog-rebuild catalog-verify
 

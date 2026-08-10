@@ -64,6 +64,7 @@ def build_environment(
     core_only: bool,
 ) -> dict[str, str]:
     env = os.environ.copy()
+    env.pop("VIRTUAL_ENV", None)
     for key, value in load_dotenv(REPOSITORY_ROOT / ".env").items():
         env.setdefault(key, value)
 
@@ -101,6 +102,9 @@ def build_environment(
             # Pin the host workflow independently of whichever newer Python a
             # developer's package manager currently exposes by default.
             "UV_PYTHON": "3.11",
+            # A visible name avoids macOS marking every .pth file beneath a
+            # dot-prefixed .venv as hidden and skipping editable packages.
+            "UV_PROJECT_ENVIRONMENT": str(REPOSITORY_ROOT / "osii-env"),
             # The MCP package declares `osii` as a workspace dependency. Keep
             # editable source importable even when an older uv-created .pth
             # file is present in the shared development environment.
@@ -123,33 +127,39 @@ def build_environment(
     if provider_profile == "corporate":
         env["OSII_EXTRACTOR_ROUTES_PATH"] = str((REPOSITORY_ROOT / "ai-ready-ingest" / "config" / "extractor_routes_corporate.toml").resolve())
     if not core_only:
+        ollama_embedding_model = env.get("OLLAMA_EMBEDDING_MODEL", "").strip() or "all-minilm"
+        ollama_chat_model = env.get("OLLAMA_CHAT_MODEL", "").strip() or "llama3.2:1b"
+        ollama_synthesis_model = env.get("OLLAMA_SYNTHESIS_MODEL", "").strip() or ollama_chat_model
+        env.update({
+            "OLLAMA_EMBEDDING_MODEL": ollama_embedding_model,
+            "OLLAMA_SYNTHESIS_MODEL": ollama_synthesis_model,
+            "OLLAMA_CHAT_MODEL": ollama_chat_model,
+        })
         local_urls = [
             f"http://127.0.0.1:{env.get('OSII_LOCAL_EXTRACTOR_PORT', '8092')}",
             f"http://127.0.0.1:{env.get('OSII_LOCAL_SYNTHESIZER_PORT', '8093')}",
             f"http://127.0.0.1:{embeddings_port}",
             f"http://127.0.0.1:{env.get('OSII_LOCAL_ENRICHER_PORT', '8094')}",
+            "http://127.0.0.1:8095/ollama/embedder",
+            "http://127.0.0.1:8095/ollama/synthesizer",
         ]
         configured = [item for item in env.get("OSII_PROCESSORS", "").split(",") if item]
-        if provider_profile == "ollama":
-            local_urls.extend(["http://127.0.0.1:8095/ollama/embedder", "http://127.0.0.1:8095/ollama/synthesizer"])
-        elif provider_profile == "corporate":
+        if provider_profile == "corporate":
             shirty_url = env.get("OSII_SHIRTY_BRIDGE_URL", "http://127.0.0.1:8096").rstrip("/")
-            local_urls.extend([f"{shirty_url}/extractor", f"{shirty_url}/embedder", f"{shirty_url}/synthesizer", "http://127.0.0.1:8095/ollama/embedder", "http://127.0.0.1:8095/ollama/synthesizer"])
+            local_urls.extend([f"{shirty_url}/extractor", f"{shirty_url}/embedder", f"{shirty_url}/synthesizer"])
         env.update({
             "OSII_PROCESSORS": ",".join(local_urls + configured),
             "OSII_DEFAULT_EXTRACTOR": "corporate.shirty-textract" if provider_profile == "corporate" else "local.native-text",
-            "OSII_DEFAULT_SYNTHESIZER": "local.extractive-preview",
-            "OSII_DEFAULT_EMBEDDER": "corporate.shirty-embedding" if provider_profile == "corporate" else ("ollama.embedder" if provider_profile == "ollama" else "local.hashing"),
+            "OSII_DEFAULT_SYNTHESIZER": "corporate.shirty-synthesis" if provider_profile == "corporate" else "ollama.synthesizer",
+            "OSII_DEFAULT_EMBEDDER": "corporate.shirty-embedding" if provider_profile == "corporate" else "ollama.embedder",
             "OSII_DEFAULT_ENRICHER": "local.stats-keywords",
-            "EMBEDDING_MODEL": env.get("OLLAMA_EMBEDDING_MODEL", "") if provider_profile == "ollama" else (env.get("SHIRTY_EMBEDDING_MODEL", "") if provider_profile == "corporate" else "osii-local-hashing-v1"),
+            "EMBEDDING_MODEL": env.get("SHIRTY_EMBEDDING_MODEL", "") if provider_profile == "corporate" else ollama_embedding_model,
         })
-        if provider_profile == "ollama":
+        if provider_profile in {"baseline", "ollama"}:
             env.update({"CHAT_PROVIDER": "ollama", "CHAT_PROVIDER_CHAIN": "ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "ollama.synthesizer,local.extractive-preview,firstN"})
         elif provider_profile == "corporate":
             shirty_url = env.get("OSII_SHIRTY_BRIDGE_URL", "http://127.0.0.1:8096").rstrip("/")
             env.update({"CHAT_PROVIDER": "openai", "CHAT_PROVIDER_CHAIN": "openai,ollama,extractive", "OSII_CHAT_BASE_URL": f"{shirty_url}/v1", "OSII_SYNTHESIZER_FALLBACKS": "corporate.shirty-synthesis,ollama.synthesizer,local.extractive-preview,firstN"})
-        else:
-            env.update({"CHAT_PROVIDER": "extractive", "CHAT_PROVIDER_CHAIN": "extractive"})
     if examples and not env.get("OSII_PROCESSORS"):
         processor_port = env.get("OSII_EXAMPLE_PROCESSOR_PORT", "8091")
         env["OSII_PROCESSORS"] = f"http://127.0.0.1:{processor_port}"
@@ -401,7 +411,7 @@ def run(
         print("[dev] Press Ctrl+C to stop host processes.")
         if not core_only:
             print("[dev] Local processors: extractor 8092, synthesizer 8093, embedder 8085, enricher 8094")
-            print(f"[dev] Provider profile: {provider_profile}; models are never downloaded automatically")
+            print(f"[dev] Provider profile: {provider_profile}; model downloads require an explicit Tools action")
 
         while True:
             for name, (_, process) in processes.items():

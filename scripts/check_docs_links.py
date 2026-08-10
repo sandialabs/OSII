@@ -42,6 +42,7 @@ def markdown_files() -> list[Path]:
                 ".pytest_cache",
                 ".venv",
                 "node_modules",
+                "osii-env",
                 "site",
                 "venv",
             }

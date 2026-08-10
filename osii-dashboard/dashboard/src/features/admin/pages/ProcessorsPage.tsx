@@ -1,10 +1,23 @@
-import { FormEvent, useState } from "react";
-import { Alert, Button, Chip, Divider, FormControlLabel, MenuItem, Paper, Stack, Switch, TextField, Typography } from "@mui/material";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { Alert, Button, Chip, Divider, FormControlLabel, LinearProgress, MenuItem, Paper, Stack, Switch, TextField, Typography } from "@mui/material";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 
-import { checkModelProvider, checkProcessorEndpoint, createModelProvider, createProcessorEndpoint, getIntakeReadiness, listModelProviders, listProcessorEndpoints } from "../../../api/queue";
-import type { ModelProvider, ProcessorEndpoint } from "../../../api/types";
+import { checkModelProvider, checkProcessorEndpoint, createModelProvider, createProcessorEndpoint, getIntakeReadiness, getOllamaPullStatus, listModelProviders, listProcessorEndpoints, pullOllamaModel } from "../../../api/queue";
+import type { ModelProvider, ModelProviderHealth, ModelPullJob, OllamaRecommendation, ProcessorEndpoint } from "../../../api/types";
+
+const DEFAULT_EMBEDDING_MODEL = "all-minilm";
+const DEFAULT_CHAT_MODEL = "llama3.2:1b";
+
+function modelMatches(installed: string, requested: string) {
+  return installed === requested || installed === `${requested}:latest` || requested === `${installed}:latest`;
+}
+
+function formatBytes(value?: number | null) {
+  if (!value) return "size unavailable";
+  if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(1)} GB`;
+  return `${Math.round(value / 1024 ** 2)} MB`;
+}
 
 export function ProcessorsPage() {
   const client = useQueryClient();
@@ -17,9 +30,34 @@ export function ProcessorsPage() {
   });
   const [message, setMessage] = useState<string | null>(null);
   const [providerForm, setProviderForm] = useState<ModelProvider>({
-    id: "ollama-local", type: "ollama", base_url: "http://127.0.0.1:11434", enabled: false,
-    priority: 100, embedding_model: "", synthesis_model: "", chat_model: "", credential_env: "",
+    id: "ollama-local", type: "ollama", base_url: "http://127.0.0.1:11434", enabled: true,
+    priority: 100, embedding_model: DEFAULT_EMBEDDING_MODEL, synthesis_model: DEFAULT_CHAT_MODEL, chat_model: DEFAULT_CHAT_MODEL, credential_env: "",
   });
+  const [providerHealth, setProviderHealth] = useState<Record<string, ModelProviderHealth>>({});
+  const [pullJobs, setPullJobs] = useState<Record<string, ModelPullJob>>({});
+  const autoProbed = useRef(new Set<string>());
+
+  const loadProviderModels = async (provider: ModelProvider, announce = false) => {
+    try {
+      const result = await checkModelProvider(provider.id);
+      setProviderHealth((current) => ({ ...current, [provider.id]: result }));
+      if (announce) {
+        setMessage(`${provider.id}: ${result.ok ? `connected; ${result.models.length} installed model(s)` : result.detail ?? "unavailable"}.`);
+      }
+      return result;
+    } catch (error) {
+      if (announce) setMessage(error instanceof Error ? error.message : "Provider check failed.");
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    for (const provider of providers.data?.providers ?? []) {
+      if (provider.type !== "ollama" || autoProbed.current.has(provider.id)) continue;
+      autoProbed.current.add(provider.id);
+      void loadProviderModels(provider);
+    }
+  }, [providers.data]);
 
   const add = async (event: FormEvent) => {
     event.preventDefault();
@@ -46,7 +84,7 @@ export function ProcessorsPage() {
     event.preventDefault();
     try {
       await createModelProvider(providerForm);
-      setMessage("Model provider saved. Models remain unselected until you enter their exact installed names.");
+      setMessage("Model provider saved. The highest-priority enabled provider supplies each configured capability.");
       await client.invalidateQueries({ queryKey: ["admin", "model-providers"] });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save model provider.");
@@ -54,9 +92,25 @@ export function ProcessorsPage() {
   };
 
   const probeProvider = async (provider: ModelProvider) => {
-    const result = await checkModelProvider(provider.id);
-    const commands = result.pull_commands.length ? ` Missing models: ${result.pull_commands.join("; ")}` : "";
-    setMessage(`${provider.id}: ${result.ok ? `connected; ${result.models.length} installed model(s)` : result.detail ?? "unavailable"}.${commands}`);
+    await loadProviderModels(provider, true);
+  };
+
+  const installModel = async (provider: ModelProvider, recommendation: OllamaRecommendation) => {
+    try {
+      const jobKey = `${provider.id}:${recommendation.model}`;
+      let job = await pullOllamaModel(provider.id, recommendation.model);
+      setPullJobs((current) => ({ ...current, [jobKey]: job }));
+      while (job.status === "queued" || job.status === "running") {
+        await new Promise((resolve) => window.setTimeout(resolve, 750));
+        job = await getOllamaPullStatus(provider.id, job.job_id);
+        setPullJobs((current) => ({ ...current, [jobKey]: job }));
+      }
+      if (job.status === "error") throw new Error(job.detail || `Could not download ${recommendation.model}`);
+      setMessage(`${recommendation.display_name} installed through Ollama.`);
+      await loadProviderModels(provider);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Model download failed.");
+    }
   };
 
   return (
@@ -103,7 +157,7 @@ export function ProcessorsPage() {
       <Paper component="form" onSubmit={(event) => void addProvider(event)} variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
           <Typography fontWeight={700}>Model providers</Typography>
-          <Typography variant="body2" color="text.secondary">Ollama, Shirty, and generic OpenAI-compatible servers are adapted by a thin HTTP bridge. They are not custom OSII Processors. OSII stores only this non-secret configuration.</Typography>
+          <Typography variant="body2" color="text.secondary">Ollama, Shirty, and generic OpenAI-compatible servers are adapted by a thin HTTP bridge. Ollama itself and its model files remain separate from OSII, so this module can be disabled when a reliable endpoint is available.</Typography>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
             <TextField label="Provider ID" value={providerForm.id} onChange={(event) => setProviderForm({ ...providerForm, id: event.target.value })} />
             <TextField select label="Type" value={providerForm.type} onChange={(event) => setProviderForm({ ...providerForm, type: event.target.value as ModelProvider["type"] })} sx={{ minWidth: 140 }}>
@@ -118,13 +172,71 @@ export function ProcessorsPage() {
             <TextField label="Credential env name" value={providerForm.credential_env} onChange={(event) => setProviderForm({ ...providerForm, credential_env: event.target.value })} helperText="Example: SHIRTY_API_KEY. Never paste the key." />
           </Stack>
           <FormControlLabel control={<Switch checked={providerForm.enabled} onChange={(event) => setProviderForm({ ...providerForm, enabled: event.target.checked })} />} label="Enable this provider" />
-          <Alert severity="warning">Model names are explicit. OSII never chooses or downloads an Ollama model. If a model is missing, Health gives a copy-paste <code>ollama pull</code> command.</Alert>
+          <Alert severity="info">The first-run defaults are the US-origin <code>all-minilm</code> embedding model and Meta <code>llama3.2:1b</code> for chat and synthesis. Downloads are explicit and restricted by <code>OSII_OLLAMA_ALLOWED_MODELS</code>.</Alert>
           <Button type="submit" variant="contained" sx={{ alignSelf: "flex-start" }}>Save provider</Button>
           {(providers.data?.providers ?? []).map((provider) => (
-            <Stack key={provider.id} direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1}>
-              <Stack><Typography fontWeight={600}>{provider.id} <Chip size="small" label={provider.type} /></Typography><Typography variant="caption" color="text.secondary">{provider.base_url} · credentials {provider.credential_present ? "present" : "not present"} · {provider.enabled ? "enabled" : "disabled"}</Typography></Stack>
-              <Stack direction="row" spacing={1}><Button variant="outlined" onClick={() => setProviderForm(provider)}>Edit</Button><Button variant="outlined" onClick={() => void probeProvider(provider)}>Health & models</Button></Stack>
-            </Stack>
+            <Paper key={provider.id} variant="outlined" sx={{ p: 1.5 }}>
+              <Stack spacing={1.25}>
+                <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1}>
+                  <Stack>
+                    <Stack direction="row" spacing={0.75} alignItems="center">
+                      <Typography fontWeight={600}>{provider.id}</Typography>
+                      <Chip size="small" label={provider.type} />
+                    </Stack>
+                    <Typography variant="caption" color="text.secondary">{provider.base_url} · credentials {provider.credential_required === false ? "not required" : provider.credential_present ? "present" : "not present"} · {provider.enabled ? "enabled" : "disabled"}</Typography>
+                  </Stack>
+                  <Stack direction="row" spacing={1}><Button variant="outlined" onClick={() => setProviderForm(provider)}>Edit</Button><Button variant="outlined" onClick={() => void probeProvider(provider)}>Refresh models</Button></Stack>
+                </Stack>
+                {provider.type === "ollama" && providerHealth[provider.id]?.ok ? (
+                  <Stack spacing={0.75}>
+                    <Typography variant="body2" fontWeight={700}>Installed Ollama models</Typography>
+                    {providerHealth[provider.id].model_details.map((model) => {
+                      const embeddingSelected = modelMatches(model.name, provider.embedding_model);
+                      const chatSelected = modelMatches(model.name, provider.chat_model) || modelMatches(model.name, provider.synthesis_model);
+                      return (
+                        <Stack key={model.name} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}>
+                          <Stack direction="row" spacing={0.5} alignItems="center"><Typography variant="body2">{model.name}</Typography>{embeddingSelected ? <Chip size="small" label="embedding selected" /> : null}{chatSelected ? <Chip size="small" label="chat selected" /> : null}</Stack>
+                          <Typography variant="caption" color="text.secondary">{[formatBytes(model.size), model.parameter_size, model.quantization_level].filter(Boolean).join(" · ")}</Typography>
+                        </Stack>
+                      );
+                    })}
+                    {!providerHealth[provider.id].model_details.length ? <Typography variant="caption" color="text.secondary">Ollama is connected, but no models are installed.</Typography> : null}
+                  </Stack>
+                ) : null}
+                {provider.type === "ollama" && providerHealth[provider.id] && !providerHealth[provider.id].ok ? <Alert severity="warning">Ollama is not reachable at this URL. Start Ollama, then refresh this pane.</Alert> : null}
+                {provider.type === "ollama" ? (
+                  <Stack spacing={1}>
+                    <Typography variant="body2" fontWeight={700}>Approved starter models</Typography>
+                    {(providers.data?.ollama_recommendations ?? []).map((recommendation) => {
+                      const installed = (providerHealth[provider.id]?.models ?? []).some((name) => modelMatches(name, recommendation.model));
+                      const job = pullJobs[`${provider.id}:${recommendation.model}`];
+                      const progress = job?.total ? Math.min(100, (job.completed / job.total) * 100) : undefined;
+                      const active = job?.status === "queued" || job?.status === "running";
+                      return (
+                        <Paper key={recommendation.model} variant="outlined" sx={{ p: 1.25 }}>
+                          <Stack spacing={0.75}>
+                            <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}>
+                              <Stack>
+                                <Stack direction="row" spacing={0.75} alignItems="center">
+                                  <Typography variant="body2" fontWeight={700}>{recommendation.display_name}</Typography>
+                                  <Chip size="small" label={recommendation.capability} />
+                                </Stack>
+                                <Typography variant="caption" color="text.secondary">{recommendation.model} · {recommendation.publisher} · {recommendation.size_label}</Typography>
+                                <Typography variant="caption" color="text.secondary">{recommendation.description}</Typography>
+                              </Stack>
+                              <Button disabled={installed || active || !providerHealth[provider.id]?.ok} variant={installed ? "outlined" : "contained"} onClick={() => void installModel(provider, recommendation)}>
+                                {installed ? "Installed" : active ? "Downloading…" : `Download ${recommendation.size_label}`}
+                              </Button>
+                            </Stack>
+                            {active ? <Stack spacing={0.25}><LinearProgress variant={progress === undefined ? "indeterminate" : "determinate"} value={progress} /><Typography variant="caption" color="text.secondary">{job.status_text}{progress === undefined ? "" : ` · ${Math.round(progress)}%`}</Typography></Stack> : null}
+                          </Stack>
+                        </Paper>
+                      );
+                    })}
+                  </Stack>
+                ) : null}
+              </Stack>
+            </Paper>
           ))}
           <Divider />
           <Typography variant="body2" fontWeight={700}>Available vector indexes</Typography>

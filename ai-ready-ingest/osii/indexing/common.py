@@ -22,6 +22,7 @@ from osii.domain.storage.store import (
 from osii.indexing.chunking import write_chunk_manifest
 from osii.search.lexical import build_bm25_index
 from osii.domain.catalog_db import rebuild_catalog
+from osii.domain.model_provider_config import selected_model, selected_processor
 from osii.domain.storage.atomic import atomic_write_text
 
 
@@ -32,7 +33,7 @@ MODEL_TOKEN_LIMITS: dict[str, int] = {}
 
 
 def get_embedding_model(explicit_model: str | None = None) -> str:
-    return explicit_model or os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL)
+    return explicit_model or selected_model("embedder")
 
 
 def get_model_token_limit(model: str) -> int:
@@ -44,7 +45,7 @@ def get_model_char_limit(model: str) -> int:
 
 
 def embedding_namespace(model: str | None = None, provider: str | None = None) -> tuple[str, str]:
-    provider_name = provider or os.getenv("OSII_DEFAULT_EMBEDDER", "local.hashing")
+    provider_name = provider or selected_processor("embedder")
     model_name = model or get_embedding_model()
     safe_provider = re.sub(r"[^A-Za-z0-9_.-]+", "-", provider_name).strip("-") or "unknown"
     safe_model = re.sub(r"[^A-Za-z0-9_.-]+", "-", model_name).strip("-")[:48] or "unknown"

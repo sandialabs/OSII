@@ -1,5 +1,8 @@
+import json
+
 from fastapi.testclient import TestClient
 
+from app.config import get_settings
 from app.main import app
 
 
@@ -20,3 +23,17 @@ def test_chat_falls_back_and_labels_provider(monkeypatch, tmp_path):
     assert response.json()["provider"] == "extractive"
     assert response.json()["fallback_used"] is True
     assert response.json()["retrieval_mode"] == "lexical"
+
+
+def test_disabling_all_saved_providers_selects_extractive_chat(monkeypatch, tmp_path):
+    provider_path = tmp_path / "state" / "model_providers.json"
+    provider_path.parent.mkdir(parents=True)
+    provider_path.write_text(json.dumps([]), encoding="utf-8")
+    monkeypatch.setenv("OSII_ROOT", str(tmp_path))
+    monkeypatch.setenv("CHAT_PROVIDER", "ollama")
+    monkeypatch.setenv("CHAT_PROVIDER_CHAIN", "ollama,extractive")
+
+    settings = get_settings()
+
+    assert settings.chat_provider == "extractive"
+    assert settings.chat_provider_chain == ("extractive",)

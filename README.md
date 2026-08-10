@@ -80,7 +80,7 @@ cd /path/to/osii
 make dev
 ```
 
-`make dev` requires no container runtime or model download. It runs the API,
+`make dev` requires no container runtime or preexisting model download. It runs the API,
 worker, local chat, MCP server, dashboard, and four independent Processor API
 services directly from source: native-text extraction, cited extractive
 previews, 384-dimensional lexical hashing embeddings, and statistics/keyword
@@ -88,10 +88,12 @@ enrichment. Scanned PDFs still require optional OCR. The launcher checks ports a
 reloads backend services when source changes, and keeps generated data under
 `osii-data/`.
 
-Hashing embeddings are enabled by default and require almost no memory. They
-are an explicit lexical baseline, not a semantic model. Optional semantic
-models are reached over HTTP through Ollama or an OpenAI-compatible provider;
-OSII does not install provider SDKs or download models.
+OSII first tries a separately installed Ollama service with `all-minilm` for
+semantic embeddings and Meta `llama3.2:1b` for chat and synthesis. Open
+**Tools → Model providers** to see installed models and explicitly download
+either approved starter model when missing. OSII bundles neither Ollama nor
+model weights. Hashing, BM25, and extractive chat remain the automatic
+model-free fallbacks.
 
 On Windows PowerShell, use the equivalent launcher:
 
@@ -101,7 +103,8 @@ cd C:\path\to\osii
 ```
 
 The first development startup may take longer while dependencies are checked.
-Later starts reuse them. When the terminal output settles, open:
+Later starts reuse the ignored `osii-env` Python environment. When the terminal
+output settles, open:
 
 - **OSII dashboard:** <http://localhost:5173>
 - **Backend status:** <http://localhost:8511/health>
@@ -160,8 +163,8 @@ run the normal integrated container stack.
   editable development stack without containers.
 - `make dev-core` / `.\scripts\osii.ps1 dev-core`: run application services
   without processors for external-integration testing.
-- `make dev-ollama` / `.\scripts\osii.ps1 dev-ollama`: enable configured Ollama
-  adapters. Exact installed model names must still be selected explicitly.
+- `make dev-ollama` / `.\scripts\osii.ps1 dev-ollama`: explicit alias for the
+  normal Ollama-first development profile.
 - `make dev-corporate` / `.\scripts\osii.ps1 dev-corporate`: prefer the
   separately running Shirty bridge, then Ollama, then extractive fallbacks.
 - `make dev-extractor`, `dev-synthesizer`, `dev-embedder`, or `dev-enricher`

@@ -94,11 +94,15 @@ def create_chat_client() -> ChatClient:
 
 
 def create_embedding_client() -> EmbeddingClient:
-    processor_name = os.getenv("OSII_DEFAULT_EMBEDDER", "").strip()
+    from osii.domain.model_provider_config import load_provider_records, selected_processor
+
+    base_url = _configured_url("OSII_EMBEDDING_BASE_URL", "OSII_MODEL_BASE_URL")
+    if load_provider_records() is None and not os.getenv("OSII_DEFAULT_EMBEDDER", "").strip() and base_url:
+        return OpenAICompatibleClient(base_url, os.getenv("OSII_EMBEDDING_API_KEY") or os.getenv("OSII_MODEL_API_KEY"))
+    processor_name = selected_processor("embedder")
     if processor_name:
         from osii.processors.remote import ProcessorEmbeddingClient, resolve_remote_processor
         return ProcessorEmbeddingClient(resolve_remote_processor(processor_name, "embedder"))
-    base_url = _configured_url("OSII_EMBEDDING_BASE_URL", "OSII_MODEL_BASE_URL")
     if not base_url:
         raise ModelCapabilityUnavailable(
             "Embeddings are not configured. Start the bundled embeddings service "

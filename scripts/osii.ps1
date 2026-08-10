@@ -12,6 +12,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepositoryRoot = Split-Path -Parent $PSScriptRoot
+$env:UV_PROJECT_ENVIRONMENT = Join-Path $RepositoryRoot "osii-env"
+Remove-Item Env:VIRTUAL_ENV -ErrorAction SilentlyContinue
 
 if ($Runtime -eq "Docker") {
     $ComposeExecutable = "docker"

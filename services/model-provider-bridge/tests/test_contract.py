@@ -28,8 +28,17 @@ def test_ollama_embedding_and_synthesis_contract(monkeypatch):
     assert synthesized.json()["metadata"]["provider"] == "ollama"
 
 
-def test_model_must_be_selected(monkeypatch, tmp_path):
+def test_ollama_embedding_has_small_us_model_default(monkeypatch, tmp_path):
     monkeypatch.setenv("OSII_ROOT", str(tmp_path))
     monkeypatch.delenv("OLLAMA_EMBEDDING_MODEL", raising=False)
-    response = TestClient(app, raise_server_exceptions=False).post("/ollama/embedder/v1/embed", json={"request_id": "r", "inputs": [{"id": "a", "text": "hello"}]})
-    assert response.status_code == 422
+    seen = {}
+
+    def fake_request(method, path, **kwargs):
+        seen.update(kwargs["payload"])
+        return {"model": "all-minilm", "embeddings": [[1.0, 0.0]]}
+
+    monkeypatch.setattr(CLIENTS["ollama"], "request", fake_request)
+    monkeypatch.setattr("app.main._ollama_model_digest", lambda _: None)
+    response = TestClient(app).post("/ollama/embedder/v1/embed", json={"request_id": "r", "inputs": [{"id": "a", "text": "hello"}]})
+    assert response.status_code == 200
+    assert seen["model"] == "all-minilm"

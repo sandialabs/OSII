@@ -12,15 +12,30 @@ Do not register Shirty or Ollama as a custom Processor endpoint in Tools.
 
 ## Ollama
 
-Run Ollama separately and use `make dev-ollama`. The bridge calls native
-`/api/embed` for normalized batch embeddings, `/api/chat` for generation, and
-`/api/tags` for installed-model discovery. OSII installs no Ollama Python
-package, bundles no server or weights, and never initiates a pull.
+Run Ollama separately; normal `make dev` uses it when reachable. The bridge
+calls native `/api/embed` for normalized batch embeddings and `/api/chat` for
+generation. The Tools pane calls `/api/tags` to show installed models beside
+the endpoint configuration.
+
+First-run selections are Ollama's
+[`all-minilm`](https://ollama.com/library/all-minilm) for embeddings and Meta
+[`llama3.2:1b`](https://ollama.com/library/llama3.2) for chat and synthesis.
+Both are US-origin defaults sized for an ordinary workstation. If either is
+absent, Tools can explicitly call Ollama's documented
+[`/api/pull`](https://docs.ollama.com/api/pull) endpoint and show download
+progress. The default download allowlist contains only those two names and can be extended through
+`OSII_OLLAMA_ALLOWED_MODELS`. OSII installs no Ollama Python package and
+bundles no server or weights.
 
 Configure non-secret fields in **Tools → Model providers**: provider ID, base
 URL, enabled state, priority, and exact embedding/synthesis/chat model names.
-Missing installed models are reported as copy-paste `ollama pull <model>`
-commands.
+Missing installed models still include copy-paste `ollama pull <model>`
+commands for environments where browser-initiated downloads are disabled.
+
+Saving every model provider as disabled is an explicit opt-out: OSII returns
+to hashing embeddings and extractive synthesis/chat. Enabled providers are
+selected by priority and capability, so a reliable OpenAI-compatible or Shirty
+endpoint can replace Ollama without changing Intake or the dashboard.
 
 ## Generic OpenAI-compatible services
 

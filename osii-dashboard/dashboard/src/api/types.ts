@@ -578,7 +578,48 @@ export type ModelProvider = {
   synthesis_model: string;
   chat_model: string;
   credential_env: string;
+  credential_required?: boolean;
   credential_present?: boolean;
+};
+
+export type OllamaModelDetail = {
+  name: string;
+  size?: number | null;
+  digest?: string | null;
+  modified_at?: string | null;
+  family?: string | null;
+  parameter_size?: string | null;
+  quantization_level?: string | null;
+};
+
+export type OllamaRecommendation = {
+  model: string;
+  capability: "embedding" | "chat";
+  display_name: string;
+  publisher: string;
+  size_label: string;
+  description: string;
+};
+
+export type ModelProviderHealth = {
+  ok: boolean;
+  models: string[];
+  model_details: OllamaModelDetail[];
+  missing_models: string[];
+  pull_commands: string[];
+  recommendations: OllamaRecommendation[];
+  detail?: string;
+};
+
+export type ModelPullJob = {
+  job_id: string;
+  provider_id: string;
+  model: string;
+  status: "queued" | "running" | "complete" | "error";
+  status_text: string;
+  completed: number;
+  total: number;
+  detail?: string | null;
 };
 
 export type EditedTextSegment = {

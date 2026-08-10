@@ -27,19 +27,38 @@ make dev
 
 It starts the API, worker, chat, MCP, dashboard, four baseline processors, and
 the lightweight provider bridge from editable source. The bridge makes no
-provider request until a provider and exact model are enabled. Run applications
-without any processor or bridge using `make dev-core`.
+generation or embedding request until that capability is used; Tools performs
+only model discovery. Run applications without any processor or bridge using
+`make dev-core`.
 
-Use `make dev-ollama` after installing and starting Ollama separately. OSII
-queries `/api/tags` to show installed models but never pulls one. When Tools
-reports a missing model, run the displayed command yourself, for example:
+Host Python dependencies live in the ignored `osii-env/` directory. OSII uses
+that visible name because current macOS Python releases can skip editable
+package path files beneath a hidden `.venv` directory.
+
+Normal `make dev` is Ollama-first when the separately installed Ollama service
+is reachable. In **Tools → Model providers**, OSII queries `/api/tags` and shows
+the installed models beside the endpoint configuration. The two approved US
+starter models are:
+
+- `all-minilm`, a roughly 46 MB Microsoft-origin embedding model.
+- `llama3.2:1b`, a roughly 1.3 GB Meta chat and synthesis model.
+
+Select **Download** to ask Ollama to pull a missing starter model and show its
+progress. OSII bundles no model weights. Downloads are limited to
+`OSII_OLLAMA_ALLOWED_MODELS`; corporate administrators can extend that list
+with other approved models.
+
+The equivalent manual command remains available, for example:
 
 ```bash
-ollama pull nomic-embed-text
+ollama pull all-minilm
 ```
 
-Then enter that exact name in **Tools → Model providers** and enable the
-provider. The Windows command is `.\scripts\osii.ps1 dev-ollama`.
+`make dev-ollama` and `.\scripts\osii.ps1 dev-ollama` remain explicit aliases
+for this profile. Disable the Ollama provider in Tools to return chat,
+synthesis, and embedding to their guaranteed local baselines. A higher-priority
+enabled OpenAI-compatible or Shirty provider replaces Ollama capability by
+capability, without changing the rest of OSII.
 
 On Windows, append `-DryRun` to any host profile command to validate its
 service plan without opening ports, for example

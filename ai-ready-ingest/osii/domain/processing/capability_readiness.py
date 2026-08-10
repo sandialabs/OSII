@@ -9,6 +9,7 @@ import requests
 import tomllib
 from osii.indexing.common import embeddings_meta_path
 from osii.domain.catalog_db import list_semantic_indexes
+from osii.domain.model_provider_config import selected_processor
 
 from osii.processors.remote import discover_remote_processors
 
@@ -23,8 +24,8 @@ def _service_probe(url: str, *, timeout: float = 3.0) -> tuple[bool, str]:
         return False, str(exc)
 
 
-def _embedding_probe() -> dict[str, Any]:
-    selected = os.getenv("OSII_DEFAULT_EMBEDDER", "").strip()
+def _embedding_probe(osii_root: Path | None = None) -> dict[str, Any]:
+    selected = selected_processor("embedder", osii_root=osii_root)
     if selected:
         for descriptor in discover_remote_processors(include_errors=True):
             if descriptor.get("name") != selected:
@@ -122,10 +123,10 @@ def _embedding_probe() -> dict[str, Any]:
     }
 
 
-def embedding_readiness() -> dict[str, Any]:
+def embedding_readiness(osii_root: Path | None = None) -> dict[str, Any]:
     """Return a tested view of the configured embedding capability."""
 
-    return _embedding_probe()
+    return _embedding_probe(osii_root)
 
 
 def _registered_endpoints(osii_root: Path) -> list[dict[str, Any]]:
@@ -237,7 +238,7 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
             "descriptor": descriptor if not descriptor.get("error") else None,
         })
 
-    embedding = embedding_readiness()
+    embedding = embedding_readiness(osii_root)
     index_metadata: dict[str, Any] = {}
     try:
         index_metadata = tomllib.loads(embeddings_meta_path(osii_root).read_text(encoding="utf-8")).get("embeddings", {})
@@ -259,8 +260,8 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
     return {
         "defaults": {
             "extractor": os.getenv("OSII_DEFAULT_EXTRACTOR", "native_text"),
-            "synthesizer": os.getenv("OSII_DEFAULT_SYNTHESIZER", "firstN"),
-            "embedder": os.getenv("OSII_DEFAULT_EMBEDDER", ""),
+            "synthesizer": selected_processor("synthesizer", osii_root=osii_root),
+            "embedder": selected_processor("embedder", osii_root=osii_root),
             "enricher": os.getenv("OSII_DEFAULT_ENRICHER", "stats_keywords"),
         },
         "extractors": remote_by_kind["extractor"] + extractors,

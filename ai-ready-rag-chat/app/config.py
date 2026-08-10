@@ -22,16 +22,17 @@ class Settings:
 
 
 def get_settings() -> Settings:
-    primary = os.getenv("CHAT_PROVIDER", "extractive").strip().lower()
+    primary = os.getenv("CHAT_PROVIDER", "ollama").strip().lower()
     chain = tuple(item.strip().lower() for item in os.getenv("CHAT_PROVIDER_CHAIN", primary).split(",") if item.strip())
     ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
-    ollama_model = os.getenv("OLLAMA_CHAT_MODEL", "").strip()
+    ollama_model = os.getenv("OLLAMA_CHAT_MODEL", "llama3.2:1b").strip() or "llama3.2:1b"
     openai_url = os.getenv("OSII_CHAT_BASE_URL", os.getenv("OSII_MODEL_BASE_URL", "")).rstrip("/")
     openai_model = os.getenv("OSII_CHAT_MODEL", os.getenv("SHIRTY_CHAT_MODEL", "")).strip()
     openai_key = os.getenv("OSII_MODEL_API_KEY", "")
     root = Path(os.getenv("OSII_ROOT", "./osii-data/.osii"))
+    provider_path = root / "state" / "model_providers.json"
     try:
-        providers = json.loads((root / "state" / "model_providers.json").read_text(encoding="utf-8"))
+        providers = json.loads(provider_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         providers = []
     enabled = sorted((item for item in providers if item.get("enabled")), key=lambda item: int(item.get("priority", 100)))
@@ -51,11 +52,16 @@ def get_settings() -> Settings:
                 openai_key = os.getenv(env_name, "")
         chain = tuple(dict.fromkeys([*chain_items, "extractive"]))
         primary = chain[0]
+    elif provider_path.exists():
+        # An explicit saved configuration with every provider disabled must
+        # override the environment's first-run Ollama defaults.
+        chain = ("extractive",)
+        primary = "extractive"
     if "extractive" not in chain:
         chain = (*chain, "extractive")
     return Settings(
         osii_backend_base_url=os.getenv("OSII_BACKEND_BASE_URL", "http://localhost:8511").rstrip("/"),
-        chat_model=os.getenv("CHAT_MODEL", "openai/gpt-oss-120b"),
+        chat_model=os.getenv("CHAT_MODEL", "llama3.2:1b"),
         chat_max_results=int(os.getenv("CHAT_MAX_RESULTS", "8")),
         chat_max_tokens=int(os.getenv("CHAT_MAX_TOKENS", "900")),
         preferred_search_mode=os.getenv("PREFERRED_SEARCH_MODE", "hybrid"),
