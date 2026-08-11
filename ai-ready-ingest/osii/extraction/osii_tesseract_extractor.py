@@ -28,9 +28,10 @@ class OsiiTesseractExtractor(BaseExtractor):
     display_name = "OSII-Tesseract Extractor"
     description = (
         "Uses the OSII-Tesseract OCR service for page-grounded OCR on PDFs and supported "
-        "document types. Writes one manifest-backed text segment per page with page-level provenance."
+        "document types. Writes one manifest-backed text segment per page with normalized "
+        "OCR region geometry."
     )
-    version = "1.0"
+    version = "1.2"
 
     def _base_url(self, extractor_config: dict | None = None) -> str:
         extractor_config = extractor_config or {}
@@ -184,6 +185,7 @@ class OsiiTesseractExtractor(BaseExtractor):
             "expert_context_used": bool(expert_context),
             "segment_storage": "shared_text_file",
             "segmentation": "page",
+            "preserve_page_region_geometry": True,
         }
 
         initialize_bundle(osii_store=osii_store, doc_ctx=doc_ctx)
@@ -244,6 +246,8 @@ class OsiiTesseractExtractor(BaseExtractor):
                         "page_width": page_record.get("width"),
                         "page_height": page_record.get("height"),
                     },
+                    "coordinate_space": "normalized",
+                    "regions": page_record.get("results", []),
                 }
 
                 append_manifest_record(

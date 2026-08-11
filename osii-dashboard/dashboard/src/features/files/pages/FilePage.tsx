@@ -185,6 +185,7 @@ export function FilePage() {
           mime={detail.mime}
           page={activePage}
           onPageChange={handlePageChange}
+          segments={textsQuery.data?.segments ?? []}
         />
       )}
 

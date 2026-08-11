@@ -7,12 +7,20 @@ type PdfPageViewerProps = {
   pdf: PDFDocumentProxy;
   pageNumber: number;
   width?: number;
+  regions?: PdfBoundingRegion[];
+};
+
+export type PdfBoundingRegion = {
+  bbox: [number, number, number, number];
+  text?: string | null;
+  confidence?: number | null;
 };
 
 export function PdfPageViewer({
   pdf,
   pageNumber,
   width = 760,
+  regions = [],
 }: PdfPageViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -62,16 +70,51 @@ export function PdfPageViewer({
         py: 2,
       }}
     >
-      <canvas
-        ref={canvasRef}
-        style={{
-          display: "block",
+      <Box
+        sx={{
+          position: "relative",
+          width,
           maxWidth: "100%",
-          height: "auto",
-          background: "#fff",
+          lineHeight: 0,
           boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
         }}
-      />
+      >
+        <canvas
+          ref={canvasRef}
+          style={{
+            display: "block",
+            width: "100%",
+            height: "auto",
+            background: "#fff",
+          }}
+        />
+        {regions.map((region, index) => {
+          const [x1, y1, x2, y2] = region.bbox;
+          return (
+            <Box
+              key={`${x1}-${y1}-${x2}-${y2}-${index}`}
+              component="span"
+              title={[
+                region.text?.trim() || "OCR region",
+                typeof region.confidence === "number"
+                  ? `Confidence ${Math.round(region.confidence * 100)}%`
+                  : null,
+              ].filter(Boolean).join(" · ")}
+              sx={{
+                position: "absolute",
+                left: `${x1 * 100}%`,
+                top: `${y1 * 100}%`,
+                width: `${Math.max(0, x2 - x1) * 100}%`,
+                height: `${Math.max(0, y2 - y1) * 100}%`,
+                border: "2px solid rgba(220, 38, 38, 0.82)",
+                backgroundColor: "rgba(239, 68, 68, 0.08)",
+                boxSizing: "border-box",
+                pointerEvents: "none",
+              }}
+            />
+          );
+        })}
+      </Box>
     </Box>
   );
 }

@@ -89,6 +89,18 @@ class ProviderHTTP:
             )
             response.raise_for_status()
             data = response.json()
+        except requests.HTTPError as exc:
+            detail = (exc.response.text or str(exc))[:1000]
+            if 400 <= exc.response.status_code < 500:
+                # Processor API reports invalid provider inputs as 422 so the
+                # caller can adjust them instead of treating them as downtime
+                # or opening the availability circuit breaker.
+                raise ValueError(
+                    f"{self.provider} rejected the request: HTTP "
+                    f"{exc.response.status_code} - {detail}"
+                ) from exc
+            self.breaker.failure()
+            raise RuntimeError(f"{self.provider} request failed: {exc} - {detail}") from exc
         except (requests.RequestException, ValueError) as exc:
             self.breaker.failure()
             raise RuntimeError(f"{self.provider} request failed: {exc}") from exc

@@ -13,7 +13,7 @@ from app.core.models import (
     RecognitionParams,
 )
 from app.core.ocr import ocr_region
-from app.core.pdf import render_pdf_pages
+from app.core.pdf import iter_pdf_pages, pdf_page_count
 from app.core.preprocess import find_text_regions, preprocess_image
 from app.core.utils import load_image_bytes, normalize_bbox, normalize_polygon, pad_bbox
 
@@ -281,13 +281,15 @@ def process_document_bytes(
     print(f"[pipeline] process_document_bytes start: {filename}", flush=True)
 
     if filename.lower().endswith(".pdf"):
-        images = render_pdf_pages(file_bytes, dpi=settings.default_pdf_dpi)
+        page_count = pdf_page_count(file_bytes)
+        images = iter_pdf_pages(file_bytes, dpi=settings.default_pdf_dpi)
     else:
+        page_count = 1
         images = [load_image_bytes(file_bytes, filename)]
 
     pages: list[DocumentPageResult] = []
     for index, image in enumerate(images, start=1):
-        print(f"[pipeline] processing page {index}/{len(images)}", flush=True)
+        print(f"[pipeline] processing page {index}/{page_count}", flush=True)
         run, _ = process_page_image(image, params, include_debug=include_debug)
         pages.append(
             DocumentPageResult(

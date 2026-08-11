@@ -210,7 +210,9 @@ embeddings/
   segments.meta.toml
 ```
 
-Additional chunking metadata may exist as part of the current implementation.
+Chunk mappings record method, requested size and overlap, exact text offsets,
+previous/next chunk IDs, actual overlap, extraction identity, and source
+segment/page grounding. BM25 and vector retrieval consume the same manifest.
 
 Retrieval chunks are derived infrastructure for search ranking.
 

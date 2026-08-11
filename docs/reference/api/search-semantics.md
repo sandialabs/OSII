@@ -32,8 +32,11 @@ Representative response:
       "chunk_id": "chunk-sha256-test123-000001",
       "file_id": "sha256-test123",
       "source_relpath": "reports/example.pdf",
-      "chunk_method": "paragraph",
+      "chunk_method": "sentence_window",
       "chunk_index": 1,
+      "source_segment_ids": ["seg-000001"],
+      "source_pages": [1],
+      "overlap_with_previous": 0,
       "char_start": 0,
       "char_end": 38,
       "source_text_representation": "canonical",
@@ -98,7 +101,8 @@ They may have stable segment identifiers such as `seg-000001` and provenance suc
 
 Search chunks are derived retrieval units used for embedding and ranking.
 
-They may be paragraph-based or produced by another chunking method.
+The default uses sentence/paragraph-aligned overlapping windows. Paragraph and
+fixed-window compatibility modes remain available.
 
 They are not canonical extraction units.
 
@@ -124,6 +128,12 @@ The current public `GET /api/search` route:
 - does not currently return canonical manifest segment identifiers
 
 Consumers that need richer rendering may need to resolve grounded spans separately using text-span routes.
+
+The dashboard uses `POST /api/search`, which additionally resolves the source
+manifest `segment_id`, PDF `page`, snippet, collections, and `source_origin`.
+Its `source_origin` reports all source pages/segments touched by a chunk and the
+actual overlap with the preceding chunk. Highly redundant overlapping results
+are suppressed before the requested `top_k` is returned.
 
 ## Scope-aware search behavior
 

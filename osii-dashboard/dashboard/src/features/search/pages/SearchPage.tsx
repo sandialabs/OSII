@@ -95,6 +95,8 @@ export function SearchPage() {
         fileId: result.fileId,
         charStart: result.charStart,
         charEnd: result.charEnd,
+        page: result.page,
+        segmentId: result.segmentId,
       }),
     );
   };

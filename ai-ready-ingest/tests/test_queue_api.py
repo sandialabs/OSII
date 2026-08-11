@@ -124,6 +124,28 @@ def test_embedding_cannot_be_queued_without_a_tested_embedder(
     assert "no tested embedder is available" in response.json()["detail"]
 
 
+def test_invalid_chunk_overlap_is_rejected_before_queueing(
+    client,
+    temp_data_root: Path,
+):
+    source_file = temp_data_root / "notes.txt"
+    source_file.write_text("local text", encoding="utf-8")
+
+    response = client.post(
+        "/api/runs",
+        json={
+            "queue_paths": [str(source_file)],
+            "build_embeddings": True,
+            "chunking_method": "sentence_window",
+            "chunk_size": 200,
+            "chunk_overlap": 200,
+        },
+    )
+
+    assert response.status_code == 422
+    assert "smaller than chunk_size" in response.json()["detail"]
+
+
 def test_upload_then_enqueue_returns_durable_run(client, temp_upload_root: Path):
     upload = client.post(
         "/api/uploads",

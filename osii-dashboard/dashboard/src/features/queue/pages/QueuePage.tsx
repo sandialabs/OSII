@@ -59,6 +59,8 @@ type Notice = {
   text: string;
 };
 
+type ChunkingMethod = "sentence_window" | "paragraph" | "window";
+
 const FILE_FILTERS = [
   { value: "all", label: "All file types", patterns: "" },
   {
@@ -113,6 +115,9 @@ export function QueuePage() {
   const [extractionPolicy, setExtractionPolicy] = useState<"make_primary" | "save_variant">("make_primary");
   const [synthesize, setSynthesize] = useState(true);
   const [embed, setEmbed] = useState(true);
+  const [chunkingMethod, setChunkingMethod] = useState<ChunkingMethod>("sentence_window");
+  const [chunkSize, setChunkSize] = useState(768);
+  const [chunkOverlap, setChunkOverlap] = useState(128);
   const [enrich, setEnrich] = useState(false);
   const [selectedSynthesizer, setSelectedSynthesizer] = useState("");
   const [selectedEnricher, setSelectedEnricher] = useState("");
@@ -129,6 +134,8 @@ export function QueuePage() {
     : selectedFilter.patterns;
   const deferredIncludePatterns = useDeferredValue(includePatterns);
   const deferredExcludePatterns = useDeferredValue(excludePatterns);
+  const chunkSettingsValid = chunkingMethod === "paragraph"
+    || (chunkSize > 0 && chunkOverlap >= 0 && chunkOverlap < chunkSize);
 
   const rootBrowse = useQuery({
     queryKey: ["intake", "browse", "shared-root"],
@@ -194,6 +201,9 @@ export function QueuePage() {
       extractMode,
       synthesize,
       embed,
+      chunkingMethod,
+      chunkSize,
+      chunkOverlap,
       enrich,
       selectedSynthesizer,
       selectedEnricher,
@@ -212,6 +222,9 @@ export function QueuePage() {
         ? (selectedSynthesizer || readiness.data?.defaults.synthesizer || "local.extractive-preview")
         : null,
       build_embeddings: embed,
+      chunking_method: chunkingMethod,
+      chunk_size: chunkSize,
+      chunk_overlap: chunkOverlap,
       enricher_name: enrich
         ? (selectedEnricher || readiness.data?.defaults.enricher || "local.stats-keywords")
         : null,
@@ -295,6 +308,9 @@ export function QueuePage() {
           ? (selectedSynthesizer || readiness.data?.defaults.synthesizer || "local.extractive-preview")
           : null,
         build_embeddings: embed,
+        chunking_method: chunkingMethod,
+        chunk_size: chunkSize,
+        chunk_overlap: chunkOverlap,
         enricher_name: enrich
           ? (selectedEnricher || readiness.data?.defaults.enricher || "local.stats-keywords")
           : null,
@@ -921,6 +937,62 @@ export function QueuePage() {
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
             Select the extractive baseline or a connected model-backed synthesizer.
           </Typography>
+          {embed ? (
+            <Accordion variant="outlined" disableGutters>
+              <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
+                <Stack spacing={0.2}>
+                  <Typography variant="body2" fontWeight={600}>Retrieval chunking</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {chunkingMethod === "sentence_window"
+                      ? `${chunkSize} characters with about ${chunkOverlap} characters of sentence-aligned overlap`
+                      : chunkingMethod === "window"
+                        ? `${chunkSize} characters with ${chunkOverlap} characters of fixed overlap`
+                        : "One chunk per paragraph; no overlap"}
+                  </Typography>
+                </Stack>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Stack spacing={1.5}>
+                  <TextField
+                    select
+                    size="small"
+                    label="Chunking strategy"
+                    value={chunkingMethod}
+                    onChange={(event) => setChunkingMethod(event.target.value as ChunkingMethod)}
+                  >
+                    <MenuItem value="sentence_window">Sentence-aligned windows (recommended)</MenuItem>
+                    <MenuItem value="paragraph">Paragraphs (compatibility)</MenuItem>
+                    <MenuItem value="window">Fixed character windows</MenuItem>
+                  </TextField>
+                  {chunkingMethod !== "paragraph" ? (
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                      <TextField
+                        size="small"
+                        type="number"
+                        label="Maximum characters"
+                        value={chunkSize}
+                        inputProps={{ min: 100, step: 100 }}
+                        onChange={(event) => setChunkSize(Number(event.target.value))}
+                      />
+                      <TextField
+                        size="small"
+                        type="number"
+                        label="Overlap characters"
+                        value={chunkOverlap}
+                        inputProps={{ min: 0, step: 25 }}
+                        error={!chunkSettingsValid}
+                        helperText={!chunkSettingsValid ? "Overlap must be smaller than the chunk size." : "Preserves context across boundaries."}
+                        onChange={(event) => setChunkOverlap(Number(event.target.value))}
+                      />
+                    </Stack>
+                  ) : null}
+                  <Typography variant="caption" color="text.secondary">
+                    Sentence-aligned windows preserve exact character offsets and source-page grounding. Changing these settings rebuilds both semantic and BM25 indexes.
+                  </Typography>
+                </Stack>
+              </AccordionDetails>
+            </Accordion>
+          ) : null}
           {embeddingStatus?.index_rebuild_required ? (
             <Alert severity="warning">
               {embeddingStatus.indexed_model
@@ -1054,6 +1126,7 @@ export function QueuePage() {
               || readiness.isLoading
               || (runExtraction && !extractorPlanReady)
               || (embed && !embeddingAvailable)
+              || (embed && !chunkSettingsValid)
               || (extractionPolicy === "save_variant" && runExtraction && (synthesize || embed || enrich))
             }
             onClick={() => void start()}

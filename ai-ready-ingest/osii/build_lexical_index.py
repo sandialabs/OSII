@@ -6,7 +6,13 @@ from osii.domain.storage.store import (
     embeddings_lexical_index_path,
     embeddings_lexical_meta_path,
 )
-from osii.indexing.chunking import write_chunk_manifest
+from osii.indexing.chunking import (
+    DEFAULT_CHUNK_OVERLAP,
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_CHUNKING_METHOD,
+    SUPPORTED_CHUNKING_METHODS,
+    write_chunk_manifest,
+)
 from osii.search.lexical import build_bm25_index
 
 
@@ -21,21 +27,21 @@ def main():
     )
     parser.add_argument(
         "--chunking-method",
-        default="paragraph",
-        choices=["paragraph", "window"],
+        default=DEFAULT_CHUNKING_METHOD,
+        choices=SUPPORTED_CHUNKING_METHODS,
         help="Chunking strategy used before lexical indexing.",
     )
     parser.add_argument(
         "--chunk-size",
         type=int,
-        default=1200,
-        help="Chunk size for window chunking.",
+        default=DEFAULT_CHUNK_SIZE,
+        help="Maximum characters per overlapping chunk.",
     )
     parser.add_argument(
         "--chunk-overlap",
         type=int,
-        default=200,
-        help="Chunk overlap for window chunking.",
+        default=DEFAULT_CHUNK_OVERLAP,
+        help="Target character overlap between adjacent chunks.",
     )
 
     args = parser.parse_args()

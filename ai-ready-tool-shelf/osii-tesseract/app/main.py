@@ -26,6 +26,10 @@ def create_app() -> FastAPI:
 
     application.include_router(ocr_router)
 
+    @application.get("/health", tags=["system"])
+    async def health() -> dict[str, str]:
+        return {"status": "ok"}
+
     if settings.enable_demo:
         from app.demo.router import router as demo_router
 

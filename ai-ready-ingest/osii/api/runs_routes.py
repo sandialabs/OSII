@@ -34,6 +34,12 @@ from osii.domain.processing.pathing import display_rel, path_within
 from osii.domain.processing.extractor_selection import extractor_routes_path
 from osii.extraction.dispatcher import dispatch_extract
 from osii.enrichment.registry import resolve_enricher
+from osii.indexing.chunking import (
+    DEFAULT_CHUNK_OVERLAP,
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_CHUNKING_METHOD,
+    validate_chunking_settings,
+)
 from osii.synthesis.file.firstn import FirstNSynthesizer
 from osii.synthesis.file.recursive import RecursiveSynthesizer
 
@@ -294,6 +300,10 @@ def run_worker(
             if run is None:
                 return
 
+            if run["items"][index].get("status") in {"done", "partial", "error"}:
+                append_log(run_id, f"Resume: kept completed result for {src.name}.")
+                continue
+
             extension = src.suffix.lower() or "(no extension)"
             extractor_name = (
                 (extractor_overrides or {}).get(extension)
@@ -498,6 +508,13 @@ async def start_run(request: Request, payload: dict):
         if extractor
     }
     build_embeddings = bool(payload.get("build_embeddings", False))
+    chunking_method = str(payload.get("chunking_method") or DEFAULT_CHUNKING_METHOD)
+    chunk_size = int(payload.get("chunk_size", DEFAULT_CHUNK_SIZE))
+    chunk_overlap = int(payload.get("chunk_overlap", DEFAULT_CHUNK_OVERLAP))
+    try:
+        validate_chunking_settings(chunking_method, chunk_size, chunk_overlap)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not any((run_extraction, synthesizer_name, enricher_name, build_embeddings)):
         raise HTTPException(status_code=422, detail="Select at least one processing operation.")
     if extraction_policy == "save_variant" and any((synthesizer_name, enricher_name, build_embeddings)):
@@ -584,6 +601,11 @@ async def start_run(request: Request, payload: dict):
         "extraction_policy": extraction_policy,
         "synthesize": synthesizer_name,
         "embed": build_embeddings,
+        "chunking": {
+            "method": chunking_method,
+            "chunk_size": chunk_size,
+            "chunk_overlap": chunk_overlap,
+        } if build_embeddings else None,
         "enrich": enricher_name,
     }
     save_run(run)
@@ -616,6 +638,9 @@ async def start_run(request: Request, payload: dict):
             "extraction_policy": extraction_policy,
             "build_embeddings": build_embeddings,
             "embedding_batch_size": int(payload.get("embedding_batch_size", 64)),
+            "chunking_method": chunking_method,
+            "chunk_size": chunk_size,
+            "chunk_overlap": chunk_overlap,
             "enricher_name": enricher_name,
             "enricher_config": enricher_config,
         },

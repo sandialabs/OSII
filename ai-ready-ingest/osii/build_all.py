@@ -3,6 +3,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+from osii.indexing.chunking import (
+    DEFAULT_CHUNK_OVERLAP,
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_CHUNKING_METHOD,
+    SUPPORTED_CHUNKING_METHODS,
+)
+
 
 def run_step(cmd: list[str], *, cwd: Path, label: str) -> None:
     print("")
@@ -71,12 +78,22 @@ def main():
     parser.add_argument("--checkpoint-every", type=int, default=100, help="Checkpoint frequency")
     parser.add_argument(
         "--chunking-method",
-        default="paragraph",
-        choices=["paragraph", "window"],
+        default=DEFAULT_CHUNKING_METHOD,
+        choices=SUPPORTED_CHUNKING_METHODS,
         help="Chunking strategy for search index build",
     )
-    parser.add_argument("--chunk-size", type=int, default=1200, help="Chunk size for window chunking")
-    parser.add_argument("--chunk-overlap", type=int, default=200, help="Chunk overlap for window chunking")
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=DEFAULT_CHUNK_SIZE,
+        help="Maximum characters per overlapping chunk",
+    )
+    parser.add_argument(
+        "--chunk-overlap",
+        type=int,
+        default=DEFAULT_CHUNK_OVERLAP,
+        help="Target character overlap between adjacent chunks",
+    )
 
     args = parser.parse_args()
 

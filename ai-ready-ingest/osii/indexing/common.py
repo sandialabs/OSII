@@ -19,7 +19,12 @@ from osii.domain.storage.store import (
     embeddings_chunks_manifest_path,
     embeddings_dir as osii_embeddings_dir,
 )
-from osii.indexing.chunking import write_chunk_manifest
+from osii.indexing.chunking import (
+    DEFAULT_CHUNK_OVERLAP,
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_CHUNKING_METHOD,
+    write_chunk_manifest,
+)
 from osii.search.lexical import build_bm25_index
 from osii.domain.catalog_db import rebuild_catalog
 from osii.domain.model_provider_config import selected_model, selected_processor
@@ -138,6 +143,12 @@ def collect_text_chunks(
                 "char_end": row["char_end"],
                 "source_text_representation": row["source_text_representation"],
                 "source_text_kind": row["source_text_kind"],
+                "source_extraction_id": row.get("source_extraction_id"),
+                "source_segment_ids": row.get("source_segment_ids", []),
+                "source_pages": row.get("source_pages", []),
+                "previous_chunk_id": row.get("previous_chunk_id"),
+                "next_chunk_id": row.get("next_chunk_id"),
+                "overlap_with_previous": row.get("overlap_with_previous", 0),
                 "text": truncated_text,
                 "truncated": warning is not None,
             }
@@ -150,6 +161,7 @@ def is_context_length_error(exc: Exception) -> bool:
     msg = str(exc).lower()
     return (
         "maximum context length" in msg
+        or ("context length" in msg and "exceed" in msg)
         or "contextwindowexceedederror" in msg
         or ("requested" in msg and "tokens" in msg and "embedding" in msg)
     )
@@ -159,7 +171,7 @@ def more_aggressive_truncation(text: str) -> list[str]:
     current = len(text)
     candidates = []
 
-    for cap in (1024, 768, 512):
+    for cap in (1024, 768, 512, 384, 256):
         if current > cap:
             candidates.append(text[:cap].rstrip())
 
@@ -179,6 +191,11 @@ def _embed_batch(client: Any, model: str, batch: list[str], retries: int = 3):
             return client.embed(model=model, texts=batch)
         except Exception as exc:
             last_exc = exc
+            # Processor API preserves provider context errors. A retry cannot
+            # make the same over-limit payload valid, so return to the caller
+            # immediately and let it try the next smaller text.
+            if is_context_length_error(exc):
+                raise
             if attempt < retries - 1:
                 time.sleep(1.0 * (attempt + 1))
     raise last_exc
@@ -235,10 +252,80 @@ def append_partial_mapping_row(osii_root: Path, row: dict) -> None:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+def _embedding_mapping_row(
+    item: dict,
+    *,
+    faiss_id: int,
+    source_item_index: int,
+    truncated: bool,
+) -> dict:
+    return {
+        "faiss_id": faiss_id,
+        "source_item_index": source_item_index,
+        "chunk_id": item["chunk_id"],
+        "file_id": item["file_id"],
+        "source_relpath": item["source_relpath"],
+        "chunk_method": item["chunk_method"],
+        "chunk_index": item["chunk_index"],
+        "char_start": item["char_start"],
+        "char_end": item["char_end"],
+        "source_text_representation": item["source_text_representation"],
+        "source_text_kind": item["source_text_kind"],
+        "source_extraction_id": item.get("source_extraction_id"),
+        "source_segment_ids": item.get("source_segment_ids", []),
+        "source_pages": item.get("source_pages", []),
+        "previous_chunk_id": item.get("previous_chunk_id"),
+        "next_chunk_id": item.get("next_chunk_id"),
+        "overlap_with_previous": item.get("overlap_with_previous", 0),
+        "truncated": truncated,
+    }
+
+
 def save_checkpoint_index(osii_root: Path, index) -> Path:
     path = build_index_tmp_path(osii_root)
     faiss.write_index(index, str(path))
     return path
+
+
+def _prepare_checkpoint_configuration(
+    osii_root: Path,
+    *,
+    items: list[dict],
+    model: str,
+    chunking_method: str,
+    chunk_size: int,
+    chunk_overlap: int,
+) -> None:
+    digest = hashlib.sha256()
+    for item in items:
+        digest.update(str(item.get("chunk_id") or "").encode("utf-8"))
+        digest.update(str(item.get("source_extraction_id") or "").encode("utf-8"))
+        digest.update(str(item.get("char_start") or 0).encode("ascii"))
+        digest.update(str(item.get("char_end") or 0).encode("ascii"))
+        digest.update(hashlib.sha256((item.get("text") or "").encode("utf-8")).digest())
+
+    expected = {
+        "model": model,
+        "chunking_method": chunking_method,
+        "chunk_size": chunk_size,
+        "chunk_overlap": chunk_overlap,
+        "input_fingerprint": digest.hexdigest(),
+    }
+    directory = build_dir(osii_root)
+    config_path = directory / "checkpoint-config.json"
+    try:
+        current = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        current = None
+
+    has_checkpoint_files = any(
+        path.name != config_path.name for path in directory.iterdir()
+    )
+    if current != expected and (current is not None or has_checkpoint_files):
+        shutil.rmtree(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+        config_path = directory / "checkpoint-config.json"
+    atomic_write_text(config_path, json.dumps(expected, indent=2) + "\n")
 
 
 def finalize_outputs(
@@ -319,9 +406,9 @@ def embed_collection_resumable(
     model: str,
     batch_size: int = 1,
     checkpoint_every: int = 100,
-    chunking_method: str = "paragraph",
-    chunk_size: int = 1200,
-    chunk_overlap: int = 200,
+    chunking_method: str = DEFAULT_CHUNKING_METHOD,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
 ) -> tuple[Path, Path, Path]:
     client = create_embedding_client()
 
@@ -332,8 +419,23 @@ def embed_collection_resumable(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
     )
+    _prepare_checkpoint_configuration(
+        osii_root,
+        items=items,
+        model=model,
+        chunking_method=chunking_method,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
     index, partial_rows = load_resumable_checkpoint(osii_root)
-    already_done = len(partial_rows)
+    already_done = (
+        max(
+            int(row.get("source_item_index", index))
+            for index, row in enumerate(partial_rows)
+        ) + 1
+        if partial_rows
+        else 0
+    )
 
     skipped: list[str] = []
     final_rows = list(partial_rows)
@@ -371,64 +473,83 @@ def embed_collection_resumable(
 
     success_since_checkpoint = 0
 
-    for item_idx in range(already_done, len(items)):
-        item = items[item_idx]
-        text = item["text"]
+    effective_batch_size = max(1, int(batch_size))
+    for batch_start in range(already_done, len(items), effective_batch_size):
+        batch_items = items[batch_start:batch_start + effective_batch_size]
+        batch_texts = [item["text"] for item in batch_items]
 
-        try_texts = [text] + more_aggressive_truncation(text)
-        embedded = False
-        last_exc = None
-
-        for candidate_text in try_texts:
-            try:
-                vectors = _embed_batch(client, model, [candidate_text], retries=3)
-                vec = np.array(vectors, dtype="float32")
-                faiss.normalize_L2(vec)
-
-                if index is None:
-                    index = faiss.IndexFlatIP(vec.shape[1])
-                elif index.d != vec.shape[1]:
-                    raise IncompatibleIndexError(
-                        f"Embedding dimensions changed from {index.d} to {vec.shape[1]}; "
-                        "the checkpoint cannot be resumed in a different vector space."
-                    )
-
-                index.add(vec)
-
-                faiss_id = len(final_rows)
-                row = {
-                    "faiss_id": faiss_id,
-                    "chunk_id": item["chunk_id"],
-                    "file_id": item["file_id"],
-                    "source_relpath": item["source_relpath"],
-                    "chunk_method": item["chunk_method"],
-                    "chunk_index": item["chunk_index"],
-                    "char_start": item["char_start"],
-                    "char_end": item["char_end"],
-                    "source_text_representation": item["source_text_representation"],
-                    "source_text_kind": item["source_text_kind"],
-                    "truncated": item["truncated"] or (candidate_text != text),
-                }
+        try:
+            vectors = _embed_batch(client, model, batch_texts, retries=3)
+            vec = np.array(vectors, dtype="float32")
+            if vec.ndim != 2 or vec.shape[0] != len(batch_items):
+                raise RuntimeError("Embedding service returned an invalid batch shape.")
+            faiss.normalize_L2(vec)
+            if index is None:
+                index = faiss.IndexFlatIP(vec.shape[1])
+            elif index.d != vec.shape[1]:
+                raise IncompatibleIndexError(
+                    f"Embedding dimensions changed from {index.d} to {vec.shape[1]}; "
+                    "the checkpoint cannot be resumed in a different vector space."
+                )
+            index.add(vec)
+            for offset, item in enumerate(batch_items):
+                row = _embedding_mapping_row(
+                    item,
+                    faiss_id=len(final_rows),
+                    source_item_index=batch_start + offset,
+                    truncated=bool(item["truncated"]),
+                )
                 append_partial_mapping_row(osii_root, row)
                 final_rows.append(row)
-
-                embedded = True
-                success_since_checkpoint += 1
-                break
-
-            except Exception as exc:
-                if isinstance(exc, IncompatibleIndexError):
-                    raise
-                last_exc = exc
-                if not is_context_length_error(exc):
-                    break
-
-        if not embedded:
-            skipped.append(
-                f"{item['source_relpath']} :: {item['chunk_id']} :: {last_exc}"
-            )
-            print(f"WARNING: skipped chunk after embedding failures: {item['source_relpath']} :: {item['chunk_id']}")
-            continue
+            success_since_checkpoint += len(batch_items)
+        except Exception as batch_exc:
+            if isinstance(batch_exc, IncompatibleIndexError):
+                raise
+            # One over-limit or malformed item can reject a provider's whole
+            # batch. Isolate the inputs and retain the established truncation
+            # fallback so healthy neighbors still enter the index.
+            for offset, item in enumerate(batch_items):
+                text = item["text"]
+                embedded = False
+                last_exc = batch_exc
+                for candidate_text in [text, *more_aggressive_truncation(text)]:
+                    try:
+                        vectors = _embed_batch(client, model, [candidate_text], retries=3)
+                        vec = np.array(vectors, dtype="float32")
+                        faiss.normalize_L2(vec)
+                        if index is None:
+                            index = faiss.IndexFlatIP(vec.shape[1])
+                        elif index.d != vec.shape[1]:
+                            raise IncompatibleIndexError(
+                                f"Embedding dimensions changed from {index.d} to {vec.shape[1]}; "
+                                "the checkpoint cannot be resumed in a different vector space."
+                            )
+                        index.add(vec)
+                        row = _embedding_mapping_row(
+                            item,
+                            faiss_id=len(final_rows),
+                            source_item_index=batch_start + offset,
+                            truncated=bool(item["truncated"] or candidate_text != text),
+                        )
+                        append_partial_mapping_row(osii_root, row)
+                        final_rows.append(row)
+                        embedded = True
+                        success_since_checkpoint += 1
+                        break
+                    except Exception as exc:
+                        if isinstance(exc, IncompatibleIndexError):
+                            raise
+                        last_exc = exc
+                        if not is_context_length_error(exc):
+                            break
+                if not embedded:
+                    skipped.append(
+                        f"{item['source_relpath']} :: {item['chunk_id']} :: {last_exc}"
+                    )
+                    print(
+                        "WARNING: skipped chunk after embedding failures: "
+                        f"{item['source_relpath']} :: {item['chunk_id']}"
+                    )
 
         if index is not None and success_since_checkpoint >= checkpoint_every:
             save_checkpoint_index(osii_root, index)

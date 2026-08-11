@@ -593,6 +593,11 @@ export type ProcessingRun = {
     extraction_policy?: string;
     synthesize?: string | null;
     embed?: boolean;
+    chunking?: {
+      method: "sentence_window" | "paragraph" | "window";
+      chunk_size: number;
+      chunk_overlap: number;
+    } | null;
     enrich?: string | null;
   };
   indexing_status?: string;
@@ -758,12 +763,17 @@ export type ChatCitation = {
   source_relpath: string | null;
   snippet: string | null;
   chunk_id: string | null;
+  segment_id: string | null;
+  page: number | null;
   char_start: number | null;
   char_end: number | null;
   source_origin: {
     grounding_type: string;
     char_start: number;
     char_end: number;
+    segment_ids?: string[];
+    pages?: number[];
+    overlap_with_previous?: number;
   } | null;
 };
 
@@ -805,8 +815,10 @@ export type SearchScopedResult = {
   score: number;
   match_type: string | null;
   chunk_id: string | null;
+  segment_id: string | null;
   chunk_method: string | null;
   chunk_index: number | null;
+  page: number | null;
   char_start: number | null;
   char_end: number | null;
   source_text_representation: string | null;

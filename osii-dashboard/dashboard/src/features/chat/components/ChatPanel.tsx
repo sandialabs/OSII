@@ -351,6 +351,8 @@ export function ChatPanel({ scope }: ChatPanelProps) {
                                         fileId: citation.file_id,
                                         charStart: citation.char_start,
                                         charEnd: citation.char_end,
+                                        page: citation.page,
+                                        segmentId: citation.segment_id,
                                       }),
                                     );
                                   }}
@@ -428,6 +430,8 @@ export function ChatPanel({ scope }: ChatPanelProps) {
                         fileId: citation.file_id,
                         charStart: citation.char_start,
                         charEnd: citation.char_end,
+                        page: citation.page,
+                        segmentId: citation.segment_id,
                       }),
                     )
                   }
@@ -491,6 +495,8 @@ export function ChatPanel({ scope }: ChatPanelProps) {
                                 fileId: citation.file_id,
                                 charStart: citation.char_start,
                                 charEnd: citation.char_end,
+                                page: citation.page,
+                                segmentId: citation.segment_id,
                               }),
                             );
                           }}

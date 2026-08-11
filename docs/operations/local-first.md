@@ -64,6 +64,21 @@ On Windows, append `-DryRun` to any host profile command to validate its
 service plan without opening ports, for example
 `.\scripts\osii.ps1 dev-corporate -DryRun`.
 
+The optional OpenCV/Tesseract OCR service can also run without a container:
+
+```bash
+make dev-ocr-host
+```
+
+```powershell
+.\scripts\osii.ps1 dev-ocr-host
+```
+
+It listens on port 8080 and exposes its region-tuning interface at
+`http://localhost:8080/demo`. Tesseract must already be available on `PATH`.
+OCR extraction stores normalized region boxes, which the Source and Split View
+can overlay on the PDF.
+
 ## Add and reprocess documents
 
 The Intake page separates **Add files**, **Process library**, and **Activity**.
@@ -107,6 +122,12 @@ Semantic indexes live under provider/model-specific directories and record
 provider, model, digest when supplied, dimensions, normalization, chunking,
 and creation time. Changing model or dimensions creates a different vector
 space and requires a rebuild. Hashing is never labeled semantic.
+
+The normal retrieval baseline uses sentence/paragraph-aligned windows of 768
+characters with about 128 characters of overlap. Intake exposes the strategy,
+size, and overlap. Both BM25 and vector search consume the same manifest, and
+search carries page/segment provenance into document navigation. See
+[retrieval chunking and overlap](../concepts/retrieval-chunking.md).
 
 ## Optional containers
 

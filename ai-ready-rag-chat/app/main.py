@@ -62,6 +62,8 @@ async def chat(request: ChatRequest):
             "source_relpath": item.get("source_relpath"),
             "snippet": snippet,
             "chunk_id": item.get("chunk_id"),
+            "segment_id": item.get("segment_id"),
+            "page": item.get("page"),
             "char_start": item.get("char_start"),
             "char_end": item.get("char_end"),
             "source_origin": item.get("source_origin"),

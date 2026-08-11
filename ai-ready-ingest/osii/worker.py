@@ -60,6 +60,12 @@ def execute_job(job: dict) -> None:
             str(osii_root),
             "--batch-size",
             str(payload.get("embedding_batch_size", 64)),
+            "--chunking-method",
+            str(payload.get("chunking_method") or "sentence_window"),
+            "--chunk-size",
+            str(payload.get("chunk_size", 768)),
+            "--chunk-overlap",
+            str(payload.get("chunk_overlap", 128)),
         ]
         try:
             run = get_run(job["run_id"])

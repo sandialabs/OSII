@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("dev", "dev-host", "dev-core", "dev-ollama", "dev-corporate", "dev-extractor", "dev-synthesizer", "dev-embedder", "dev-enricher", "dev-model-bridge", "dev-containers", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build", "doctor", "catalog-rebuild", "catalog-verify")]
+    [ValidateSet("dev", "dev-host", "dev-core", "dev-ollama", "dev-corporate", "dev-extractor", "dev-synthesizer", "dev-embedder", "dev-enricher", "dev-model-bridge", "dev-ocr-host", "dev-containers", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build", "doctor", "catalog-rebuild", "catalog-verify")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
@@ -88,6 +88,16 @@ try {
         }
         "dev-model-bridge" {
             & uv run --python 3.11 --package osii-model-provider-bridge uvicorn app.main:app --app-dir services/model-provider-bridge --host 127.0.0.1 --port 8095 --reload
+        }
+        "dev-ocr-host" {
+            $env:ENABLE_DEMO = "true"
+            Push-Location (Join-Path $RepositoryRoot "ai-ready-tool-shelf/osii-tesseract")
+            try {
+                & uv run --no-project --python 3.11 --with-requirements requirements.txt python -m uvicorn app.main:app --host 127.0.0.1 --port 8080
+            }
+            finally {
+                Pop-Location
+            }
         }
         "dev-containers" {
             Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")

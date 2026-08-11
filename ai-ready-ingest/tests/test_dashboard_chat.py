@@ -3,9 +3,9 @@ from osii.domain.services.chat import dashboard_chat
 
 def test_dashboard_chat_root_scope(monkeypatch, temp_osii_root, sample_osii_object):
     def fake_dashboard_search(osii_root, *, query, mode, top_k=10, scope=None):
-        assert mode == "semantic"
+        assert mode == "hybrid"
         assert scope["scope_type"] == "root"
-        return [
+        return "hybrid", [
             {
                 "file_id": sample_osii_object["file_id"],
                 "filename": "example.pdf",
@@ -57,7 +57,7 @@ def test_dashboard_chat_object_scope(monkeypatch, temp_osii_root, sample_osii_ob
     def fake_dashboard_search(osii_root, *, query, mode, top_k=10, scope=None):
         assert scope["scope_type"] == "object"
         assert scope["file_id"] == file_id
-        return [
+        return "hybrid", [
             {
                 "file_id": file_id,
                 "filename": "example.pdf",
@@ -117,7 +117,7 @@ def test_dashboard_chat_collection_scope(monkeypatch, temp_osii_root, sample_osi
     def fake_dashboard_search(osii_root, *, query, mode, top_k=10, scope=None):
         assert scope["scope_type"] == "collection"
         assert scope["collection_id"] == collection["id"]
-        return [
+        return "hybrid", [
             {
                 "file_id": file_id,
                 "filename": "example.pdf",

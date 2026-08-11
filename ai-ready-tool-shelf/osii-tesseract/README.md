@@ -102,6 +102,10 @@ Use it to:
 - run OCR on cached region sets
 - filter OCR results by confidence
 
+### `GET /health`
+
+Returns `{"status": "ok"}` for host and container readiness checks.
+
 ## OCR pipeline
 
 Per page, OSII-Tesseract:
@@ -117,6 +121,9 @@ Per page, OSII-Tesseract:
 9. deskews each region locally
 10. runs Tesseract on the deskewed region crop
 
+PDF pages are rendered and recognized sequentially, keeping memory use bounded
+for long documents instead of retaining every high-resolution page image.
+
 ## Local development
 
 For local Windows development, use Python 3.12.
@@ -128,14 +135,14 @@ py -3.12 -m venv .venv312
 .venv312\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8081
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8080
 ```
 
 Open:
 
 ```text
-http://127.0.0.1:8081/docs
-http://127.0.0.1:8081/demo
+http://127.0.0.1:8080/docs
+http://127.0.0.1:8080/demo
 ```
 
 ## Configuration

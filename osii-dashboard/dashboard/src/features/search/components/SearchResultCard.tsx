@@ -111,6 +111,16 @@ export function SearchResultCard({
                     {result.mode ? (
                       <Chip label={result.mode} size="small" variant="outlined" />
                     ) : null}
+                    {result.page != null ? (
+                      <Chip label={`Page ${result.page}`} size="small" variant="outlined" />
+                    ) : null}
+                    {result.chunkMethod ? (
+                      <Chip
+                        label={result.chunkMethod === "sentence_window" ? "Sentence window" : result.chunkMethod}
+                        size="small"
+                        variant="outlined"
+                      />
+                    ) : null}
                     <Chip label={`Score ${result.score.toFixed(3)}`} size="small" />
                   </Stack>
                 </Stack>
@@ -124,7 +134,7 @@ export function SearchResultCard({
                   }}
                 >
                   <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                    Matched chunk
+                    Matched chunk{result.overlapWithPrevious ? ` · ${result.overlapWithPrevious} shared characters` : ""}
                   </Typography>
                   <Typography
                     variant="body2"

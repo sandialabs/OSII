@@ -14,6 +14,8 @@ def test_dashboard_search_lexical_mode(monkeypatch, temp_osii_root):
                 "char_end": 20,
                 "source_text_representation": "canonical",
                 "source_text_kind": "canonical_extracted_text",
+                "source_segment_ids": ["seg-000001"],
+                "source_pages": [1],
                 "score": 2.5,
             }
         ]
@@ -32,6 +34,8 @@ def test_dashboard_search_lexical_mode(monkeypatch, temp_osii_root):
     assert len(results) == 1
     assert results[0]["match_type"] == "lexical"
     assert results[0]["chunk_id"] == "chunk-1"
+    assert results[0]["page"] == 1
+    assert results[0]["segment_id"] == "seg-000001"
 
 
 def test_dashboard_search_hybrid_mode(monkeypatch, temp_osii_root):
@@ -82,3 +86,36 @@ def test_dashboard_search_hybrid_mode(monkeypatch, temp_osii_root):
     assert len(results) == 1
     assert results[0]["match_type"] == "hybrid"
     assert results[0]["chunk_id"] == "chunk-1"
+
+
+def test_dashboard_search_suppresses_nearly_duplicate_overlapping_chunks(
+    monkeypatch,
+    temp_osii_root,
+):
+    def fake_lexical_search_chunks(osii_root, query, top_k=10):
+        base = {
+            "file_id": "sha256-test123",
+            "source_relpath": "reports/example.pdf",
+            "chunk_method": "sentence_window",
+            "source_text_representation": "canonical",
+            "source_text_kind": "canonical_extracted_text",
+        }
+        return [
+            {**base, "chunk_id": "chunk-1", "chunk_index": 1, "char_start": 0, "char_end": 100, "score": 3.0},
+            {**base, "chunk_id": "chunk-2", "chunk_index": 2, "char_start": 20, "char_end": 120, "score": 2.9},
+            {**base, "chunk_id": "chunk-3", "chunk_index": 3, "char_start": 120, "char_end": 180, "score": 2.0},
+        ]
+
+    monkeypatch.setattr(
+        "osii.domain.services.search.lexical_search_chunks",
+        fake_lexical_search_chunks,
+    )
+    _, results = dashboard_search(
+        temp_osii_root,
+        query="thermal",
+        mode="lexical",
+        top_k=3,
+        scope={"scope_type": "root"},
+    )
+
+    assert [result["chunk_id"] for result in results] == ["chunk-1", "chunk-3"]

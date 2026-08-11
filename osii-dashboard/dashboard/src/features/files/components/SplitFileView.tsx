@@ -44,6 +44,7 @@ export function SplitFileView({
         page={page}
         onPageChange={onPageChange}
         compact
+        segments={segments}
       />
 
       <GroundedSegmentEditor

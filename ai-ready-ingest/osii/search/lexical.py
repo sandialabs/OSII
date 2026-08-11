@@ -12,7 +12,12 @@ from osii.domain.storage.store import (
     embeddings_lexical_index_path,
     embeddings_lexical_meta_path,
 )
-from osii.indexing.chunking import write_chunk_manifest
+from osii.indexing.chunking import (
+    DEFAULT_CHUNK_OVERLAP,
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_CHUNKING_METHOD,
+    write_chunk_manifest,
+)
 
 
 TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]{1,}")
@@ -25,9 +30,9 @@ def tokenize(text: str) -> list[str]:
 def ensure_chunk_manifest(
     osii_root: Path,
     *,
-    method: str = "paragraph",
-    chunk_size: int = 1200,
-    overlap: int = 200,
+    method: str = DEFAULT_CHUNKING_METHOD,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    overlap: int = DEFAULT_CHUNK_OVERLAP,
 ) -> Path:
     path = embeddings_chunks_manifest_path(osii_root)
     write_chunk_manifest(
@@ -40,7 +45,9 @@ def ensure_chunk_manifest(
 
 
 def load_chunk_manifest(osii_root: Path) -> list[dict]:
-    path = ensure_chunk_manifest(osii_root)
+    path = embeddings_chunks_manifest_path(osii_root)
+    if not path.exists():
+        path = ensure_chunk_manifest(osii_root)
 
     if not path.exists():
         raise RuntimeError(f"Chunk manifest not found: {path}")
@@ -99,6 +106,11 @@ def build_bm25_index(osii_root: Path) -> tuple[Path, Path]:
                 "document_count": len(rows),
                 "tokenizer": "simple_regex_lower",
                 "index_type": "bm25s",
+                "chunking": {
+                    "method": rows[0].get("chunk_method") if rows else None,
+                    "chunk_size": rows[0].get("chunk_size") if rows else None,
+                    "chunk_overlap": rows[0].get("chunk_overlap") if rows else None,
+                },
             },
             indent=2,
         ),

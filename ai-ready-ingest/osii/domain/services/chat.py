@@ -156,10 +156,10 @@ def dashboard_chat(
 
     _, scope_info = _scope_header(osii_root, scope)
 
-    results = dashboard_search(
+    _, results = dashboard_search(
         osii_root,
         query=query,
-        mode="semantic",
+        mode="hybrid",
         top_k=top_k,
         scope=scope,
     )

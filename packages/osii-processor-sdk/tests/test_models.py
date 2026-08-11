@@ -1,3 +1,6 @@
+from io import BytesIO
+import urllib.error
+
 import pytest
 from pydantic import ValidationError
 
@@ -12,6 +15,24 @@ from osii_processor_sdk import (
     TableArtifactData,
     TableColumn,
 )
+from osii_processor_sdk.client import ProcessorClient, ProcessorClientError
+
+
+def test_processor_client_preserves_http_error_body(monkeypatch):
+    error = urllib.error.HTTPError(
+        "http://processor/v1/embed",
+        422,
+        "Unprocessable Entity",
+        {},
+        BytesIO(b'{"detail":"input length exceeds context length"}'),
+    )
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(error),
+    )
+
+    with pytest.raises(ProcessorClientError, match="exceeds context length"):
+        ProcessorClient("http://processor")._post("/v1/embed", "{}")
 
 
 def test_enrichment_request_requires_scope():

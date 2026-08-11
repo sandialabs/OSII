@@ -1,12 +1,24 @@
 // src/features/files/components/FileSourcePanel.tsx
 import { useEffect, useState } from "react";
-import { Alert, Box, Button, CircularProgress, Stack, TextField, Typography } from "@mui/material";
+import {
+  Alert,
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  FormControlLabel,
+  Stack,
+  Switch,
+  TextField,
+  Typography,
+} from "@mui/material";
 import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
 import ChevronLeftOutlinedIcon from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlinedIcon from "@mui/icons-material/ChevronRightOutlined";
 
 import { usePdfDocument } from "../../../hooks/usePdfDocument";
-import { PdfPageViewer } from "./PdfPageViewer";
+import type { ManifestRecord } from "../../../api/types";
+import { PdfPageViewer, type PdfBoundingRegion } from "./PdfPageViewer";
 import { getObjectSourceUrl } from "../../../api/source";
 
 type FileSourcePanelProps = {
@@ -15,7 +27,45 @@ type FileSourcePanelProps = {
   page?: number | null;
   onPageChange?: (page: number) => void;
   compact?: boolean;
+  segments?: ManifestRecord[];
 };
+
+function normalizedPageRegions(
+  segments: ManifestRecord[],
+  page: number,
+): PdfBoundingRegion[] {
+  return segments
+    .filter((segment) => segment.source_origin?.page === page)
+    .flatMap((segment) => {
+      const rawRegions = Array.isArray(segment.regions)
+        ? segment.regions
+        : Array.isArray(segment.source_origin?.regions)
+          ? segment.source_origin.regions
+          : [];
+      return rawRegions.flatMap((value) => {
+        if (!value || typeof value !== "object") return [];
+        const region = value as Record<string, unknown>;
+        const bbox = region.bbox;
+        if (
+          !Array.isArray(bbox)
+          || bbox.length !== 4
+          || !bbox.every((coordinate) => (
+            typeof coordinate === "number"
+            && Number.isFinite(coordinate)
+            && coordinate >= 0
+            && coordinate <= 1
+          ))
+        ) {
+          return [];
+        }
+        return [{
+          bbox: bbox as [number, number, number, number],
+          text: typeof region.text === "string" ? region.text : null,
+          confidence: typeof region.confidence === "number" ? region.confidence : null,
+        }];
+      });
+    });
+}
 
 export function FileSourcePanel({
   fileId,
@@ -23,6 +73,7 @@ export function FileSourcePanel({
   page = null,
   onPageChange,
   compact = false,
+  segments = [],
 }: FileSourcePanelProps) {
   const sourceUrl = getObjectSourceUrl(fileId);
 
@@ -33,6 +84,7 @@ export function FileSourcePanel({
         page={page}
         onPageChange={onPageChange}
         compact={compact}
+        segments={segments}
       />
     );
   }
@@ -62,14 +114,17 @@ function PdfSourcePanel({
   page,
   onPageChange,
   compact,
+  segments,
 }: {
   sourceUrl: string;
   page?: number | null;
   onPageChange?: (page: number) => void;
   compact: boolean;
+  segments: ManifestRecord[];
 }) {
   const { pdf, isLoading, error } = usePdfDocument(sourceUrl);
   const [pageInput, setPageInput] = useState("");
+  const [showBoundingBoxes, setShowBoundingBoxes] = useState(true);
 
   useEffect(() => {
     if (typeof page === "number" && Number.isFinite(page)) {
@@ -100,6 +155,7 @@ function PdfSourcePanel({
 
   const pageCount = pdf.numPages;
   const currentPage = Math.min(Math.max(page ?? 1, 1), pageCount);
+  const regions = normalizedPageRegions(segments, currentPage);
 
   const handleJumpToPage = () => {
     const parsed = Number(pageInput);
@@ -178,8 +234,34 @@ function PdfSourcePanel({
           >
             Open
           </Button>
+
+          {regions.length ? (
+            <FormControlLabel
+              control={(
+                <Switch
+                  size="small"
+                  checked={showBoundingBoxes}
+                  onChange={(event) => setShowBoundingBoxes(event.target.checked)}
+                />
+              )}
+              label="OCR boxes"
+            />
+          ) : null}
         </Stack>
       </Stack>
+
+      {regions.length ? (
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Chip size="small" color="error" variant="outlined" label={`${regions.length} grounded OCR regions`} />
+          <Typography variant="caption" color="text.secondary">
+            Boxes use normalized source coordinates and resize with the PDF page.
+          </Typography>
+        </Stack>
+      ) : (
+        <Typography variant="caption" color="text.secondary">
+          No region-level provenance is available for this page.
+        </Typography>
+      )}
 
       <Box
         sx={{
@@ -194,6 +276,7 @@ function PdfSourcePanel({
           pdf={pdf}
           pageNumber={currentPage}
           width={compact ? 680 : 760}
+          regions={showBoundingBoxes ? regions : []}
         />
       </Box>
     </Stack>

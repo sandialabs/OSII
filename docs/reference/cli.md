@@ -335,15 +335,18 @@ python -m osii.build_lexical_index `
   --osii-root ".\osii-data\.osii"
 ```
 
-Window chunking example:
+Sentence-aligned overlapping chunking is the default. An explicit example:
 
 ```powershell
 python -m osii.build_lexical_index `
   --osii-root ".\osii-data\.osii" `
-  --chunking-method window `
-  --chunk-size 1200 `
-  --chunk-overlap 200
+  --chunking-method sentence_window `
+  --chunk-size 768 `
+  --chunk-overlap 128
 ```
+
+Use `--chunking-method paragraph` for the previous no-overlap behavior or
+`--chunking-method window` for fixed character windows.
 
 ## Run the full backend pipeline
 

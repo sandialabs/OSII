@@ -184,6 +184,9 @@ run the normal integrated container stack.
   (and matching PowerShell commands): run one processor independently.
 - `make dev-model-bridge` / `.\scripts\osii.ps1 dev-model-bridge`: run only the
   HTTP-only Ollama/OpenAI-compatible bridge.
+- `make dev-ocr-host` / `.\scripts\osii.ps1 dev-ocr-host`: run the optional
+  OpenCV/Tesseract OCR service directly on the host, with its tuning UI at
+  `http://localhost:8080/demo`.
 - `make dev-containers` / `.\scripts\osii.ps1 dev-containers`: run application
   services from source while Tika and Tesseract run in Podman for deployment
   parity.
@@ -249,6 +252,11 @@ chat, baseline synthesis, and baseline enrichment run without a model
 connection. Tika and Tesseract remain optional OCR/deployment services. Ollama,
 OpenAI-compatible services, Shirty, and domain processors enhance capabilities
 without becoming dependencies of the basic user experience.
+
+Retrieval defaults to sentence-aligned 768-character chunks with roughly 128
+characters of overlap. Intake exposes these settings, while BM25 and semantic
+retrieval share the same chunk manifest and grounded source offsets. See
+[retrieval chunking and overlap](docs/concepts/retrieval-chunking.md).
 
 The repository remains under active development. Processor API v1 is the
 compatibility boundary for new extensions.

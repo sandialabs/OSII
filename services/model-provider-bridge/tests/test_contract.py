@@ -1,6 +1,18 @@
 from fastapi.testclient import TestClient
+import pytest
+import requests
 
 from app.main import CLIENTS, app
+
+
+def test_provider_client_preserves_ollama_context_error(monkeypatch):
+    response = requests.Response()
+    response.status_code = 400
+    response._content = b'{"error":"the input length exceeds the context length"}'
+
+    monkeypatch.setattr(requests, "request", lambda *args, **kwargs: response)
+    with pytest.raises(ValueError, match="exceeds the context length"):
+        CLIENTS["ollama"].request("POST", "/api/embed", payload={"input": ["long"]})
 
 
 def test_ollama_embedding_and_synthesis_contract(monkeypatch):

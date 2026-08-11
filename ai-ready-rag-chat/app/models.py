@@ -27,6 +27,8 @@ class CitationModel(BaseModel):
     source_relpath: str | None = None
     snippet: str | None = None
     chunk_id: str | None = None
+    segment_id: str | None = None
+    page: int | None = None
     char_start: int | None = None
     char_end: int | None = None
     source_origin: dict[str, Any] | None = None

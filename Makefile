@@ -5,7 +5,7 @@ UV ?= uv
 export UV_PROJECT_ENVIRONMENT := $(CURDIR)/osii-env
 unexport VIRTUAL_ENV
 
-.PHONY: dev dev-host dev-core dev-ollama dev-corporate dev-extractor dev-synthesizer dev-embedder dev-enricher dev-model-bridge dev-containers dev-services dev-examples containers-dev run dev-all down logs test build docs docs-serve doctor catalog-rebuild catalog-verify
+.PHONY: dev dev-host dev-core dev-ollama dev-corporate dev-extractor dev-synthesizer dev-embedder dev-enricher dev-model-bridge dev-ocr-host dev-containers dev-services dev-examples containers-dev run dev-all down logs test build docs docs-serve doctor catalog-rebuild catalog-verify
 
 # Default development path: API, worker, chat, MCP, dashboard, and extraction
 # all run from source on the host. No container runtime is required.
@@ -37,6 +37,9 @@ dev-enricher:
 
 dev-model-bridge:
 	$(UV) run --python 3.11 --package osii-model-provider-bridge uvicorn app.main:app --app-dir services/model-provider-bridge --host 127.0.0.1 --port 8095 --reload
+
+dev-ocr-host:
+	cd ai-ready-tool-shelf/osii-tesseract && ENABLE_DEMO=true $(UV) run --no-project --python 3.11 --with-requirements requirements.txt python -m uvicorn app.main:app --host 127.0.0.1 --port 8080
 
 # Hybrid development for deployment-parity extraction: Tika and Tesseract use
 # containers while the application services continue to run from source.

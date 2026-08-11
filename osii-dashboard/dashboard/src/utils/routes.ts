@@ -5,6 +5,8 @@ export function buildFileRoute(params: {
   fileId: string;
   charStart?: number | null;
   charEnd?: number | null;
+  page?: number | null;
+  segmentId?: string | null;
 }): string {
   const search = new URLSearchParams();
 
@@ -14,6 +16,14 @@ export function buildFileRoute(params: {
 
   if (params.charEnd != null) {
     search.set("char_end", String(params.charEnd));
+  }
+
+  if (params.page != null) {
+    search.set("page", String(params.page));
+  }
+
+  if (params.segmentId) {
+    search.set("segment_id", params.segmentId);
   }
 
   const qs = search.toString();

@@ -136,13 +136,14 @@ def _load_run(run_id: str) -> dict | None:
 
 def get_run(run_id: str) -> dict | None:
     with RUNS_LOCK:
-        run = RUNS.get(run_id)
-        if run is not None:
-            return run
+        # API and worker are separate host processes. The durable store is the
+        # shared authority; a process-local cache can otherwise leave Activity
+        # showing a run as pending after the worker has already completed it.
         run = _load_run(run_id)
         if run is not None:
             RUNS[run_id] = run
-        return run
+            return run
+        return RUNS.get(run_id)
 
 
 def list_runs(*, limit: int = 100) -> list[dict]:
