@@ -168,10 +168,10 @@ function PdfSourcePanel({
   return (
     <Stack spacing={1.25} sx={{ minWidth: 0 }}>
       <Stack
-        direction={{ xs: "column", md: "row" }}
+        direction={compact ? "column" : { xs: "column", md: "row" }}
         spacing={1}
         justifyContent="space-between"
-        alignItems={{ xs: "flex-start", md: "center" }}
+        alignItems={compact ? "flex-start" : { xs: "flex-start", md: "center" }}
       >
         <Typography variant="subtitle1" fontWeight={600}>
           Source PDF
@@ -251,7 +251,7 @@ function PdfSourcePanel({
       </Stack>
 
       {regions.length ? (
-        <Stack direction="row" spacing={1} alignItems="center">
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
           <Chip size="small" color="error" variant="outlined" label={`${regions.length} grounded OCR regions`} />
           <Typography variant="caption" color="text.secondary">
             Boxes use normalized source coordinates and resize with the PDF page.

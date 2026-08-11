@@ -79,6 +79,10 @@ It listens on port 8080 and exposes its region-tuning interface at
 OCR extraction stores normalized region boxes, which the Source and Split View
 can overlay on the PDF.
 
+On ordinary laptop-width screens, Split View places the source and grounded
+text side by side and wraps each pane's controls within its own column. On
+narrow screens, the panes stack so neither source content nor text is squeezed.
+
 ## Add and reprocess documents
 
 The Intake page separates **Add files**, **Process library**, and **Activity**.

@@ -34,6 +34,7 @@ type GroundedSegmentEditorProps = {
   height?: number | string;
   fontSizePx?: number;
   searchResetToken?: number;
+  compact?: boolean;
 };
 
 type EditableSegment = {
@@ -92,6 +93,7 @@ export function GroundedSegmentEditor({
   height = "68vh",
   fontSizePx = 15,
   searchResetToken = 0,
+  compact = false,
 }: GroundedSegmentEditorProps) {
   const editedQuery = useEditedObjectText(fileId, true);
   const saveMutation = useSaveEditedObjectText(fileId);
@@ -226,10 +228,10 @@ export function GroundedSegmentEditor({
   return (
     <Stack spacing={1.25} sx={{ minWidth: 0 }}>
       <Stack
-        direction={{ xs: "column", md: "row" }}
+        direction={compact ? "column" : { xs: "column", md: "row" }}
         spacing={1.25}
         justifyContent="space-between"
-        alignItems={{ xs: "flex-start", md: "center" }}
+        alignItems={compact ? "flex-start" : { xs: "flex-start", md: "center" }}
       >
         <Stack spacing={0.25}>
           <Typography variant="subtitle1" fontWeight={600}>
@@ -300,9 +302,9 @@ export function GroundedSegmentEditor({
           <CardContent sx={{ py: 1.25 }}>
             <Stack spacing={1.25}>
               <Stack
-                direction={{ xs: "column", md: "row" }}
+                direction={compact ? "column" : { xs: "column", md: "row" }}
                 spacing={1}
-                alignItems={{ xs: "stretch", md: "center" }}
+                alignItems={compact ? "stretch" : { xs: "stretch", md: "center" }}
               >
                 <TextField
                   fullWidth
@@ -321,7 +323,7 @@ export function GroundedSegmentEditor({
                   sx={{
                     border: "1px solid rgba(20,184,166,0.25)",
                     borderRadius: 1,
-                    alignSelf: { xs: "flex-start", md: "center" },
+                    alignSelf: compact ? "flex-start" : { xs: "flex-start", md: "center" },
                   }}
                 >
                   <SearchOutlinedIcon fontSize="small" />
@@ -462,10 +464,10 @@ export function GroundedSegmentEditor({
                     >
                       <Stack spacing={0.7}>
                         <Stack
-                          direction={{ xs: "column", sm: "row" }}
+                          direction={compact ? "column" : { xs: "column", sm: "row" }}
                           spacing={0.75}
                           justifyContent="space-between"
-                          alignItems={{ xs: "flex-start", sm: "center" }}
+                          alignItems={compact ? "flex-start" : { xs: "flex-start", sm: "center" }}
                         >
                           <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
                             <Chip label={segment.id} size="small" variant="outlined" />

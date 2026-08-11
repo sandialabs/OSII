@@ -31,10 +31,10 @@ export function SplitFileView({
       sx={{
         display: "grid",
         gridTemplateColumns: {
-          xs: "1fr",
-          xl: "minmax(0, 0.95fr) minmax(340px, 0.8fr)",
+          xs: "minmax(0, 1fr)",
+          lg: "repeat(2, minmax(0, 1fr))",
         },
-        gap: 1.25,
+        gap: { xs: 2, lg: 1.5 },
         alignItems: "start",
       }}
     >
@@ -55,6 +55,7 @@ export function SplitFileView({
         onJumpToSource={onJumpToSource}
         height="68vh"
         fontSizePx={15}
+        compact
       />
     </Box>
   );
