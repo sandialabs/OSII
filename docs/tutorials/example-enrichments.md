@@ -19,7 +19,8 @@ view when the background job finishes.
    morphology rules;
 4. reducing regular plural nouns and comparative/superlative adjectives to a
    lemma; and
-5. counting each 2-, 3-, and 4-token sequence.
+5. counting each consecutive 2-, 3-, and 4-token sequence without joining
+   across a rejected verb or function word.
 
 The table contains rank, phrase, n-gram size, total frequency, and collection
 document frequency. Row provenance identifies every source document in which

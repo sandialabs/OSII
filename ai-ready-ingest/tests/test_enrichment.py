@@ -2,10 +2,12 @@ import json
 
 from osii_processor_sdk import (
     Capability,
+    EntityListArtifactData,
     ProcessorDescriptor,
     ProcessorKind,
     ProvenanceRef,
     SynthesisResponse,
+    TableArtifactData,
 )
 
 from osii.enrichment.llm_wiki import LlmWikiEnricher
@@ -165,7 +167,8 @@ def test_linguistic_keyword_and_entity_examples(temp_osii_root, sample_osii_obje
             "Thermal calibration drift affects local sensor measurements. "
             "Thermal calibration drift requires careful analysis. "
             "Sandia National Laboratories reviewed the sensor. "
-            "Sandia National Laboratories published the analysis."
+            "Sandia National Laboratories published the analysis. "
+            "We talk about other things."
         ),
     )
 
@@ -200,9 +203,12 @@ def test_linguistic_keyword_and_entity_examples(temp_osii_root, sample_osii_obje
     )
 
     rows = keyword_payload["rows"]
+    TableArtifactData.model_validate(keyword_payload)
+    EntityListArtifactData.model_validate(entity_payload)
     thermal_phrase = next(row for row in rows if row["keyword"] == "thermal calibration drift")
     assert thermal_phrase["frequency"] == 2
     assert {row["n"] for row in rows}.issubset({2, 3, 4})
+    assert all(row["keyword"] != "talk about" for row in rows)
     entity = next(item for item in entity_payload["entities"] if item["name"] == "Sandia National Laboratories")
     assert entity["entity_type"] == "organization_candidate"
     assert entity["attributes"]["frequency"] == 2

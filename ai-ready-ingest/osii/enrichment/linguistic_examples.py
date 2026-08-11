@@ -13,31 +13,34 @@ from osii.enrichment.common import collect_scope_texts
 WORD_RE = re.compile(r"[A-Za-z][A-Za-z'-]*")
 SENTENCE_RE = re.compile(r"[^.!?\n]+")
 ENTITY_RE = re.compile(
-    r"\b(?:[A-Z]{2,}|[A-Z][a-z][A-Za-z0-9'.-]*)"
+    r"\b(?:[A-Z]{2,}|[A-Z][a-z](?:[A-Za-z0-9'.-]*[A-Za-z0-9'])?)"
     r"(?:\s+(?:(?:of|the|and|for|in|on|&|de|van)\s+)?"
-    r"(?:[A-Z]{2,}|[A-Z][a-z][A-Za-z0-9'.-]*)){0,5}\b"
+    r"(?:[A-Z]{2,}|[A-Z][a-z](?:[A-Za-z0-9'.-]*[A-Za-z0-9'])?)){0,5}\b"
 )
 
 FUNCTION_WORDS = {
-    "a", "an", "and", "are", "as", "at", "be", "because", "been", "before",
+    "a", "about", "after", "again", "ago", "an", "and", "another", "any", "are", "around",
+    "as", "at", "away", "back", "be", "because", "been", "before",
     "being", "between", "both", "but", "by", "can", "could", "did", "do", "does",
     "during", "each", "for", "from", "had", "has", "have", "he", "her", "here",
     "hers", "him", "his", "how", "i", "if", "in", "into", "is", "it", "its",
     "may", "might", "more", "most", "must", "no", "not", "of", "on", "or", "our",
-    "ours", "she", "should", "so", "some", "such", "than", "that", "the", "their",
+    "now", "other", "ours", "out", "over", "she", "should", "so", "some", "such",
+    "than", "that", "the", "their",
     "theirs", "them", "then", "there", "these", "they", "this", "those", "through",
     "to", "under", "until", "up", "us", "very", "was", "we", "were", "what", "when",
     "where", "which", "while", "who", "why", "will", "with", "would", "you", "your",
 }
 
 COMMON_VERBS = {
-    "add", "allow", "appear", "apply", "become", "begin", "build", "call", "change",
-    "check", "choose", "come", "contain", "continue", "create", "define", "describe",
+    "add", "affect", "allow", "appear", "apply", "become", "begin", "build", "call", "change",
+    "check", "choose", "click", "come", "contain", "continue", "create", "define", "describe",
     "display", "do", "drive", "enable", "end", "explain", "find", "follow", "generate",
     "get", "give", "go", "include", "keep", "know", "let", "make", "mean", "move",
     "need", "open", "provide", "read", "record", "reduce", "require", "return", "run",
-    "save", "see", "select", "set", "show", "start", "stop", "support", "take", "tell",
-    "think", "try", "turn", "use", "want", "work", "write",
+    "outrun", "publish", "review", "save", "say", "see", "select", "set", "show",
+    "start", "stop", "support", "take", "talk",
+    "tell", "think", "try", "turn", "use", "want", "work", "write",
 }
 
 ADJECTIVE_WORDS = {
@@ -62,6 +65,8 @@ IRREGULAR_LEMMAS = {
     "matrices": "matrix",
     "men": "man",
     "people": "person",
+    "physics": "physics",
+    "reynolds": "reynolds",
     "women": "woman",
 }
 
@@ -70,6 +75,17 @@ ENTITY_STARTER_WORDS = {
     "I", "If", "In", "It", "Its", "No", "On", "She", "So", "The", "Then", "There",
     "These", "They", "This", "Those", "To", "We", "When", "Where", "Which", "While",
     "With", "You",
+}
+
+ENTITY_NOISE_WORDS = {
+    "again", "all", "am", "can", "chapter", "create", "deployment", "example", "fig",
+    "figure", "life", "note", "now", "once", "one", "pass", "pipeline", "pipelines",
+    "recipe", "sandbox", "section", "service", "some", "task", "tasks", "terminal", "that",
+    "table", "topology", "up", "vol", "well", "what", "you'll",
+}
+
+ENTITY_HEADER_WORDS = {
+    "command", "container", "created", "id", "image", "name", "names", "ports", "status",
 }
 
 ORGANIZATION_MARKERS = {
@@ -105,7 +121,8 @@ def _lemma(word: str, adjective: bool) -> str:
 
 def _noun_or_adjective(word: str) -> tuple[str, str] | None:
     value = word.lower().strip("'-")
-    if len(value) < 3 or value in FUNCTION_WORDS or value in COMMON_VERBS:
+    base_form = _lemma(value, False)
+    if len(value) < 3 or value in FUNCTION_WORDS or value in COMMON_VERBS or base_form in COMMON_VERBS:
         return None
     adjective = value in ADJECTIVE_WORDS or value.endswith(ADJECTIVE_SUFFIXES)
     if not adjective and value.endswith(("ing", "ed")):
@@ -140,16 +157,24 @@ class NounAdjectiveNgramEnricher(BaseEnricher):
             for item in texts:
                 seen_in_document: set[tuple[str, ...]] = set()
                 for sentence in SENTENCE_RE.findall(item["text"]):
-                    lemmas = [
-                        tagged[0]
-                        for token in WORD_RE.findall(sentence)
-                        if (tagged := _noun_or_adjective(token)) is not None
-                    ]
-                    for width in (2, 3, 4):
-                        for offset in range(0, len(lemmas) - width + 1):
-                            ngram = tuple(lemmas[offset:offset + width])
-                            counts[ngram] += 1
-                            seen_in_document.add(ngram)
+                    runs: list[list[str]] = []
+                    current_run: list[str] = []
+                    for token in WORD_RE.findall(sentence):
+                        tagged = _noun_or_adjective(token)
+                        if tagged is None:
+                            if current_run:
+                                runs.append(current_run)
+                                current_run = []
+                            continue
+                        current_run.append(tagged[0])
+                    if current_run:
+                        runs.append(current_run)
+                    for lemmas in runs:
+                        for width in (2, 3, 4):
+                            for offset in range(0, len(lemmas) - width + 1):
+                                ngram = tuple(lemmas[offset:offset + width])
+                                counts[ngram] += 1
+                                seen_in_document.add(ngram)
                 for ngram in seen_in_document:
                     documents_by_ngram[ngram].add(item["file_id"])
 
@@ -179,7 +204,10 @@ class NounAdjectiveNgramEnricher(BaseEnricher):
                 payload={
                     "artifact_type": "table",
                     "title": "Noun and adjective phrase keywords",
-                    "description": "Top 20 frequency-ranked 2-, 3-, and 4-grams after local English noun/adjective filtering and lemmatization.",
+                    "description": (
+                        "Top 20 frequency-ranked 2-, 3-, and 4-grams after local English "
+                        "noun/adjective filtering and lemmatization."
+                    ),
                     "columns": [
                         {"key": "rank", "label": "Rank", "data_type": "integer"},
                         {"key": "keyword", "label": "Keyword phrase", "data_type": "string"},
@@ -214,7 +242,9 @@ def _entity_type(name: str) -> str:
         return "organization_candidate"
     if len(tokens) == 1 and name.replace(".", "").isupper():
         return "acronym_candidate"
-    if 2 <= len(tokens) <= 4 and all(token not in {"of", "the", "and", "for", "in", "on"} for token in tokens):
+    if 2 <= len(tokens) <= 4 and all(
+        token not in {"of", "the", "and", "for", "in", "on"} for token in tokens
+    ):
         return "person_or_named_thing_candidate"
     return "named_entity_candidate"
 
@@ -243,20 +273,44 @@ class EntityCandidateEnricher(BaseEnricher):
             variants: dict[str, Counter[str]] = defaultdict(Counter)
             mentions: dict[str, list[dict]] = defaultdict(list)
             documents_by_entity: dict[str, set[str]] = defaultdict(set)
+            non_initial_mentions: Counter[str] = Counter()
 
             for item in texts:
                 for match in ENTITY_RE.finditer(item["text"]):
-                    name = " ".join(match.group(0).split()).strip(" .")
-                    words = name.split()
-                    if not name or (len(words) == 1 and name in ENTITY_STARTER_WORDS):
+                    raw_name = " ".join(match.group(0).split()).strip(" .")
+                    words = raw_name.split()
+                    drop = 0
+                    while drop < len(words) and (
+                        words[drop] in ENTITY_STARTER_WORDS
+                        or (drop > 0 and words[drop].casefold() in {"the"})
+                    ):
+                        drop += 1
+                    words = words[drop:]
+                    name = " ".join(words)
+                    if not name or (
+                        len(words) == 1
+                        and (
+                            name in ENTITY_STARTER_WORDS
+                            or name.casefold() in ENTITY_NOISE_WORDS
+                            or (len(name) < 3 and not name.isupper())
+                        )
+                    ):
+                        continue
+                    if len(words) > 1 and all(
+                        word.casefold().strip(".:") in ENTITY_HEADER_WORDS for word in words
+                    ):
                         continue
                     key = name.casefold()
+                    name_start = match.start() + match.group(0).find(words[0])
+                    prefix = item["text"][max(0, name_start - 3):name_start]
+                    if name_start > 0 and not re.search(r"[.!?\n]\s*$", prefix):
+                        non_initial_mentions[key] += 1
                     variants[key][name] += 1
                     documents_by_entity[key].add(item["file_id"])
                     if len(mentions[key]) < 25:
                         mentions[key].append({
                             "file_id": item["file_id"],
-                            "char_start": match.start(),
+                            "char_start": name_start,
                             "char_end": match.end(),
                             "source_origin": {"representation": item.get("representation")},
                         })
@@ -264,8 +318,8 @@ class EntityCandidateEnricher(BaseEnricher):
             eligible = [
                 key
                 for key, names in variants.items()
-                if sum(names.values()) >= 2
-                or any(len(name.split()) > 1 or name.isupper() for name in names)
+                if any(len(name.split()) > 1 or name.isupper() for name in names)
+                or (sum(names.values()) >= 2 and non_initial_mentions[key] > 0)
             ]
             eligible.sort(
                 key=lambda key: (
@@ -299,7 +353,10 @@ class EntityCandidateEnricher(BaseEnricher):
                 payload={
                     "artifact_type": "entity_list",
                     "title": "Named entity candidates",
-                    "description": "Repeated capitalized phrases and acronyms with grounded source mentions. Candidate types are intentionally conservative.",
+                    "description": (
+                        "Repeated capitalized phrases and acronyms with grounded source mentions. "
+                        "Candidate types are intentionally conservative."
+                    ),
                     "entities": entities,
                 },
                 metadata={
