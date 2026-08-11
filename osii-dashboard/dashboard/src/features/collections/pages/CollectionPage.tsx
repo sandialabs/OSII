@@ -25,6 +25,7 @@ import {
 } from "../../../hooks/useCollections";
 import { CollectionFileGrid } from "../components/CollectionFileGrid";
 import { ScopeEnrichmentsPanel } from "../../files/components/ScopeEnrichmentsPanel";
+import { ScopeWikiPanel } from "../../files/components/ScopeWikiPanel";
 
 export function CollectionPage() {
   const { collectionId } = useParams<{ collectionId: string }>();
@@ -158,6 +159,10 @@ export function CollectionPage() {
           </Stack>
         </Stack>
 
+        <ScopeWikiPanel
+          scope={{ scope_type: "collection", collection_id: collectionId }}
+          title={data.collection.name}
+        />
         <CollectionFileGrid collectionId={collectionId} />
         <ScopeEnrichmentsPanel
           scope={{ scope_type: "collection", collection_id: collectionId }}

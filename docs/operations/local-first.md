@@ -9,7 +9,7 @@ credential, or model cache.
 | Synthesis | cited extractive Markdown preview | selected Ollama, OpenAI-compatible, or Shirty chat model |
 | Embedding | 384D token/bigram hashing (lexical) | selected semantic embedding model |
 | Search | BM25; hashing similarity | provider/model-specific semantic FAISS index |
-| Enrichment | statistics and keywords table | domain Processor API service |
+| Enrichment | statistics and keywords table | LLM wiki through the selected model-backed synthesizer; domain Processor API service |
 | Chat | grounded extractive answer | selected model provider |
 | Browse/API/MCP | local dashboard, backend, and MCP | same contracts |
 
@@ -63,6 +63,29 @@ capability, without changing the rest of OSII.
 On Windows, append `-DryRun` to any host profile command to validate its
 service plan without opening ports, for example
 `.\scripts\osii.ps1 dev-corporate -DryRun`.
+
+## Add and reprocess documents
+
+The Intake page separates **Add files**, **Process library**, and **Activity**.
+Use Process library after installing a model to add embeddings or summaries to
+documents that were extracted earlier. Use **Upgrade extraction** when a better
+extractor becomes available; OSII preserves both extraction versions and lets
+you decide whether the new result becomes primary. See
+[Extraction versions and downstream lineage](../reference/extraction-versions.md).
+
+## Generate an LLM wiki
+
+With a model-backed synthesizer selected in Tools, OSII can compose that
+capability into a standard wiki-Markdown enrichment. Generate a document wiki
+from the document's **Wiki** tab or a collection wiki from the collection view.
+The operation runs in the background, records the actual provider and model,
+and never substitutes the extractive preview while labeling the result as an
+LLM wiki. See the [LLM wiki walkthrough](../tutorials/llm-wiki.md).
+
+Two additional dependency-free examples produce a frequency-ranked table of
+lemmatized noun/adjective 2-, 3-, and 4-grams and a grounded list of named
+entity candidates. Both use standard Processor API artifact formats; see
+[Example keyword and entity enrichments](../tutorials/example-enrichments.md).
 
 `make dev-corporate` registers the separately deployed Shirty bridge as first
 choice and Ollama as an optional fallback. The corresponding Windows command

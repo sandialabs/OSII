@@ -14,6 +14,7 @@ import type { EnrichmentListEntryFile } from "../../../api/types";
 import { useObjectEnrichmentPayload } from "../../../hooks/useObjectEnrichmentPayload";
 import { useScopeEnrichments } from "../../../hooks/useScopeEnrichments";
 import { EnrichmentArtifactView } from "./EnrichmentArtifactView";
+import { ExampleEnrichmentActions } from "./ExampleEnrichmentActions";
 
 type FileEnrichmentsPanelProps = {
   fileId: string;
@@ -78,15 +79,17 @@ export function FileEnrichmentsPanel({ fileId }: FileEnrichmentsPanelProps) {
   }
 
   const enrichments = (data?.enrichments ?? []).filter(
-    (entry) => entry.kind !== "file" || !entry.name.endsWith(".meta.json"),
+    (entry) => entry.kind !== "file" || (
+      !entry.name.endsWith(".meta.json") && entry.name !== "wiki--llm_wiki.json"
+    ),
   );
-
-  if (enrichments.length === 0) {
-    return <Alert severity="info">No enrichments are available for this file.</Alert>;
-  }
 
   return (
     <Stack spacing={2}>
+      <ExampleEnrichmentActions scope={{ scope_type: "object", file_id: fileId }} />
+      {enrichments.length === 0 ? (
+        <Alert severity="info">No other enrichments are available for this file.</Alert>
+      ) : null}
       {enrichments.map((entry) => (
         entry.kind === "file" ? (
           <EnrichmentFileCard

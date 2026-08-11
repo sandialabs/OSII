@@ -4,6 +4,7 @@ from pathlib import Path
 import tomllib
 
 from osii.domain.artifacts.edited_text import edited_text_path
+from osii.domain.artifacts.extraction_variants import list_extraction_variants, primary_extraction_dir
 from osii.domain.storage.store import object_text_path, provenance_path
 from osii.extraction.registry import get_extractors
 from osii.synthesis.registry import get_synthesizers
@@ -39,7 +40,9 @@ def get_object_processing_metadata(osii_root: Path, file_id: str) -> dict | None
     extractor_display = extractor_map.get(extractor_name, {}).get("display_name") if extractor_name else None
     synthesizer_display = synthesizer_map.get(synthesizer_name, {}).get("display_name") if synthesizer_name else None
 
-    canonical_text = object_text_path(osii_root, file_id)
+    extraction_state = list_extraction_variants(osii_root, file_id) or {}
+    primary_dir = primary_extraction_dir(osii_root, file_id)
+    canonical_text = (primary_dir / "text.txt") if primary_dir else object_text_path(osii_root, file_id)
     edited_text = edited_text_path(osii_root, file_id)
 
     supports_markdown_render = extractor_name in {"pdf_default", "banyan_ingest", "banyan-extract", "banyan"}
@@ -50,6 +53,7 @@ def get_object_processing_metadata(osii_root: Path, file_id: str) -> dict | None
             "name": extractor_name,
             "display_name": extractor_display,
         },
+        "extractions": extraction_state,
         "synthesizer": {
             "name": synthesizer_name,
             "display_name": synthesizer_display,

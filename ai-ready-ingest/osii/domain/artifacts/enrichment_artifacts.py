@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import json
 
+from osii.domain.artifacts.extraction_variants import list_extraction_variants
+from osii.domain.artifacts.artifact_staleness import clear_artifacts_stale
+
 from osii.domain.storage.store import (
     collection_enrichments_dir,
     folder_enrichments_dir,
@@ -91,7 +94,12 @@ def write_object_enrichment_variant(
     meta_path = out_dir / f"{base}.meta.json"
 
     data_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    meta_path.write_text(json.dumps(metadata or {}, indent=2), encoding="utf-8")
+    extraction_id = (list_extraction_variants(osii_root, file_id) or {}).get("primary_id")
+    meta_path.write_text(
+        json.dumps({**(metadata or {}), **({"input_extraction_id": extraction_id} if extraction_id else {})}, indent=2),
+        encoding="utf-8",
+    )
+    clear_artifacts_stale(osii_root, file_id, "enrichments")
 
     return {
         "scope_type": "object",

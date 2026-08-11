@@ -94,10 +94,10 @@ def create_chat_client() -> ChatClient:
 
 
 def create_embedding_client() -> EmbeddingClient:
-    from osii.domain.model_provider_config import load_provider_records, selected_processor
+    from osii.domain.model_provider_config import selected_processor
 
     base_url = _configured_url("OSII_EMBEDDING_BASE_URL", "OSII_MODEL_BASE_URL")
-    if load_provider_records() is None and not os.getenv("OSII_DEFAULT_EMBEDDER", "").strip() and base_url:
+    if base_url and (os.getenv("OSII_EMBEDDING_BASE_URL", "").strip() or os.getenv("OSII_MODEL_BASE_URL", "").strip()):
         return OpenAICompatibleClient(base_url, os.getenv("OSII_EMBEDDING_API_KEY") or os.getenv("OSII_MODEL_API_KEY"))
     processor_name = selected_processor("embedder")
     if processor_name:

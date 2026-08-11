@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Alert, Button, Chip, Divider, FormControlLabel, LinearProgress, MenuItem, Paper, Stack, Switch, TextField, Typography } from "@mui/material";
+import { Alert, Button, Chip, Divider, FormControlLabel, LinearProgress, MenuItem, Paper, Stack, Switch, Tab, Tabs, TextField, Typography } from "@mui/material";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 
@@ -35,6 +35,8 @@ export function ProcessorsPage() {
   });
   const [providerHealth, setProviderHealth] = useState<Record<string, ModelProviderHealth>>({});
   const [pullJobs, setPullJobs] = useState<Record<string, ModelPullJob>>({});
+  const [section, setSection] = useState<"overview" | "models" | "capabilities" | "endpoints">("overview");
+  const [showProviderForm, setShowProviderForm] = useState(false);
   const autoProbed = useRef(new Set<string>());
 
   const loadProviderModels = async (provider: ModelProvider, announce = false) => {
@@ -85,6 +87,7 @@ export function ProcessorsPage() {
     try {
       await createModelProvider(providerForm);
       setMessage("Model provider saved. The highest-priority enabled provider supplies each configured capability.");
+      setShowProviderForm(false);
       await client.invalidateQueries({ queryKey: ["admin", "model-providers"] });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save model provider.");
@@ -123,7 +126,16 @@ export function ProcessorsPage() {
       </Stack>
       {message ? <Alert severity={message.includes("failed") || message.includes("Could not") ? "error" : "info"}>{message}</Alert> : null}
 
-      <Paper variant="outlined" sx={{ p: 2 }}>
+      <Paper variant="outlined" sx={{ px: 1 }}>
+        <Tabs value={section} onChange={(_, value) => setSection(value)} variant="scrollable" allowScrollButtonsMobile aria-label="Tool sections">
+          <Tab value="overview" label="Overview" />
+          <Tab value="models" label="Model providers" />
+          <Tab value="capabilities" label="Local capabilities" />
+          <Tab value="endpoints" label="Processor endpoints" />
+        </Tabs>
+      </Paper>
+
+      {section === "overview" ? <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.25}>
           <Typography fontWeight={700}>Guaranteed local capabilities</Typography>
           <Typography variant="body2">Native extraction, extractive previews and chat, hashing vectors, BM25 search, and statistics/keyword enrichment require no account, model download, or container.</Typography>
@@ -152,12 +164,16 @@ export function ProcessorsPage() {
             Return to Intake
           </Button>
         </Stack>
-      </Paper>
+      </Paper> : null}
 
-      <Paper component="form" onSubmit={(event) => void addProvider(event)} variant="outlined" sx={{ p: 2 }}>
+      {section === "models" ? <Paper component="form" onSubmit={(event) => void addProvider(event)} variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
           <Typography fontWeight={700}>Model providers</Typography>
           <Typography variant="body2" color="text.secondary">Ollama, Shirty, and generic OpenAI-compatible servers are adapted by a thin HTTP bridge. Ollama itself and its model files remain separate from OSII, so this module can be disabled when a reliable endpoint is available.</Typography>
+          <Button variant="outlined" onClick={() => setShowProviderForm((current) => !current)} sx={{ alignSelf: "flex-start" }}>
+            {showProviderForm ? "Hide provider settings" : "Add or edit a provider"}
+          </Button>
+          {showProviderForm ? <>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
             <TextField label="Provider ID" value={providerForm.id} onChange={(event) => setProviderForm({ ...providerForm, id: event.target.value })} />
             <TextField select label="Type" value={providerForm.type} onChange={(event) => setProviderForm({ ...providerForm, type: event.target.value as ModelProvider["type"] })} sx={{ minWidth: 140 }}>
@@ -174,6 +190,7 @@ export function ProcessorsPage() {
           <FormControlLabel control={<Switch checked={providerForm.enabled} onChange={(event) => setProviderForm({ ...providerForm, enabled: event.target.checked })} />} label="Enable this provider" />
           <Alert severity="info">The first-run defaults are the US-origin <code>all-minilm</code> embedding model and Meta <code>llama3.2:1b</code> for chat and synthesis. Downloads are explicit and restricted by <code>OSII_OLLAMA_ALLOWED_MODELS</code>.</Alert>
           <Button type="submit" variant="contained" sx={{ alignSelf: "flex-start" }}>Save provider</Button>
+          </> : null}
           {(providers.data?.providers ?? []).map((provider) => (
             <Paper key={provider.id} variant="outlined" sx={{ p: 1.5 }}>
               <Stack spacing={1.25}>
@@ -185,7 +202,7 @@ export function ProcessorsPage() {
                     </Stack>
                     <Typography variant="caption" color="text.secondary">{provider.base_url} · credentials {provider.credential_required === false ? "not required" : provider.credential_present ? "present" : "not present"} · {provider.enabled ? "enabled" : "disabled"}</Typography>
                   </Stack>
-                  <Stack direction="row" spacing={1}><Button variant="outlined" onClick={() => setProviderForm(provider)}>Edit</Button><Button variant="outlined" onClick={() => void probeProvider(provider)}>Refresh models</Button></Stack>
+                  <Stack direction="row" spacing={1}><Button variant="outlined" onClick={() => { setProviderForm(provider); setShowProviderForm(true); }}>Edit</Button><Button variant="outlined" onClick={() => void probeProvider(provider)}>Refresh models</Button></Stack>
                 </Stack>
                 {provider.type === "ollama" && providerHealth[provider.id]?.ok ? (
                   <Stack spacing={0.75}>
@@ -243,9 +260,9 @@ export function ProcessorsPage() {
           {(readiness.data?.semantic_indexes ?? []).map((index) => <Typography key={index.index_id} variant="caption" color="text.secondary">{index.provider_id} · {index.model} · {index.dimensions ?? "?"} dimensions · {index.semantic ? "semantic" : "lexical hashing"} · {index.compatible ? "compatible" : "rebuild required"}</Typography>)}
           {readiness.data && !(readiness.data.semantic_indexes?.length) ? <Typography variant="caption" color="text.secondary">No provider/model-specific index has been built yet.</Typography> : null}
         </Stack>
-      </Paper>
+      </Paper> : null}
 
-      <Paper variant="outlined" sx={{ p: 2 }}>
+      {section === "capabilities" ? <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.25}>
           <Typography fontWeight={700}>Selected local Processor services</Typography>
           {readiness.data ? ([
@@ -259,12 +276,16 @@ export function ProcessorsPage() {
                 <Typography fontWeight={600}>{item.display_name}</Typography>
                 <Typography variant="caption" color="text.secondary">{item.id} · {item.base_url ?? "in-process compatibility fallback"}</Typography>
               </Stack>
-              <Chip size="small" color={item.available ? "success" : "error"} label={item.available ? item.detail : "Unavailable"} />
+              <Stack direction="row" spacing={0.75} alignItems="center">
+                <Chip size="small" variant="outlined" label={item.kind ?? "processor"} />
+                <Chip size="small" color={item.available ? "success" : "error"} label={item.available ? item.detail : "Unavailable"} />
+              </Stack>
             </Stack>
           ))) : <Typography variant="body2">Testing local services…</Typography>}
         </Stack>
-      </Paper>
+      </Paper> : null}
 
+      {section === "endpoints" ? <>
       <Paper component="form" onSubmit={(event) => void add(event)} variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={2}>
           <Stack spacing={0.25}>
@@ -299,6 +320,7 @@ export function ProcessorsPage() {
         ))}
         {!processors.isLoading && !(processors.data?.processors.length) ? <Alert severity="info">No external processors are registered.</Alert> : null}
       </Stack>
+      </> : null}
     </Stack>
   );
 }

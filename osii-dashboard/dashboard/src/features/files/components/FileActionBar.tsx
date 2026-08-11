@@ -99,6 +99,8 @@ export function FileActionBar({ fileId }: FileActionBarProps) {
                     onChange={(event) => setEnricherName(event.target.value)}
                   >
                     <MenuItem value="stats_keywords">stats_keywords</MenuItem>
+                    <MenuItem value="noun_adjective_ngrams">noun_adjective_ngrams</MenuItem>
+                    <MenuItem value="entity_candidates">entity_candidates</MenuItem>
                     <MenuItem value="llm_wiki_stub">llm_wiki_stub</MenuItem>
                   </TextField>
 

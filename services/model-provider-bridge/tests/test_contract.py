@@ -28,6 +28,40 @@ def test_ollama_embedding_and_synthesis_contract(monkeypatch):
     assert synthesized.json()["metadata"]["provider"] == "ollama"
 
 
+def test_synthesis_passes_wiki_guidance_and_output_limit_to_ollama(monkeypatch, tmp_path):
+    monkeypatch.setenv("OSII_ROOT", str(tmp_path))
+    seen = {}
+
+    def fake_request(method, path, **kwargs):
+        assert path == "/api/chat"
+        seen.update(kwargs["payload"])
+        return {"message": {"content": "# Demonstration Wiki\n\nGrounded fact [doc-1]."}}
+
+    monkeypatch.setattr(CLIENTS["ollama"], "request", fake_request)
+    response = TestClient(app).post(
+        "/ollama/synthesizer/v1/synthesize",
+        json={
+            "request_id": "wiki-1",
+            "scope": {
+                "scope_type": "object",
+                "scope_id": "doc-1",
+                "documents": [{"file_id": "doc-1", "filename": "report.txt", "text": "Grounded fact."}],
+            },
+            "expert_context": "Focus on experimental results.",
+            "config": {
+                "instructions": "Create a grounded wiki.",
+                "max_tokens": 1800,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Create a grounded wiki." in seen["messages"][0]["content"]
+    assert "Focus on experimental results." in seen["messages"][0]["content"]
+    assert "SOURCE doc-1" in seen["messages"][0]["content"]
+    assert seen["options"]["num_predict"] == 1800
+
+
 def test_ollama_embedding_has_small_us_model_default(monkeypatch, tmp_path):
     monkeypatch.setenv("OSII_ROOT", str(tmp_path))
     monkeypatch.delenv("OLLAMA_EMBEDDING_MODEL", raising=False)

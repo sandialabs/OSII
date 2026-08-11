@@ -41,6 +41,12 @@ def execute_job(job: dict) -> None:
         synthesizer_name=payload.get("synthesizer_name") or None,
         synthesizer_config=payload.get("synthesizer_config") or {},
         extractor_overrides=payload.get("extractor_overrides") or {},
+        workflow=payload.get("workflow") or "intake",
+        run_extraction=bool(payload.get("run_extraction", True)),
+        extract_mode=payload.get("extract_mode") or "always",
+        extraction_policy=payload.get("extraction_policy") or "make_primary",
+        enricher_name=payload.get("enricher_name") or None,
+        enricher_config=payload.get("enricher_config") or {},
     )
 
     if payload.get("build_embeddings"):

@@ -116,19 +116,32 @@ output settles, open:
 - **Chat health/docs:** <http://localhost:8611/health> · <http://localhost:8611/docs>
 - **MCP server:** <http://localhost:8022/mcp>
 
-In the dashboard, select **Intake** in the first sidebar section. Intake first
-tests the required tools and shows the extractor selected for each matched file
-type. The entire shared volume is the default scope; file-type and glob rules
-narrow that scope rather than replacing it. One-off uploads have their own
-section. Review the matched, new, and already-processed counts, then select
-**Start intake**. Model-backed outputs cannot be selected unless their service
-passes its readiness test. Files are processed sequentially and appear under
-**Files** as each extraction completes; the whole intake does not need to
-finish first. File grids reveal results in groups and limit concurrent PDF
-thumbnail rendering so a large corpus remains responsive.
+In the dashboard, select **Intake** in the first sidebar section. **Add files**
+tests required tools and shows the extractor selected for each matched file
+type. **Process library** adds embeddings, summaries, enrichments, or a better
+extraction to existing documents without repeating unrelated work.
+**Activity** keeps run history out of the setup forms. The entire shared volume
+is the default scope; file-type and glob rules narrow it rather than replacing
+it. Files are processed sequentially and appear under **Files** as each
+extraction completes.
 
-Open **Tools** before the first intake. It separates guaranteed local
-capabilities, model providers, and OSII Processor API services. For a domain
+Re-extraction is versioned. A better extractor can be saved beside the current
+result or made primary while preserving the previous version. See
+[Extraction versions and downstream lineage](docs/reference/extraction-versions.md).
+
+With an Ollama synthesis model selected, open a document's **Wiki** tab or an
+individual collection to generate a grounded LLM wiki as a standard enrichment
+artifact. The model runs outside OSII; the portable Markdown and provenance are
+saved inside `.osii`. See [Generate an LLM wiki](docs/tutorials/llm-wiki.md).
+
+The document **Enrichments** tab and collection **Derived artifacts** section
+also include model-free examples for a top-20 noun/adjective n-gram keyword
+table and a grounded named-entity candidate list. See
+[Example keyword and entity enrichments](docs/tutorials/example-enrichments.md).
+
+Open **Tools** before the first intake. Its Overview, Model providers, Local
+capabilities, and Processor endpoints submenus keep setup details separate.
+For a domain
 processor running on the host, use a base URL such as
 `http://127.0.0.1:8091`; a packaged API container should use the processor's
 Compose service name or `host.containers.internal` for a host service. Run

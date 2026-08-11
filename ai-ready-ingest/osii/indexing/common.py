@@ -24,6 +24,7 @@ from osii.search.lexical import build_bm25_index
 from osii.domain.catalog_db import rebuild_catalog
 from osii.domain.model_provider_config import selected_model, selected_processor
 from osii.domain.storage.atomic import atomic_write_text
+from osii.domain.artifacts.artifact_staleness import clear_artifacts_stale
 
 
 DEFAULT_EMBEDDING_MODEL = "osii-local-hashing-v1"
@@ -302,6 +303,9 @@ def finalize_outputs(
         "skipped": skipped,
     }
     final_meta.write_text(tomli_w.dumps(payload), encoding="utf-8")
+
+    for file_id in {str(row.get("file_id")) for row in final_mapping_rows if row.get("file_id")}:
+        clear_artifacts_stale(osii_root, file_id, "embeddings", "search_chunks")
 
     shutil.rmtree(build_dir(osii_root), ignore_errors=True)
     rebuild_catalog(osii_root)

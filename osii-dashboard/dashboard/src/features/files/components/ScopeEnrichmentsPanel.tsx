@@ -7,6 +7,7 @@ import type {
 import { useScopeEnrichmentPayload } from "../../../hooks/useScopeEnrichmentPayload";
 import { useScopeEnrichments } from "../../../hooks/useScopeEnrichments";
 import { EnrichmentArtifactView } from "./EnrichmentArtifactView";
+import { ExampleEnrichmentActions } from "./ExampleEnrichmentActions";
 
 function ScopeArtifact({
   scope,
@@ -36,17 +37,19 @@ export function ScopeEnrichmentsPanel({ scope }: { scope: ScopeDescribeRequest }
     (entry): entry is EnrichmentListEntryFile =>
       entry.kind === "file" &&
       entry.name.endsWith(".json") &&
+      entry.name !== "wiki--llm_wiki.json" &&
       !entry.name.endsWith(".meta.json"),
   );
-  if (files.length === 0) return null;
-
   return (
     <Stack spacing={2}>
       <Typography variant="h6" fontWeight={700}>Derived artifacts</Typography>
+      <ExampleEnrichmentActions scope={scope} />
+      {files.length === 0 ? (
+        <Alert severity="info">No other derived artifacts are available for this scope.</Alert>
+      ) : null}
       {files.map((entry) => (
         <ScopeArtifact key={entry.name} scope={scope} entry={entry} />
       ))}
     </Stack>
   );
 }
-

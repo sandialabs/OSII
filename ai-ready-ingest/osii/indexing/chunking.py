@@ -80,6 +80,7 @@ def generate_chunk_records(
                     "source_relpath": source_relpath,
                     "source_text_representation": preferred["name"],
                     "source_text_kind": preferred["kind"],
+                    "source_extraction_id": preferred.get("extraction_id"),
                     "chunk_method": method,
                     "chunk_index": i,
                     "char_start": char_start,

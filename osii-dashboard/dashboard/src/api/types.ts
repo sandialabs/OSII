@@ -201,6 +201,26 @@ export type TextRepresentation = {
   preferred: boolean;
 };
 
+export type ExtractionVariant = {
+  id: string;
+  created_utc: string;
+  extractor: { name: string; version: string };
+  status: string;
+  text_sha256?: string | null;
+  text_chars: number;
+  manifest_records: number;
+  primary: boolean;
+  text_path: string;
+  manifest_path: string;
+  provenance_path: string;
+};
+
+export type ExtractionVariantsResponse = {
+  file_id: string;
+  primary_id: string | null;
+  variants: ExtractionVariant[];
+};
+
 export type ObjectSynthesisArtifact = {
   name: string;
   text_path: string;
@@ -485,6 +505,20 @@ export type IntakePreview = {
     sample: string[];
   }>;
   stopped_reason?: string | null;
+  processing_plan?: {
+    matched_count: number;
+    unique_document_count: number;
+    extracted_count: number;
+    missing_extraction_count: number;
+    blocked_count: number;
+    steps: Array<{
+      id: "extract" | "synthesize" | "embed" | "enrich";
+      label: string;
+      eligible_count: number;
+      current_count: number;
+      scope_note?: string;
+    }>;
+  };
 };
 
 export type CapabilityReadiness = {
@@ -552,7 +586,24 @@ export type ProcessingRun = {
   finished_at?: string | null;
   completed?: number;
   total?: number;
-  items?: Array<{ display: string; status: string; error?: string | null; extractor?: string | null }>;
+  workflow?: "intake" | "library";
+  operations?: {
+    extract?: boolean;
+    extract_mode?: string;
+    extraction_policy?: string;
+    synthesize?: string | null;
+    embed?: boolean;
+    enrich?: string | null;
+  };
+  indexing_status?: string;
+  indexing_error?: string | null;
+  items?: Array<{
+    display: string;
+    status: string;
+    error?: string | null;
+    extractor?: string | null;
+    extraction_variant_id?: string | null;
+  }>;
   logs?: string[];
   queue_job_id?: string;
   error?: string | null;
@@ -630,6 +681,8 @@ export type EditedTextSegment = {
 export type EditedTextStaleFlags = {
   embeddings: boolean;
   search_chunks: boolean;
+  syntheses?: boolean;
+  enrichments?: boolean;
 };
 
 export type EditedTextReadResponse = {

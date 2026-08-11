@@ -5,6 +5,8 @@ from osii.domain.read.manifest import list_text_records
 from osii.domain.read.segments import get_segment_text
 from osii.domain.storage.store import object_dir, object_synth_text_path
 from osii.domain.storage.objects import update_synthesis_provenance
+from osii.domain.artifacts.extraction_variants import list_extraction_variants
+from osii.domain.artifacts.artifact_staleness import clear_artifacts_stale
 
 
 def ensure_object_synth_dir(osii_store: Path, file_id: str) -> Path:
@@ -54,14 +56,16 @@ def write_synth_text(
     ensure_object_synth_dir(osii_store, file_id)
     path = object_synth_text_path(osii_store, file_id)
     path.write_text(text, encoding="utf-8")
+    clear_artifacts_stale(osii_store, file_id, "syntheses")
 
     if synthesizer_name and synthesizer_version:
+        extraction_id = (list_extraction_variants(osii_store, file_id) or {}).get("primary_id")
         update_synthesis_provenance(
             osii_store=osii_store,
             file_id=file_id,
             synthesizer_name=synthesizer_name,
             synthesizer_version=synthesizer_version,
-            config=config,
+            config={**(config or {}), **({"input_extraction_id": extraction_id} if extraction_id else {})},
             expert_context_used=bool(expert_context_used),
         )
 

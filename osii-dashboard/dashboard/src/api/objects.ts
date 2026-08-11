@@ -10,6 +10,7 @@ import type {
   ObjectSynthesesResponse,
   ObjectTextsResponse,
   PreferredTextResponse,
+  ExtractionVariantsResponse,
 } from "./types";
 
 export async function getObject(fileId: string): Promise<ObjectAggregate> {
@@ -36,6 +37,19 @@ export async function getObjectManifest(
 export async function getObjectTexts(fileId: string): Promise<ObjectTextsResponse> {
   return apiJson<ObjectTextsResponse>(
     `/api/objects/${encodeURIComponent(fileId)}/texts`,
+  );
+}
+
+export async function getObjectExtractions(fileId: string): Promise<ExtractionVariantsResponse> {
+  return apiJson<ExtractionVariantsResponse>(
+    `/api/objects/${encodeURIComponent(fileId)}/extractions`,
+  );
+}
+
+export async function makeObjectExtractionPrimary(fileId: string, variantId: string): Promise<ExtractionVariantsResponse> {
+  return apiJson<ExtractionVariantsResponse>(
+    `/api/objects/${encodeURIComponent(fileId)}/extractions/${encodeURIComponent(variantId)}/primary`,
+    { method: "POST", json: {} },
   );
 }
 

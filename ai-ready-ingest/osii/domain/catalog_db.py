@@ -12,7 +12,7 @@ import tomllib
 from typing import Any
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def utc_now() -> str:
@@ -62,6 +62,21 @@ def create_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_documents_path ON documents(source_relpath COLLATE NOCASE);
         CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status, source_relpath COLLATE NOCASE);
         CREATE INDEX IF NOT EXISTS idx_documents_suffix ON documents(suffix, source_relpath COLLATE NOCASE);
+        CREATE TABLE IF NOT EXISTS extraction_variants (
+            file_id TEXT NOT NULL,
+            variant_id TEXT NOT NULL,
+            extractor_name TEXT,
+            extractor_version TEXT,
+            status TEXT,
+            created_utc TEXT,
+            text_sha256 TEXT,
+            text_chars INTEGER NOT NULL DEFAULT 0,
+            manifest_records INTEGER NOT NULL DEFAULT 0,
+            is_primary INTEGER NOT NULL DEFAULT 0,
+            relpath TEXT NOT NULL,
+            PRIMARY KEY (file_id, variant_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_extraction_variants_primary ON extraction_variants(file_id, is_primary);
         CREATE TABLE IF NOT EXISTS folders (
             folder_id TEXT PRIMARY KEY,
             path TEXT NOT NULL UNIQUE,
@@ -325,6 +340,39 @@ def _scan_artifacts(osii_root: Path) -> list[tuple[str, str, str, str, str | Non
     return list(records.values())
 
 
+def _scan_extraction_variants(osii_root: Path) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    objects = osii_root / "objects"
+    if not objects.is_dir():
+        return records
+    for obj in objects.iterdir():
+        index_path = obj / "extractions" / "index.json"
+        try:
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        primary_id = index.get("primary_id")
+        for variant in index.get("variants") or []:
+            variant_id = str(variant.get("id") or "")
+            if not variant_id:
+                continue
+            extractor = variant.get("extractor") or {}
+            records.append({
+                "file_id": obj.name,
+                "variant_id": variant_id,
+                "extractor_name": extractor.get("name"),
+                "extractor_version": extractor.get("version"),
+                "status": variant.get("status"),
+                "created_utc": variant.get("created_utc"),
+                "text_sha256": variant.get("text_sha256"),
+                "text_chars": int(variant.get("text_chars") or 0),
+                "manifest_records": int(variant.get("manifest_records") or 0),
+                "is_primary": variant_id == primary_id,
+                "relpath": f"objects/{obj.name}/extractions/{variant_id}",
+            })
+    return records
+
+
 def _scan_indexes(osii_root: Path) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for path in (osii_root / "embeddings").rglob("segments.meta.toml") if (osii_root / "embeddings").exists() else []:
@@ -366,6 +414,13 @@ def _populate(conn: sqlite3.Connection, osii_root: Path) -> None:
         conn.execute("INSERT OR IGNORE INTO collection_documents VALUES (:collection_id, :file_id, :created_utc)", member)
     for artifact in _scan_artifacts(osii_root):
         conn.execute("INSERT INTO artifacts VALUES (?, ?, ?, ?, ?)", artifact)
+    for variant in _scan_extraction_variants(osii_root):
+        conn.execute(
+            """INSERT INTO extraction_variants VALUES (:file_id, :variant_id, :extractor_name,
+            :extractor_version, :status, :created_utc, :text_sha256, :text_chars,
+            :manifest_records, :is_primary, :relpath)""",
+            variant,
+        )
     for index in _scan_indexes(osii_root):
         conn.execute(
             """INSERT INTO semantic_indexes VALUES (:index_id, :provider_id, :endpoint_type, :model, :model_digest,
@@ -385,7 +440,7 @@ def rebuild_catalog(osii_root: Path) -> dict[str, Any]:
             conn.commit()
             counts = {
                 table: int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
-                for table in ("documents", "folders", "collections", "artifacts", "semantic_indexes")
+                for table in ("documents", "extraction_variants", "folders", "collections", "artifacts", "semantic_indexes")
             }
             conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         target.with_name(target.name + "-wal").unlink(missing_ok=True)

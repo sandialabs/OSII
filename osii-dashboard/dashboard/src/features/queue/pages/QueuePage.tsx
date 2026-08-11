@@ -21,6 +21,8 @@ import {
   MenuItem,
   Paper,
   Stack,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from "@mui/material";
@@ -104,8 +106,16 @@ export function QueuePage() {
   const [excludePatterns, setExcludePatterns] = useState("");
   const [includeSubfolders, setIncludeSubfolders] = useState(true);
   const [showHidden, setShowHidden] = useState(false);
+  const [section, setSection] = useState<"add" | "process" | "activity">("add");
+  const [libraryGoal, setLibraryGoal] = useState<"embed" | "synthesize" | "reextract" | "enrich" | "custom">("embed");
+  const [runExtraction, setRunExtraction] = useState(true);
+  const [extractMode, setExtractMode] = useState<"missing" | "reprocess">("missing");
+  const [extractionPolicy, setExtractionPolicy] = useState<"make_primary" | "save_variant">("make_primary");
   const [synthesize, setSynthesize] = useState(true);
   const [embed, setEmbed] = useState(true);
+  const [enrich, setEnrich] = useState(false);
+  const [selectedSynthesizer, setSelectedSynthesizer] = useState("");
+  const [selectedEnricher, setSelectedEnricher] = useState("");
   const [extractorOverrides, setExtractorOverrides] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -179,6 +189,14 @@ export function QueuePage() {
       deferredExcludePatterns,
       showHidden,
       extractorOverrides,
+      section,
+      runExtraction,
+      extractMode,
+      synthesize,
+      embed,
+      enrich,
+      selectedSynthesizer,
+      selectedEnricher,
     ],
     queryFn: () => resolveIntake({
       queue_paths: queuePaths,
@@ -187,8 +205,18 @@ export function QueuePage() {
       exclude_patterns: deferredExcludePatterns,
       show_hidden: showHidden,
       extractor_overrides: extractorOverrides,
+      workflow: section === "process" ? "library" : "intake",
+      run_extraction: runExtraction,
+      extract_mode: extractMode,
+      synthesizer_name: synthesize
+        ? (selectedSynthesizer || readiness.data?.defaults.synthesizer || "local.extractive-preview")
+        : null,
+      build_embeddings: embed,
+      enricher_name: enrich
+        ? (selectedEnricher || readiness.data?.defaults.enricher || "local.stats-keywords")
+        : null,
     }),
-    enabled: queuePaths.length > 0,
+    enabled: queuePaths.length > 0 && section !== "activity",
   });
 
   const recentRuns = useMemo(
@@ -259,19 +287,27 @@ export function QueuePage() {
         exclude_patterns: excludePatterns,
         show_hidden: showHidden,
         extractor_overrides: extractorOverrides,
+        workflow: section === "process" ? "library" : "intake",
+        run_extraction: runExtraction,
+        extract_mode: extractMode,
+        extraction_policy: extractionPolicy,
         synthesizer_name: synthesize
-          ? (readiness.data?.defaults.synthesizer ?? "local.extractive-preview")
+          ? (selectedSynthesizer || readiness.data?.defaults.synthesizer || "local.extractive-preview")
           : null,
         build_embeddings: embed,
+        enricher_name: enrich
+          ? (selectedEnricher || readiness.data?.defaults.enricher || "local.stats-keywords")
+          : null,
       });
       setNotice({
         severity: "success",
-        text: `Intake run ${run.id} is queued for ${run.resolved_count ?? preview.data.preview.matched_count} file(s).`,
+        text: `${section === "process" ? "Processing" : "Intake"} run ${run.id} is queued for ${run.resolved_count ?? preview.data.preview.matched_count} file(s).`,
       });
       setUploadedItems([]);
       setSelectedSharedItems([]);
       setIncludeSharedRoot(true);
       await queryClient.invalidateQueries({ queryKey: ["processing-runs"] });
+      setSection("activity");
     } catch (error) {
       setNotice({
         severity: "error",
@@ -282,7 +318,33 @@ export function QueuePage() {
     }
   };
 
+  const chooseLibraryGoal = (goal: typeof libraryGoal) => {
+    setLibraryGoal(goal);
+    if (goal === "embed") {
+      setRunExtraction(false); setSynthesize(false); setEmbed(true); setEnrich(false);
+    } else if (goal === "synthesize") {
+      setRunExtraction(false); setSynthesize(true); setEmbed(false); setEnrich(false);
+    } else if (goal === "reextract") {
+      setRunExtraction(true); setExtractMode("reprocess"); setSynthesize(false); setEmbed(false); setEnrich(false);
+    } else if (goal === "enrich") {
+      setRunExtraction(false); setSynthesize(false); setEmbed(false); setEnrich(true);
+    }
+  };
+
+  const changeSection = (next: "add" | "process" | "activity") => {
+    setSection(next);
+    if (next === "add") {
+      setRunExtraction(true); setExtractMode("missing"); setExtractionPolicy("make_primary");
+      setSynthesize(true); setEmbed(true); setEnrich(false);
+    } else if (next === "process") {
+      chooseLibraryGoal(libraryGoal);
+    }
+  };
+
   const matchedCount = preview.data?.preview.matched_count ?? 0;
+  const queuedDocumentCount = section === "process"
+    ? (preview.data?.preview.processing_plan?.unique_document_count ?? matchedCount)
+    : matchedCount;
   const embeddingStatus = readiness.data?.embedders[0];
   const embeddingAvailable = Boolean(embeddingStatus?.available);
   const extractorStatus = (name: string) => readiness.data?.extractors.find(
@@ -304,11 +366,62 @@ export function QueuePage() {
       <Stack spacing={0.5}>
         <Typography variant="h5" fontWeight={700}>Intake</Typography>
         <Typography color="text.secondary">
-          Bring a shared corpus or one-off uploads into OSII. The shared volume is selected in full by default.
+          Add documents, extend your current library, and monitor processing without mixing those tasks together.
         </Typography>
       </Stack>
 
+      <Paper variant="outlined" sx={{ px: 1 }}>
+        <Tabs
+          value={section}
+          onChange={(_, value) => changeSection(value)}
+          variant="scrollable"
+          allowScrollButtonsMobile
+          aria-label="Intake sections"
+        >
+          <Tab value="add" label="Add files" />
+          <Tab value="process" label="Process library" />
+          <Tab value="activity" label="Activity" />
+        </Tabs>
+      </Paper>
+
       {notice ? <Alert severity={notice.severity}>{notice.text}</Alert> : null}
+
+      {section !== "activity" ? <>
+
+      {section === "process" ? (
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Stack spacing={1.5}>
+            <Stack spacing={0.25}>
+              <Typography fontWeight={700}>What would you like to add or improve?</Typography>
+              <Typography variant="body2" color="text.secondary">
+                OSII reuses the current primary extraction unless you explicitly upgrade it.
+              </Typography>
+            </Stack>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              {([
+                ["embed", "Add embeddings"],
+                ["synthesize", "Generate summaries"],
+                ["reextract", "Upgrade extraction"],
+                ["enrich", "Run enrichment"],
+                ["custom", "Custom workflow"],
+              ] as const).map(([value, label]) => (
+                <Button
+                  key={value}
+                  variant={libraryGoal === value ? "contained" : "outlined"}
+                  onClick={() => chooseLibraryGoal(value)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </Stack>
+            {libraryGoal === "reextract" ? (
+              <Alert severity="info">
+                The new extraction is saved as an immutable version. Making it primary changes what future chunking, embeddings, summaries, and enrichments use; the previous version remains available.
+              </Alert>
+            ) : null}
+          </Stack>
+        </Paper>
+      ) : null}
 
       <Alert
         severity="info"
@@ -329,9 +442,9 @@ export function QueuePage() {
             spacing={1}
           >
             <Stack spacing={0.25}>
-              <Typography fontWeight={700}>1. Tools and extraction routing</Typography>
+              <Typography fontWeight={700}>Tools and extraction routing</Typography>
               <Typography variant="body2" color="text.secondary">
-                Confirm the tools this intake will use. Every matched file must have an available extractor before the run can start; completed files become browsable one at a time while Intake continues.
+                Confirm the capabilities this run will use. Completed files remain browsable while processing continues.
               </Typography>
             </Stack>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
@@ -365,11 +478,13 @@ export function QueuePage() {
 
           {readiness.data ? (
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              <Chip
-                color={extractorPlanReady ? "success" : "error"}
-                variant="outlined"
-                label={extractorPlanReady ? "Extractors ready" : "Extractor unavailable"}
-              />
+              {runExtraction ? (
+                <Chip
+                  color={extractorPlanReady ? "success" : "error"}
+                  variant="outlined"
+                  label={extractorPlanReady ? "Extractors ready" : "Extractor unavailable"}
+                />
+              ) : <Chip color="success" variant="outlined" label="Using current extraction" />}
               <Chip color="success" variant="outlined" label="Local preview ready" />
               <Chip
                 color={embeddingAvailable ? "success" : "default"}
@@ -384,7 +499,7 @@ export function QueuePage() {
             </Stack>
           ) : null}
 
-          <Stack spacing={1}>
+          {runExtraction ? <Stack spacing={1}>
             <Typography variant="subtitle2">Extractor rules for matched files</Typography>
             {(preview.data?.preview.extractor_plan ?? []).map((plan) => {
               const selectedStatus = extractorStatus(plan.extractor);
@@ -442,9 +557,13 @@ export function QueuePage() {
                 Extractor routing appears after files match the source scope and rules below.
               </Typography>
             ) : null}
-          </Stack>
+          </Stack> : (
+            <Alert severity="success">
+              Extraction will not run. OSII will reuse each document&apos;s current primary extraction.
+            </Alert>
+          )}
 
-          {unavailableExtractorPlan.length ? (
+          {runExtraction && unavailableExtractorPlan.length ? (
             <Alert severity="error">
               Start the required extractor service or choose another ready extractor.
             </Alert>
@@ -467,7 +586,7 @@ export function QueuePage() {
             spacing={1}
           >
             <Stack spacing={0.25}>
-              <Typography fontWeight={700}>2. Shared-volume scope</Typography>
+              <Typography fontWeight={700}>Document scope</Typography>
               <Typography variant="body2" color="text.secondary">
                 The default scope is every file under the shared root. Choose individual paths only when a broad folder selection is not suitable.
               </Typography>
@@ -627,10 +746,10 @@ export function QueuePage() {
         </Stack>
       </Paper>
 
-      <Paper variant="outlined" sx={{ p: 2 }}>
+      {section === "add" ? <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
           <Stack spacing={0.25}>
-            <Typography fontWeight={700}>3. One-off uploads</Typography>
+            <Typography fontWeight={700}>One-off uploads</Typography>
             <Typography variant="body2" color="text.secondary">
               Upload files that do not belong in the shared corpus. Uploading switches this intake to those files only.
             </Typography>
@@ -672,12 +791,12 @@ export function QueuePage() {
             </Stack>
           ))}
         </Stack>
-      </Paper>
+      </Paper> : null}
 
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={2}>
           <Stack spacing={0.25}>
-            <Typography fontWeight={700}>4. Intake rules</Typography>
+            <Typography fontWeight={700}>Scope rules</Typography>
             <Typography variant="body2" color="text.secondary">
               Rules narrow the source scope above; they never replace it. The default is all files under the shared root with no include rule.
             </Typography>
@@ -749,52 +868,122 @@ export function QueuePage() {
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
           <Stack spacing={0.25}>
-            <Typography fontWeight={700}>5. Derived outputs</Typography>
+            <Typography fontWeight={700}>{section === "process" ? "Processing steps" : "Derived outputs"}</Typography>
             <Typography variant="body2" color="text.secondary">
-              Extraction always produces canonical OSII text. These optional steps create additional representations.
+              {section === "process"
+                ? "Only the selected steps run. Downstream work uses each document's current primary extraction."
+                : "New documents receive a primary extraction. These optional steps create additional representations."}
             </Typography>
           </Stack>
+          {section === "process" && (libraryGoal === "reextract" || libraryGoal === "custom") ? (
+            <Stack spacing={1}>
+              <FormControlLabel
+                control={<Checkbox checked={runExtraction} onChange={(event) => setRunExtraction(event.target.checked)} />}
+                label="Run extraction"
+              />
+              {runExtraction ? (
+                <TextField
+                  select
+                  size="small"
+                  label="After the new extraction finishes"
+                  value={extractionPolicy}
+                  onChange={(event) => setExtractionPolicy(event.target.value as typeof extractionPolicy)}
+                >
+                  <MenuItem value="make_primary">Make it primary and preserve the previous version</MenuItem>
+                  <MenuItem value="save_variant">Save as another version; keep the current primary</MenuItem>
+                </TextField>
+              ) : null}
+            </Stack>
+          ) : null}
           <FormControlLabel
             control={(
               <Checkbox
                 checked={synthesize}
+                disabled={extractionPolicy === "save_variant" && runExtraction}
                 onChange={(event) => setSynthesize(event.target.checked)}
               />
             )}
-            label="Create extractive previews"
+            label="Generate document summaries"
           />
+          {synthesize ? (
+            <TextField
+              select
+              size="small"
+              label="Synthesizer"
+              value={selectedSynthesizer || readiness.data?.defaults.synthesizer || ""}
+              onChange={(event) => setSelectedSynthesizer(event.target.value)}
+            >
+              {(readiness.data?.synthesizers ?? []).filter((item) => item.available).map((item) => (
+                <MenuItem key={item.id} value={item.id}>{item.display_name}</MenuItem>
+              ))}
+            </TextField>
+          ) : null}
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
-            Uses grounded excerpts with citations; this is deterministic preview text, not AI-generated synthesis.
+            Select the extractive baseline or a connected model-backed synthesizer.
           </Typography>
           {embeddingStatus?.index_rebuild_required ? (
             <Alert severity="warning">
-              The existing index uses {embeddingStatus.indexed_model}; this intake will rebuild it for {embeddingStatus.model}.
+              {embeddingStatus.indexed_model
+                ? `The existing index uses ${embeddingStatus.indexed_model}; this run will rebuild it for ${embeddingStatus.model}.`
+                : `The current semantic index is incompatible and will be rebuilt for ${embeddingStatus.model}.`}
             </Alert>
           ) : null}
           <FormControlLabel
             control={(
               <Checkbox
                 checked={embed}
-                disabled={!embeddingAvailable}
+                disabled={(!embeddingAvailable && !embed) || (extractionPolicy === "save_variant" && runExtraction)}
                 onChange={(event) => setEmbed(event.target.checked)}
               />
             )}
-            label="Build embeddings after extraction"
+            label="Build semantic embeddings"
           />
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
             {embeddingAvailable
               ? `Ready${embeddingStatus?.model ? `: ${embeddingStatus.model}` : ""}.${embeddingStatus?.lexical ? " Hashing vectors provide approximate lexical similarity, not semantic understanding." : ""}`
               : "Unavailable and cannot be queued. Lexical search remains available without an embedder."}
           </Typography>
+          {section === "process" && (libraryGoal === "enrich" || libraryGoal === "custom") ? (
+            <>
+              <FormControlLabel
+                control={(
+                  <Checkbox
+                    checked={enrich}
+                    disabled={extractionPolicy === "save_variant" && runExtraction}
+                    onChange={(event) => setEnrich(event.target.checked)}
+                  />
+                )}
+                label="Run enrichment"
+              />
+              {enrich ? (
+                <TextField
+                  select
+                  size="small"
+                  label="Enricher"
+                  value={selectedEnricher || readiness.data?.defaults.enricher || ""}
+                  onChange={(event) => setSelectedEnricher(event.target.value)}
+                >
+                  {(readiness.data?.enrichers ?? []).filter((item) => item.available).map((item) => (
+                    <MenuItem key={item.id} value={item.id}>{item.display_name}</MenuItem>
+                  ))}
+                </TextField>
+              ) : null}
+            </>
+          ) : null}
+          {extractionPolicy === "save_variant" && runExtraction ? (
+            <Alert severity="info">
+              Downstream steps are disabled because this new extraction will not become primary.
+            </Alert>
+          ) : null}
         </Stack>
       </Paper>
 
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
           <Stack spacing={0.25}>
-            <Typography fontWeight={700}>6. Review and start</Typography>
+            <Typography fontWeight={700}>Review and start</Typography>
             <Typography variant="body2" color="text.secondary">
-              Existing files are refreshed so changed source content and derived artifacts stay current.
+              Review exactly what will run before adding it to the sequential processing queue.
             </Typography>
           </Stack>
 
@@ -825,6 +1014,24 @@ export function QueuePage() {
             </Stack>
           ) : null}
 
+          {preview.data?.preview.processing_plan ? (
+            <Stack spacing={0.75}>
+              {preview.data.preview.processing_plan.steps.map((step) => (
+                <Stack key={step.id} direction="row" justifyContent="space-between" spacing={2}>
+                  <Typography variant="body2">{step.label}</Typography>
+                  <Typography variant="body2" fontWeight={600}>
+                    {step.eligible_count} queued{step.current_count ? ` · ${step.current_count} already current` : ""}
+                  </Typography>
+                </Stack>
+              ))}
+              {preview.data.preview.processing_plan.blocked_count ? (
+                <Alert severity="warning">
+                  {preview.data.preview.processing_plan.blocked_count} document(s) have no extraction and will be skipped unless extraction is selected.
+                </Alert>
+              ) : null}
+            </Stack>
+          ) : null}
+
           {!includeSharedRoot && !selectedSharedItems.length && !uploadedItems.length ? (
             <Alert severity="info">
               Select a shared folder/file or upload one-off files.
@@ -845,20 +1052,25 @@ export function QueuePage() {
               || starting
               || preview.isLoading
               || readiness.isLoading
-              || !extractorPlanReady
+              || (runExtraction && !extractorPlanReady)
               || (embed && !embeddingAvailable)
+              || (extractionPolicy === "save_variant" && runExtraction && (synthesize || embed || enrich))
             }
             onClick={() => void start()}
             sx={{ alignSelf: "flex-start" }}
           >
-            {starting ? "Starting intake…" : `Start intake${matchedCount ? ` (${matchedCount} files)` : ""}`}
+            {starting
+              ? "Queueing work…"
+              : `${section === "process" ? "Queue processing" : "Start intake"}${queuedDocumentCount ? ` (${queuedDocumentCount} document${queuedDocumentCount === 1 ? "" : "s"})` : ""}`}
           </Button>
         </Stack>
       </Paper>
 
-      <Paper variant="outlined" sx={{ p: 2 }}>
+      </> : null}
+
+      {section === "activity" ? <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
-          <Typography fontWeight={700}>Recent intake runs</Typography>
+          <Typography fontWeight={700}>Processing activity</Typography>
           {recentRuns.some((run) => ["queued", "pending", "running"].includes(run.status)) ? (
             <Alert severity="success">
               Intake runs sequentially. Open Files at any time to browse documents that have already completed.
@@ -872,10 +1084,18 @@ export function QueuePage() {
                 spacing={1}
               >
                 <Stack>
-                  <Typography fontWeight={600}>{run.id.slice(0, 12)}</Typography>
+                  <Typography fontWeight={600}>
+                    {run.workflow === "library" ? "Library processing" : "New file intake"} · {run.id.slice(0, 8)}
+                  </Typography>
                   <Typography variant="body2" color="text.secondary">
                     {run.completed ?? 0} / {run.total ?? 0} files · {run.created_at}
                   </Typography>
+                  <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+                    {run.operations?.extract ? <Chip size="small" label="Extraction" /> : null}
+                    {run.operations?.synthesize ? <Chip size="small" label="Synthesis" /> : null}
+                    {run.operations?.embed ? <Chip size="small" label={`Embedding${run.indexing_status ? `: ${run.indexing_status}` : ""}`} /> : null}
+                    {run.operations?.enrich ? <Chip size="small" label="Enrichment" /> : null}
+                  </Stack>
                 </Stack>
                 <Chip
                   color={
@@ -889,6 +1109,7 @@ export function QueuePage() {
                 />
               </Stack>
               {run.error ? <Alert severity="error" sx={{ mt: 1 }}>{run.error}</Alert> : null}
+              {run.indexing_error ? <Alert severity="warning" sx={{ mt: 1 }}>{run.indexing_error}</Alert> : null}
               {(run.logs ?? []).slice(-2).map((line) => (
                 <Typography
                   key={line}
@@ -905,7 +1126,7 @@ export function QueuePage() {
             <Typography color="text.secondary">No intake runs yet.</Typography>
           ) : null}
         </Stack>
-      </Paper>
+      </Paper> : null}
     </Stack>
   );
 }

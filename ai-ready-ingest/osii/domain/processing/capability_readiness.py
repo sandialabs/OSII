@@ -257,6 +257,17 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
         embedding["index_compatible"] = False
         embedding["index_rebuild_required"] = True
 
+    selected_synthesizer = selected_processor("synthesizer", osii_root=osii_root)
+    selected_synthesizer_status = next(
+        (item for item in remote_by_kind["synthesizer"] if item["id"] == selected_synthesizer),
+        None,
+    )
+    llm_wiki_available = bool(
+        selected_synthesizer_status
+        and selected_synthesizer_status.get("available")
+        and selected_synthesizer not in {"local.extractive-preview", "firstN", "recursive"}
+    )
+
     return {
         "defaults": {
             "extractor": os.getenv("OSII_DEFAULT_EXTRACTOR", "native_text"),
@@ -286,12 +297,32 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
                 "bundled": True,
             },
             {
-                "id": "llm_wiki_stub",
-                "display_name": "LLM wiki artifact template",
+                "id": "noun_adjective_ngrams",
+                "display_name": "Noun/adjective phrase keywords",
                 "kind": "enricher",
                 "available": True,
-                "detail": "Bundled artifact example; run after intake.",
+                "detail": "Bundled local 2-, 3-, and 4-gram keyword snapshot; no model required.",
                 "bundled": True,
+            },
+            {
+                "id": "entity_candidates",
+                "display_name": "Named entity candidates",
+                "kind": "enricher",
+                "available": True,
+                "detail": "Bundled local capitalized-name and acronym candidates with grounded mentions.",
+                "bundled": True,
+            },
+            {
+                "id": "llm_wiki",
+                "display_name": "LLM Wiki",
+                "kind": "enricher",
+                "available": llm_wiki_available,
+                "detail": (
+                    f"Uses the selected model-backed synthesizer: {selected_synthesizer}."
+                    if llm_wiki_available
+                    else "Select and test an Ollama or OpenAI-compatible synthesis model first."
+                ),
+                "bundled": False,
             },
         ],
         "external": external,

@@ -1,6 +1,11 @@
 import fnmatch
+import json
 from pathlib import Path
 
+from osii.domain.storage.ids import compute_file_id
+from osii.domain.storage.store import object_dir
+from osii.domain.artifacts.artifact_staleness import get_artifact_staleness
+from osii.indexing.common import embeddings_mapping_path
 from osii.domain.read.catalog import load_files_catalog
 
 from .extractor_selection import choose_extractor_for_path, load_extractor_routes
@@ -84,6 +89,102 @@ def add_processed_counts(
     )
     preview["processed_count"] = processed_count
     preview["unprocessed_count"] = len(resolved_files) - processed_count
+    return preview
+
+
+def add_processing_plan(
+    preview: dict,
+    resolved_files: list[Path],
+    osii_root: Path,
+    *,
+    run_extraction: bool,
+    extract_mode: str,
+    synthesize: bool,
+    embed: bool,
+    enrich: bool,
+) -> dict:
+    """Add a concise, non-mutating operation plan for Intake review."""
+    file_ids = [compute_file_id(path) for path in resolved_files]
+    unique_file_ids = set(file_ids)
+    extracted = {
+        file_id
+        for file_id in file_ids
+        if (object_dir(osii_root, file_id) / "text.txt").is_file()
+    }
+    stale_by_file = {
+        file_id: (get_artifact_staleness(osii_root, file_id) or {}).get("stale", {})
+        for file_id in file_ids
+    }
+    synthesized = {
+        file_id
+        for file_id in file_ids
+        if not stale_by_file[file_id].get("syntheses")
+        and (
+            (object_dir(osii_root, file_id) / "synth.txt").is_file()
+            or any((object_dir(osii_root, file_id) / "syntheses").glob("*.txt"))
+        )
+    }
+    enriched = {
+        file_id
+        for file_id in file_ids
+        if not stale_by_file[file_id].get("enrichments")
+        and any((object_dir(osii_root, file_id) / "enrichments").glob("*"))
+    }
+    embedded: set[str] = set()
+    try:
+        mapping = embeddings_mapping_path(osii_root)
+        if mapping.is_file():
+            for line in mapping.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    file_id = json.loads(line).get("file_id")
+                    if file_id:
+                        if not stale_by_file.get(str(file_id), {}).get("embeddings"):
+                            embedded.add(str(file_id))
+    except (OSError, ValueError, json.JSONDecodeError):
+        embedded = set()
+
+    steps = []
+    extraction_count = 0
+    if run_extraction:
+        extraction_count = len(unique_file_ids) if extract_mode == "reprocess" else len(unique_file_ids - extracted)
+        steps.append({
+            "id": "extract",
+            "label": "Extract text",
+            "eligible_count": extraction_count,
+            "current_count": len(extracted) if extract_mode == "missing" else 0,
+        })
+    available_after_extraction = extracted | (unique_file_ids if run_extraction else set())
+    if synthesize:
+        steps.append({
+            "id": "synthesize",
+            "label": "Generate synthesis",
+            "eligible_count": len(available_after_extraction - synthesized),
+            "current_count": len(synthesized),
+        })
+    if embed:
+        steps.append({
+            "id": "embed",
+            "label": "Build semantic index",
+            "eligible_count": len(available_after_extraction - embedded),
+            "current_count": len(embedded & unique_file_ids),
+            "scope_note": "The semantic index is rebuilt for the current primary corpus.",
+        })
+    if enrich:
+        steps.append({
+            "id": "enrich",
+            "label": "Run enrichment",
+            "eligible_count": len(available_after_extraction - enriched),
+            "current_count": len(enriched),
+        })
+    missing_input = len(unique_file_ids - available_after_extraction)
+    preview["processing_plan"] = {
+        "matched_count": len(file_ids),
+        "unique_document_count": len(unique_file_ids),
+        "extracted_count": len(extracted),
+        "missing_extraction_count": len(unique_file_ids - extracted),
+        "blocked_count": missing_input if any((synthesize, embed, enrich)) else 0,
+        "steps": steps,
+    }
     return preview
 
 

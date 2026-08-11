@@ -29,11 +29,14 @@ nav:
   - Start here: index.md
   - Install and use:
       - Single-file walkthrough: tutorials/single-file.md
+      - Generate an LLM wiki: tutorials/llm-wiki.md
+      - Example enrichments: tutorials/example-enrichments.md
       - Python demonstrations: tutorials/python-demonstrations.md
       - CLI cheat sheet: reference/cli.md
   - Understand OSII:
       - Architecture: concepts/architecture.md
       - Extraction: concepts/extraction.md
+      - Extraction versions: reference/extraction-versions.md
       - Synthesis: concepts/synthesis.md
       - Store structure: reference/osii-store.md
       - Rebuildable catalog: reference/catalog.md

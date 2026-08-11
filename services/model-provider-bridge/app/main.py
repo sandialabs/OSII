@@ -180,10 +180,14 @@ def _scope_prompt(request: SynthesisRequest) -> str:
     for document in request.scope.documents:
         text = document.text or "\n\n".join(segment.text for segment in document.segments)
         sources.append(f"SOURCE {document.file_id or document.filename}:\n{text}")
-    return (
-        "Write a concise grounded Markdown synthesis. Cite source file IDs in square brackets. "
-        "Do not introduce facts absent from the sources.\n\n" + "\n\n".join(sources)
-    )
+    instructions = str(
+        request.config.get("instructions")
+        or "Write a concise grounded Markdown synthesis. Cite source file IDs in square brackets. "
+        "Do not introduce facts absent from the sources."
+    ).strip()
+    context = str(request.expert_context or "").strip()
+    guidance = f"\n\nADDITIONAL GUIDANCE:\n{context}" if context else ""
+    return f"{instructions}{guidance}\n\n" + "\n\n".join(sources)
 
 
 class ProviderSynthesizer(Synthesizer):
@@ -201,11 +205,12 @@ class ProviderSynthesizer(Synthesizer):
     def synthesize(self, request: SynthesisRequest) -> SynthesisResponse:
         model = _model(self.provider, "synthesis", request.config)
         messages = [{"role": "user", "content": _scope_prompt(request)}]
+        max_tokens = max(256, min(int(request.config.get("max_tokens", 1200)), 4000))
         if self.provider == "ollama":
-            payload = CLIENTS[self.provider].request("POST", "/api/chat", payload={"model": model, "messages": messages, "stream": False}, timeout=180)
+            payload = CLIENTS[self.provider].request("POST", "/api/chat", payload={"model": model, "messages": messages, "stream": False, "options": {"num_predict": max_tokens}}, timeout=180)
             markdown = payload.get("message", {}).get("content", "")
         else:
-            payload = CLIENTS[self.provider].request("POST", "/chat/completions", payload={"model": model, "messages": messages, "max_tokens": 1200}, timeout=180)
+            payload = CLIENTS[self.provider].request("POST", "/chat/completions", payload={"model": model, "messages": messages, "max_tokens": max_tokens}, timeout=180)
             choices = payload.get("choices") or []
             markdown = choices[0].get("message", {}).get("content", "") if choices else ""
         if not str(markdown).strip():

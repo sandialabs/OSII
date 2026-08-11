@@ -8,6 +8,7 @@ from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 
 from osii.domain.processing.intake import (
     add_extractor_plan,
+    add_processing_plan,
     add_processed_counts,
     expand_queue_to_files,
     is_source_processed,
@@ -187,6 +188,16 @@ async def resolve_queue(request: Request, payload: dict):
     )
     add_processed_counts(preview, resolved_files, shared_root.parent, request.app.state.osii_root)
     add_extractor_plan(preview, resolved_files, extractor_overrides)
+    add_processing_plan(
+        preview,
+        resolved_files,
+        request.app.state.osii_root,
+        run_extraction=bool(payload.get("run_extraction", True)),
+        extract_mode=str(payload.get("extract_mode") or "missing"),
+        synthesize=bool(payload.get("synthesizer_name")),
+        embed=bool(payload.get("build_embeddings", False)),
+        enrich=bool(payload.get("enricher_name")),
+    )
 
     return {
         "queue_items": queue_items,
