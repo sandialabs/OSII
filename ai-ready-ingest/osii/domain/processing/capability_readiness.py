@@ -9,6 +9,7 @@ from typing import Any
 import requests
 from osii.domain.catalog_db import list_semantic_indexes
 from osii.domain.model_provider_config import processor_model, selected_processor
+from osii.enrichment.llm_wiki import LlmWikiEnricher
 from osii.indexing.common import embeddings_meta_path
 from osii.processors.remote import discover_remote_processors
 
@@ -198,6 +199,26 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
             "available": nemotron_available,
             "detail": nemotron_detail,
             "bundled": False,
+            "config_schema": {
+                "type": "object",
+                "properties": {
+                    "temperature": {
+                        "type": "number",
+                        "title": "VLM temperature",
+                        "description": "Controls sampling for the Nemotron page parser.",
+                        "minimum": 0,
+                        "maximum": 2,
+                        "default": 0,
+                    },
+                    "page_limit": {
+                        "type": "integer",
+                        "title": "Page limit",
+                        "description": "Optional demo/debug limit. Leave blank to process every page.",
+                        "minimum": 1,
+                    },
+                },
+                "additionalProperties": False,
+            },
         },
     ]
 
@@ -361,6 +382,7 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
                     else "Select and test an Ollama or OpenAI-compatible synthesis model first."
                 ),
                 "bundled": False,
+                "config_schema": LlmWikiEnricher.config_schema,
             },
         ],
         "external": external,

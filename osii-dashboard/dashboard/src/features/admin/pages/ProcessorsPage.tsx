@@ -3,8 +3,8 @@ import { Alert, Box, Button, Chip, Divider, FormControlLabel, LinearProgress, Me
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 
-import { checkModelProvider, checkProcessorEndpoint, createModelProvider, createProcessorEndpoint, getIntakeReadiness, getOllamaPullStatus, listModelProviders, listProcessorEndpoints, pullOllamaModel } from "../../../api/queue";
-import type { CapabilityReadiness, ModelProvider, ModelProviderHealth, ModelPullJob, OllamaRecommendation, ProcessorEndpoint } from "../../../api/types";
+import { checkModelProvider, checkProcessorEndpoint, createModelProvider, createProcessorEndpoint, getIntakeReadiness, getOllamaPullStatus, getProcessorSettings, listModelProviders, listProcessorEndpoints, pullOllamaModel, saveProcessorSettings } from "../../../api/queue";
+import type { CapabilityReadiness, ModelProvider, ModelProviderHealth, ModelPullJob, OllamaRecommendation, ProcessorConfigProperty, ProcessorEndpoint } from "../../../api/types";
 
 const DEFAULT_EMBEDDING_MODEL = "all-minilm";
 const DEFAULT_CHAT_MODEL = "llama3.2:1b";
@@ -46,10 +46,9 @@ const LOCAL_CAPABILITY_GROUPS = [
   },
 ];
 
-function uniqueBundled(items: CapabilityReadiness[]) {
+function uniqueCapabilities(items: CapabilityReadiness[]) {
   return items.filter(
-    (item, index) => item.bundled
-      && items.findIndex((candidate) => candidate.id === item.id) === index,
+    (item, index) => items.findIndex((candidate) => candidate.id === item.id) === index,
   );
 }
 
@@ -58,9 +57,55 @@ function isSelectedDefault(item: CapabilityReadiness, selected: string) {
 }
 
 function localRuntimeLabel(item: CapabilityReadiness) {
-  if (item.base_url) return "Host service · started by make dev";
+  if (item.bundled && item.base_url) return "Host service · started by make dev";
+  if (item.base_url) return "Connected service or model-provider bridge";
   if (!item.available) return "Optional tool · start separately";
   return "Built into OSII core";
+}
+
+function capabilitySchema(item: CapabilityReadiness) {
+  return item.config_schema ?? item.descriptor?.config_schema;
+}
+
+function defaultConfig(item: CapabilityReadiness, saved: Record<string, unknown>) {
+  const properties = capabilitySchema(item)?.properties ?? {};
+  return Object.fromEntries(
+    Object.entries(properties).flatMap(([name, property]) => (
+      saved[name] !== undefined || property.default !== undefined
+        ? [[name, saved[name] ?? property.default]]
+        : []
+    )),
+  );
+}
+
+function ConfigInput({ name, property, value, onChange }: {
+  name: string;
+  property: ProcessorConfigProperty;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  const label = property.title ?? name.replace(/_/g, " ");
+  if (property.type === "boolean") {
+    return <FormControlLabel control={<Switch checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} />} label={label} />;
+  }
+  if (property.enum?.length) {
+    return <TextField select fullWidth size="small" label={label} value={value ?? ""} onChange={(event) => onChange(event.target.value)} helperText={property.description}>
+      {property.enum.map((option) => <MenuItem key={String(option)} value={option}>{option}</MenuItem>)}
+    </TextField>;
+  }
+  const numeric = property.type === "number" || property.type === "integer";
+  return <TextField
+    fullWidth
+    size="small"
+    multiline={property.format === "textarea"}
+    minRows={property.format === "textarea" ? 7 : undefined}
+    label={label}
+    type={numeric ? "number" : "text"}
+    value={value ?? ""}
+    inputProps={numeric ? { min: property.minimum, max: property.maximum, step: property.type === "integer" ? 1 : 0.1 } : undefined}
+    onChange={(event) => onChange(numeric ? Number(event.target.value) : event.target.value)}
+    helperText={property.description}
+  />;
 }
 
 export function ProcessorsPage() {
@@ -69,6 +114,7 @@ export function ProcessorsPage() {
   const processors = useQuery({ queryKey: ["admin", "processors"], queryFn: listProcessorEndpoints });
   const providers = useQuery({ queryKey: ["admin", "model-providers"], queryFn: listModelProviders });
   const readiness = useQuery({ queryKey: ["intake", "readiness"], queryFn: getIntakeReadiness });
+  const processorSettings = useQuery({ queryKey: ["admin", "processor-settings"], queryFn: getProcessorSettings });
   const [form, setForm] = useState<Omit<ProcessorEndpoint, "id"> & { id: string }>({
     id: "", display_name: "", kind: "extractor", base_url: "http://", enabled: true,
   });
@@ -81,6 +127,8 @@ export function ProcessorsPage() {
   const [pullJobs, setPullJobs] = useState<Record<string, ModelPullJob>>({});
   const [section, setSection] = useState<"overview" | "models" | "capabilities" | "endpoints">("overview");
   const [showProviderForm, setShowProviderForm] = useState(false);
+  const [editingCapability, setEditingCapability] = useState<string | null>(null);
+  const [capabilityDraft, setCapabilityDraft] = useState<Record<string, unknown>>({});
   const autoProbed = useRef(new Set<string>());
 
   const loadProviderModels = async (provider: ModelProvider, announce = false) => {
@@ -160,6 +208,22 @@ export function ProcessorsPage() {
     }
   };
 
+  const editCapability = (item: CapabilityReadiness) => {
+    setEditingCapability(item.id);
+    setCapabilityDraft(defaultConfig(item, processorSettings.data?.settings[item.id] ?? {}));
+  };
+
+  const saveCapability = async (item: CapabilityReadiness) => {
+    try {
+      await saveProcessorSettings(item.id, capabilityDraft);
+      setMessage(`${item.display_name}: default settings saved.`);
+      setEditingCapability(null);
+      await client.invalidateQueries({ queryKey: ["admin", "processor-settings"] });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save processor settings.");
+    }
+  };
+
   return (
     <Stack spacing={3}>
       <Stack spacing={0.5}>
@@ -174,7 +238,7 @@ export function ProcessorsPage() {
         <Tabs value={section} onChange={(_, value) => setSection(value)} variant="scrollable" allowScrollButtonsMobile aria-label="Tool sections">
           <Tab value="overview" label="Overview" />
           <Tab value="models" label="Model providers" />
-          <Tab value="capabilities" label="Local capabilities" />
+          <Tab value="capabilities" label="Capabilities & settings" />
           <Tab value="endpoints" label="Processor endpoints" />
         </Tabs>
       </Paper>
@@ -309,14 +373,14 @@ export function ProcessorsPage() {
       {section === "capabilities" ? <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={2}>
           <Stack spacing={0.5}>
-            <Typography fontWeight={700}>Guaranteed local capabilities</Typography>
+            <Typography fontWeight={700}>Capabilities and processor defaults</Typography>
             <Typography variant="body2" color="text.secondary">
-              These are grouped by the four OSII processing concepts. A Default badge means Intake selects that capability automatically.
+              Local, model-backed, and connected implementations are grouped by the four OSII processing concepts. A Default badge means Intake selects that capability automatically.
             </Typography>
           </Stack>
           {readiness.data ? <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(2, minmax(0, 1fr))" }, gap: 2 }}>
             {LOCAL_CAPABILITY_GROUPS.map((group) => {
-              const items = uniqueBundled(readiness.data[group.key]);
+              const items = uniqueCapabilities(readiness.data[group.key]);
               const selected = readiness.data.defaults[group.defaultKey];
               return (
                 <Paper key={group.key} variant="outlined" sx={{ p: 1.75 }}>
@@ -336,6 +400,24 @@ export function ProcessorsPage() {
                         <Typography variant="caption" color="text.secondary">{item.id}</Typography>
                         <Typography variant="caption" color="text.secondary">{localRuntimeLabel(item)}</Typography>
                         <Typography variant="caption">{item.available ? item.detail : "Not currently running."}</Typography>
+                        {Object.keys(capabilitySchema(item)?.properties ?? {}).length ? (
+                          <Button size="small" variant="text" onClick={() => editingCapability === item.id ? setEditingCapability(null) : editCapability(item)} sx={{ alignSelf: "flex-start", px: 0 }}>
+                            {editingCapability === item.id ? "Hide settings" : "View and edit settings"}
+                          </Button>
+                        ) : null}
+                        {editingCapability === item.id ? <Paper variant="outlined" sx={{ p: 1.5, mt: 0.5 }}>
+                          <Stack spacing={1.25}>
+                            <Typography variant="body2" fontWeight={700}>{item.display_name} defaults</Typography>
+                            {Object.entries(capabilitySchema(item)?.properties ?? {}).map(([name, property]) => (
+                              <ConfigInput key={name} name={name} property={property} value={capabilityDraft[name]} onChange={(value) => setCapabilityDraft((current) => ({ ...current, [name]: value }))} />
+                            ))}
+                            <Alert severity="info">These are non-secret defaults stored in <code>.osii/state/processor_settings.json</code>. Per-run API values override them.</Alert>
+                            <Stack direction="row" spacing={1}>
+                              <Button variant="contained" onClick={() => void saveCapability(item)}>Save defaults</Button>
+                              <Button variant="outlined" onClick={() => setEditingCapability(null)}>Cancel</Button>
+                            </Stack>
+                          </Stack>
+                        </Paper> : null}
                       </Stack>
                     ))}
                     {!items.length ? <Alert severity="info">No local {group.title.toLowerCase()} capability was discovered.</Alert> : null}

@@ -2,9 +2,9 @@ import threading
 from pathlib import Path
 
 from fastapi import APIRouter, Request
-
-from osii.domain.processing.jobs import create_run_record, get_run, append_log
-from osii.synthesis.registry import resolve_synthesizer
+from osii.api.runs_routes import get_synthesizer
+from osii.domain.processing.jobs import append_log, create_run_record, get_run
+from osii.domain.processor_settings import merged_processor_settings
 
 router = APIRouter(prefix="/api/synthesis", tags=["synthesis-jobs"])
 
@@ -24,9 +24,11 @@ def _run_object_synthesis_job(
             return
 
         run["status"] = "running"
-        append_log(run_id, f"Starting synthesis for {file_id} using '{synthesizer_name}'")
+        append_log(
+            run_id, f"Starting synthesis for {file_id} using '{synthesizer_name}'"
+        )
 
-        synthesizer = resolve_synthesizer(synthesizer_name)
+        synthesizer = get_synthesizer(synthesizer_name)
         result = synthesizer.synthesize(
             osii_store=osii_root,
             file_id=file_id,
@@ -42,7 +44,9 @@ def _run_object_synthesis_job(
         run["completed"] = 1
         run["items"][0]["status"] = "done"
         run["items"][0]["file_id"] = file_id
-        run["items"][0]["synthesis"] = result.get("synthesis_rel") or result.get("synth_rel")
+        run["items"][0]["synthesis"] = result.get("synthesis_rel") or result.get(
+            "synth_rel"
+        )
         append_log(run_id, "Synthesis complete.")
 
     except Exception as exc:
@@ -63,7 +67,11 @@ async def synthesize_object(request: Request, file_id: str, payload: dict):
         return {"error": "synthesizer_name is required"}
 
     expert_context = payload.get("expert_context")
-    synthesizer_config = payload.get("synthesizer_config") or {}
+    synthesizer_config = merged_processor_settings(
+        osii_root,
+        synthesizer_name,
+        payload.get("synthesizer_config"),
+    )
 
     run = create_run_record(
         [osii_root / "objects" / file_id], osii_root, osii_root, osii_root=osii_root

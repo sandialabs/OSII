@@ -2,8 +2,8 @@ import threading
 from pathlib import Path
 
 from fastapi import APIRouter, Request
-
-from osii.domain.processing.jobs import create_run_record, get_run, append_log
+from osii.domain.processing.jobs import append_log, create_run_record, get_run
+from osii.domain.processor_settings import merged_processor_settings
 from osii.enrichment.registry import resolve_enricher
 
 router = APIRouter(prefix="/api/enrichment-jobs", tags=["enrichment-jobs"])
@@ -63,7 +63,11 @@ async def run_enrichment(request: Request, payload: dict):
 
     scope = payload.get("scope") or {}
     expert_context = payload.get("expert_context")
-    enricher_config = payload.get("enricher_config") or {}
+    enricher_config = merged_processor_settings(
+        osii_root,
+        enricher_name,
+        payload.get("enricher_config"),
+    )
 
     run = create_run_record([osii_root], osii_root, osii_root, osii_root=osii_root)
     run["items"][0]["display"] = str(scope)

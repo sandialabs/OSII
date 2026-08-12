@@ -84,7 +84,10 @@ class PdfDefaultExtractor(BaseExtractor):
                     ]
                 }
             ],
-            "temperature": 0.0
+            "temperature": max(
+                0.0,
+                min(float((extractor_config or {}).get("temperature", 0.0)), 2.0),
+            ),
         }
 
         r = requests.post(

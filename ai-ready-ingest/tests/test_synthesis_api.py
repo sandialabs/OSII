@@ -5,7 +5,7 @@ def test_synthesis_api_starts_job(client, monkeypatch, sample_osii_object):
         def synthesize(self, *, osii_store, file_id, expert_context=None, synthesizer_config=None):
             return {"synth_rel": f"objects/{file_id}/synth.txt"}
 
-    monkeypatch.setattr("osii.api.synthesis_routes.resolve_synthesizer", lambda name: FakeSynth())
+    monkeypatch.setattr("osii.api.synthesis_routes.get_synthesizer", lambda name: FakeSynth())
 
     response = client.post(
         f"/api/synthesis/objects/{file_id}",

@@ -538,6 +538,29 @@ export type CapabilityReadiness = {
   index_compatible?: boolean;
   index_rebuild_required?: boolean;
   indexed_model?: string;
+  config_schema?: ProcessorConfigSchema;
+  descriptor?: {
+    config_schema?: ProcessorConfigSchema;
+    [key: string]: unknown;
+  } | null;
+};
+
+export type ProcessorConfigProperty = {
+  type?: "string" | "number" | "integer" | "boolean";
+  title?: string;
+  description?: string;
+  default?: unknown;
+  enum?: Array<string | number>;
+  minimum?: number;
+  maximum?: number;
+  format?: string;
+};
+
+export type ProcessorConfigSchema = {
+  type?: "object";
+  properties?: Record<string, ProcessorConfigProperty>;
+  required?: string[];
+  additionalProperties?: boolean;
 };
 
 export type IntakeReadiness = {

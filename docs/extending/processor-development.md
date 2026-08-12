@@ -38,6 +38,25 @@ class MyProcessor(Enricher):
         display_name="My Processor",
         description="Describe the domain result.",
         kind=ProcessorKind.ENRICHER,
+        config_schema={
+            "type": "object",
+            "properties": {
+                "instructions": {
+                    "type": "string",
+                    "title": "Analysis prompt",
+                    "description": "Domain guidance applied to the source text.",
+                    "default": "Extract only facts grounded in the supplied source.",
+                    "format": "textarea",
+                },
+                "temperature": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 2,
+                    "default": 0.2,
+                },
+            },
+            "additionalProperties": False,
+        },
     )
 
     def enrich(self, request: EnrichmentRequest) -> EnrichmentResponse:
@@ -50,6 +69,20 @@ app = create_processor_app(MyProcessor())
 The helper exposes `/health`, `/v1/descriptor`, and the kind-specific operation
 endpoint. See the [Processor API reference](../reference/processor-api/index.md)
 for exact payloads.
+
+## Expose settings without dashboard code
+
+Tools renders `config_schema` as a generic settings form. String and multiline
+prompt fields, numbers, integers, Booleans, and enums require no custom
+frontend implementation. Saved non-secret defaults live in
+`.osii/state/processor_settings.json`; explicit values in an API request take
+precedence. The core passes the resulting object unchanged as `request.config`.
+
+Keep deployment settings such as URLs and credential environment-variable
+names in the provider/endpoint configuration. Never declare API keys or other
+secrets as processor settings. A custom dashboard component is only necessary
+for richer interactions that JSON Schema cannot describe, such as drawing a
+page region or visually mapping table columns.
 
 ## Production requirements
 
@@ -71,6 +104,5 @@ Register the service base URL under **Tools**. **Health** verifies
 liveness. **Test** reads the descriptor, checks that its kind matches the
 registration, and sends a small contract-valid operation request.
 
-Remote enrichers currently execute end to end. External extractors,
-synthesizers, and embedders can be registered and contract-tested, but their
-core commit adapters are still incomplete.
+External extractors, synthesizers, embedders, and enrichers use the same
+descriptor, settings, request, and core-owned commit flow.

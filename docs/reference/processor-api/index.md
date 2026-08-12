@@ -36,6 +36,12 @@ Copyable implementations live in
 `packages/osii-processor-sdk/examples` and the containerized table example lives
 in `services/table-pdf-enricher`.
 
+`config_schema` uses the ordinary JSON Schema object/property vocabulary. The
+dashboard currently renders string fields (use `format: "textarea"` for long
+prompts), numbers, integers, Booleans, and enums. Titles, descriptions,
+defaults, and numeric bounds become labels, guidance, initial values, and form
+constraints. These settings must be non-secret.
+
 ## Store and trust boundary
 
 Processors must not receive a writable OSII volume. They may use bundled local

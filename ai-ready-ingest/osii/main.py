@@ -23,6 +23,7 @@ from osii.api.extractors import router as extractors_router
 from osii.api.preview_routes import router as preview_router
 from osii.api.processors_routes import router as processors_router
 from osii.api.processor_admin_routes import router as processor_admin_router
+from osii.api.processor_settings_routes import router as processor_settings_router
 from osii.api.model_provider_routes import router as model_provider_router
 from osii.api.runs_routes import router as runs_router
 from osii.api.scopes_routes import router as scopes_router
@@ -82,6 +83,7 @@ app.include_router(synthesis_router)
 app.include_router(enrichment_jobs_router)
 app.include_router(processors_router)
 app.include_router(processor_admin_router)
+app.include_router(processor_settings_router)
 app.include_router(model_provider_router)
 
 @app.get("/health")

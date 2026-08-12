@@ -48,6 +48,17 @@ export async function getIntakeReadiness(): Promise<IntakeReadiness> {
   return apiJson<IntakeReadiness>("/api/intake/readiness");
 }
 
+export async function getProcessorSettings(): Promise<{ settings: Record<string, Record<string, unknown>> }> {
+  return apiJson("/api/admin/processor-settings");
+}
+
+export async function saveProcessorSettings(processorName: string, config: Record<string, unknown>) {
+  return apiJson<{ processor_name: string; config: Record<string, unknown> }>(
+    `/api/admin/processor-settings/${encodeURIComponent(processorName)}`,
+    { method: "PUT", json: { config } },
+  );
+}
+
 export async function listProcessingRuns(): Promise<{ runs: ProcessingRun[]; queue: Array<Record<string, unknown>> }> {
   return apiJson("/api/runs");
 }

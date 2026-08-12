@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, ClassVar
 import uuid
 
 from osii_processor_sdk import DocumentInput, ProcessorClient, ScopeInput, SynthesisRequest
@@ -99,6 +100,33 @@ class LlmWikiEnricher(BaseEnricher):
     display_name = "LLM Wiki"
     description = "Creates a grounded Markdown wiki using the selected model provider."
     version = "1.0"
+    config_schema: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {
+            "instructions": {
+                "type": "string",
+                "title": "LLM Wiki prompt",
+                "description": "Grounding and structure instructions sent to the selected synthesizer.",
+                "default": WIKI_INSTRUCTIONS,
+                "format": "textarea",
+            },
+            "title": {"type": "string", "title": "Default wiki title", "default": "OSII LLM Wiki"},
+            "max_input_chars": {
+                "type": "integer", "title": "Maximum input characters",
+                "minimum": 4000, "maximum": 250000, "default": 60000,
+            },
+            "max_tokens": {
+                "type": "integer", "title": "Maximum output tokens",
+                "minimum": 512, "maximum": 4000, "default": 1800,
+            },
+            "max_brief_documents": {
+                "type": "integer", "title": "Maximum source briefs",
+                "description": "For small collections, summarize each source before building the wiki.",
+                "minimum": 0, "maximum": 20, "default": 8,
+            },
+        },
+        "additionalProperties": False,
+    }
 
     def enrich(
         self,
@@ -134,7 +162,8 @@ class LlmWikiEnricher(BaseEnricher):
             descriptor = resolve_remote_processor(synthesizer_name, "synthesizer")
             client = ProcessorClient(descriptor["base_url"])
             title = str(config.get("title") or "OSII LLM Wiki").strip() or "OSII LLM Wiki"
-            context_parts = [WIKI_INSTRUCTIONS, f"The wiki title is: {title}."]
+            instructions = str(config.get("instructions") or WIKI_INSTRUCTIONS).strip()
+            context_parts = [instructions, f"The wiki title is: {title}."]
             if expert_context:
                 context_parts.append(f"Additional subject-matter guidance:\n{expert_context.strip()}")
 
@@ -197,7 +226,7 @@ class LlmWikiEnricher(BaseEnricher):
                     ),
                     expert_context="\n\n".join(context_parts),
                     config={
-                        "instructions": WIKI_INSTRUCTIONS,
+                        "instructions": instructions,
                         "title": title,
                         "max_tokens": max(512, min(int(config.get("max_tokens", 1_800)), 4_000)),
                         **({"model": config["model"]} if config.get("model") else {}),

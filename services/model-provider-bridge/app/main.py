@@ -110,6 +110,10 @@ class ProviderHTTP:
 
 CLIENTS = {name: ProviderHTTP(name) for name in ("ollama", "openai")}
 _OLLAMA_MODEL_CACHE: tuple[float, list[dict[str, Any]]] = (0.0, [])
+DEFAULT_SYNTHESIS_INSTRUCTIONS = (
+    "Write a concise grounded Markdown synthesis. Cite source file IDs in square "
+    "brackets. Do not introduce facts absent from the sources."
+)
 
 
 def _ollama_model_digest(model: str) -> str | None:
@@ -194,8 +198,7 @@ def _scope_prompt(request: SynthesisRequest) -> str:
         sources.append(f"SOURCE {document.file_id or document.filename}:\n{text}")
     instructions = str(
         request.config.get("instructions")
-        or "Write a concise grounded Markdown synthesis. Cite source file IDs in square brackets. "
-        "Do not introduce facts absent from the sources."
+        or DEFAULT_SYNTHESIS_INSTRUCTIONS
     ).strip()
     context = str(request.expert_context or "").strip()
     guidance = f"\n\nADDITIONAL GUIDANCE:\n{context}" if context else ""
@@ -212,17 +215,38 @@ class ProviderSynthesizer(Synthesizer):
             description=f"Processor API adapter for an explicitly selected {provider} chat model.",
             kind=ProcessorKind.SYNTHESIZER,
             capabilities=Capability(scope_types=["object", "folder", "collection", "root"], output_kinds=["wiki_markdown"]),
+            config_schema={
+                "type": "object",
+                "properties": {
+                    "instructions": {
+                        "type": "string", "title": "Synthesis prompt",
+                        "description": "Instructions placed before the grounded source material.",
+                        "default": DEFAULT_SYNTHESIS_INSTRUCTIONS, "format": "textarea",
+                    },
+                    "temperature": {
+                        "type": "number", "title": "Temperature",
+                        "description": "Lower values make synthesis more repeatable.",
+                        "minimum": 0, "maximum": 2, "default": 0.2,
+                    },
+                    "max_tokens": {
+                        "type": "integer", "title": "Maximum output tokens",
+                        "minimum": 256, "maximum": 4000, "default": 1200,
+                    },
+                },
+                "additionalProperties": False,
+            },
         )
 
     def synthesize(self, request: SynthesisRequest) -> SynthesisResponse:
         model = _model(self.provider, "synthesis", request.config)
         messages = [{"role": "user", "content": _scope_prompt(request)}]
         max_tokens = max(256, min(int(request.config.get("max_tokens", 1200)), 4000))
+        temperature = max(0.0, min(float(request.config.get("temperature", 0.2)), 2.0))
         if self.provider == "ollama":
-            payload = CLIENTS[self.provider].request("POST", "/api/chat", payload={"model": model, "messages": messages, "stream": False, "options": {"num_predict": max_tokens}}, timeout=180)
+            payload = CLIENTS[self.provider].request("POST", "/api/chat", payload={"model": model, "messages": messages, "stream": False, "options": {"num_predict": max_tokens, "temperature": temperature}}, timeout=180)
             markdown = payload.get("message", {}).get("content", "")
         else:
-            payload = CLIENTS[self.provider].request("POST", "/chat/completions", payload={"model": model, "messages": messages, "max_tokens": max_tokens}, timeout=180)
+            payload = CLIENTS[self.provider].request("POST", "/chat/completions", payload={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}, timeout=180)
             choices = payload.get("choices") or []
             markdown = choices[0].get("message", {}).get("content", "") if choices else ""
         if not str(markdown).strip():

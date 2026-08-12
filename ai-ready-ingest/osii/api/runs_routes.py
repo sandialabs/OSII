@@ -31,6 +31,7 @@ from osii.domain.storage.synth import write_folder_synth_text
 from osii.domain.storage.ids import compute_file_id
 from osii.domain.storage.store import ensure_osii_store_layout
 from osii.domain.processing.pathing import display_rel, path_within
+from osii.domain.processor_settings import merged_processor_settings
 from osii.domain.processing.extractor_selection import extractor_routes_path
 from osii.extraction.dispatcher import dispatch_extract
 from osii.enrichment.registry import resolve_enricher
@@ -328,7 +329,11 @@ def run_worker(
                         data_volume_root=data_volume_root,
                         osii_root=osii_store,
                         expert_context=context or None,
-                        extractor_config={},
+                        extractor_config=merged_processor_settings(
+                            osii_store,
+                            extractor_name,
+                            {},
+                        ),
                         make_primary=extraction_policy == "make_primary",
                         dispatcher=dispatch_extract,
                     )
@@ -506,9 +511,17 @@ async def start_run(request: Request, payload: dict):
     if extraction_policy not in {"make_primary", "save_variant"}:
         raise HTTPException(status_code=422, detail="extraction_policy must be 'make_primary' or 'save_variant'")
     synthesizer_name = payload.get("synthesizer_name") or None
-    synthesizer_config = payload.get("synthesizer_config") or {}
+    synthesizer_config = merged_processor_settings(
+        osii_store,
+        synthesizer_name,
+        payload.get("synthesizer_config"),
+    )
     enricher_name = payload.get("enricher_name") or None
-    enricher_config = payload.get("enricher_config") or {}
+    enricher_config = merged_processor_settings(
+        osii_store,
+        enricher_name,
+        payload.get("enricher_config"),
+    )
     extractor_overrides = {
         str(extension).lower(): str(extractor)
         for extension, extractor in (payload.get("extractor_overrides") or {}).items()

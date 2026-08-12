@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 
 @dataclass
@@ -20,6 +20,7 @@ class BaseEnricher(ABC):
     display_name: str = "Base Enricher"
     description: str = "Abstract enrichment producer."
     version: str = "1.0"
+    config_schema: ClassVar[dict[str, Any]] = {}
 
     def describe(self) -> dict[str, Any]:
         return {
@@ -27,6 +28,7 @@ class BaseEnricher(ABC):
             "display_name": self.display_name,
             "description": self.description,
             "version": self.version,
+            "config_schema": self.config_schema,
         }
 
     @abstractmethod

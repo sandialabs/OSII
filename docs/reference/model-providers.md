@@ -75,6 +75,12 @@ ready, started automatically by `make dev`, built into core, or an optional
 tool that must be started separately. The local hashing embedder remains
 visible here even when an Ollama embedder is selected.
 
+The same groups expose schema-driven processor settings. Ollama and generic
+OpenAI-compatible synthesizers publish their grounded synthesis prompt,
+temperature, and output-token limit. The LLM Wiki enricher publishes its wiki
+prompt and input/output bounds. Saved defaults apply to Intake, file actions,
+and direct enrichment jobs; an explicit request configuration overrides them.
+
 ## Secret handling
 
 Provider JSON stores no secret values. Credentials are read only from
