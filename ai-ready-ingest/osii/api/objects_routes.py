@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from osii.domain.artifacts.artifact_staleness import get_artifact_staleness, mark_artifacts_stale
@@ -22,8 +22,70 @@ from osii.domain.read.segments import list_segments
 from osii.domain.read.synthesis import get_synth_text, get_synth_toml, list_syntheses
 from osii.domain.scopes.collections import list_collections_for_file
 from osii.domain.keywords.manual import get_manual_keywords, write_manual_keywords
+from osii.domain.governance import get_governance, write_governance
+from osii.domain.object_deletion import build_deletion_preview, delete_object
 
 router = APIRouter(prefix="/api/objects", tags=["objects"])
+
+
+@router.get("/{file_id}/governance")
+async def get_object_governance(request: Request, file_id: str):
+    record = get_governance(request.app.state.osii_root.resolve(), file_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="unknown file_id")
+    return {"file_id": file_id, "governance": record}
+
+
+@router.put("/{file_id}/governance")
+async def put_object_governance(request: Request, file_id: str, payload: dict):
+    try:
+        record = write_governance(
+            request.app.state.osii_root.resolve(),
+            file_id,
+            sensitivity_labels=payload.get("sensitivity_labels", []),
+            tags=payload.get("tags", []),
+            handling_notes=payload.get("handling_notes", ""),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if record is None:
+        raise HTTPException(status_code=404, detail="unknown file_id")
+    return {"file_id": file_id, "governance": record}
+
+
+@router.post("/{file_id}/deletion-preview")
+async def preview_object_deletion(request: Request, file_id: str, payload: dict):
+    try:
+        preview = build_deletion_preview(
+            request.app.state.osii_root.resolve(),
+            request.app.state.shared_volume_root.resolve(),
+            request.app.state.upload_originals_root.resolve(),
+            file_id,
+            str(payload.get("mode") or "sidecar_only"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if preview is None:
+        raise HTTPException(status_code=404, detail="unknown file_id")
+    return preview
+
+
+@router.delete("/{file_id}")
+async def delete_object_route(request: Request, file_id: str, payload: dict):
+    try:
+        return delete_object(
+            request.app.state.osii_root.resolve(),
+            request.app.state.shared_volume_root.resolve(),
+            request.app.state.upload_originals_root.resolve(),
+            file_id,
+            mode=str(payload.get("mode") or ""),
+            preview_token=str(payload.get("preview_token") or ""),
+            confirmation=str(payload.get("confirmation") or ""),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/{file_id}/keywords/manual")
@@ -71,6 +133,7 @@ async def get_object(request: Request, file_id: str):
         "processing": processing,
         "enrichments": enrichments,
         "artifact_summary": artifact_summary,
+        "governance": get_governance(osii_root, file_id),
     }
 
 

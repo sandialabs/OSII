@@ -15,8 +15,9 @@ The dashboard is intentionally modular. It is a standalone frontend that talks t
 - Open and inspect documents including source PDFs
 - Navigate by folder using a lazy-loaded tree
 - Organize documents into collections
-- Add or remove collection members without touching their originals, and export a collection-only OSII sidecar ZIP
-- Apply manual file keywords and save reusable keyword sets for topics or sensitivity markers
+- Add or remove collection members without touching their originals, and export/import manifest-validated collection OSII packages
+- Apply structured sensitivity-awareness labels, handling notes, and reusable plain-text tags
+- Preview and surgically remove one file's OSII data, with a separate option to delete the writable original too
 - Prepare for future document chat workflows
 
 ---

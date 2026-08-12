@@ -260,6 +260,12 @@ export type ObjectAggregate = {
   processing: ObjectProcessing;
   enrichments: EnrichmentListEntry[];
   artifact_summary: ObjectArtifactSummary;
+  governance: {
+    sensitivity_labels: string[];
+    tags: string[];
+    handling_notes: string;
+    updated_utc: string | null;
+  } | null;
 };
 
 export type ObjectTextsResponse = {

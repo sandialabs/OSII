@@ -27,6 +27,12 @@ export function FileHeader({ file }: FileHeaderProps) {
         {file.supportsMarkdownRender ? (
           <Chip label="Markdown-capable" size="small" variant="outlined" />
         ) : null}
+        {file.sensitivityLabels.map((label) => (
+          <Chip key={`sensitivity-${label}`} label={label} size="small" color="warning" />
+        ))}
+        {file.tags.map((tag) => (
+          <Chip key={`tag-${tag}`} label={tag} size="small" variant="outlined" />
+        ))}
       </Stack>
     </Stack>
   );

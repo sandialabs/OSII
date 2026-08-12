@@ -221,3 +221,52 @@ def list_queue_jobs(*, limit: int = 100) -> list[dict]:
         }
         for row in rows
     ]
+
+
+def find_active_jobs_for_paths(paths: list[str]) -> list[dict]:
+    """Return queued/running jobs that still reference one of the source paths."""
+    if _STATE_DB is None or not paths:
+        return []
+    normalized = {str(path).replace("\\", "/") for path in paths if path}
+    matches: list[dict] = []
+    with _connection() as conn:
+        rows = conn.execute(
+            "SELECT id, run_id, payload_json, status FROM queue_jobs WHERE status IN ('queued', 'running')"
+        ).fetchall()
+    for row in rows:
+        try:
+            payload = json.loads(row["payload_json"])
+        except json.JSONDecodeError:
+            continue
+        serialized = json.dumps(payload).replace("\\", "/")
+        if any(path in serialized for path in normalized):
+            matches.append({"id": row["id"], "run_id": row["run_id"], "status": row["status"]})
+    return matches
+
+
+def find_job_history_for_paths(paths: list[str]) -> list[str]:
+    """Return completed or failed run IDs whose records mention a source path."""
+    if _STATE_DB is None or not paths:
+        return []
+    normalized = {str(path).replace("\\", "/") for path in paths if path}
+    with _connection() as conn:
+        rows = conn.execute("SELECT id, data_json FROM runs").fetchall()
+    return sorted(
+        row["id"]
+        for row in rows
+        if any(path in row["data_json"].replace("\\", "/") for path in normalized)
+    )
+
+
+def purge_job_history(run_ids: list[str]) -> int:
+    """Remove operational history for runs disclosed by a deletion preview."""
+    if _STATE_DB is None or not run_ids:
+        return 0
+    placeholders = ",".join("?" for _ in run_ids)
+    with _connection() as conn:
+        conn.execute(f"DELETE FROM queue_jobs WHERE run_id IN ({placeholders})", run_ids)
+        cursor = conn.execute(f"DELETE FROM runs WHERE id IN ({placeholders})", run_ids)
+    with RUNS_LOCK:
+        for run_id in run_ids:
+            RUNS.pop(run_id, None)
+    return int(cursor.rowcount)

@@ -43,6 +43,8 @@ export type FileDetailModel = {
   hasSynthesis: boolean;
   collections: Array<{ id: string; name: string; kind: string | null }>;
   supportsMarkdownRender: boolean;
+  sensitivityLabels: string[];
+  tags: string[];
 };
 
 export function toFileDetailModel(object: ObjectAggregate): FileDetailModel {
@@ -62,5 +64,7 @@ export function toFileDetailModel(object: ObjectAggregate): FileDetailModel {
     supportsMarkdownRender: Boolean(
       object.processing.capabilities?.supports_markdown_render,
     ),
+    sensitivityLabels: object.governance?.sensitivity_labels ?? [],
+    tags: object.governance?.tags ?? [],
   };
 }

@@ -16,6 +16,7 @@ from osii.api.folder_synthesizer_routes import router as folder_synthesizer_rout
 from osii.api.intake_routes import router as intake_router
 from osii.api.keyword_sets_routes import router as keyword_sets_router
 from osii.api.objects_routes import router as objects_router
+from osii.api.packages_routes import router as packages_router
 from osii.api.osii_read_routes import router as osii_read_router
 from osii.api.osii_routes import router as osii_router
 from osii.api.extractor_routes import router as extractor_routes_router
@@ -73,6 +74,7 @@ app.include_router(embedding_router)
 app.include_router(search_router)
 app.include_router(scopes_router)
 app.include_router(objects_router)
+app.include_router(packages_router)
 app.include_router(keyword_sets_router)
 app.include_router(collections_router)
 app.include_router(collection_synthesis_router)

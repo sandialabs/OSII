@@ -139,6 +139,15 @@ also include model-free examples for a top-20 noun/adjective n-gram keyword
 table and a grounded named-entity candidate list. See
 [Example keyword and entity enrichments](docs/tutorials/example-enrichments.md).
 
+Use **Labels & Tags** on a document to store portable sensitivity awareness,
+handling notes, and plain-text tags in its canonical object sidecar. These
+markings are metadata, not access controls. A collection can be exported as a
+manifest/checksum-validated OSII package and merged from **Collections** on
+another system; duplicate file IDs retain local data and union their labels.
+**Delete File Data** always shows the affected collections, folders, aggregate
+products, source file, and indexes before requiring exact confirmation. See
+[Sensitive data, transfer, and deletion](docs/operations/sensitive-data.md).
+
 Open **Tools** before the first intake. Its Overview, Model providers, Local
 capabilities, and Processor endpoints submenus keep setup details separate.
 For a domain
@@ -228,6 +237,7 @@ Important documentation:
 - [Architecture](docs/concepts/architecture.md)
 - [Local operation](docs/operations/local-first.md)
 - [Guaranteed local processors](docs/operations/local-processors.md)
+- [Sensitive data, transfer, and deletion](docs/operations/sensitive-data.md)
 
 The repository currently includes:
 

@@ -44,6 +44,7 @@ response models plus the FastAPI endpoints.
 - [Guaranteed container-free processor services](operations/local-processors.md)
 - [Extractor routing](reference/extractor-routing.md)
 - [Export components for separate repositories](operations/component-export.md)
+- [Sensitive data, OSII package transfer, and deletion](operations/sensitive-data.md)
 
 ## API and file-format reference
 

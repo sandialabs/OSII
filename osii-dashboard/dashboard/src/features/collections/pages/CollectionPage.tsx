@@ -154,7 +154,7 @@ export function CollectionPage() {
               component="a"
               href={`/api/collections/${encodeURIComponent(collectionId)}/export`}
             >
-              Export Sidecar
+              Export OSII Package
             </Button>
             <Button
               variant="outlined"

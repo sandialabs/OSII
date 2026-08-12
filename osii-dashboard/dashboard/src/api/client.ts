@@ -60,6 +60,11 @@ export async function apiJson<TResponse>(
       "error" in data &&
       typeof (data as { error?: unknown }).error === "string"
         ? (data as { error: string }).error
+        : typeof data === "object" &&
+            data !== null &&
+            "detail" in data &&
+            typeof (data as { detail?: unknown }).detail === "string"
+          ? (data as { detail: string }).detail
         : `Request failed with status ${response.status}`;
     throw new ApiError(message, response.status, data);
   }

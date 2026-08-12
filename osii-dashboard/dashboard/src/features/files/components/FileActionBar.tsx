@@ -16,6 +16,8 @@ import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import PsychologyOutlinedIcon from "@mui/icons-material/PsychologyOutlined";
 import CollectionsBookmarkOutlinedIcon from "@mui/icons-material/CollectionsBookmarkOutlined";
 import LocalOfferOutlinedIcon from "@mui/icons-material/LocalOfferOutlined";
+import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
+import { useNavigate } from "react-router-dom";
 
 import { useObjectSynthesisJob } from "../../../hooks/useObjectSynthesisJob";
 import { useEnrichmentJob } from "../../../hooks/useEnrichmentJob";
@@ -23,12 +25,14 @@ import { getObjectSourceUrl } from "../../../api/source";
 import { getIntakeReadiness } from "../../../api/queue";
 import { AddFileToCollectionDialog } from "../../collections/components/AddFileToCollectionDialog";
 import { ManualKeywordsDialog } from "./ManualKeywordsDialog";
+import { DeleteObjectDialog } from "./DeleteObjectDialog";
 
 type FileActionBarProps = {
   fileId: string;
 };
 
 export function FileActionBar({ fileId }: FileActionBarProps) {
+  const navigate = useNavigate();
   const synthesisJob = useObjectSynthesisJob(fileId);
   const enrichmentJob = useEnrichmentJob();
 
@@ -37,6 +41,7 @@ export function FileActionBar({ fileId }: FileActionBarProps) {
   const [enricherName, setEnricherName] = useState("stats_keywords");
   const [collectionDialogOpen, setCollectionDialogOpen] = useState(false);
   const [keywordsDialogOpen, setKeywordsDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const synthesizerOptions = (readiness.data?.synthesizers ?? []).filter(
     (item) => item.available && !["firstN", "firstN_folder", "collection_firstn"].includes(item.id),
   );
@@ -79,7 +84,15 @@ export function FileActionBar({ fileId }: FileActionBarProps) {
                   startIcon={<LocalOfferOutlinedIcon />}
                   onClick={() => setKeywordsDialogOpen(true)}
                 >
-                  Keywords
+                  Labels & Tags
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  startIcon={<DeleteOutlineOutlinedIcon />}
+                  onClick={() => setDeleteDialogOpen(true)}
+                >
+                  Delete File Data
                 </Button>
               </Stack>
 
@@ -186,6 +199,12 @@ export function FileActionBar({ fileId }: FileActionBarProps) {
       <ManualKeywordsDialog
         open={keywordsDialogOpen}
         onClose={() => setKeywordsDialogOpen(false)}
+        fileId={fileId}
+      />
+      <DeleteObjectDialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        onDeleted={() => navigate("/files")}
         fileId={fileId}
       />
     </>

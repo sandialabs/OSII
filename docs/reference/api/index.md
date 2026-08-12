@@ -89,6 +89,8 @@ Collection membership must reference stable object identifiers such as `file_id`
 - `GET /api/collections/{collection_id}/members`
 - `POST /api/collections/{collection_id}/members`
 - `DELETE /api/collections/{collection_id}/members/{file_id}`
+- `GET /api/collections/{collection_id}/export`
+- `POST /api/packages/import`
 
 ### Objects
 
@@ -97,6 +99,10 @@ Collection membership must reference stable object identifiers such as `file_id`
 - `GET /api/objects/{file_id}/texts`
 - `GET /api/objects/{file_id}/texts/preferred`
 - `GET /api/objects/{file_id}/syntheses`
+- `GET /api/objects/{file_id}/governance`
+- `PUT /api/objects/{file_id}/governance`
+- `POST /api/objects/{file_id}/deletion-preview`
+- `DELETE /api/objects/{file_id}`
 
 ### Text spans
 
@@ -430,9 +436,44 @@ DELETE /api/collections/{collection_id}/members/{file_id}
 
 Removal is success/no-op style. If the collection exists but the document is not currently a member, the response reports `removed: false` rather than treating that case as an error.
 
+### Export and import an OSII package
+
+```http
+GET /api/collections/{collection_id}/export
+POST /api/packages/import
+```
+
+Export returns a ZIP containing collection and object sidecars plus a versioned
+`osii-package.json` checksum manifest; it never includes source files. Import
+uses multipart field `package`, validates every member before writing, merges
+objects by immutable `file_id`, unions governance labels, and invalidates
+corpus-wide derived indexes. See [sensitive data and transfer](../../operations/sensitive-data.md).
+
 ## Object resources
 
 Object resources provide the preferred read surface for canonical object metadata, text access, syntheses, and related summaries.
+
+### Read or update governance metadata
+
+```http
+GET /api/objects/{file_id}/governance
+PUT /api/objects/{file_id}/governance
+```
+
+The JSON fields are `sensitivity_labels`, `tags`, and `handling_notes`. They are
+stored canonically in `objects/<file_id>/governance.toml` and communicate
+awareness; they do not enforce access control.
+
+### Preview and delete one object
+
+```http
+POST /api/objects/{file_id}/deletion-preview
+DELETE /api/objects/{file_id}
+```
+
+Preview accepts mode `sidecar_only` or `source_and_sidecar`. Delete requires the
+same mode, the returned `preview_token`, and `confirmation` exactly equal to the
+file ID. Active Intake jobs or a stale preview block deletion.
 
 ### Read object aggregate
 
