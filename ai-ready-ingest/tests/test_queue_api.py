@@ -68,7 +68,10 @@ def test_browse_and_preview_report_processed_files(
         },
     )
     assert overridden.status_code == 200
-    assert overridden.json()["preview"]["extractor_plan"][0]["extractor"] == "osii_tesseract"
+    assert (
+        overridden.json()["preview"]["extractor_plan"][0]["extractor"]
+        == "osii_tesseract"
+    )
 
 
 def test_intake_readiness_reports_bundled_tools(
@@ -100,6 +103,77 @@ def test_intake_readiness_reports_bundled_tools(
     assert tika["available"] is True
     assert payload["synthesizers"][0]["available"] is True
     assert payload["embedders"][0]["available"] is False
+
+
+def test_intake_readiness_hides_compatibility_duplicates_and_labels_model(
+    client,
+    monkeypatch,
+):
+    from osii.domain.processing import capability_readiness
+
+    descriptors = [
+        {
+            "name": "local.native-text",
+            "display_name": "Local Native Text Extractor",
+            "kind": "extractor",
+            "base_url": "http://127.0.0.1:8092",
+        },
+        {
+            "name": "local.extractive-preview",
+            "display_name": "Local Extractive Preview",
+            "kind": "synthesizer",
+            "base_url": "http://127.0.0.1:8093",
+        },
+        {
+            "name": "ollama.synthesizer",
+            "display_name": "Ollama Synthesizer",
+            "kind": "synthesizer",
+            "base_url": "http://127.0.0.1:8095/ollama/synthesizer",
+        },
+        {
+            "name": "local.hashing",
+            "display_name": "Local Lexical Hashing Embedder",
+            "kind": "embedder",
+            "base_url": "http://127.0.0.1:8085",
+        },
+    ]
+    monkeypatch.setattr(
+        capability_readiness,
+        "discover_remote_processors",
+        lambda **kwargs: descriptors,
+    )
+    monkeypatch.setattr(
+        capability_readiness,
+        "_service_probe",
+        lambda *args, **kwargs: (False, "not running"),
+    )
+    monkeypatch.setattr(
+        capability_readiness,
+        "embedding_readiness",
+        lambda osii_root: {
+            "id": "ollama.embedder",
+            "available": True,
+            "model": "all-minilm",
+        },
+    )
+    monkeypatch.setenv("OLLAMA_SYNTHESIS_MODEL", "llama3.2:3b")
+
+    payload = client.get("/api/intake/readiness").json()
+
+    assert [item["id"] for item in payload["extractors"]].count("native_text") == 0
+    assert [item["id"] for item in payload["extractors"]].count(
+        "local.native-text"
+    ) == 1
+    assert [item["id"] for item in payload["synthesizers"]].count("firstN") == 0
+    ollama = next(
+        item for item in payload["synthesizers"] if item["id"] == "ollama.synthesizer"
+    )
+    assert ollama["display_name"] == "Ollama Synthesizer · llama3.2:3b"
+    assert ollama["model"] == "llama3.2:3b"
+    assert [item["id"] for item in payload["embedders"]] == [
+        "ollama.embedder",
+        "local.hashing",
+    ]
 
 
 def test_embedding_cannot_be_queued_without_a_tested_embedder(

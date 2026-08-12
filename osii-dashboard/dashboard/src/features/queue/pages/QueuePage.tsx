@@ -364,7 +364,9 @@ export function QueuePage() {
   const queuedDocumentCount = section === "process"
     ? (preview.data?.preview.processing_plan?.unique_document_count ?? matchedCount)
     : matchedCount;
-  const embeddingStatus = readiness.data?.embedders[0];
+  const embeddingStatus = readiness.data?.embedders.find(
+    (embedder) => embedder.id === readiness.data?.defaults.embedder,
+  ) ?? readiness.data?.embedders[0];
   const embeddingAvailable = Boolean(embeddingStatus?.available);
   const extractorStatus = (name: string) => readiness.data?.extractors.find(
     (extractor) => (

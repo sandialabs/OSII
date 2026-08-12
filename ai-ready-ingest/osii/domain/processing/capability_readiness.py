@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import tomllib
 from pathlib import Path
 from typing import Any
 
 import requests
-import tomllib
-from osii.indexing.common import embeddings_meta_path
 from osii.domain.catalog_db import list_semantic_indexes
-from osii.domain.model_provider_config import selected_processor
-
+from osii.domain.model_provider_config import processor_model, selected_processor
+from osii.indexing.common import embeddings_meta_path
 from osii.processors.remote import discover_remote_processors
 
 
@@ -39,7 +38,10 @@ def _embedding_probe(osii_root: Path | None = None) -> dict[str, Any]:
                 try:
                     probe = requests.post(
                         f"{descriptor['base_url']}/v1/embed",
-                        json={"request_id": "readiness", "inputs": [{"id": "probe", "text": "OSII readiness probe"}]},
+                        json={
+                            "request_id": "readiness",
+                            "inputs": [{"id": "probe", "text": "OSII readiness probe"}],
+                        },
                         timeout=8,
                     )
                     probe.raise_for_status()
@@ -47,8 +49,15 @@ def _embedding_probe(osii_root: Path | None = None) -> dict[str, Any]:
                     model = payload["model"]
                     provider = payload["processor"]["name"]
                     dimensions = payload["vectors"][0]["dimensions"]
-                    detail = f"Descriptor and {dimensions}-dimensional vector validated."
-                except (requests.RequestException, ValueError, KeyError, IndexError) as exc:
+                    detail = (
+                        f"Descriptor and {dimensions}-dimensional vector validated."
+                    )
+                except (
+                    requests.RequestException,
+                    ValueError,
+                    KeyError,
+                    IndexError,
+                ) as exc:
                     available = False
                     detail = f"Embedding operation test failed: {exc}"
             return {
@@ -65,10 +74,10 @@ def _embedding_probe(osii_root: Path | None = None) -> dict[str, Any]:
                 "lexical": selected == "local.hashing",
             }
     base_url = (
-        os.getenv("OSII_EMBEDDING_BASE_URL")
-        or os.getenv("OSII_MODEL_BASE_URL")
-        or ""
-    ).strip().rstrip("/")
+        (os.getenv("OSII_EMBEDDING_BASE_URL") or os.getenv("OSII_MODEL_BASE_URL") or "")
+        .strip()
+        .rstrip("/")
+    )
     model = os.getenv(
         "EMBEDDING_MODEL",
         "osii-local-hashing-v1",
@@ -146,9 +155,7 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
         "OSII_TESSERACT_URL",
         "http://127.0.0.1:8080",
     ).rstrip("/")
-    tesseract_available, tesseract_detail = _service_probe(
-        f"{tesseract_url}/health"
-    )
+    tesseract_available, tesseract_detail = _service_probe(f"{tesseract_url}/health")
 
     nemotron_url = os.getenv("NEMOTRON_BASE_URL", "").strip().rstrip("/")
     if nemotron_url:
@@ -160,18 +167,6 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
         nemotron_detail = "NEMOTRON_BASE_URL is not configured."
 
     extractors = [
-        {
-            "id": "native_text",
-            "aliases": ["native_text"],
-            "display_name": "Native Python Text Extractor",
-            "description": (
-                "Container-free extraction for text-layer PDFs, modern Office "
-                "documents, and common text formats."
-            ),
-            "available": True,
-            "detail": "Bundled in the OSII Python package.",
-            "bundled": True,
-        },
         {
             "id": "tika",
             "aliases": ["tika", "tika_catchall"],
@@ -221,27 +216,77 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
             }
         )
 
-    remote_by_kind: dict[str, list[dict[str, Any]]] = {kind: [] for kind in ("extractor", "synthesizer", "embedder", "enricher")}
+    remote_by_kind: dict[str, list[dict[str, Any]]] = {
+        kind: [] for kind in ("extractor", "synthesizer", "embedder", "enricher")
+    }
     for descriptor in discover_remote_processors(include_errors=True):
         kind = descriptor.get("kind")
         if kind not in remote_by_kind:
             continue
-        remote_by_kind[kind].append({
-            "id": descriptor.get("name", descriptor.get("base_url")),
-            "display_name": descriptor.get("display_name", descriptor.get("base_url")),
-            "description": descriptor.get("description", "Processor API service"),
-            "kind": kind,
-            "available": not descriptor.get("error"),
-            "detail": "Descriptor validated." if not descriptor.get("error") else descriptor["error"],
-            "base_url": descriptor.get("base_url"),
-            "bundled": str(descriptor.get("name", "")).startswith("local."),
-            "descriptor": descriptor if not descriptor.get("error") else None,
-        })
+        name = str(descriptor.get("name", descriptor.get("base_url")))
+        model = (
+            processor_model(name, kind, osii_root=osii_root)
+            if kind in {"embedder", "synthesizer"}
+            else ""
+        )
+        display_name = descriptor.get("display_name", descriptor.get("base_url"))
+        if model:
+            display_name = f"{display_name} · {model}"
+        remote_by_kind[kind].append(
+            {
+                "id": name,
+                "display_name": display_name,
+                "description": descriptor.get("description", "Processor API service"),
+                "kind": kind,
+                "available": not descriptor.get("error"),
+                "detail": "Descriptor validated."
+                if not descriptor.get("error")
+                else descriptor["error"],
+                "base_url": descriptor.get("base_url"),
+                "bundled": str(descriptor.get("name", "")).startswith("local."),
+                "descriptor": descriptor if not descriptor.get("error") else None,
+                **({"model": model} if model else {}),
+            }
+        )
+
+    remote_extractor_ids = {item["id"] for item in remote_by_kind["extractor"]}
+    if "local.native-text" not in remote_extractor_ids:
+        extractors.insert(
+            0,
+            {
+                "id": "native_text",
+                "aliases": ["native_text", "local.native-text"],
+                "display_name": "Local Native Text Extractor",
+                "description": (
+                    "Container-free extraction for text-layer PDFs, modern Office "
+                    "documents, and common text formats."
+                ),
+                "available": True,
+                "detail": "Using the compatibility implementation in OSII core.",
+                "bundled": True,
+            },
+        )
+
+    synthesizers = list(remote_by_kind["synthesizer"])
+    if "local.extractive-preview" not in {item["id"] for item in synthesizers}:
+        synthesizers.append(
+            {
+                "id": "firstN",
+                "aliases": ["firstN", "local.extractive-preview"],
+                "display_name": "Local Extractive Preview",
+                "kind": "synthesizer",
+                "available": True,
+                "detail": "Using the compatibility implementation in OSII core.",
+                "bundled": True,
+            }
+        )
 
     embedding = embedding_readiness(osii_root)
     index_metadata: dict[str, Any] = {}
     try:
-        index_metadata = tomllib.loads(embeddings_meta_path(osii_root).read_text(encoding="utf-8")).get("embeddings", {})
+        index_metadata = tomllib.loads(
+            embeddings_meta_path(osii_root).read_text(encoding="utf-8")
+        ).get("embeddings", {})
     except (OSError, tomllib.TOMLDecodeError):
         pass
     if index_metadata and embedding.get("available"):
@@ -257,15 +302,28 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
         embedding["index_compatible"] = False
         embedding["index_rebuild_required"] = True
 
+    embedders = [embedding] if embedding.get("id") else []
+    known_embedder_ids = {item["id"] for item in embedders}
+    embedders.extend(
+        item
+        for item in remote_by_kind["embedder"]
+        if item["id"] not in known_embedder_ids
+    )
+
     selected_synthesizer = selected_processor("synthesizer", osii_root=osii_root)
     selected_synthesizer_status = next(
-        (item for item in remote_by_kind["synthesizer"] if item["id"] == selected_synthesizer),
+        (
+            item
+            for item in remote_by_kind["synthesizer"]
+            if item["id"] == selected_synthesizer
+        ),
         None,
     )
     llm_wiki_available = bool(
         selected_synthesizer_status
         and selected_synthesizer_status.get("available")
-        and selected_synthesizer not in {"local.extractive-preview", "firstN", "recursive"}
+        and selected_synthesizer
+        not in {"local.extractive-preview", "firstN", "recursive"}
     )
 
     return {
@@ -276,18 +334,10 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
             "enricher": os.getenv("OSII_DEFAULT_ENRICHER", "stats_keywords"),
         },
         "extractors": remote_by_kind["extractor"] + extractors,
-        "synthesizers": remote_by_kind["synthesizer"] + [
-            {
-                "id": "firstN",
-                "display_name": "Local text preview",
-                "kind": "synthesizer",
-                "available": True,
-                "detail": "Bundled deterministic synthesizer; no model service required.",
-                "bundled": True,
-            }
-        ],
-        "embedders": [embedding] if embedding.get("id") else remote_by_kind["embedder"],
-        "enrichers": remote_by_kind["enricher"] + [
+        "synthesizers": synthesizers,
+        "embedders": embedders,
+        "enrichers": remote_by_kind["enricher"]
+        + [
             {
                 "id": "stats_keywords",
                 "display_name": "Statistics and keywords",

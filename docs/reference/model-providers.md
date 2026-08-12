@@ -62,6 +62,18 @@ Run it at port 8096, set `OSII_SHIRTY_BRIDGE_URL`, and use
 the extractive baseline. An unavailable Shirty service is expected and trips a
 short circuit breaker rather than hanging every request.
 
+Intake advertises the independent `local.native-text` and
+`local.extractive-preview` services when they are running. Their older
+in-process implementations remain compatibility fallbacks, but are not shown
+as duplicate choices. Model-provider choices include the configured model in
+their label (for example, `Ollama Synthesizer · llama3.2:1b`).
+
+Tools groups guaranteed local capabilities under Extraction, Synthesis,
+Embedding, and Enrichment. Each entry shows whether it is the Intake default,
+ready, started automatically by `make dev`, built into core, or an optional
+tool that must be started separately. The local hashing embedder remains
+visible here even when an Ollama embedder is selected.
+
 ## Secret handling
 
 Provider JSON stores no secret values. Credentials are read only from

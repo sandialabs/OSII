@@ -1,10 +1,10 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Alert, Button, Chip, Divider, FormControlLabel, LinearProgress, MenuItem, Paper, Stack, Switch, Tab, Tabs, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, Chip, Divider, FormControlLabel, LinearProgress, MenuItem, Paper, Stack, Switch, Tab, Tabs, TextField, Typography } from "@mui/material";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 
 import { checkModelProvider, checkProcessorEndpoint, createModelProvider, createProcessorEndpoint, getIntakeReadiness, getOllamaPullStatus, listModelProviders, listProcessorEndpoints, pullOllamaModel } from "../../../api/queue";
-import type { ModelProvider, ModelProviderHealth, ModelPullJob, OllamaRecommendation, ProcessorEndpoint } from "../../../api/types";
+import type { CapabilityReadiness, ModelProvider, ModelProviderHealth, ModelPullJob, OllamaRecommendation, ProcessorEndpoint } from "../../../api/types";
 
 const DEFAULT_EMBEDDING_MODEL = "all-minilm";
 const DEFAULT_CHAT_MODEL = "llama3.2:1b";
@@ -17,6 +17,50 @@ function formatBytes(value?: number | null) {
   if (!value) return "size unavailable";
   if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(1)} GB`;
   return `${Math.round(value / 1024 ** 2)} MB`;
+}
+
+const LOCAL_CAPABILITY_GROUPS = [
+  {
+    key: "extractors" as const,
+    title: "Extraction",
+    description: "Turns source files into grounded text with source, page, and region provenance.",
+    defaultKey: "extractor" as const,
+  },
+  {
+    key: "synthesizers" as const,
+    title: "Synthesis",
+    description: "Creates cited document, folder, collection, or library-level Markdown summaries.",
+    defaultKey: "synthesizer" as const,
+  },
+  {
+    key: "embedders" as const,
+    title: "Embedding",
+    description: "Builds vectors for similarity search; local hashing is lexical rather than semantic.",
+    defaultKey: "embedder" as const,
+  },
+  {
+    key: "enrichers" as const,
+    title: "Enrichment",
+    description: "Produces reusable knowledge products such as tables, entity lists, graphs, and wiki Markdown.",
+    defaultKey: "enricher" as const,
+  },
+];
+
+function uniqueBundled(items: CapabilityReadiness[]) {
+  return items.filter(
+    (item, index) => item.bundled
+      && items.findIndex((candidate) => candidate.id === item.id) === index,
+  );
+}
+
+function isSelectedDefault(item: CapabilityReadiness, selected: string) {
+  return item.id === selected || item.aliases?.includes(selected);
+}
+
+function localRuntimeLabel(item: CapabilityReadiness) {
+  if (item.base_url) return "Host service · started by make dev";
+  if (!item.available) return "Optional tool · start separately";
+  return "Built into OSII core";
 }
 
 export function ProcessorsPage() {
@@ -263,25 +307,43 @@ export function ProcessorsPage() {
       </Paper> : null}
 
       {section === "capabilities" ? <Paper variant="outlined" sx={{ p: 2 }}>
-        <Stack spacing={1.25}>
-          <Typography fontWeight={700}>Selected local Processor services</Typography>
-          {readiness.data ? ([
-            ...readiness.data.extractors,
-            ...readiness.data.synthesizers,
-            ...readiness.data.embedders,
-            ...readiness.data.enrichers,
-          ].filter((item, index, items) => item.bundled && items.findIndex((candidate) => candidate.id === item.id) === index).map((item) => (
-            <Stack key={item.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}>
-              <Stack>
-                <Typography fontWeight={600}>{item.display_name}</Typography>
-                <Typography variant="caption" color="text.secondary">{item.id} · {item.base_url ?? "in-process compatibility fallback"}</Typography>
-              </Stack>
-              <Stack direction="row" spacing={0.75} alignItems="center">
-                <Chip size="small" variant="outlined" label={item.kind ?? "processor"} />
-                <Chip size="small" color={item.available ? "success" : "error"} label={item.available ? item.detail : "Unavailable"} />
-              </Stack>
-            </Stack>
-          ))) : <Typography variant="body2">Testing local services…</Typography>}
+        <Stack spacing={2}>
+          <Stack spacing={0.5}>
+            <Typography fontWeight={700}>Guaranteed local capabilities</Typography>
+            <Typography variant="body2" color="text.secondary">
+              These are grouped by the four OSII processing concepts. A Default badge means Intake selects that capability automatically.
+            </Typography>
+          </Stack>
+          {readiness.data ? <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(2, minmax(0, 1fr))" }, gap: 2 }}>
+            {LOCAL_CAPABILITY_GROUPS.map((group) => {
+              const items = uniqueBundled(readiness.data[group.key]);
+              const selected = readiness.data.defaults[group.defaultKey];
+              return (
+                <Paper key={group.key} variant="outlined" sx={{ p: 1.75 }}>
+                  <Stack spacing={1.25}>
+                    <Stack spacing={0.25}>
+                      <Typography variant="subtitle1" fontWeight={700}>{group.title}</Typography>
+                      <Typography variant="caption" color="text.secondary">{group.description}</Typography>
+                    </Stack>
+                    <Divider />
+                    {items.map((item) => (
+                      <Stack key={item.id} spacing={0.5}>
+                        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+                          <Typography variant="body2" fontWeight={650}>{item.display_name}</Typography>
+                          {isSelectedDefault(item, selected) ? <Chip size="small" color="primary" label="Default" /> : null}
+                          <Chip size="small" color={item.available ? "success" : "default"} label={item.available ? "Ready" : "Unavailable"} />
+                        </Stack>
+                        <Typography variant="caption" color="text.secondary">{item.id}</Typography>
+                        <Typography variant="caption" color="text.secondary">{localRuntimeLabel(item)}</Typography>
+                        <Typography variant="caption">{item.available ? item.detail : "Not currently running."}</Typography>
+                      </Stack>
+                    ))}
+                    {!items.length ? <Alert severity="info">No local {group.title.toLowerCase()} capability was discovered.</Alert> : null}
+                  </Stack>
+                </Paper>
+              );
+            })}
+          </Box> : <Typography variant="body2">Testing local services…</Typography>}
         </Stack>
       </Paper> : null}
 
