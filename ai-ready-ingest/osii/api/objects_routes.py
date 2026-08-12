@@ -21,8 +21,30 @@ from osii.domain.read.manifest import list_manifest_records
 from osii.domain.read.segments import list_segments
 from osii.domain.read.synthesis import get_synth_text, get_synth_toml, list_syntheses
 from osii.domain.scopes.collections import list_collections_for_file
+from osii.domain.keywords.manual import get_manual_keywords, write_manual_keywords
 
 router = APIRouter(prefix="/api/objects", tags=["objects"])
+
+
+@router.get("/{file_id}/keywords/manual")
+async def get_object_manual_keywords(request: Request, file_id: str):
+    keywords = get_manual_keywords(request.app.state.osii_root.resolve(), file_id)
+    if keywords is None:
+        return {"error": "unknown file_id"}
+    return {"file_id": file_id, "keywords": keywords}
+
+
+@router.put("/{file_id}/keywords/manual")
+async def put_object_manual_keywords(request: Request, file_id: str, payload: dict):
+    try:
+        keywords = write_manual_keywords(
+            request.app.state.osii_root.resolve(), file_id, payload.get("keywords", [])
+        )
+    except ValueError as exc:
+        return {"error": str(exc)}
+    if keywords is None:
+        return {"error": "unknown file_id"}
+    return {"file_id": file_id, "keywords": keywords}
 
 
 @router.get("/{file_id}")

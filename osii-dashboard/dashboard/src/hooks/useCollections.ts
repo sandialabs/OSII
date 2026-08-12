@@ -79,6 +79,7 @@ export function useUpdateCollection(collectionId: string) {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["collections"] }),
+        queryClient.invalidateQueries({ queryKey: ["scopes", "summaries"] }),
         queryClient.invalidateQueries({
           queryKey: ["collections", "detail", collectionId],
         }),
@@ -116,6 +117,7 @@ export function useAddCollectionMembers(collectionId: string) {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["collections"] }),
+        queryClient.invalidateQueries({ queryKey: ["scopes", "summaries"] }),
         queryClient.invalidateQueries({
           queryKey: ["collections", collectionId, "members"],
         }),

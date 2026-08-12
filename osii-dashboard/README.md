@@ -15,6 +15,8 @@ The dashboard is intentionally modular. It is a standalone frontend that talks t
 - Open and inspect documents including source PDFs
 - Navigate by folder using a lazy-loaded tree
 - Organize documents into collections
+- Add or remove collection members without touching their originals, and export a collection-only OSII sidecar ZIP
+- Apply manual file keywords and save reusable keyword sets for topics or sensitivity markers
 - Prepare for future document chat workflows
 
 ---

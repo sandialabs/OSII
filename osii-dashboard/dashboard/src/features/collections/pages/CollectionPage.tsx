@@ -15,6 +15,8 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import ChatOutlinedIcon from "@mui/icons-material/ChatOutlined";
+import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
+import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { useBrowsingScope } from "../../../app/providers/BrowsingScopeProvider";
@@ -26,6 +28,7 @@ import {
 import { CollectionFileGrid } from "../components/CollectionFileGrid";
 import { ScopeEnrichmentsPanel } from "../../files/components/ScopeEnrichmentsPanel";
 import { ScopeWikiPanel } from "../../files/components/ScopeWikiPanel";
+import { AddFilesToCollectionDialog } from "../components/AddFilesToCollectionDialog";
 
 export function CollectionPage() {
   const { collectionId } = useParams<{ collectionId: string }>();
@@ -44,6 +47,7 @@ export function CollectionPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [addFilesOpen, setAddFilesOpen] = useState(false);
 
   useEffect(() => {
     if (data?.collection) {
@@ -141,6 +145,17 @@ export function CollectionPage() {
             >
               Chat Collection
             </Button>
+            <Button variant="outlined" startIcon={<AddOutlinedIcon />} onClick={() => setAddFilesOpen(true)}>
+              Add Files
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<DownloadOutlinedIcon />}
+              component="a"
+              href={`/api/collections/${encodeURIComponent(collectionId)}/export`}
+            >
+              Export Sidecar
+            </Button>
             <Button
               variant="outlined"
               startIcon={<EditOutlinedIcon />}
@@ -208,6 +223,8 @@ export function CollectionPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <AddFilesToCollectionDialog open={addFilesOpen} onClose={() => setAddFilesOpen(false)} collectionId={collectionId} />
 
       <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)} fullWidth maxWidth="xs">
         <DialogTitle>Delete Collection</DialogTitle>

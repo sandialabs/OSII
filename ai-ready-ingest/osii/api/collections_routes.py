@@ -1,4 +1,9 @@
-from fastapi import APIRouter, Request
+from io import BytesIO
+from pathlib import Path
+import zipfile
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
 from osii.domain.artifacts.collection_artifacts import get_collection_artifact_summary
 from osii.domain.scopes.collections import (
@@ -13,6 +18,18 @@ from osii.domain.scopes.collections import (
 )
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
+
+
+def _safe_export_name(value: str) -> str:
+    return "".join(char if (char.isascii() and char.isalnum()) or char in "-_" else "-" for char in value).strip("-") or "collection"
+
+
+def _write_directory_to_zip(archive: zipfile.ZipFile, directory: Path, prefix: str) -> None:
+    if not directory.exists():
+        return
+    for path in sorted(directory.rglob("*")):
+        if path.is_file():
+            archive.write(path, f"{prefix}/{path.relative_to(directory).as_posix()}")
 
 
 @router.get("")
@@ -52,6 +69,29 @@ async def get_collection_route(request: Request, collection_id: str):
         "collection": collection,
         "artifact_summary": artifact_summary,
     }
+
+
+@router.get("/{collection_id}/export")
+async def export_collection_sidecar(request: Request, collection_id: str):
+    """Export only the selected collection's OSII sidecar; source files stay out of the archive."""
+    osii_root = request.app.state.osii_root.resolve()
+    collection = get_collection(osii_root, collection_id)
+    if collection is None:
+        raise HTTPException(status_code=404, detail="unknown collection_id")
+
+    output = BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        collection_dir = osii_root / "collections" / collection_id
+        _write_directory_to_zip(archive, collection_dir, f"collections/{collection_id}")
+        for file_id in list_collection_documents(osii_root, collection_id):
+            _write_directory_to_zip(archive, osii_root / "objects" / file_id, f"objects/{file_id}")
+    output.seek(0)
+    filename = f"{_safe_export_name(collection['name'])}-osii-sidecar.zip"
+    return StreamingResponse(
+        output,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.patch("/{collection_id}")

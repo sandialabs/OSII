@@ -50,3 +50,22 @@ def test_collection_members_api(client, sample_osii_object):
     remove_resp = client.delete(f"/api/collections/{collection_id}/members/{file_id}")
     assert remove_resp.status_code == 200
     assert remove_resp.json()["removed"] is True
+
+
+def test_collection_export_contains_only_selected_sidecar(client, sample_osii_object):
+    import io
+    import zipfile
+
+    file_id = sample_osii_object["file_id"]
+    collection_id = client.post("/api/collections", json={"name": "shareable"}).json()["collection"]["id"]
+    client.post(f"/api/collections/{collection_id}/members", json={"file_ids": [file_id]})
+
+    response = client.get(f"/api/collections/{collection_id}/export")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/zip")
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        names = archive.namelist()
+    assert f"collections/{collection_id}/collection.toml" in names
+    assert f"objects/{file_id}/meta.toml" in names
+    assert not any(name.startswith("source/") for name in names)

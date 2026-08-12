@@ -89,7 +89,9 @@ Supported scope types are:
 - `collection`
 - `object`
 
-Collections are logical scopes independent of the source folder hierarchy.
+Collections are logical scopes independent of the source folder hierarchy. Collection membership is stored in the OSII sidecar, so a member can be added or removed without moving, copying, or deleting its original source file. The collection export endpoint produces a ZIP containing only that collection's metadata, scope artifacts, and member object sidecars; it intentionally excludes original source files so the sidecar can be shared under its own protections.
+
+Manual keywords are also stored as object-sidecar enrichment artifacts (`keywords--manual.json`). Reusable keyword sets live in `keyword_sets.toml` at the OSII root and can be used for sensitivity markers, topics, or other organization labels.
 Folders are structural scopes derived from source organization.
 
 The same backend operation may target either kind of scope.

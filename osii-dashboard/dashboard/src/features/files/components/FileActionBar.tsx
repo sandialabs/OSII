@@ -14,11 +14,13 @@ import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import PsychologyOutlinedIcon from "@mui/icons-material/PsychologyOutlined";
 import CollectionsBookmarkOutlinedIcon from "@mui/icons-material/CollectionsBookmarkOutlined";
+import LocalOfferOutlinedIcon from "@mui/icons-material/LocalOfferOutlined";
 
 import { useObjectSynthesisJob } from "../../../hooks/useObjectSynthesisJob";
 import { useEnrichmentJob } from "../../../hooks/useEnrichmentJob";
 import { getObjectSourceUrl } from "../../../api/source";
 import { AddFileToCollectionDialog } from "../../collections/components/AddFileToCollectionDialog";
+import { ManualKeywordsDialog } from "./ManualKeywordsDialog";
 
 type FileActionBarProps = {
   fileId: string;
@@ -31,6 +33,7 @@ export function FileActionBar({ fileId }: FileActionBarProps) {
   const [synthesizerName, setSynthesizerName] = useState("firstN");
   const [enricherName, setEnricherName] = useState("stats_keywords");
   const [collectionDialogOpen, setCollectionDialogOpen] = useState(false);
+  const [keywordsDialogOpen, setKeywordsDialogOpen] = useState(false);
 
   return (
     <>
@@ -60,6 +63,13 @@ export function FileActionBar({ fileId }: FileActionBarProps) {
                   onClick={() => setCollectionDialogOpen(true)}
                 >
                   Add to Collection
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<LocalOfferOutlinedIcon />}
+                  onClick={() => setKeywordsDialogOpen(true)}
+                >
+                  Keywords
                 </Button>
               </Stack>
 
@@ -160,6 +170,11 @@ export function FileActionBar({ fileId }: FileActionBarProps) {
       <AddFileToCollectionDialog
         open={collectionDialogOpen}
         onClose={() => setCollectionDialogOpen(false)}
+        fileId={fileId}
+      />
+      <ManualKeywordsDialog
+        open={keywordsDialogOpen}
+        onClose={() => setKeywordsDialogOpen(false)}
         fileId={fileId}
       />
     </>
