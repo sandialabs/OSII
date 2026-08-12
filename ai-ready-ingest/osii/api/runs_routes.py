@@ -109,7 +109,7 @@ def _get_one_synthesizer(name: str):
 
 def get_synthesizer(name: str):
     configured = [item.strip() for item in os.getenv("OSII_SYNTHESIZER_FALLBACKS", "").split(",") if item.strip()]
-    chain = list(dict.fromkeys([name, *configured, "firstN"]))
+    chain = list(dict.fromkeys([name, *configured]))
     return FallbackSynthesizer(chain)
 
 

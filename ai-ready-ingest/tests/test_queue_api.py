@@ -101,7 +101,7 @@ def test_intake_readiness_reports_bundled_tools(
     assert payload["extractors"][0]["available"] is True
     tika = next(item for item in payload["extractors"] if item["id"] == "tika")
     assert tika["available"] is True
-    assert payload["synthesizers"][0]["available"] is True
+    assert payload["synthesizers"] == []
     assert payload["embedders"][0]["available"] is False
 
 

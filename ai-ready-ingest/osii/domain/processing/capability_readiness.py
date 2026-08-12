@@ -268,18 +268,6 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
         )
 
     synthesizers = list(remote_by_kind["synthesizer"])
-    if "local.extractive-preview" not in {item["id"] for item in synthesizers}:
-        synthesizers.append(
-            {
-                "id": "firstN",
-                "aliases": ["firstN", "local.extractive-preview"],
-                "display_name": "Local Extractive Preview",
-                "kind": "synthesizer",
-                "available": True,
-                "detail": "Using the compatibility implementation in OSII core.",
-                "bundled": True,
-            }
-        )
 
     embedding = embedding_readiness(osii_root)
     index_metadata: dict[str, Any] = {}

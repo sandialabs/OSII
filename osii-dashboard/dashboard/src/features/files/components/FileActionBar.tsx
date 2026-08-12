@@ -1,5 +1,6 @@
 // src/features/files/components/FileActionBar.tsx
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Alert,
   Button,
@@ -19,6 +20,7 @@ import LocalOfferOutlinedIcon from "@mui/icons-material/LocalOfferOutlined";
 import { useObjectSynthesisJob } from "../../../hooks/useObjectSynthesisJob";
 import { useEnrichmentJob } from "../../../hooks/useEnrichmentJob";
 import { getObjectSourceUrl } from "../../../api/source";
+import { getIntakeReadiness } from "../../../api/queue";
 import { AddFileToCollectionDialog } from "../../collections/components/AddFileToCollectionDialog";
 import { ManualKeywordsDialog } from "./ManualKeywordsDialog";
 
@@ -30,10 +32,18 @@ export function FileActionBar({ fileId }: FileActionBarProps) {
   const synthesisJob = useObjectSynthesisJob(fileId);
   const enrichmentJob = useEnrichmentJob();
 
-  const [synthesizerName, setSynthesizerName] = useState("firstN");
+  const readiness = useQuery({ queryKey: ["intake", "readiness"], queryFn: getIntakeReadiness });
+  const [synthesizerName, setSynthesizerName] = useState("");
   const [enricherName, setEnricherName] = useState("stats_keywords");
   const [collectionDialogOpen, setCollectionDialogOpen] = useState(false);
   const [keywordsDialogOpen, setKeywordsDialogOpen] = useState(false);
+  const synthesizerOptions = (readiness.data?.synthesizers ?? []).filter(
+    (item) => item.available && !["firstN", "firstN_folder", "collection_firstn"].includes(item.id),
+  );
+  const selectedSynthesizer = synthesizerName
+    || synthesizerOptions.find((item) => item.id === readiness.data?.defaults.synthesizer)?.id
+    || synthesizerOptions[0]?.id
+    || "";
 
   return (
     <>
@@ -79,11 +89,12 @@ export function FileActionBar({ fileId }: FileActionBarProps) {
                     select
                     size="small"
                     label="Synthesizer"
-                    value={synthesizerName}
+                    value={selectedSynthesizer}
                     onChange={(event) => setSynthesizerName(event.target.value)}
                   >
-                    <MenuItem value="firstN">firstN</MenuItem>
-                    <MenuItem value="recursive">recursive</MenuItem>
+                    {synthesizerOptions.map((item) => (
+                      <MenuItem key={item.id} value={item.id}>{item.display_name}</MenuItem>
+                    ))}
                   </TextField>
 
                   <Button
@@ -91,10 +102,10 @@ export function FileActionBar({ fileId }: FileActionBarProps) {
                     startIcon={<AutoAwesomeOutlinedIcon />}
                     onClick={() =>
                       synthesisJob.mutate({
-                        synthesizer_name: synthesizerName,
+                        synthesizer_name: selectedSynthesizer,
                       })
                     }
-                    disabled={synthesisJob.isPending}
+                    disabled={synthesisJob.isPending || !selectedSynthesizer}
                   >
                     Rerun Synthesis
                   </Button>

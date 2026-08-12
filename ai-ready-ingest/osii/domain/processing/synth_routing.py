@@ -1,5 +1,5 @@
-from pathlib import Path
 import tomllib
+from pathlib import Path
 
 
 def object_synth_routes_path() -> Path:
@@ -11,11 +11,9 @@ def folder_synth_routes_path() -> Path:
 
 
 def load_object_synth_routes(config_path: Path | None = None) -> list[dict]:
-    print('DEBUG: you have entered load_object_synth_routes')
-
     path = config_path or object_synth_routes_path()
     if not path.exists():
-        return [{"name": "default-firstN", "synthesizer": "firstN", "extensions": ["*"]}]
+        return []
 
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     return data.get("routes", [])
@@ -24,7 +22,7 @@ def load_object_synth_routes(config_path: Path | None = None) -> list[dict]:
 def load_folder_synth_routes(config_path: Path | None = None) -> list[dict]:
     path = config_path or folder_synth_routes_path()
     if not path.exists():
-        return [{"name": "default-folder-firstN", "synthesizer": "firstN_folder", "path_patterns": ["*"]}]
+        return []
 
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     return data.get("routes", [])
@@ -39,7 +37,9 @@ def choose_object_synthesizer(path: Path, routes: list[dict]) -> str | None:
     return None
 
 
-def get_extensions_for_synthesizer(object_synth_routes: list[dict], synthesizer_name: str) -> list[str] | None:
+def get_extensions_for_synthesizer(
+    object_synth_routes: list[dict], synthesizer_name: str
+) -> list[str] | None:
     for route in object_synth_routes:
         if route.get("synthesizer") == synthesizer_name:
             return route.get("extensions", [])
@@ -52,6 +52,9 @@ def choose_folder_synthesizer(folder_relpath: str, routes: list[dict]) -> str | 
     rel = folder_relpath.replace("\\", "/").strip("/")
     for route in routes:
         patterns = route.get("path_patterns", [])
-        if any(fnmatch.fnmatch(rel, pattern.strip("/")) or pattern == "*" for pattern in patterns):
+        if any(
+            fnmatch.fnmatch(rel, pattern.strip("/")) or pattern == "*"
+            for pattern in patterns
+        ):
             return route.get("synthesizer")
     return None

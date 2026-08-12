@@ -156,10 +156,10 @@ def build_environment(
             "EMBEDDING_MODEL": env.get("SHIRTY_EMBEDDING_MODEL", "") if provider_profile == "corporate" else ollama_embedding_model,
         })
         if provider_profile in {"baseline", "ollama"}:
-            env.update({"CHAT_PROVIDER": "ollama", "CHAT_PROVIDER_CHAIN": "ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "ollama.synthesizer,local.extractive-preview,firstN"})
+            env.update({"CHAT_PROVIDER": "ollama", "CHAT_PROVIDER_CHAIN": "ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "ollama.synthesizer,local.extractive-preview"})
         elif provider_profile == "corporate":
             shirty_url = env.get("OSII_SHIRTY_BRIDGE_URL", "http://127.0.0.1:8096").rstrip("/")
-            env.update({"CHAT_PROVIDER": "openai", "CHAT_PROVIDER_CHAIN": "openai,ollama,extractive", "OSII_CHAT_BASE_URL": f"{shirty_url}/v1", "OSII_SYNTHESIZER_FALLBACKS": "corporate.shirty-synthesis,ollama.synthesizer,local.extractive-preview,firstN"})
+            env.update({"CHAT_PROVIDER": "openai", "CHAT_PROVIDER_CHAIN": "openai,ollama,extractive", "OSII_CHAT_BASE_URL": f"{shirty_url}/v1", "OSII_SYNTHESIZER_FALLBACKS": "corporate.shirty-synthesis,ollama.synthesizer,local.extractive-preview"})
     if examples and not env.get("OSII_PROCESSORS"):
         processor_port = env.get("OSII_EXAMPLE_PROCESSOR_PORT", "8091")
         env["OSII_PROCESSORS"] = f"http://127.0.0.1:{processor_port}"

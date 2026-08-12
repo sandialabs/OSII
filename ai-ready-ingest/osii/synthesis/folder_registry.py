@@ -12,7 +12,9 @@ def get_folder_synthesizers():
 
 
 def list_folder_synthesizer_descriptions() -> list[dict]:
-    return [s.describe() for s in get_folder_synthesizers()]
+    return [
+        s.describe() for s in get_folder_synthesizers() if s.name != "firstN_folder"
+    ]
 
 
 def resolve_folder_synthesizer(name: str):

@@ -1,9 +1,11 @@
 import threading
 from pathlib import Path
 
-from fastapi import APIRouter, Request
-
-from osii.domain.artifacts.collection_artifacts import get_collection_artifact_summary, list_collection_syntheses
+from fastapi import APIRouter, HTTPException, Request
+from osii.domain.artifacts.collection_artifacts import (
+    get_collection_artifact_summary,
+    list_collection_syntheses,
+)
 from osii.domain.processing.jobs import append_log, create_run_record, get_run
 from osii.domain.scopes.collections import get_collection
 from osii.synthesis.collection.firstn import CollectionFirstNSynthesizer
@@ -26,7 +28,10 @@ def _run_collection_synthesis_job(
             return
 
         run["status"] = "running"
-        append_log(run_id, f"Starting collection synthesis for {collection_id} using '{synthesizer_name}'")
+        append_log(
+            run_id,
+            f"Starting collection synthesis for {collection_id} using '{synthesizer_name}'",
+        )
 
         if synthesizer_name == "collection_firstn":
             synthesizer = CollectionFirstNSynthesizer()
@@ -37,7 +42,9 @@ def _run_collection_synthesis_job(
                 synthesizer_config=synthesizer_config,
             )
         else:
-            raise RuntimeError(f"Unsupported collection synthesizer: {synthesizer_name}")
+            raise RuntimeError(
+                f"Unsupported collection synthesizer: {synthesizer_name}"
+            )
 
         run = get_run(run_id)
         if run is None:
@@ -84,14 +91,21 @@ async def get_collection_artifacts_route(request: Request, collection_id: str):
 
 
 @router.post("/{collection_id}/syntheses")
-async def run_collection_synthesis_route(request: Request, collection_id: str, payload: dict):
+async def run_collection_synthesis_route(
+    request: Request, collection_id: str, payload: dict
+):
     osii_root = request.app.state.osii_root.resolve()
 
     collection = get_collection(osii_root, collection_id)
     if collection is None:
         return {"error": "unknown collection_id"}
 
-    synthesizer_name = (payload.get("synthesizer_name") or "collection_firstn").strip()
+    synthesizer_name = str(payload.get("synthesizer_name") or "").strip()
+    if not synthesizer_name:
+        raise HTTPException(
+            status_code=422,
+            detail="Select a collection synthesizer explicitly.",
+        )
     expert_context = payload.get("expert_context")
     synthesizer_config = payload.get("synthesizer_config") or {}
 

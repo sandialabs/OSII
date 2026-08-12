@@ -1,5 +1,8 @@
 def test_collection_syntheses_endpoint(client, temp_osii_root, sample_osii_object):
-    from osii.domain.scopes.collections import create_collection, add_documents_to_collection
+    from osii.domain.scopes.collections import (
+        add_documents_to_collection,
+        create_collection,
+    )
     from osii.synthesis.collection.firstn import CollectionFirstNSynthesizer
 
     file_id = sample_osii_object["file_id"]
@@ -28,7 +31,10 @@ def test_collection_syntheses_endpoint(client, temp_osii_root, sample_osii_objec
 
 
 def test_collection_artifacts_endpoint(client, temp_osii_root, sample_osii_object):
-    from osii.domain.scopes.collections import create_collection, add_documents_to_collection
+    from osii.domain.scopes.collections import (
+        add_documents_to_collection,
+        create_collection,
+    )
 
     file_id = sample_osii_object["file_id"]
     collection = create_collection(
@@ -48,8 +54,13 @@ def test_collection_artifacts_endpoint(client, temp_osii_root, sample_osii_objec
     assert "actions" in data
 
 
-def test_run_collection_synthesis_endpoint(client, monkeypatch, temp_osii_root, sample_osii_object):
-    from osii.domain.scopes.collections import create_collection, add_documents_to_collection
+def test_run_collection_synthesis_endpoint(
+    client, monkeypatch, temp_osii_root, sample_osii_object
+):
+    from osii.domain.scopes.collections import (
+        add_documents_to_collection,
+        create_collection,
+    )
 
     file_id = sample_osii_object["file_id"]
     collection = create_collection(
@@ -95,3 +106,35 @@ def test_run_collection_synthesis_endpoint(client, monkeypatch, temp_osii_root, 
     assert data["collection_id"] == collection["id"]
     assert data["synthesizer_name"] == "collection_firstn"
     assert "run_id" in data
+
+
+def test_collection_synthesis_requires_explicit_method(
+    client,
+    temp_osii_root,
+    sample_osii_object,
+):
+    from osii.domain.scopes.collections import (
+        add_documents_to_collection,
+        create_collection,
+    )
+
+    collection = create_collection(
+        temp_osii_root,
+        name="explicit-synthesis-test",
+        description="test",
+        kind="manual",
+        color=None,
+    )
+    add_documents_to_collection(
+        temp_osii_root,
+        collection["id"],
+        [sample_osii_object["file_id"]],
+    )
+
+    response = client.post(
+        f"/api/collections/{collection['id']}/syntheses",
+        json={},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Select a collection synthesizer explicitly."
