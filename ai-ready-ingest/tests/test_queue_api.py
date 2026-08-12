@@ -169,3 +169,42 @@ def test_upload_then_enqueue_returns_durable_run(client, temp_upload_root: Path)
     assert status.status_code == 200
     assert status.json()["runs"][0]["id"] == payload["id"]
     assert status.json()["queue"][0]["status"] == "queued"
+
+
+def test_intake_preserves_expert_context_on_the_run(
+    client,
+    temp_data_root: Path,
+):
+    source_file = temp_data_root / "calibration-notes.txt"
+    source_file.write_text("ambient run 17", encoding="utf-8")
+
+    queued = client.post(
+        "/api/runs",
+        json={
+            "queue_paths": [str(source_file)],
+            "expert_context": "  Temperatures are ambient unless marked.  ",
+        },
+    )
+
+    assert queued.status_code == 200
+    run = client.get(f"/api/runs/{queued.json()['run_id']}").json()
+    assert run["expert_context"] == "Temperatures are ambient unless marked."
+
+
+def test_intake_rejects_invalid_expert_context(
+    client,
+    temp_data_root: Path,
+):
+    source_file = temp_data_root / "notes.txt"
+    source_file.write_text("test", encoding="utf-8")
+
+    response = client.post(
+        "/api/runs",
+        json={
+            "queue_paths": [str(source_file)],
+            "expert_context": {"unexpected": "object"},
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "expert_context must be a string or null"

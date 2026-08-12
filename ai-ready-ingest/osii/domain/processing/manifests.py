@@ -60,7 +60,7 @@ def save_manifest(
         "include_subfolders": include_subfolders,
         "include_patterns": include_patterns,
         "exclude_patterns": exclude_patterns,
-        "context": context,
+        "expert_context": context or None,
         "files": files_payload,
     }
 

@@ -486,7 +486,14 @@ async def start_run(request: Request, payload: dict):
 
     max_files = payload.get("max_files")
     max_total_size_mb = payload.get("max_total_size_mb")
-    context = payload.get("context", "")
+    raw_context = payload.get("expert_context")
+    if raw_context is None:
+        raw_context = payload.get("context", "")
+    if not isinstance(raw_context, str):
+        raise HTTPException(status_code=422, detail="expert_context must be a string or null")
+    context = raw_context.strip()
+    if len(context) > 20_000:
+        raise HTTPException(status_code=422, detail="expert_context must not exceed 20,000 characters")
     intake_name = payload.get("intake_name", "")
     workflow = str(payload.get("workflow") or "intake").strip().lower()
     if workflow not in {"intake", "library"}:
@@ -595,6 +602,7 @@ async def start_run(request: Request, payload: dict):
         osii_root=osii_store,
     )
     run["workflow"] = workflow
+    run["expert_context"] = context or None
     run["operations"] = {
         "extract": run_extraction,
         "extract_mode": extract_mode,

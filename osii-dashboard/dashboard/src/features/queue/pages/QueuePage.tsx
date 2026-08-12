@@ -122,6 +122,7 @@ export function QueuePage() {
   const [selectedSynthesizer, setSelectedSynthesizer] = useState("");
   const [selectedEnricher, setSelectedEnricher] = useState("");
   const [extractorOverrides, setExtractorOverrides] = useState<Record<string, string>>({});
+  const [expertContext, setExpertContext] = useState("");
   const [uploading, setUploading] = useState(false);
   const [starting, setStarting] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -314,6 +315,7 @@ export function QueuePage() {
         enricher_name: enrich
           ? (selectedEnricher || readiness.data?.defaults.enricher || "local.stats-keywords")
           : null,
+        expert_context: expertContext.trim() || null,
       });
       setNotice({
         severity: "success",
@@ -322,6 +324,7 @@ export function QueuePage() {
       setUploadedItems([]);
       setSelectedSharedItems([]);
       setIncludeSharedRoot(true);
+      setExpertContext("");
       await queryClient.invalidateQueries({ queryKey: ["processing-runs"] });
       setSection("activity");
     } catch (error) {
@@ -884,6 +887,28 @@ export function QueuePage() {
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
           <Stack spacing={0.25}>
+            <Typography fontWeight={700}>Expert context</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Add facts a subject-matter expert knows about the selected documents or folders. OSII saves this context with the intake and supplies it to processors that can use it.
+            </Typography>
+          </Stack>
+          <TextField
+            fullWidth
+            multiline
+            minRows={4}
+            label="Expert context (optional)"
+            placeholder="Example: These folders contain repeated calibration runs. Temperatures are ambient unless explicitly marked, and filenames beginning with REF are control measurements."
+            value={expertContext}
+            onChange={(event) => setExpertContext(event.target.value)}
+            inputProps={{ maxLength: 20_000 }}
+            helperText={`${expertContext.length.toLocaleString()} / 20,000 characters · Applies to every matched document in this run.`}
+          />
+        </Stack>
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Stack spacing={1.5}>
+          <Stack spacing={0.25}>
             <Typography fontWeight={700}>{section === "process" ? "Processing steps" : "Derived outputs"}</Typography>
             <Typography variant="body2" color="text.secondary">
               {section === "process"
@@ -1086,6 +1111,23 @@ export function QueuePage() {
             </Stack>
           ) : null}
 
+          {expertContext.trim() ? (
+            <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "action.hover" }}>
+              <Stack spacing={0.5}>
+                <Typography variant="caption" fontWeight={700} color="text.secondary">
+                  EXPERT CONTEXT INCLUDED
+                </Typography>
+                <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                  {expertContext.trim()}
+                </Typography>
+              </Stack>
+            </Paper>
+          ) : (
+            <Typography variant="caption" color="text.secondary">
+              No expert context supplied. You can still start this run.
+            </Typography>
+          )}
+
           {preview.data?.preview.processing_plan ? (
             <Stack spacing={0.75}>
               {preview.data.preview.processing_plan.steps.map((step) => (
@@ -1163,6 +1205,22 @@ export function QueuePage() {
                   <Typography variant="body2" color="text.secondary">
                     {run.completed ?? 0} / {run.total ?? 0} files · {run.created_at}
                   </Typography>
+                  {run.expert_context ? (
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{
+                        mt: 0.5,
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      Expert context: {run.expert_context}
+                    </Typography>
+                  ) : null}
                   <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
                     {run.operations?.extract ? <Chip size="small" label="Extraction" /> : null}
                     {run.operations?.synthesize ? <Chip size="small" label="Synthesis" /> : null}

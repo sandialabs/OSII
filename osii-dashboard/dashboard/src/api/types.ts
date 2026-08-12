@@ -587,6 +587,7 @@ export type ProcessingRun = {
   completed?: number;
   total?: number;
   workflow?: "intake" | "library";
+  expert_context?: string | null;
   operations?: {
     extract?: boolean;
     extract_mode?: string;

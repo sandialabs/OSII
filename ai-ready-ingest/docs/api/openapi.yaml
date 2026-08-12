@@ -1850,7 +1850,7 @@ paths:
                   show_hidden: false
                   include_patterns: "*.pdf\n*.docx"
                   exclude_patterns: ""
-                  context: ""
+                  expert_context: ""
                   intake_name: full-build
               extraction_plus_synthesis:
                 value:
@@ -1860,7 +1860,7 @@ paths:
                   show_hidden: false
                   include_patterns: "*.pdf\n*.docx"
                   exclude_patterns: ""
-                  context: Focus on thermal calibration details.
+                  expert_context: Focus on thermal calibration details.
                   intake_name: thermal-build
                   synthesizer_name: firstN
                   synthesizer_config:
@@ -4249,8 +4249,15 @@ components:
           type: string
         exclude_patterns:
           type: string
+        expert_context:
+          type:
+            - string
+            - 'null'
+          description: Optional subject-matter guidance saved with the intake and passed to capable processors.
         context:
           type: string
+          deprecated: true
+          description: Compatibility alias for expert_context.
         intake_name:
           type: string
         synthesizer_name:

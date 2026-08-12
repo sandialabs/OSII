@@ -92,6 +92,13 @@ extractor becomes available; OSII preserves both extraction versions and lets
 you decide whether the new result becomes primary. See
 [Extraction versions and downstream lineage](../reference/extraction-versions.md).
 
+Use the optional **Expert context** field for facts that are not reliably
+inferable from the files themselves, such as experiment naming conventions,
+control groups, units, or domain terminology. The context applies to every
+document matched from the selected files or folders, appears in the final
+review and Activity history, is saved in the intake manifest, and is passed to
+extractors, synthesizers, and enrichers that support it.
+
 ## Generate an LLM wiki
 
 With a model-backed synthesizer selected in Tools, OSII can compose that

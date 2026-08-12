@@ -1,3 +1,4 @@
+import json
 import threading
 from pathlib import Path
 
@@ -29,10 +30,13 @@ def test_completed_document_is_browsable_while_next_document_runs(
     second_started = threading.Event()
     release_second = threading.Event()
     dispatch_count = 0
+    expert_context = "REF files are controls; temperatures are ambient unless marked."
+    observed_contexts: list[str | None] = []
 
     def staged_dispatch(**kwargs):
         nonlocal dispatch_count
         dispatch_count += 1
+        observed_contexts.append(kwargs.get("expert_context"))
         if dispatch_count == 2:
             second_started.set()
             if not release_second.wait(timeout=5):
@@ -58,7 +62,7 @@ def test_completed_document_is_browsable_while_next_document_runs(
             "include_subfolders": True,
             "include_patterns": [],
             "exclude_patterns": [],
-            "context": "",
+            "context": expert_context,
             "intake_name": "incremental-test",
             "data_volume_root": temp_data_root.parent,
             "osii_store": temp_osii_root,
@@ -91,3 +95,8 @@ def test_completed_document_is_browsable_while_next_document_runs(
 
     assert not worker.is_alive()
     assert get_run(run["id"])["status"] == "done"
+    assert observed_contexts == [expert_context, expert_context]
+
+    manifest_path = next((temp_osii_root / "manifests").glob("intake-manifest-*.json"))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["expert_context"] == expert_context
