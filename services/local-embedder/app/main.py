@@ -39,7 +39,11 @@ class LocalHashingEmbedder(Embedder):
         name="local.hashing",
         version="1.0.0",
         display_name="Local Lexical Hashing Embedder",
-        description="Zero-download deterministic token and bigram hashing vectors.",
+        description=(
+            "A zero-download lexical baseline that converts tokens and adjacent word pairs "
+            "into deterministic, normalized 384-dimensional vectors. It helps match shared "
+            "wording, but does not understand semantic synonyms like a model embedding does."
+        ),
         kind=ProcessorKind.EMBEDDER,
         capabilities=Capability(output_kinds=["embedding_vector"]),
         config_schema={"type": "object", "properties": {}, "additionalProperties": False},

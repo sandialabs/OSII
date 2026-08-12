@@ -17,7 +17,11 @@ class LocalExtractivePreviewSynthesizer(Synthesizer):
         name="local.extractive-preview",
         version="1.0.0",
         display_name="Local Extractive Preview",
-        description="Creates deterministic cited Markdown excerpts without a language model.",
+        description=(
+            "Model-free synthesis over text that has already been extracted. It selects "
+            "short source excerpts and formats them as cited Markdown; it does not run OCR, "
+            "interpret the document, or generate new claims."
+        ),
         kind=ProcessorKind.SYNTHESIZER,
         capabilities=Capability(
             scope_types=["object", "folder", "collection", "root"],
@@ -53,4 +57,3 @@ class LocalExtractivePreviewSynthesizer(Synthesizer):
 
 
 app = create_processor_app(LocalExtractivePreviewSynthesizer())
-

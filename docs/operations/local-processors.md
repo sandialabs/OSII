@@ -7,8 +7,8 @@ internet connection, corporate gateway, or downloaded model.
 | Capability | Stable name | Port | Baseline behavior |
 |---|---|---:|---|
 | Extractor | `local.native-text` | 8092 | Text PDFs, DOCX, PPTX, XLSX, RTF, and common text/data files |
-| Synthesizer | `local.extractive-preview` | 8093 | Deterministic cited Markdown excerpts; not AI-generated synthesis |
-| Embedder | `local.hashing` | 8085 | Deterministic L2-normalized 384D token/bigram hashing vectors |
+| Synthesizer | `local.extractive-preview` | 8093 | Model-free cited Markdown assembled from extracted excerpts; not OCR and does not generate new claims |
+| Embedder | `local.hashing` | 8085 | Deterministic normalized 384D token/bigram hashing for shared-wording similarity; lexical, not semantic |
 | Enricher | `local.stats-keywords` | 8094 | Standard table artifact with counts and keywords |
 
 Each exposes `/health`, `/v1/descriptor`, its `/v1/...` operation, `/docs`,

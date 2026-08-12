@@ -398,8 +398,9 @@ export function ProcessorsPage() {
                           <Chip size="small" color={item.available ? "success" : "default"} label={item.available ? "Ready" : "Unavailable"} />
                         </Stack>
                         <Typography variant="caption" color="text.secondary">{item.id}</Typography>
+                        {item.description ? <Typography variant="body2">{item.description}</Typography> : null}
                         <Typography variant="caption" color="text.secondary">{localRuntimeLabel(item)}</Typography>
-                        <Typography variant="caption">{item.available ? item.detail : "Not currently running."}</Typography>
+                        {!item.available ? <Typography variant="caption">Not currently running.</Typography> : null}
                         {Object.keys(capabilitySchema(item)?.properties ?? {}).length ? (
                           <Button size="small" variant="text" onClick={() => editingCapability === item.id ? setEditingCapability(null) : editCapability(item)} sx={{ alignSelf: "flex-start", px: 0 }}>
                             {editingCapability === item.id ? "Hide settings" : "View and edit settings"}

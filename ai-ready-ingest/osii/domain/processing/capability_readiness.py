@@ -64,6 +64,7 @@ def _embedding_probe(osii_root: Path | None = None) -> dict[str, Any]:
             return {
                 "id": selected,
                 "display_name": descriptor.get("display_name", selected),
+                "description": descriptor.get("description", "Configured embedding processor."),
                 "kind": "embedder",
                 "available": available,
                 "detail": detail if available else descriptor.get("error", detail),
@@ -181,7 +182,10 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
             "id": "osii_tesseract",
             "aliases": ["osii_tesseract"],
             "display_name": "OSII Tesseract OCR",
-            "description": "Page-grounded OCR for scanned PDFs and supported documents.",
+            "description": (
+                "Optional OCR extraction for scanned PDFs. Tesseract reads page images and "
+                "returns grounded text with page-region bounding boxes; start it separately."
+            ),
             "available": tesseract_available,
             "detail": tesseract_detail,
             "bundled": True,
@@ -351,6 +355,7 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
                 "id": "stats_keywords",
                 "display_name": "Statistics and keywords",
                 "kind": "enricher",
+                "description": "Creates deterministic word counts and frequent-keyword artifacts from extracted text.",
                 "available": True,
                 "detail": "Bundled locally; run after intake from a file or collection.",
                 "bundled": True,
@@ -359,6 +364,7 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
                 "id": "noun_adjective_ngrams",
                 "display_name": "Noun/adjective phrase keywords",
                 "kind": "enricher",
+                "description": "Ranks recurring 2-, 3-, and 4-word noun/adjective phrases to provide a compact content snapshot.",
                 "available": True,
                 "detail": "Bundled local 2-, 3-, and 4-gram keyword snapshot; no model required.",
                 "bundled": True,
@@ -367,6 +373,7 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
                 "id": "entity_candidates",
                 "display_name": "Named entity candidates",
                 "kind": "enricher",
+                "description": "Finds grounded capitalized-name and acronym candidates without requiring a model download.",
                 "available": True,
                 "detail": "Bundled local capitalized-name and acronym candidates with grounded mentions.",
                 "bundled": True,
@@ -375,6 +382,7 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
                 "id": "llm_wiki",
                 "display_name": "LLM Wiki",
                 "kind": "enricher",
+                "description": "Uses the selected model-backed synthesizer to create a cited Markdown knowledge page for a document or collection.",
                 "available": llm_wiki_available,
                 "detail": (
                     f"Uses the selected model-backed synthesizer: {selected_synthesizer}."
