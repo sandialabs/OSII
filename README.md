@@ -12,7 +12,8 @@ run folders into a standard table artifact that is immediately visible in the
 dashboard and available to agents.
 
 [Read the documentation](https://heidikmkv.github.io/osii/) ·
-[Browse the documentation on GitHub](docs/index.md)
+[Browse the documentation on GitHub](docs/index.md) ·
+[Follow the Python walkthrough](osii-demo-notebooks/README.md)
 
 ## Getting started
 
@@ -139,6 +140,15 @@ also include model-free examples for a top-20 noun/adjective n-gram keyword
 table and a grounded named-entity candidate list. See
 [Example keyword and entity enrichments](docs/tutorials/example-enrichments.md).
 
+Search and Chat retain up to 20 recent searches or prompts in the current
+browser so those pages remain useful between visits. Only the prompt, scope,
+time, and search mode are saved—never results, answers, or citations—and each
+entry or the complete browser-local history can be deleted. Saved root and
+collection keyword snapshots also provide one-click searches and grounded
+question starters. The Home page's collapsed **Library Insights** section
+exposes root-level wikis, tables, entity lists, and standard knowledge graphs
+without adding another service or storage authority.
+
 Use **Labels & Tags** on a document to store portable sensitivity awareness,
 handling notes, and plain-text tags in its canonical object sidecar. These
 markings are metadata, not access controls. A collection can be exported as a
@@ -226,11 +236,11 @@ make COMPOSE='docker compose' dev-containers
 .\scripts\osii.ps1 dev-containers -Runtime Docker
 ```
 
-See the [documentation index](docs/index.md) for guided paths through usage,
-architecture, extension development, operations, and API reference.
+See the [documentation index](docs/index.md) for three short starting paths.
+The remaining pages are task-oriented reference material; nobody needs to read
+the documentation tree from beginning to end. Common next steps are:
 
-Important documentation:
-
+- [Python module walkthrough](osii-demo-notebooks/README.md)
 - [Extend OSII](docs/extending/index.md)
 - [Processor API v1](docs/reference/processor-api/index.md)
 - [Standard artifact formats](docs/reference/processor-api/standard-artifacts.md)
@@ -285,8 +295,10 @@ The monorepo currently contains components such as:
 
 ### 1. Build a local OSII database
 Use the backend CLI to process a source collection into `.osii`.
-For a step-by-step, code-first walkthrough, use the
-[Jupytext-ready Python demonstrations](osii-demo-notebooks/README.md).
+For a comprehensive but small step-by-step walkthrough, use the
+[Jupytext-ready Python demonstrations](osii-demo-notebooks/README.md). Plain
+Python files are canonical; `manage_notebooks.py` converts the complete set to
+or from notebooks without making notebook JSON the normal review format.
 
 ### 2. Start the backend API
 Run the backend FastAPI service to expose the OSII store over REST.

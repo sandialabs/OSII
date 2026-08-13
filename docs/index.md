@@ -4,12 +4,15 @@ OSII turns local files into grounded, inspectable information that people can
 browse, search, enrich, and use through AI agents. Start with the path that
 matches what you want to do.
 
-## Install and use OSII
+## Start here
 
 - [Get started from the repository README](https://github.com/heidikmkv/osii#getting-started--no-development-experience-required)
-- [Process one file end to end](tutorials/single-file.md)
-- [Use the command line](reference/cli.md)
-- [Follow the Python demonstrations](tutorials/python-demonstrations.md)
+- [Follow the friendly Python walkthrough](tutorials/python-demonstrations.md)
+- [Process one file through the CLI](tutorials/single-file.md)
+
+These three pages are the normal entry points. The remaining documentation is
+reference material: read it when you need to understand, extend, or operate a
+specific boundary rather than from top to bottom.
 
 ## Understand OSII
 
@@ -32,11 +35,9 @@ OSII extension services are ordinary Python HTTP containers. A subject-matter
 expert owns the domain logic; the OSII SDK supplies validated request and
 response models plus the FastAPI endpoints.
 
-> [!NOTE]
-> Remote enrichers execute end to end and their standard artifacts appear in
-> the dashboard and agent APIs. External extractors, synthesizers, and
-> embedders have stable v1 wire contracts and can be registered and tested,
-> but their core-side commit adapters are still being completed.
+Core commit adapters validate remote extraction, synthesis, embedding, and
+enrichment responses. Processor services return typed results and never write
+the `.osii` store directly.
 
 ## Operate offline
 
@@ -51,10 +52,12 @@ response models plus the FastAPI endpoints.
 - [REST API overview](reference/api/index.md)
 - [API resource model](reference/api/resource-model.md)
 - [Search semantics](reference/api/search-semantics.md)
+- [Keyword suggestions and example enrichments](tutorials/example-enrichments.md)
 - [API compatibility](reference/api/compatibility.md)
 - [Processor API v1](reference/processor-api/index.md)
 - [Model-provider capabilities](reference/model-providers.md)
 - [Collection file format](reference/collection-file-format.md)
+- [CLI cheat sheet](reference/cli.md)
 
 ## Contribute
 

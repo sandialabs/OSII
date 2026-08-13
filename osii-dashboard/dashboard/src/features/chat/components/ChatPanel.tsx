@@ -36,6 +36,9 @@ import type {
   ScopeDescribeRequest,
 } from "../../../api/types";
 import { buildCollectionRoute, buildFileRoute } from "../../../utils/routes";
+import { RecentActivity } from "../../../components/discovery/RecentActivity";
+import { ScopeSuggestions } from "../../../components/discovery/ScopeSuggestions";
+import { useActivityHistory } from "../../../hooks/useActivityHistory";
 
 type ChatPanelProps = {
   scope: ScopeDescribeRequest;
@@ -129,6 +132,7 @@ function CitationThumbnail({
 export function ChatPanel({ scope }: ChatPanelProps) {
   const navigate = useNavigate();
   const chatMutation = useChat();
+  const recentPrompts = useActivityHistory("chat_prompt");
 
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<DisplayChatMessage[]>([]);
@@ -141,6 +145,7 @@ export function ChatPanel({ scope }: ChatPanelProps) {
   const handleSend = async () => {
     const query = input.trim();
     if (!query) return;
+    recentPrompts.add({ text: query, scope });
 
     const requestHistory: ChatMessage[] = history.map((message) => ({
       role: message.role,
@@ -292,9 +297,19 @@ export function ChatPanel({ scope }: ChatPanelProps) {
         </CardContent>
       </Card>
 
+      <ScopeSuggestions scope={scope} mode="questions" onSelect={setInput} />
+
+      <RecentActivity
+        kind="chat_prompt"
+        entries={recentPrompts.entries}
+        onSelect={(entry) => setInput(entry.text)}
+        onDelete={recentPrompts.remove}
+        onClear={recentPrompts.clear}
+      />
+
       {history.length === 0 ? (
         <Typography variant="body2" color="text.secondary">
-          No answers yet. Ask a question to begin.
+          No answers yet. Choose a suggested question, reuse a recent prompt, or write your own.
         </Typography>
       ) : (
         <Stack spacing={1.5}>

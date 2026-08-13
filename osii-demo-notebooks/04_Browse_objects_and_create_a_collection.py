@@ -1,30 +1,89 @@
 # %% [markdown]
-# # 04 — Browse objects and create a collection
+# # 04 — Browse scopes, create a collection, and add governance metadata
 #
-# Collections are lightweight user groupings over canonical OSII object IDs.
-# They do not duplicate the original documents or extracted data.
+# A folder is structural; a collection is a user-defined logical grouping.
+# Both resolve to stable object IDs. Governance labels, handling notes, and
+# plain-text tags travel with object sidecars, but they are metadata—not access
+# control.
 
 # %%
-from osii.domain.scopes.collections import add_documents_to_collection, create_collection, list_collections
-from osii.domain.storage.ids import compute_file_id
+from osii.domain.governance import get_governance, write_governance
+from osii.domain.read.catalog import load_files_catalog, load_folders_catalog
+from osii.domain.scopes.collections import (
+    add_documents_to_collection,
+    create_collection,
+    list_collection_documents,
+    list_collections,
+)
+from osii.domain.scopes.descriptors import describe_scope
+from osii.domain.scopes.membership import list_scope_file_ids
 
-from _demo_support import demo_paths, require_file
+from _demo_support import demo_paths, heading, require_path
+
+
+paths = demo_paths()
+require_path(paths.osii_root / "objects", "Run scripts 00–02 first.")
+documents = load_files_catalog(paths.osii_root)
+folders = load_folders_catalog(paths.osii_root)
+
+heading("Root and folder scopes")
+root_scope = {"scope_type": "root"}
+print(describe_scope(paths.osii_root, root_scope))
+print("Root members:", len(list_scope_file_ids(paths.osii_root, root_scope)))
+for folder in folders:
+    scope = {"scope_type": "folder", "folder_id": folder["folder_id"]}
+    print("-", describe_scope(paths.osii_root, scope), "members=", len(list_scope_file_ids(paths.osii_root, scope)))
+
+# %% [markdown]
+# ## Create an idempotent collection
+#
+# Re-running this cell reuses the named collection and does not duplicate
+# membership.
 
 # %%
-_, SOURCE_ROOT, OSII_ROOT = demo_paths()
-source_file = SOURCE_ROOT / "experiment_notes.txt"
-require_file(source_file, "Run 00_Setup_a_demo_workspace.py first.")
-file_id = compute_file_id(source_file)
-
-collection = next((item for item in list_collections(OSII_ROOT) if item["name"] == "Calibration experiments"), None)
+collection_name = "Calibration evidence"
+collection = next(
+    (item for item in list_collections(paths.osii_root) if item["name"] == collection_name),
+    None,
+)
 if collection is None:
     collection = create_collection(
-        OSII_ROOT,
-        name="Calibration experiments",
-        description="Files about calibration drift and repeat measurements.",
+        paths.osii_root,
+        name=collection_name,
+        description="Experiments and references related to thermal calibration.",
+        color="#2563eb",
     )
-membership = add_documents_to_collection(OSII_ROOT, collection["id"], [file_id])
 
-print("Collection:", collection)
+calibration_ids = [
+    item["file_id"]
+    for item in documents
+    if "calibration" in item["source_relpath"] or "handbook" in item["source_relpath"]
+]
+membership = add_documents_to_collection(paths.osii_root, collection["id"], calibration_ids)
+
+heading("Collection scope")
+print(collection)
 print("Membership update:", membership)
-print("All collections:", list_collections(OSII_ROOT))
+print("Current members:", list_collection_documents(paths.osii_root, collection["id"]))
+print(
+    "Canonical definition:",
+    paths.osii_root / "collections" / collection["id"] / "collection.toml",
+)
+
+# %% [markdown]
+# ## Add portable labels and tags
+
+# %%
+sample_file_id = calibration_ids[0]
+governance = write_governance(
+    paths.osii_root,
+    sample_file_id,
+    sensitivity_labels=["DEMO DATA"],
+    tags=["thermal calibration", "reviewed example"],
+    handling_notes="Generated demonstration content; no access restriction.",
+)
+
+heading("Object governance sidecar")
+print(governance)
+print("Read back:", get_governance(paths.osii_root, sample_file_id))
+print("Path:", paths.osii_root / "objects" / sample_file_id / "governance.toml")

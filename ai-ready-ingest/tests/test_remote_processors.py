@@ -1,4 +1,13 @@
 from pathlib import Path
+import tomllib
+
+from osii_processor_sdk import (
+    Capability,
+    ProcessorDescriptor,
+    ProcessorKind,
+    ProvenanceRef,
+    SynthesisResponse,
+)
 
 from osii.processors import remote
 
@@ -40,3 +49,48 @@ def test_discovery_ignores_unavailable_processors(monkeypatch):
     monkeypatch.setattr(remote, "_request_json", fail)
     assert remote.discover_remote_processors() == []
     assert remote.discover_remote_processors(include_errors=True)[0]["error"]
+
+
+def test_remote_synthesis_omits_absent_citation_fields_from_toml(
+    temp_osii_root: Path,
+    sample_osii_object: dict,
+):
+    descriptor = ProcessorDescriptor(
+        name="local.extractive-preview",
+        version="1.0.0",
+        display_name="Local Extractive Preview",
+        description="Test synthesizer",
+        kind=ProcessorKind.SYNTHESIZER,
+        capabilities=Capability(scope_types=["object"]),
+    ).model_dump(mode="json")
+    synthesizer = remote.RemoteSynthesizer(
+        {**descriptor, "base_url": "http://synthesizer.test"}
+    )
+
+    class FakeClient:
+        def synthesize(self, request):
+            return SynthesisResponse(
+                request_id=request.request_id,
+                processor=ProcessorDescriptor.model_validate(descriptor),
+                markdown="Grounded preview.",
+                citations=[ProvenanceRef(file_id=sample_osii_object["file_id"])],
+            )
+
+    synthesizer._client = FakeClient()
+    result = synthesizer.synthesize(
+        osii_store=temp_osii_root,
+        file_id=sample_osii_object["file_id"],
+    )
+
+    assert result["error"] is None
+    provenance = tomllib.loads(
+        (
+            temp_osii_root
+            / "objects"
+            / sample_osii_object["file_id"]
+            / "provenance.toml"
+        ).read_text(encoding="utf-8")
+    )
+    assert provenance["synthesis"]["config"]["citations"] == [
+        {"file_id": sample_osii_object["file_id"], "source_origin": {}}
+    ]

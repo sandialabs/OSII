@@ -1,6 +1,5 @@
-# Self-contained environment for these Python/Jupytext demonstrations.
-# Run from this directory: python -m pip install -r requirements.txt
+# Self-contained environment for the Python and Jupytext demonstrations.
+# Use Python 3.11–3.13 and run: python -m pip install -r requirements.txt
+-e ../packages/osii-processor-sdk
 -e ../ai-ready-ingest
-jupyterlab>=4.2
-jupytext>=1.16
-ipykernel>=6.29
+jupytext>=1.17,<2

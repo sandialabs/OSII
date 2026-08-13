@@ -1,6 +1,7 @@
 // src/app/providers/BrowsingScopeProvider.tsx
 import {
   createContext,
+  useCallback,
   useContext,
   useMemo,
   useState,
@@ -26,29 +27,35 @@ export function BrowsingScopeProvider({ children }: { children: ReactNode }) {
     request: { scope_type: "root" },
   });
 
+  const setRootScope = useCallback(() => {
+    setScope({ kind: "root", request: { scope_type: "root" } });
+  }, []);
+
+  const setFolderScope = useCallback((folder: FolderScopeDescriptor) => {
+    setScope({
+      kind: "folder",
+      request: { scope_type: "folder", folder_id: folder.folder_id },
+      folder,
+    });
+  }, []);
+
+  const setCollectionScope = useCallback((collectionId: string, label?: string) => {
+    setScope({
+      kind: "collection",
+      request: { scope_type: "collection", collection_id: collectionId },
+      collectionId,
+      label,
+    });
+  }, []);
+
   const value = useMemo<BrowsingScopeContextValue>(
     () => ({
       scope,
-      setRootScope: () =>
-        setScope({
-          kind: "root",
-          request: { scope_type: "root" },
-        }),
-      setFolderScope: (folder: FolderScopeDescriptor) =>
-        setScope({
-          kind: "folder",
-          request: { scope_type: "folder", folder_id: folder.folder_id },
-          folder,
-        }),
-      setCollectionScope: (collectionId: string, label?: string) =>
-        setScope({
-          kind: "collection",
-          request: { scope_type: "collection", collection_id: collectionId },
-          collectionId,
-          label,
-        }),
+      setRootScope,
+      setFolderScope,
+      setCollectionScope,
     }),
-    [scope],
+    [scope, setRootScope, setFolderScope, setCollectionScope],
   );
 
   return (

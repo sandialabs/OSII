@@ -287,7 +287,16 @@ class RemoteSynthesizer:
             text=response.markdown,
             synthesizer_name=self.name,
             synthesizer_version=self.version,
-            config={**(synthesizer_config or {}), "processor_url": self.base_url, "citations": [item.model_dump(mode="json") for item in response.citations]},
+            config={
+                **(synthesizer_config or {}),
+                "processor_url": self.base_url,
+                # Processor API citations have optional grounding fields. TOML
+                # cannot encode None, so provenance records only supplied data.
+                "citations": [
+                    item.model_dump(mode="json", exclude_none=True)
+                    for item in response.citations
+                ],
+            },
             expert_context_used=bool(expert_context),
         )
         return {

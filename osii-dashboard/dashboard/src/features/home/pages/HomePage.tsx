@@ -6,6 +6,7 @@ import { useScopeSummaries } from "../../../hooks/useScopeSummaries";
 import { toFileCardModel } from "../../../domain/files";
 import { FileGrid } from "../../files/components/FileGrid";
 import { buildFileRoute } from "../../../utils/routes";
+import { LibraryInsights } from "../components/LibraryInsights";
 
 export function HomePage() {
   const navigate = useNavigate();
@@ -17,6 +18,8 @@ export function HomePage() {
 
   return (
     <Stack spacing={2}>
+      <LibraryInsights />
+
       <Stack spacing={0.5}>
         <Typography variant="h5" fontWeight={700}>
           Files

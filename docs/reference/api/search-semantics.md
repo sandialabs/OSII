@@ -157,3 +157,23 @@ When rendering search results:
 3. use object and text-span routes to retrieve canonical context as needed
 4. do not depend on `faiss_id` stability
 5. do not treat `chunk_id` as a stable canonical identifier
+
+## Dashboard history and suggestions
+
+The dashboard's recent searches are convenience state, not an API or canonical
+OSII artifact. It stores at most 20 entries under the versioned browser key
+`osii.activity-history.v1`. A search entry contains only the query, timestamp,
+scope identifiers, and requested mode. Repeating an identical query in the
+same scope moves it to the top with the newest requested mode. Users can remove
+one entry or clear the list.
+
+Chat prompts use the same browser-local store and limit but never store model
+answers, citations, providers, or retrieved text. Selecting an old prompt only
+prefills the input; it never sends a request automatically. If browser storage
+is disabled or corrupt, Search and Chat behave normally with empty history.
+
+Scope suggestions come from the canonical
+`keywords--noun_adjective_ngrams.json` enrichment. The dashboard reads up to
+six ranked phrases and launches hybrid search in the same root or collection
+scope. BM25 remains the backend fallback when semantic retrieval is
+unavailable. No history or suggestion state is exported with `.osii`.

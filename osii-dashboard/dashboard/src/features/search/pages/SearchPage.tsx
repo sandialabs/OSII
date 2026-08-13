@@ -22,6 +22,10 @@ import { useSearch } from "../../../hooks/useSearch";
 import { buildFileRoute } from "../../../utils/routes";
 import { toSearchResultModel, type SearchResultModel } from "../../../domain/search";
 import { SearchResultCard } from "../components/SearchResultCard";
+import { RecentActivity } from "../../../components/discovery/RecentActivity";
+import { ScopeSuggestions } from "../../../components/discovery/ScopeSuggestions";
+import { useActivityHistory } from "../../../hooks/useActivityHistory";
+import type { ActivityHistoryEntry } from "../../../utils/activityHistory";
 
 function coerceMode(value: string | null): SearchMode {
   if (value === "semantic" || value === "lexical" || value === "hybrid") {
@@ -34,6 +38,7 @@ export function SearchPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { data: collectionsData } = useCollections();
+  const recentSearches = useActivityHistory("search");
 
   const initialQuery = searchParams.get("q") ?? "";
   const initialMode = coerceMode(searchParams.get("mode"));
@@ -72,21 +77,36 @@ export function SearchPage() {
     [data?.results],
   );
 
-  const handleSearch = () => {
+  const runSearch = (
+    text: string,
+    nextMode: SearchMode,
+    nextScope: ScopeDescribeRequest,
+  ) => {
+    const cleanText = text.trim();
+    if (!cleanText) return;
     const next = new URLSearchParams();
-
-    if (queryInput.trim()) {
-      next.set("q", queryInput.trim());
+    next.set("q", cleanText);
+    next.set("mode", nextMode);
+    next.set("scope_type", nextScope.scope_type);
+    setQueryInput(cleanText);
+    setMode(nextMode);
+    if (nextScope.scope_type === "collection") {
+      next.set("collection_id", nextScope.collection_id);
+      setScopeType("collection");
+      setCollectionId(nextScope.collection_id);
+    } else {
+      setScopeType("root");
+      setCollectionId("");
     }
-
-    next.set("mode", mode);
-    next.set("scope_type", scopeType);
-
-    if (scopeType === "collection" && collectionId.trim()) {
-      next.set("collection_id", collectionId.trim());
-    }
-
+    recentSearches.add({ text: cleanText, scope: nextScope, mode: nextMode });
     navigate(`/search?${next.toString()}`);
+  };
+
+  const handleSearch = () => runSearch(queryInput, mode, effectiveScope);
+
+  const handleRecentSearch = (entry: ActivityHistoryEntry) => {
+    const supportedScope = entry.scope.scope_type === "collection" ? entry.scope : { scope_type: "root" as const };
+    runSearch(entry.text, entry.mode ?? "semantic", supportedScope);
   };
 
   const handleOpen = (result: SearchResultModel) => {
@@ -229,6 +249,19 @@ export function SearchPage() {
           </Stack>
         </CardContent>
       </Card>
+
+      <ScopeSuggestions
+        scope={effectiveScope}
+        onSelect={(keyword) => runSearch(keyword, "hybrid", effectiveScope)}
+      />
+
+      <RecentActivity
+        kind="search"
+        entries={recentSearches.entries}
+        onSelect={handleRecentSearch}
+        onDelete={recentSearches.remove}
+        onClear={recentSearches.clear}
+      />
 
       <Stack spacing={0.5}>
         <Typography variant="subtitle1" fontWeight={600}>

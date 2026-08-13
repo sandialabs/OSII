@@ -29,6 +29,7 @@ import { CollectionFileGrid } from "../components/CollectionFileGrid";
 import { ScopeEnrichmentsPanel } from "../../files/components/ScopeEnrichmentsPanel";
 import { ScopeWikiPanel } from "../../files/components/ScopeWikiPanel";
 import { AddFilesToCollectionDialog } from "../components/AddFilesToCollectionDialog";
+import { ScopeSuggestions } from "../../../components/discovery/ScopeSuggestions";
 
 export function CollectionPage() {
   const { collectionId } = useParams<{ collectionId: string }>();
@@ -112,6 +113,16 @@ export function CollectionPage() {
     );
   };
 
+  const handleSuggestedSearch = (keyword: string) => {
+    const params = new URLSearchParams({
+      q: keyword,
+      mode: "hybrid",
+      scope_type: "collection",
+      collection_id: collectionId,
+    });
+    navigate(`/search?${params.toString()}`);
+  };
+
   return (
     <>
       <Stack spacing={3}>
@@ -173,6 +184,12 @@ export function CollectionPage() {
             </Button>
           </Stack>
         </Stack>
+
+        <ScopeSuggestions
+          scope={{ scope_type: "collection", collection_id: collectionId }}
+          compact
+          onSelect={handleSuggestedSearch}
+        />
 
         <ScopeWikiPanel
           scope={{ scope_type: "collection", collection_id: collectionId }}

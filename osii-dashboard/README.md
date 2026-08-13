@@ -12,12 +12,15 @@ The dashboard is intentionally modular. It is a standalone frontend that talks t
 
 - Browse documents across your indexed corpus
 - Search using semantic, lexical, or hybrid retrieval
+- Reuse or delete up to 20 recent browser-local searches and chat prompts; answers and results are never stored
+- Explore root or collection scopes through saved noun/adjective phrase suggestions
 - Open and inspect documents including source PDFs
 - Navigate by folder using a lazy-loaded tree
 - Organize documents into collections
 - Add or remove collection members without touching their originals, and export/import manifest-validated collection OSII packages
 - Apply structured sensitivity-awareness labels, handling notes, and reusable plain-text tags
 - Preview and surgically remove one file's OSII data, with a separate option to delete the writable original too
+- Expand Library Insights on Home to view root-level standard enrichments without loading them into the normal file grid
 - Prepare for future document chat workflows
 
 ---

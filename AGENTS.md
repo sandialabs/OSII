@@ -59,5 +59,7 @@ required for the basic browse, search, processing, and grounded-chat workflow.
 - Treat `.ipynb` files as opaque artifacts. Do not read, edit, format, or
   rewrite them unless the human explicitly asks to work on a named notebook.
 - Use the paired `.py` source files for review and normal code changes. When a
-  notebook needs a Python counterpart, run `scripts/notebook_to_py.py` rather
-  than opening its JSON.
+  named legacy notebook needs a Python counterpart, run
+  `scripts/notebook_to_py.py` rather than opening its JSON. For the canonical
+  demonstration set, use `osii-demo-notebooks/manage_notebooks.py` to convert
+  all examples safely in either direction.
