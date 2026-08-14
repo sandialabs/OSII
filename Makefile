@@ -2,10 +2,13 @@
 # Docker Desktop, for example: make COMPOSE='docker compose' dev-containers
 COMPOSE ?= podman-compose
 UV ?= uv
+OSII_IMAGE_PREFIX ?= localhost/osii
+OSII_IMAGE_TAG ?= latest
 export UV_PROJECT_ENVIRONMENT := $(CURDIR)/osii-env
+export OSII_IMAGE_PREFIX OSII_IMAGE_TAG
 unexport VIRTUAL_ENV
 
-.PHONY: dev dev-host dev-core dev-ollama dev-corporate dev-extractor dev-synthesizer dev-embedder dev-enricher dev-model-bridge dev-ocr-host dev-containers dev-services dev-examples containers-dev run dev-all down logs test build docs docs-serve doctor catalog-rebuild catalog-verify
+.PHONY: dev dev-host dev-core dev-ollama dev-corporate dev-extractor dev-synthesizer dev-embedder dev-enricher dev-model-bridge dev-ocr-host dev-containers dev-services dev-examples containers-dev run dev-all down logs test build build-release push-release docs docs-serve doctor catalog-rebuild catalog-verify
 
 # Default development path: API, worker, chat, MCP, dashboard, and extraction
 # all run from source on the host. No container runtime is required.
@@ -51,18 +54,18 @@ dev-services:
 
 # Start the normal integrated stack from existing images, without rebuilding.
 run:
-	$(COMPOSE) --profile chat --profile agents --profile ocr up local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker chat mcp dashboard tika tesseract
+	$(COMPOSE) up --no-build --pull missing local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker chat dashboard
 
 dev-examples: dev-services
 	$(COMPOSE) --profile examples up -d --build table-pdf-enricher
 	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py --examples
 
 # Rebuild and run the deployment-style container stack.
-containers-dev:
-	$(COMPOSE) --profile chat --profile agents --profile ocr up --build local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker chat mcp dashboard tika tesseract
+containers-dev: build
+	$(COMPOSE) --profile chat --profile agents --profile ocr up local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker chat mcp dashboard tika tesseract
 
-dev-all:
-	$(COMPOSE) --profile examples --profile chat --profile agents --profile ocr up --build
+dev-all: build
+	$(COMPOSE) --profile examples --profile chat --profile agents --profile ocr up
 
 down:
 	$(COMPOSE) --profile examples --profile chat --profile agents --profile ocr down
@@ -81,10 +84,20 @@ test:
 	cd services/local-embedder && $(UV) run --python 3.11 --package osii-local-embedder --extra dev python -m pytest tests
 	cd services/local-enricher && $(UV) run --python 3.11 --package osii-local-enricher --extra dev python -m pytest tests
 	cd services/model-provider-bridge && $(UV) run --python 3.11 --package osii-model-provider-bridge --extra dev python -m pytest tests
+	$(UV) run --no-project --python 3.11 --with pytest --with 'uvicorn[standard]' python -m pytest services/baseline-processors/tests
 	cd osii-dashboard/dashboard && npm test --if-present && npm run build
 
-build:
-	$(COMPOSE) --profile examples --profile chat --profile agents --profile ocr build
+# Build each distinct image once. API/worker share core; all five baseline
+# processor services share one selectable-command image.
+build: build-release
+	$(COMPOSE) --profile examples --profile agents --profile ocr build mcp table-pdf-enricher tesseract
+
+build-release:
+	$(COMPOSE) build api dashboard chat local-extractor
+
+push-release:
+	@if echo "$(OSII_IMAGE_PREFIX)" | grep -q '^localhost/'; then echo "Set OSII_IMAGE_PREFIX to a registry path such as quay.io/your-org/osii."; exit 2; fi
+	$(COMPOSE) push api dashboard chat local-extractor
 
 doctor:
 	$(UV) run --no-project --python 3.11 python scripts/disk_usage.py

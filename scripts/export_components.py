@@ -53,12 +53,24 @@ COMPONENTS: dict[str, tuple[ExportEntry, ...]] = {
         ExportEntry("services/local-embedder", "services/local-embedder"),
         ExportEntry("services/local-enricher", "services/local-enricher"),
         ExportEntry("services/model-provider-bridge", "services/model-provider-bridge"),
+        ExportEntry("services/baseline-processors", "services/baseline-processors"),
         ExportEntry("docs/extending", "docs/extending"),
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
     "notebooks": (
         ExportEntry("osii-demo-notebooks", "."),
         ExportEntry("docs/tutorials", "docs/tutorials"),
+    ),
+    "baseline-processors": (
+        ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
+        ExportEntry("services/local-extractor", "services/local-extractor"),
+        ExportEntry("services/local-synthesizer", "services/local-synthesizer"),
+        ExportEntry("services/local-embedder", "services/local-embedder"),
+        ExportEntry("services/local-enricher", "services/local-enricher"),
+        ExportEntry("services/model-provider-bridge", "services/model-provider-bridge"),
+        ExportEntry("services/baseline-processors", "services/baseline-processors"),
+        ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
+        ExportEntry("docs/reference/model-providers.md", "docs/model-providers.md"),
     ),
     "local-extractor": (
         ExportEntry("services/local-extractor", "."),
@@ -160,19 +172,33 @@ def adapt_container_files(component: str, component_root: Path) -> None:
             ),
             encoding="utf-8",
         )
-    if (component.startswith("local-") or component == "model-provider-bridge") and dockerfile.exists():
-        dockerfile.write_text(
-            dockerfile.read_text(encoding="utf-8")
-            .replace(f"COPY services/{component} /workspace/services/{component}", "COPY . /workspace/service")
-            .replace(f"/workspace/services/{component}", "/workspace/service"),
-            encoding="utf-8",
-        )
+    if component.startswith("local-") or component == "model-provider-bridge":
         pyproject = component_root / "pyproject.toml"
         pyproject.write_text(
             pyproject.read_text(encoding="utf-8").replace(
                 "osii-processor-sdk = { workspace = true }",
                 'osii-processor-sdk = { path = "packages/osii-processor-sdk" }',
             ),
+            encoding="utf-8",
+        )
+        port = {
+            "local-extractor": 8092,
+            "local-synthesizer": 8093,
+            "local-embedder": 8085,
+            "local-enricher": 8094,
+            "model-provider-bridge": 8095,
+        }[component]
+        dockerfile.write_text(
+            "FROM python:3.12-slim\n"
+            "ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1\n"
+            "WORKDIR /workspace\n"
+            "COPY packages/osii-processor-sdk /workspace/packages/osii-processor-sdk\n"
+            "COPY . /workspace/service\n"
+            "RUN pip install --no-cache-dir /workspace/packages/osii-processor-sdk /workspace/service\n"
+            "RUN addgroup --system osii && adduser --system --ingroup osii osii\n"
+            "USER osii\n"
+            f"EXPOSE {port}\n"
+            f'CMD ["uvicorn", "app.main:app", "--app-dir", "/workspace/service", "--host", "0.0.0.0", "--port", "{port}"]\n',
             encoding="utf-8",
         )
 

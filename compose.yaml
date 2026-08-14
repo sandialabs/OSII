@@ -2,9 +2,11 @@ name: osii
 
 services:
   api:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-core:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
       dockerfile: ai-ready-ingest/Dockerfile
+      args: {OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"}
     environment:
       OSII_ROOT: /data/.osii
       SHARED_VOLUME_ROOT: /data/source
@@ -41,9 +43,7 @@ services:
       retries: 10
 
   worker:
-    build:
-      context: .
-      dockerfile: ai-ready-ingest/Dockerfile
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-core:${OSII_IMAGE_TAG:-latest}"
     command: ["python", "-m", "osii.worker"]
     environment:
       OSII_ROOT: /data/.osii
@@ -74,9 +74,11 @@ services:
         condition: service_healthy
 
   dashboard:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-dashboard:${OSII_IMAGE_TAG:-latest}"
     build:
       context: osii-dashboard/dashboard
       dockerfile: Dockerfile
+      args: {OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"}
     ports:
       - "${OSII_DASHBOARD_PORT:-5173}:8080"
     depends_on:
@@ -89,9 +91,11 @@ services:
         condition: service_started
 
   chat:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-chat:${OSII_IMAGE_TAG:-latest}"
     build:
       context: ai-ready-rag-chat
       dockerfile: Dockerfile
+      args: {OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"}
     environment:
       OSII_BACKEND_BASE_URL: http://api:8511
       OSII_ROOT: /data/.osii
@@ -112,6 +116,7 @@ services:
         condition: service_healthy
 
   mcp:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-mcp:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
       dockerfile: ai-ready-mcp/Dockerfile
@@ -152,9 +157,12 @@ services:
     profiles: ["ocr"]
 
   local-extractor:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: services/local-extractor/Dockerfile
+      dockerfile: services/baseline-processors/Dockerfile
+      args: &baseline-build-args {OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"}
+    command: ["extractor"]
     ports: ["${OSII_LOCAL_EXTRACTOR_PORT:-8092}:8092"]
     healthcheck: &processor-health
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:' + __import__('os').environ['PORT'] + '/health')"]
@@ -164,33 +172,45 @@ services:
     environment: {PORT: "8092"}
 
   local-synthesizer:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: services/local-synthesizer/Dockerfile
+      dockerfile: services/baseline-processors/Dockerfile
+      args: *baseline-build-args
+    command: ["synthesizer"]
     ports: ["${OSII_LOCAL_SYNTHESIZER_PORT:-8093}:8093"]
     healthcheck: *processor-health
     environment: {PORT: "8093"}
 
   local-embedder:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: services/local-embedder/Dockerfile
+      dockerfile: services/baseline-processors/Dockerfile
+      args: *baseline-build-args
+    command: ["embedder"]
     ports: ["${OSII_EMBEDDINGS_PORT:-8085}:8085"]
     healthcheck: *processor-health
     environment: {PORT: "8085"}
 
   local-enricher:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: services/local-enricher/Dockerfile
+      dockerfile: services/baseline-processors/Dockerfile
+      args: *baseline-build-args
+    command: ["enricher"]
     ports: ["${OSII_LOCAL_ENRICHER_PORT:-8094}:8094"]
     healthcheck: *processor-health
     environment: {PORT: "8094"}
 
   model-provider-bridge:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: services/model-provider-bridge/Dockerfile
+      dockerfile: services/baseline-processors/Dockerfile
+      args: *baseline-build-args
+    command: ["model-bridge"]
     ports: ["${OSII_MODEL_BRIDGE_PORT:-8095}:8095"]
     healthcheck: *processor-health
     environment:

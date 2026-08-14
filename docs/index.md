@@ -45,6 +45,7 @@ the `.osii` store directly.
 - [Guaranteed container-free processor services](operations/local-processors.md)
 - [Extractor routing](reference/extractor-routing.md)
 - [Export components for separate repositories](operations/component-export.md)
+- [Publish the consolidated images to Quay](operations/publishing-images.md)
 - [Sensitive data, OSII package transfer, and deletion](operations/sensitive-data.md)
 
 ## API and file-format reference

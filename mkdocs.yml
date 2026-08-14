@@ -58,6 +58,7 @@ nav:
       - Extractor routing: reference/extractor-routing.md
       - Sensitive data and transfer: operations/sensitive-data.md
       - Export components: operations/component-export.md
+      - Publish images to Quay: operations/publishing-images.md
   - API and formats:
       - REST API:
           - Overview: reference/api/index.md

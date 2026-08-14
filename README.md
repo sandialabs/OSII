@@ -187,7 +187,15 @@ On Windows PowerShell:
 
 `make run` never rebuilds images. Use `make containers-dev` or
 `.\scripts\osii.ps1 containers-dev` when you intentionally want to rebuild and
-run the normal integrated container stack.
+run the integrated stack with optional MCP and OCR. The normal `run` command
+starts the nine application/baseline containers and does not silently require
+optional MCP or OCR images.
+
+The normal release publishes only four OSII image artifacts: core (shared by
+API and worker), dashboard, chat, and baseline processors. The extractor,
+synthesizer, embedder, enricher, and model-provider bridge remain separate
+containers but select commands from the same compact baseline image. See
+[Publish OSII images to Quay](docs/operations/publishing-images.md).
 
 ### Useful shortcuts
 
@@ -217,6 +225,10 @@ run the normal integrated container stack.
   and all example services in containers. Ollama remains separately managed.
 - `make containers-dev` / `.\scripts\osii.ps1 containers-dev`: rebuild and
   run the normal deployment-style container stack.
+- `make build-release` / `.\scripts\osii.ps1 build-release`: build the four
+  normal publishable images exactly once each.
+- `make push-release` / `.\scripts\osii.ps1 push-release`: push those four
+  explicitly tagged images after a non-local registry prefix is supplied.
 - `make logs` / `.\scripts\osii.ps1 logs`: follow service logs.
 - `make down` / `.\scripts\osii.ps1 down`: stop the stack without deleting
   your data volume.

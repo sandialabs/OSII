@@ -1,11 +1,15 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("dev", "dev-host", "dev-core", "dev-ollama", "dev-corporate", "dev-extractor", "dev-synthesizer", "dev-embedder", "dev-enricher", "dev-model-bridge", "dev-ocr-host", "dev-containers", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build", "doctor", "catalog-rebuild", "catalog-verify")]
+    [ValidateSet("dev", "dev-host", "dev-core", "dev-ollama", "dev-corporate", "dev-extractor", "dev-synthesizer", "dev-embedder", "dev-enricher", "dev-model-bridge", "dev-ocr-host", "dev-containers", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build", "build-release", "push-release", "doctor", "catalog-rebuild", "catalog-verify")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
     [string]$Runtime = "Podman",
+
+    [string]$ImagePrefix = "",
+
+    [string]$ImageTag = "latest",
 
     [switch]$DryRun
 )
@@ -14,6 +18,11 @@ $ErrorActionPreference = "Stop"
 $RepositoryRoot = Split-Path -Parent $PSScriptRoot
 $env:UV_PROJECT_ENVIRONMENT = Join-Path $RepositoryRoot "osii-env"
 Remove-Item Env:VIRTUAL_ENV -ErrorAction SilentlyContinue
+if (-not $ImagePrefix) {
+    $ImagePrefix = if ($env:OSII_IMAGE_PREFIX) { $env:OSII_IMAGE_PREFIX } else { "localhost/osii" }
+}
+$env:OSII_IMAGE_PREFIX = $ImagePrefix
+$env:OSII_IMAGE_TAG = $ImageTag
 
 if ($Runtime -eq "Docker") {
     $ComposeExecutable = "docker"
@@ -107,7 +116,7 @@ try {
             Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
         }
         "run" {
-            Invoke-OsiiCompose @("--profile", "chat", "--profile", "agents", "--profile", "ocr", "up", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "chat", "mcp", "dashboard", "tika", "tesseract")
+            Invoke-OsiiCompose @("up", "--no-build", "--pull", "missing", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "chat", "dashboard")
         }
         "dev-examples" {
             Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
@@ -115,10 +124,14 @@ try {
             Invoke-OsiiDevLauncher @("--examples")
         }
         "containers-dev" {
-            Invoke-OsiiCompose @("--profile", "chat", "--profile", "agents", "--profile", "ocr", "up", "--build", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "chat", "mcp", "dashboard", "tika", "tesseract")
+            Invoke-OsiiCompose @("build", "api", "dashboard", "chat", "local-extractor")
+            Invoke-OsiiCompose @("--profile", "agents", "--profile", "ocr", "build", "mcp", "tesseract")
+            Invoke-OsiiCompose @("--profile", "chat", "--profile", "agents", "--profile", "ocr", "up", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "chat", "mcp", "dashboard", "tika", "tesseract")
         }
         "dev-all" {
-            Invoke-OsiiCompose @("--profile", "examples", "--profile", "chat", "--profile", "agents", "--profile", "ocr", "up", "--build")
+            Invoke-OsiiCompose @("build", "api", "dashboard", "chat", "local-extractor")
+            Invoke-OsiiCompose @("--profile", "examples", "--profile", "agents", "--profile", "ocr", "build", "mcp", "table-pdf-enricher", "tesseract")
+            Invoke-OsiiCompose @("--profile", "examples", "--profile", "chat", "--profile", "agents", "--profile", "ocr", "up")
         }
         "down" {
             Invoke-OsiiCompose @("--profile", "examples", "--profile", "chat", "--profile", "agents", "--profile", "ocr", "down")
@@ -127,7 +140,17 @@ try {
             Invoke-OsiiCompose @("logs", "-f")
         }
         "build" {
-            Invoke-OsiiCompose @("--profile", "examples", "--profile", "chat", "--profile", "agents", "--profile", "ocr", "build")
+            Invoke-OsiiCompose @("build", "api", "dashboard", "chat", "local-extractor")
+            Invoke-OsiiCompose @("--profile", "examples", "--profile", "agents", "--profile", "ocr", "build", "mcp", "table-pdf-enricher", "tesseract")
+        }
+        "build-release" {
+            Invoke-OsiiCompose @("build", "api", "dashboard", "chat", "local-extractor")
+        }
+        "push-release" {
+            if ($ImagePrefix.StartsWith("localhost/")) {
+                throw "Set -ImagePrefix to a registry path such as quay.io/your-org/osii."
+            }
+            Invoke-OsiiCompose @("push", "api", "dashboard", "chat", "local-extractor")
         }
         "doctor" {
             & uv run --no-project --python 3.11 python scripts/disk_usage.py

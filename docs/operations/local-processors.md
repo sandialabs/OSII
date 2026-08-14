@@ -4,6 +4,11 @@
 start four independent Processor API v1 services. They need no container,
 internet connection, corporate gateway, or downloaded model.
 
+For packaged deployment, these four services and the lightweight model-provider
+bridge share one `osii-baseline-processors` image. Each container selects one
+command, so the HTTP contracts and process boundaries remain independent. See
+[Publish OSII images to Quay](publishing-images.md).
+
 | Capability | Stable name | Port | Baseline behavior |
 |---|---|---:|---|
 | Extractor | `local.native-text` | 8092 | Text PDFs, DOCX, PPTX, XLSX, RTF, and common text/data files |
@@ -32,11 +37,12 @@ runtime. Review their dependency and remote-code risks independently.
 
 ## Moving a processor to its own repository
 
-Each `services/local-*` directory is a self-contained Python package with a
-Dockerfile. Copy it together with `packages/osii-processor-sdk`, publish the SDK
-in the destination environment, and replace the workspace dependency with that
-published version. Configure core with its URL in `OSII_PROCESSORS` and select
-it with `OSII_DEFAULT_EXTRACTOR`, `OSII_DEFAULT_SYNTHESIZER`,
+Each `services/local-*` directory is a self-contained Python package. The
+component-export script supplies a standalone Dockerfile when copying one into
+its own repository; the monorepo itself uses the shared baseline image. Publish
+the SDK in the destination environment and replace the workspace dependency
+with that published version. Configure core with its URL in `OSII_PROCESSORS`
+and select it with `OSII_DEFAULT_EXTRACTOR`, `OSII_DEFAULT_SYNTHESIZER`,
 `OSII_DEFAULT_EMBEDDER`, or `OSII_DEFAULT_ENRICHER`.
 
 The HTTP contract remains Processor API v1; no OSII-core import is required by

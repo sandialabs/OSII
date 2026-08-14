@@ -24,10 +24,13 @@ uv run --no-project --python 3.11 python scripts/export_components.py --output .
 ```
 
 The output contains `backend`, `frontend`, `mcp`, `chat`, `tools`, `notebooks`,
-the four local processors, and the HTTP-only `model-provider-bridge` directory,
-plus `EXPORT_MANIFEST.json`. The backend Dockerfile is
+the shared `baseline-processors` image source, the four independently exportable
+local processors, and the HTTP-only `model-provider-bridge` directory, plus
+`EXPORT_MANIFEST.json`. The backend Dockerfile is
 adapted to use its exported directory as its build context. The MCP export is
 prepared to install `osii` from the receiving environment's package registry.
+Standalone processor exports receive their own small Dockerfile even though the
+monorepo publishes them together in one image.
 
 The manifest records the important handoff dependency: publish the OSII backend
 package internally before packaging the MCP server, and publish the processor
