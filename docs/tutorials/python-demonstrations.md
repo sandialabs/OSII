@@ -39,15 +39,11 @@ python 02_Extract_documents_locally.py
 Continue in numerical order. On Windows, substitute `py` for `python` if that
 is your configured launcher.
 
-Working data stays under `osii-demo-notebooks/demo-workspace/` and is ignored
-by Git. Script `00` copies the bundled PDF there and resets only that fixed
-demonstration directory.
-
-To use personal documents, place them in the Git-ignored
-`osii-demo-notebooks/user-documents/` directory and change the `SOURCE_PATH`
-line in script 00 to point to `paths.notebook_dir / "user-documents"`. It also
-accepts a path to one file. Originals are copied into the disposable workspace
-and never modified.
+Put personal documents directly in `osii-demo-notebooks/documents/`, beside the
+bundled Purcell PDF. Additional files in that directory are ignored by Git.
+OSII reads them in place and never modifies the originals. Derived data stays
+under the ignored `osii-demo-notebooks/demo-workspace/` directory. Script 00 is
+a single cell that lists the source files; script 01 initializes the sidecar.
 
 ## Use notebooks without making notebook JSON the source of truth
 

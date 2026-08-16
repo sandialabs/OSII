@@ -11,9 +11,8 @@ import urllib.request
 
 @dataclass(frozen=True)
 class DemoPaths:
-    """Paths used only by the generated demonstration workspace."""
+    """Shared paths used by the later demonstration scripts."""
 
-    notebook_dir: Path
     workspace: Path
     source_root: Path
     osii_root: Path
@@ -28,9 +27,8 @@ def demo_paths() -> DemoPaths:
     notebook_dir = Path(__file__).resolve().parent
     workspace = notebook_dir / "demo-workspace"
     return DemoPaths(
-        notebook_dir=notebook_dir,
         workspace=workspace,
-        source_root=workspace / "source",
+        source_root=notebook_dir / "documents",
         osii_root=workspace / ".osii",
         exports=workspace / "exports",
     )

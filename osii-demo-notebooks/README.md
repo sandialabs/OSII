@@ -9,7 +9,7 @@ OSII architecture without requiring you to begin with containers or a model:
 
 | File | What it demonstrates | Extra service required |
 |---|---|---|
-| `00_Setup_a_demo_workspace.py` | Copy the bundled Purcell PDF into a safe workspace | None |
+| `00_Setup_a_demo_workspace.py` | Show the documents that OSII will use | None |
 | `01_Create_an_OSII_store.py` | File-based sidecar and rebuildable catalog | None |
 | `02_Extract_documents_locally.py` | Page OCR, expert context, provenance, bounding boxes | OSII-Tesseract |
 | `03_Create_local_text_previews.py` | Processor-based cited synthesis | Local synthesizer |
@@ -56,21 +56,22 @@ the IPython kernel, and Jupytext. No model weights are downloaded. Optional
 processor services remain separate and are only needed by examples that call
 them over HTTP.
 
-## Use the bundled PDF or your own documents
+## Add your documents
 
-The walkthrough uses `purcell.pdf` by default. To use your own data, put files
-under the Git-ignored `osii-demo-notebooks/user-documents/` directory and edit
-this single line near the top of `00_Setup_a_demo_workspace.py`:
+Put documents directly in `osii-demo-notebooks/documents/`, beside the bundled
+`purcell.pdf`. That directory is the source library; OSII never modifies the
+originals. Additional files placed there are ignored by Git.
+
+Notebook 00 contains one relative path and simply displays the file count and
+names:
 
 ```python
-SOURCE_PATH = paths.notebook_dir / "user-documents"
+DOCUMENTS_DIR = Path("documents")
 ```
 
-`SOURCE_PATH` may point to one file or a directory. Script 00 copies those
-documents into the disposable demo workspace; it never modifies the originals.
 PDFs use OSII-Tesseract in script 02, while supported text and office formats
-use the native extractor. The later scripts include plainly named example
-queries and titles that you can edit for your own subject matter.
+use the native extractor. Later scripts include plainly named example queries
+and titles that you can edit for your own subject matter.
 
 ## Run as plain Python
 
@@ -82,9 +83,9 @@ python 01_Create_an_OSII_store.py
 python 02_Extract_documents_locally.py
 ```
 
-Continue through `08_...py`. The walkthrough copies the bundled `purcell.pdf`;
-`.osii` artifacts, indexes, and exports stay under the ignored
-`demo-workspace/` directory. Rerun `00` to reset only that working directory.
+Continue through `08_...py`. OSII reads originals from `documents/`; `.osii`
+artifacts, indexes, and exports stay under the ignored `demo-workspace/`
+directory.
 
 The Purcell PDF is scanned, so script 02 deliberately uses OSII-Tesseract and
 its page-level bounding boxes. Start the required OCR service from the
