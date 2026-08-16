@@ -42,7 +42,7 @@ else:
     print("Set RUN_OLLAMA_EXAMPLE = True to make model calls in this script.")
 
 collection = next(
-    item for item in list_collections(paths.osii_root) if item["name"] == "Calibration evidence"
+    item for item in list_collections(paths.osii_root) if item["name"] == "Purcell analysis"
 )
 
 # %% [markdown]
@@ -65,7 +65,7 @@ if RUN_OLLAMA_EXAMPLE:
     collection_summary = synthesizer.synthesize_scope(
         osii_store=paths.osii_root,
         scope={"scope_type": "collection", "collection_id": collection["id"]},
-        expert_context="Preserve experiment numbers, measurements, and caveats.",
+        expert_context="Preserve physical quantities, equations, organism names, and caveats.",
         synthesizer_config={
             "model": OLLAMA_MODEL,
             "temperature": 0.1,
@@ -77,11 +77,11 @@ if RUN_OLLAMA_EXAMPLE:
     wiki = LlmWikiEnricher().enrich(
         osii_store=paths.osii_root,
         scope={"scope_type": "collection", "collection_id": collection["id"]},
-        expert_context="Write for an engineer reviewing the calibration evidence.",
+        expert_context="Write for a scientist exploring Purcell's argument and examples.",
         enricher_config={
             "synthesizer_name": "ollama.synthesizer",
             "model": OLLAMA_MODEL,
-            "title": "Calibration Evidence Wiki",
+            "title": "Life at Low Reynolds Number Wiki",
             "max_input_chars": 20_000,
             "max_tokens": 1_200,
         },
@@ -93,7 +93,7 @@ if RUN_OLLAMA_EXAMPLE:
 
 # %%
 package_bytes = create_collection_package(paths.osii_root, collection["id"])
-package_path = paths.exports / "calibration-evidence.osii.zip"
+package_path = paths.exports / "purcell-analysis.osii.zip"
 package_path.write_bytes(package_bytes)
 
 heading("Portable OSII collection package")

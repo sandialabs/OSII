@@ -24,7 +24,7 @@ root_descriptor = write_root_toml(
     root_folder_id=root_folder_id,
     host_path=str(paths.source_root),
     container_path="/data/source",
-    notes="Generated OSII Python demonstration corpus",
+    notes="Bundled Purcell PDF Python demonstration",
     tool_versions={"demo_walkthrough": "1"},
 )
 

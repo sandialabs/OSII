@@ -28,14 +28,17 @@ require_path(paths.osii_root / "objects", "Run scripts 00–02 first.")
 
 root_scope = {"scope_type": "root"}
 collection = next(
-    item for item in list_collections(paths.osii_root) if item["name"] == "Calibration evidence"
+    item for item in list_collections(paths.osii_root) if item["name"] == "Purcell analysis"
 )
 collection_scope = {"scope_type": "collection", "collection_id": collection["id"]}
 
 keyword_result = NounAdjectiveNgramEnricher().enrich(
     osii_store=paths.osii_root,
     scope=root_scope,
-    expert_context="Experiment names and measurement terms are meaningful.",
+    expert_context=(
+        "Physical concepts, organism names, equations, and dimensional quantities "
+        "are meaningful."
+    ),
     enricher_config={"top_k": 20},
 )
 entity_result = EntityCandidateEnricher().enrich(

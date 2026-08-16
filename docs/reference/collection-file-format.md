@@ -18,7 +18,7 @@ kind = "file-list"
 color = "#3366ff"
 
 [[members]]
-source_relpath = "example_data/purcell.pdf"
+source_relpath = "purcell.pdf"
 
 [[members]]
 file_id = "sha256-test123"

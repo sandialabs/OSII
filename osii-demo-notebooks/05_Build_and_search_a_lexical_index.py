@@ -31,7 +31,7 @@ print("Metadata:", metadata_path)
 # %%
 mode_used, results = dashboard_search(
     paths.osii_root,
-    query="thermal calibration measurement drift",
+    query="low Reynolds number viscosity swimming microorganisms",
     mode="lexical",
     top_k=5,
     scope={"scope_type": "root"},
@@ -48,11 +48,11 @@ for result in results:
 
 # %%
 collection = next(
-    item for item in list_collections(paths.osii_root) if item["name"] == "Calibration evidence"
+    item for item in list_collections(paths.osii_root) if item["name"] == "Purcell analysis"
 )
 _, collection_results = dashboard_search(
     paths.osii_root,
-    query="stable reference chamber",
+    query="scallop theorem reciprocal motion",
     mode="lexical",
     top_k=5,
     scope={"scope_type": "collection", "collection_id": collection["id"]},

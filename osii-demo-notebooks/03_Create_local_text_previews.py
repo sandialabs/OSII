@@ -38,7 +38,10 @@ else:
         result = synthesizer.synthesize(
             osii_store=paths.osii_root,
             file_id=document["file_id"],
-            expert_context="Keep measurements and experiment numbers visible.",
+            expert_context=(
+                "Keep physical quantities, named entities, source references, "
+                "and important caveats visible."
+            ),
             synthesizer_config={"max_chars_per_document": 500},
         )
         print(f"- {document['source_relpath']} -> {result['synthesis_rel']}")

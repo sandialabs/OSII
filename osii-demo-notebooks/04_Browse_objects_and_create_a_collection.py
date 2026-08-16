@@ -41,7 +41,7 @@ for folder in folders:
 # membership.
 
 # %%
-collection_name = "Calibration evidence"
+collection_name = "Purcell analysis"
 collection = next(
     (item for item in list_collections(paths.osii_root) if item["name"] == collection_name),
     None,
@@ -50,16 +50,12 @@ if collection is None:
     collection = create_collection(
         paths.osii_root,
         name=collection_name,
-        description="Experiments and references related to thermal calibration.",
+        description="The bundled Purcell article and its derived knowledge products.",
         color="#2563eb",
     )
 
-calibration_ids = [
-    item["file_id"]
-    for item in documents
-    if "calibration" in item["source_relpath"] or "handbook" in item["source_relpath"]
-]
-membership = add_documents_to_collection(paths.osii_root, collection["id"], calibration_ids)
+document_ids = [item["file_id"] for item in documents]
+membership = add_documents_to_collection(paths.osii_root, collection["id"], document_ids)
 
 heading("Collection scope")
 print(collection)
@@ -74,13 +70,13 @@ print(
 # ## Add portable labels and tags
 
 # %%
-sample_file_id = calibration_ids[0]
+sample_file_id = document_ids[0]
 governance = write_governance(
     paths.osii_root,
     sample_file_id,
-    sensitivity_labels=["DEMO DATA"],
-    tags=["thermal calibration", "reviewed example"],
-    handling_notes="Generated demonstration content; no access restriction.",
+    sensitivity_labels=["PUBLIC DEMO"],
+    tags=["fluid dynamics", "low Reynolds number", "reviewed example"],
+    handling_notes="Bundled public scientific article; no access restriction.",
 )
 
 heading("Object governance sidecar")
