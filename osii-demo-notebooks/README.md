@@ -37,9 +37,9 @@ py -m pip install -r requirements.txt
 ```
 
 The requirements install editable copies of the local OSII core and Processor
-SDK plus the small Jupytext conversion dependency. They do not install a
-notebook UI or download model weights; open generated notebooks in Jupyter,
-VS Code, or another notebook application you already use.
+SDK, Jupytext, JupyterLab, and the IPython kernel. They do not download model
+weights. Optional processor services remain separate and are only needed by
+the examples that call them over HTTP.
 
 ## Run as plain Python
 
