@@ -21,25 +21,32 @@ OSII architecture without requiring you to begin with containers or a model:
 
 ## Set up once
 
-Use Python 3.11, 3.12, or 3.13. From the repository root:
+Use Python 3.11, which is the OSII development baseline. Create and activate a
+notebook-specific virtual environment, then install everything from this
+directory:
 
 ```bash
 cd osii-demo-notebooks
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-On Windows PowerShell, the same commands work with `py` if that is your Python
-launcher:
+On Windows PowerShell:
 
 ```powershell
 cd osii-demo-notebooks
-py -m pip install -r requirements.txt
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-The requirements install editable copies of the local OSII core and Processor
-SDK, Jupytext, JupyterLab, and the IPython kernel. They do not download model
-weights. Optional processor services remain separate and are only needed by
-the examples that call them over HTTP.
+The requirements install the local OSII core and Processor SDK, JupyterLab,
+the IPython kernel, and Jupytext. No model weights are downloaded. Optional
+processor services remain separate and are only needed by examples that call
+them over HTTP.
 
 ## Run as plain Python
 
@@ -73,64 +80,33 @@ Windows PowerShell equivalents:
 
 `make dev` or `.\scripts\osii.ps1 dev` starts the complete editable stack.
 
-## Convert every Python example to a notebook
+## Convert all examples
 
-The `.py` files are the reviewable source of truth in Git. This creates all
-canonical notebook companions without touching the three archived legacy
-notebooks or their short same-named Python redirect pages:
+The `.py` files are the reviewable source of truth in Git. The convenience
+wrapper converts every marked demo script in this folder and does not require
+filenames:
 
 ```bash
 python manage_notebooks.py to-notebooks
 ```
 
-When a notebook already exists, the wrapper uses Jupytext's canonical
-`--update --to notebook` operation: input cells are refreshed while outputs
-and notebook metadata are preserved. To intentionally replace the complete
-notebook and discard its outputs:
+After editing notebooks, convert every notebook back to percent-format Python:
 
 ```bash
-python manage_notebooks.py to-notebooks --force
+python manage_notebooks.py to-python
 ```
 
-Convert one file by passing its name or stem:
+For direct CLI use, Jupytext supports the same operations:
 
 ```bash
-python manage_notebooks.py to-notebooks 05_Build_and_search_a_lexical_index.py
+jupytext --to notebook example.py
+jupytext --to py:percent example.ipynb
+jupytext --update --to notebook example.py
+jupytext --to md --test example.ipynb
 ```
 
-## Convert edited notebooks back to Python
-
-After making human edits in Jupyter, convert all canonical notebook companions
-back to reviewable percent-format Python:
-
-```bash
-python manage_notebooks.py to-python --force
-```
-
-Or convert only the notebook you changed:
-
-```bash
-python manage_notebooks.py to-python 05_Build_and_search_a_lexical_index.ipynb --force
-```
-
-Review the resulting Git diff before committing. Notebook JSON is deliberately
-not the normal review or agent-editing format; agents are instructed to work
-from the paired `.py` files unless a human explicitly asks otherwise.
-
-Test every existing canonical notebook for stable round-trip conversion without
-writing files:
-
-```bash
-python manage_notebooks.py test-roundtrip
-```
-
-The helper is only a batch/file-selection wrapper. It delegates conversion to
-the standard `python -m jupytext` CLI, so the equivalent one-file commands are:
-
-```bash
-python -m jupytext --to py:percent example.ipynb
-python -m jupytext --update --to notebook example.py
-```
+Run these commands with the virtual environment activated. Review the Git diff
+after conversion; the Python files remain the normal review and editing format.
 
 ## What is canonical?
 
