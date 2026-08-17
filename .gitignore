@@ -50,6 +50,7 @@ data_volume/
 # Notebooks and tools
 .ipynb_checkpoints/
 .cache/
+*.ipynb
 
 # Editors and operating systems
 .DS_Store

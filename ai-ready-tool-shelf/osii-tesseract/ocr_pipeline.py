@@ -2,7 +2,7 @@ import io
 from typing import List, Dict, Tuple
 
 import cv2
-import fitz  # PyMuPDF
+import pymupdf as fitz
 import numpy as np
 import pytesseract
 from PIL import Image

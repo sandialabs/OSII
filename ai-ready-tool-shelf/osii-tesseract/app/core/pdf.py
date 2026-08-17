@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import cv2
-import fitz
+import pymupdf as fitz
 import numpy as np
 
 

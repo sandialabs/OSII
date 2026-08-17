@@ -9,7 +9,7 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 import docx2txt
-import fitz
+import pymupdf as fitz
 
 from osii_processor_sdk import (
     Capability,
@@ -138,4 +138,3 @@ class LocalNativeTextExtractor(Extractor):
 
 
 app = create_processor_app(LocalNativeTextExtractor())
-

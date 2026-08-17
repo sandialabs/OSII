@@ -6,7 +6,7 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 import docx2txt
-import fitz
+import pymupdf as fitz
 
 from osii.extraction.base import BaseExtractor, ExtractionSegment, ExtractionState
 from osii.extraction.common import (
