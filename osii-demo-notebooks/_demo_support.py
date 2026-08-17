@@ -19,7 +19,11 @@ class DemoPaths:
     exports: Path
 
     def source_files(self) -> list[Path]:
-        return sorted(path for path in self.source_root.rglob("*") if path.is_file())
+        return sorted(
+            path
+            for path in self.source_root.rglob("*")
+            if path.is_file() and ".osii" not in path.relative_to(self.source_root).parts
+        )
 
 
 def demo_paths() -> DemoPaths:
@@ -28,7 +32,7 @@ def demo_paths() -> DemoPaths:
     workspace = notebook_dir / "demo-workspace"
     return DemoPaths(
         workspace=workspace,
-        source_root=notebook_dir / "documents",
+        source_root=workspace / "documents",
         osii_root=workspace / ".osii",
         exports=workspace / "exports",
     )

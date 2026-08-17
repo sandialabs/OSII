@@ -1,5 +1,5 @@
 # %% [markdown]
-# # 04 — Browse scopes, create a collection, and add governance metadata
+# # 03 — Browse scopes, create a collection, and add governance metadata
 #
 # A folder is structural; a collection is a user-defined logical grouping.
 # Both resolve to stable object IDs. Governance labels, handling notes, and
@@ -22,7 +22,7 @@ from _demo_support import demo_paths, heading, require_path
 
 
 paths = demo_paths()
-require_path(paths.osii_root / "objects", "Run scripts 00–02 first.")
+require_path(paths.osii_root / "objects", "Run the earlier numbered examples first.")
 documents = load_files_catalog(paths.osii_root)
 folders = load_folders_catalog(paths.osii_root)
 

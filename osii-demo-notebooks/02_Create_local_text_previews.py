@@ -1,5 +1,5 @@
 # %% [markdown]
-# # 03 — Synthesize cited previews
+# # 02 — Synthesize cited previews
 #
 # A synthesizer receives already-extracted text. It does not perform OCR or
 # extraction. The guaranteed `local.extractive-preview` service selects source
@@ -18,7 +18,7 @@ from _demo_support import demo_paths, heading, processor_descriptor, require_pat
 
 
 paths = demo_paths()
-require_path(paths.osii_root / "root.toml", "Run scripts 00–02 first.")
+require_path(paths.osii_root / "root.toml", "Run the earlier numbered examples first.")
 
 LOCAL_SYNTHESIZER_URL = "http://127.0.0.1:8093"
 descriptor = processor_descriptor(LOCAL_SYNTHESIZER_URL)
@@ -56,4 +56,4 @@ else:
 # %% [markdown]
 # The service returned typed data, while core wrote the `.osii` files. That
 # boundary is the same for a local baseline, Ollama bridge, or custom corporate
-# synthesizer. Script 08 shows how to opt into an actual Ollama model.
+# synthesizer. The final example shows how to opt into an actual Ollama model.

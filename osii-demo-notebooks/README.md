@@ -4,20 +4,11 @@ This folder is the shortest code-first path through OSII. The examples are
 ordinary Python files with Jupytext `# %%` cell markers, so you can run them in
 a terminal, step through them in an IDE, or convert them to notebooks.
 
-The walkthrough is intentionally small and sequential. It shows the actual
-OSII architecture without requiring you to begin with containers or a model:
-
-| File | What it demonstrates | Extra service required |
-|---|---|---|
-| `00_Setup_a_demo_workspace.py` | Show the documents that OSII will use | None |
-| `01_Create_an_OSII_store.py` | File-based sidecar and rebuildable catalog | None |
-| `02_Extract_documents_locally.py` | Page OCR, expert context, provenance, bounding boxes | OSII-Tesseract |
-| `03_Create_local_text_previews.py` | Processor-based cited synthesis | Local synthesizer |
-| `04_Browse_objects_and_create_a_collection.py` | Scopes, collections, labels, tags | None |
-| `05_Build_and_search_a_lexical_index.py` | Overlapping chunks and BM25 search | None |
-| `06_Build_local_embeddings.py` | Explicit lexical hashing-vector index | Local embedder |
-| `07_Create_a_standard_enrichment.py` | Keyword table and entity-list artifacts | None |
-| `08_Connect_an_optional_model_or_processor.py` | Ollama opt-in and package export | Ollama only for opt-in cells |
+The walkthrough is intentionally small and sequential. Run the numbered
+examples in order. They move from choosing source documents and creating the
+portable sidecar through extraction, synthesis, collections, search,
+embeddings, standard enrichments, optional models, and package export. Each
+example explains what it is doing before it changes or derives anything.
 
 ## Set up once
 
@@ -58,38 +49,50 @@ them over HTTP.
 
 ## Add your documents
 
-Put documents directly in `osii-demo-notebooks/documents/`, beside the bundled
-`purcell.pdf`. That directory is the source library; OSII never modifies the
-originals. Additional files placed there are ignored by Git.
+Put documents directly in `osii-demo-notebooks/demo-workspace/documents/`,
+beside the bundled `purcell.pdf`. The source directory and `.osii` sidecar are
+then visible next to each other. OSII never modifies the originals. Additional
+files placed there are ignored by Git.
 
-Notebook 00 contains one relative path and simply displays the file count and
-names:
+The first example contains one relative path and displays the file count and
+names before initializing the OSII sidecar:
 
 ```python
-DOCUMENTS_DIR = Path("documents")
+DOCUMENTS_DIR = Path("demo-workspace/documents")
 ```
 
-PDFs use OSII-Tesseract in script 02, while supported text and office formats
+PDFs use OSII-Tesseract during extraction, while supported text and office formats
 use the native extractor. Later scripts include plainly named example queries
 and titles that you can edit for your own subject matter.
 
-## Run as plain Python
+## Run the walkthrough
 
-Run the files in numerical order:
+Open the generated notebooks in Jupyter and run them in numerical order. You
+can also run each matching `.py` file from a terminal. OSII reads originals
+from `demo-workspace/documents/`; `.osii` artifacts, indexes, and exports stay
+beside them under `demo-workspace/`.
+
+There are two alternative notebooks numbered 01. Run **one**:
+
+- **Tesseract** is the public local OCR path and preserves page bounding boxes.
+- **Shirty Textract** is the simple corporate path through the separately
+  deployed `osii-shirty-bridge`.
+
+Both write the same canonical OSII structures, so the remaining numbered
+examples are identical regardless of which extractor you choose.
+
+The Purcell PDF is scanned, so the extraction example uses OSII-Tesseract and
+its page-level bounding boxes. Start the required OCR service from the
+repository root in a **second terminal**, keep that terminal running, and then
+return to Jupyter. The Tesseract executable must already be on `PATH`:
 
 ```bash
-python 00_Setup_a_demo_workspace.py
-python 01_Create_an_OSII_store.py
-python 02_Extract_documents_locally.py
+tesseract --version
 ```
 
-Continue through `08_...py`. OSII reads originals from `documents/`; `.osii`
-artifacts, indexes, and exports stay under the ignored `demo-workspace/`
-directory.
-
-The Purcell PDF is scanned, so script 02 deliberately uses OSII-Tesseract and
-its page-level bounding boxes. Start the required OCR service from the
-repository root; the Tesseract executable must already be on `PATH`:
+On macOS, install it once with `brew install tesseract` if that command is
+missing. On corporate Windows, use the approved Tesseract installation and
+confirm that `tesseract.exe` is on `PATH`.
 
 ```bash
 make dev-ocr-host
@@ -99,7 +102,30 @@ make dev-ocr-host
 .\scripts\osii.ps1 dev-ocr-host
 ```
 
-Scripts 03 and 06 use the optional local synthesizer and embedder services:
+Confirm that <http://127.0.0.1:8080/health> returns `{"status":"ok"}` before
+running the extraction cells. The notebook checks this connection and skips
+extraction with a readable instruction if the service is unavailable.
+
+For real Shirty, start the sibling bridge in a second corporate terminal:
+
+```powershell
+cd ..\osii-shirty-bridge
+uv run python -m app --mode real
+```
+
+The bridge holds the private Shirty dependency and credential; the public OSII
+notebook does not import either. To emulate the same workflow outside the air
+gap, start OSII-Tesseract and Ollama as described in the bridge README, then run:
+
+```bash
+cd ../osii-shirty-bridge
+uv run python -m app --mode emulated
+```
+
+The emulator uses the same URLs but records `emulated` descriptors and
+provenance. It tests the workflow without claiming local OCR is real Shirty.
+
+The synthesis and embedding examples use optional local services:
 
 ```bash
 make dev-synthesizer

@@ -21,7 +21,8 @@ def _python_sources() -> list[Path]:
     return sorted(
         path
         for path in HERE.glob("*.py")
-        if "# %%" in path.read_text(encoding="utf-8")
+        if path != Path(__file__).resolve()
+        and "# %%" in path.read_text(encoding="utf-8")
     )
 
 

@@ -57,6 +57,13 @@ corporate package index and exposes:
   `client.chat.completions.create(...)`
 - an OpenAI-compatible `/v1/chat/completions` route for OSII chat
 
+Outside the corporate network, run that same bridge with
+`uv run python -m app --mode emulated`. Its extractor delegates to
+OSII-Tesseract and its model calls delegate to Ollama while preserving the
+bridge URLs and request flow. Emulated descriptors and provenance are labeled
+`emulated`; this validates integration behavior without claiming corporate
+Shirty quality or identity.
+
 Run it at port 8096, set `OSII_SHIRTY_BRIDGE_URL`, and use
 `make dev-corporate`. The corporate order is Shirty, then selected Ollama, then
 the extractive baseline. An unavailable Shirty service is expected and trips a

@@ -1,5 +1,5 @@
 # %% [markdown]
-# # 07 — Create standard knowledge products
+# # 06 — Create standard knowledge products
 #
 # Enrichment derives optional products from preferred extracted text. These two
 # model-free examples produce standard artifacts:
@@ -24,7 +24,7 @@ from _demo_support import demo_paths, heading, require_path
 
 
 paths = demo_paths()
-require_path(paths.osii_root / "objects", "Run scripts 00–02 first.")
+require_path(paths.osii_root / "objects", "Run the earlier numbered examples first.")
 
 root_scope = {"scope_type": "root"}
 collection = next(

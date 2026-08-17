@@ -1,5 +1,5 @@
 # %% [markdown]
-# # 05 — Build and search the local lexical index
+# # 04 — Build and search the local lexical index
 #
 # BM25 is OSII's zero-model retrieval baseline. It creates overlapping,
 # provenance-aware chunks from preferred text, then ranks exact and related
@@ -14,7 +14,7 @@ from _demo_support import demo_paths, heading, require_path
 
 
 paths = demo_paths()
-require_path(paths.osii_root / "objects", "Run scripts 00–02 first.")
+require_path(paths.osii_root / "objects", "Run the earlier numbered examples first.")
 
 index_path, metadata_path = build_bm25_index(paths.osii_root)
 

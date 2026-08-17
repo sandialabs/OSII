@@ -23,6 +23,10 @@ to:
 The OCR, cited-preview, and hashing examples need their corresponding local
 services. Each gives an exact launch command when its service is offline. No
 container or model is required; OCR does require Tesseract on `PATH`.
+An alternative extraction notebook uses the Shirty bridge and writes the same
+canonical OSII result, allowing all later examples to remain unchanged. The
+bridge can use real Shirty in the corporate environment or a clearly labeled
+OSII-Tesseract/Ollama emulator outside it.
 
 ## Install and run
 
@@ -31,19 +35,19 @@ Use Python 3.11–3.13. From the repository root:
 ```bash
 cd osii-demo-notebooks
 python -m pip install -r requirements.txt
-python 00_Setup_a_demo_workspace.py
-python 01_Create_an_OSII_store.py
-python 02_Extract_documents_locally.py
+python manage_notebooks.py to-notebooks
+jupyter lab
 ```
 
-Continue in numerical order. On Windows, substitute `py` for `python` if that
-is your configured launcher.
+Choose the OSII demo kernel and run the notebooks in numerical order. The
+matching `.py` files can also be run directly from a terminal.
 
-Put personal documents directly in `osii-demo-notebooks/documents/`, beside the
-bundled Purcell PDF. Additional files in that directory are ignored by Git.
-OSII reads them in place and never modifies the originals. Derived data stays
-under the ignored `osii-demo-notebooks/demo-workspace/` directory. Script 00 is
-a single cell that lists the source files; script 01 initializes the sidecar.
+Put personal documents in `osii-demo-notebooks/demo-workspace/documents/`,
+beside the bundled Purcell PDF. Additional files in that directory are ignored
+by Git. OSII reads them in place and never modifies the originals. The derived
+`.osii` directory sits beside `documents/` for conceptual clarity. The first
+example lists the source files and initializes the sidecar with explanations
+before each step.
 
 ## Use notebooks without making notebook JSON the source of truth
 
@@ -65,8 +69,7 @@ python manage_notebooks.py to-python
 
 The wrapper always converts all matching files. Use Jupytext directly for a
 single file or a round-trip test. See the
-[demonstration README](https://github.com/heidikmkv/osii/tree/main/osii-demo-notebooks) for precise commands
-and the canonical file list.
+[demonstration README](https://github.com/heidikmkv/osii/tree/main/osii-demo-notebooks) for the concise workflow.
 
 ## Where to go next
 

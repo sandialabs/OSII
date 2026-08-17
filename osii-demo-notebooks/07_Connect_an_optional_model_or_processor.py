@@ -1,5 +1,5 @@
 # %% [markdown]
-# # 08 — Opt into Ollama, discover processors, and export a collection
+# # 07 — Opt into Ollama, discover processors, and export a collection
 #
 # The basic walkthrough is already complete. This final example shows three
 # modular boundaries without making any of them mandatory:
@@ -23,7 +23,7 @@ from _demo_support import demo_paths, heading, processor_descriptor, require_pat
 
 
 paths = demo_paths()
-require_path(paths.osii_root / "objects", "Run scripts 00–07 first.")
+require_path(paths.osii_root / "objects", "Run the earlier numbered examples first.")
 
 OLLAMA_SYNTHESIZER_URL = "http://127.0.0.1:8095/ollama/synthesizer"
 OLLAMA_MODEL = os.getenv("OLLAMA_SYNTHESIS_MODEL", "llama3.2:1b")

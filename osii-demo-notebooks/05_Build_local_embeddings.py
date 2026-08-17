@@ -1,5 +1,5 @@
 # %% [markdown]
-# # 06 — Add deterministic local hashing vectors
+# # 05 — Add deterministic local hashing vectors
 #
 # `local.hashing` maps tokens and adjacent word pairs into normalized 384-D
 # vectors. It is useful for testing vector plumbing and approximate lexical
@@ -19,7 +19,7 @@ from _demo_support import demo_paths, get_json, heading, require_path
 
 
 paths = demo_paths()
-require_path(paths.osii_root / "objects", "Run scripts 00–02 first.")
+require_path(paths.osii_root / "objects", "Run the earlier numbered examples first.")
 
 HASHING_URL = "http://127.0.0.1:8085"
 descriptor = get_json(f"{HASHING_URL}/v1/descriptor")

@@ -124,9 +124,10 @@ data_volume/*
 
 ## OSII
 .osii/
-demo-workspace/
-documents/*
-!documents/purcell.pdf
+demo-workspace/*
+!demo-workspace/documents/
+demo-workspace/documents/*
+!demo-workspace/documents/purcell.pdf
 
 # AI export output
 repo_for_ai.txt
