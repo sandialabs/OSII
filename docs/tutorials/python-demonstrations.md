@@ -1,79 +1,107 @@
-# Python demonstrations
+# Learn OSII through Python
 
-Use [`osii-demo-notebooks/`](https://github.com/heidikmkv/osii/tree/main/osii-demo-notebooks) for the
-canonical code-first OSII walkthrough. Its numbered, Jupytext-compatible Python
-files are designed to be read by a person and run in order.
+The canonical code-first walkthrough lives in `osii-demo-notebooks/`. Its
+numbered Jupytext-compatible Python files are designed to be read by a person,
+run in order, and converted into notebooks when desired.
 
-## What you will build
+## What the series teaches
 
-The examples use the bundled nine-page scan of E. M. Purcell's *Life at low
-Reynolds number* and then show, through the installed `osii` Python module, how
-to:
+The walkthrough is organized around OSII's design choices rather than around
+the dashboard:
 
-1. initialize the canonical file-based `.osii` sidecar;
-2. rebuild and verify the disposable SQLite read catalog;
-3. OCR the scanned PDF with expert context, page provenance, and bounding boxes;
-4. call a synthesizer through Processor API and let core commit its result;
-5. browse root/folder/collection scopes and add portable labels and tags;
-6. build overlapping retrieval chunks and a BM25 index;
-7. optionally add the explicit local hashing-vector baseline;
-8. create standard table and entity-list enrichments;
-9. optionally use a named Ollama model and export a collection package.
+1. keep source documents untouched and create a portable `.osii` sidecar;
+2. distinguish canonical files from rebuildable catalogs and indexes;
+3. extract grounded text while preserving provenance;
+4. keep extraction, synthesis, embeddings, and enrichment replaceable;
+5. use explicit object, folder, collection, and root scopes;
+6. retrieve evidence locally before adding optional models;
+7. return standard artifacts that work for both people and agents;
+8. export a collection sidecar without bundling original sources.
 
-The OCR, cited-preview, and hashing examples need their corresponding local
-services. Each gives an exact launch command when its service is offline. No
-container or model is required; OCR does require Tesseract on `PATH`.
-An alternative extraction notebook uses the Shirty bridge and writes the same
-canonical OSII result, allowing all later examples to remain unchanged. The
-bridge can use real Shirty in the corporate environment or a clearly labeled
-OSII-Tesseract/Ollama emulator outside it.
+The final extension track uses the public `osii_processor_sdk` package to build
+and test a small extractor, synthesizer, and enricher. Those examples are
+intended to be copied into independent domain-processor services.
 
-## Install and run
+## Set up the notebook kernel
 
-Use Python 3.11–3.13. From the repository root:
+Use Python 3.11. Run the installation from the demonstration directory because
+its requirements contain monorepo-relative package paths.
+
+macOS or Linux:
 
 ```bash
 cd osii-demo-notebooks
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+python -m ipykernel install --user --name osii-demo --display-name "OSII demo"
 python manage_notebooks.py to-notebooks
 jupyter lab
 ```
 
-Choose the OSII demo kernel and run the notebooks in numerical order. The
-matching `.py` files can also be run directly from a terminal.
+Windows PowerShell:
 
-Put personal documents in `osii-demo-notebooks/demo-workspace/documents/`,
-beside the bundled Purcell PDF. Additional files in that directory are ignored
-by Git. OSII reads them in place and never modifies the originals. The derived
-`.osii` directory sits beside `documents/` for conceptual clarity. The first
-example lists the source files and initializes the sidecar with explanations
-before each step.
+```powershell
+cd osii-demo-notebooks
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m ipykernel install --user --name osii-demo --display-name "OSII demo"
+python manage_notebooks.py to-notebooks
+jupyter lab
+```
 
-## Use notebooks without making notebook JSON the source of truth
+Choose the **OSII demo** kernel and run the examples in numerical order. There
+are two alternative step-01 extraction paths; choose local Tesseract or the
+corporate Shirty bridge.
 
-Create all canonical notebook companions:
+The notebook environment and host application environment have different
+jobs:
+
+| Environment | Purpose |
+|---|---|
+| `osii-demo-notebooks/.venv` | Jupyter kernel and interactive Python examples |
+| `osii-env` | Automatically managed application-service environment used by `make dev` and `scripts/osii.ps1 dev` |
+
+Do not select `osii-env` as the notebook kernel. Optional extractor,
+synthesizer, embedder, and model services run separately and are reached over
+their typed HTTP contracts.
+
+## Bring your own documents
+
+Put personal files in `osii-demo-notebooks/demo-workspace/documents/`, beside
+the bundled Purcell PDF. Additional files there are ignored by Git. OSII reads
+the originals in place and writes derived content under
+`osii-demo-notebooks/demo-workspace/.osii/`.
+
+The bundled PDF is scanned, so the Tesseract path requires the local OCR
+service. Each service-dependent example explains the exact command and checks
+the endpoint before doing work.
+
+## Keep Python reviewable
+
+The percent-format `.py` files are the source of truth. Generate all notebook
+companions with:
 
 ```bash
 python manage_notebooks.py to-notebooks
 ```
 
-If a destination notebook already exists, this uses Jupytext's `--update`
-behavior to refresh inputs while preserving outputs and notebook metadata.
-
-After editing notebooks in Jupyter, convert them back to reviewable
-Jupytext-percent Python:
+After intentionally editing notebooks in Jupyter, convert them back with:
 
 ```bash
 python manage_notebooks.py to-python
 ```
 
-The wrapper always converts all matching files. Use Jupytext directly for a
-single file or a round-trip test. See the
-[demonstration README](https://github.com/heidikmkv/osii/tree/main/osii-demo-notebooks) for the concise workflow.
+Always review the diff after conversion. Notebook JSON remains a human-facing
+artifact rather than the normal code-review format.
 
-## Where to go next
+## Continue learning
 
-- To use the dashboard, return to the repository [Getting started](https://github.com/heidikmkv/osii#getting-started).
-- To write a domain processor, [choose a processor kind](../extending/index.md).
-- To understand the sidecar and catalog boundary, read the [store structure](../reference/osii-store.md).
-- To inspect the wire contract, use the [Processor API v1 reference](../reference/processor-api/index.md).
+- [Architecture](../concepts/architecture.md)
+- [Choose a processor kind](../extending/index.md)
+- [Develop a processor](../extending/processor-development.md)
+- [Processor API v1](../reference/processor-api/index.md)
+- [OSII store structure](../reference/osii-store.md)

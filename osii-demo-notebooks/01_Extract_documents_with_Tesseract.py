@@ -1,9 +1,29 @@
 # %% [markdown]
-# # 01 — Extract documents with provenance
+# # 01 — Turn documents into grounded objects
 #
-# Extraction turns each source document into grounded text that later steps can
-# search, summarize, embed, and enrich. OSII records which extractor was used
-# and where each text segment came from. It never changes the source document.
+# Extraction answers a narrow question: **what usable content can be recovered
+# from this source, and where did it come from?** It should not decide what the
+# document means to a particular research project. That later interpretation
+# belongs in synthesis or enrichment.
+#
+# Keeping this boundary narrow lets OSII replace OCR, compare extraction
+# versions, and reuse the same grounded text in many future workflows.
+
+# %% [markdown]
+# ## The extraction contract
+#
+# ```text
+# source path + extractor choice + expert context
+#                       |
+#                       v
+#              extraction result
+#                       |
+#                       v
+#     OSII core commits text + manifest + provenance
+# ```
+#
+# `expert_context` may tell an extractor what details must not be lost. It does
+# not authorize the extractor to invent a summary or scientific conclusion.
 
 # %%
 from osii.domain.catalog_db import rebuild_catalog
@@ -14,69 +34,77 @@ from osii.extraction.dispatcher import dispatch_extract
 
 from _demo_support import demo_paths, get_json, heading, require_path
 
-
+# %%
 paths = demo_paths()
-require_path(paths.osii_root / "root.toml", "Run the start-here example first.")
-source_files = paths.source_files()
+require_path(paths.osii_root / "root.toml", "Run 00_Start_here first.")
 
-print(f"Ready to extract {len(source_files)} document(s).")
+source_files = paths.source_files()
+print(f"Ready to extract {len(source_files)} document(s):")
 for source_file in source_files:
     print("-", source_file.relative_to(paths.source_root))
 
 # %% [markdown]
-# ## Start OCR before processing a scanned PDF
+# ## Start OCR only for sources that need it
 #
-# The bundled Purcell PDF contains page images rather than selectable text.
-# OSII therefore sends it to the separate OSII-Tesseract OCR service. The
-# service runs locally on your computer and returns page text plus bounding
-# boxes; OSII core then writes that result into `.osii`.
+# The bundled PDF is scanned, so its useful text is in pixels. OSII-Tesseract is
+# a separate service because OCR has different system dependencies and can be
+# replaced independently of the store.
 #
-# First, check the required OCR program in a terminal:
-#
-# ```bash
-# tesseract --version
-# ```
-#
-# On a Mac, install it once with `brew install tesseract` if that command is
-# missing. On a corporate Windows computer, use the approved Tesseract package
-# and confirm that `tesseract.exe` is on `PATH`.
-#
-# Open a **second terminal**, leave this notebook open, and run the following
-# command from the repository root:
-#
-# **macOS or Linux**
+# In a second terminal at the repository root, run:
 #
 # ```bash
 # make dev-ocr-host
 # ```
 #
-# **Windows PowerShell**
+# Windows PowerShell:
 #
 # ```powershell
 # .\scripts\osii.ps1 dev-ocr-host
 # ```
 #
-# Keep that terminal running. Tesseract itself must be available on `PATH`.
-# When the service is ready, <http://127.0.0.1:8080/health> returns
-# `{"status":"ok"}`. Then rerun the connection-check cell below.
+# Keeping OCR outside the notebook is intentional. A production extractor may
+# run on a workstation, an isolated server, or specialized hardware while the
+# same Python workflow and canonical store remain unchanged.
 
 # %%
 OCR_URL = "http://127.0.0.1:8080"
 pdf_files = [path for path in source_files if path.suffix.lower() == ".pdf"]
-ocr_ready = not pdf_files or get_json(f"{OCR_URL}/health") is not None
+ocr_health = get_json(f"{OCR_URL}/health") if pdf_files else {"status": "not-needed"}
+ocr_ready = not pdf_files or ocr_health is not None
 
-if ocr_ready:
-    print("OCR service is ready.")
-else:
-    print("OCR service is not running yet. Start it in a second terminal using the instructions above.")
-    print("After its health page responds, rerun this cell and continue.")
+print("PDFs requiring OCR:", len(pdf_files))
+print("OCR status:", ocr_health or "offline")
 
 # %% [markdown]
-# ## Extract one document at a time
+# ## Plan before executing
 #
-# PDFs use OSII-Tesseract because the demonstration PDF is scanned. Supported
-# text and Office files use the built-in native-text extractor. `EXPERT_CONTEXT`
-# gives an extractor useful domain guidance without changing the source.
+# Routing is data, not hidden control flow. Here the rule is deliberately easy
+# to read: scanned PDFs use Tesseract; formats with native text use the local
+# text extractor. A real deployment can replace this rule with configured
+# routes while keeping the downstream object model unchanged.
+
+# %%
+def extractor_for(source_file):
+    if source_file.suffix.lower() == ".pdf":
+        return "osii_tesseract", {
+            "osii_tesseract_base_url": OCR_URL,
+            "language": "en",
+        }
+    return "native_text", {"chunk_chars": 4000}
+
+
+extraction_plan = [
+    (source_file, *extractor_for(source_file)) for source_file in source_files
+]
+
+for source_file, extractor_name, _ in extraction_plan:
+    print(f"- {source_file.name} -> {extractor_name}")
+
+# %% [markdown]
+# ## Give the extractor domain-preservation guidance
+#
+# Replace this text for your field. Good guidance identifies information that
+# is easy for a generic parser to damage or omit. It does not ask for analysis.
 
 # %%
 EXPERT_CONTEXT = (
@@ -84,41 +112,51 @@ EXPERT_CONTEXT = (
     "references, uncertainty, and important caveats."
 )
 
-results = []
-if not ocr_ready:
-    print("Extraction skipped: start OSII-Tesseract and rerun from the connection check.")
-else:
-    heading("Extract one file at a time")
-    for source_file in source_files:
-        extractor_name = (
-            "osii_tesseract" if source_file.suffix.lower() == ".pdf" else "native_text"
-        )
-        extractor_config = (
-            {"osii_tesseract_base_url": OCR_URL, "language": "en"}
-            if extractor_name == "osii_tesseract"
-            else {"chunk_chars": 4000}
-        )
-        result = dispatch_extract(
-            extractor_name=extractor_name,
-            source_path=source_file,
-            data_volume_root=paths.source_root,
-            osii_store=paths.osii_root,
-            expert_context=EXPERT_CONTEXT,
-            extractor_config=extractor_config,
-        )
-        results.append(result)
-        print(f"- {source_file.name} via {extractor_name} -> {result['file_id']}")
+print(EXPERT_CONTEXT)
 
 # %% [markdown]
-# ## Make completed documents browsable
+# ## Extract one file
 #
-# OSII now writes folder membership and rebuilds its disposable SQLite catalog.
-# The canonical text and provenance remain ordinary files under `.osii`.
+# This small function is the copyable core operation. The dispatcher selects a
+# local or remote implementation, then OSII owns the commit into the sidecar.
 
 # %%
-if not results:
-    print("Catalog update skipped because no documents were extracted in this run.")
+def extract_one(source_file, extractor_name, extractor_config):
+    return dispatch_extract(
+        extractor_name=extractor_name,
+        source_path=source_file,
+        data_volume_root=paths.source_root,
+        osii_store=paths.osii_root,
+        expert_context=EXPERT_CONTEXT,
+        extractor_config=extractor_config,
+    )
+
+# %% [markdown]
+# ## Apply the same operation to the corpus
+#
+# Sequential processing keeps the learning example transparent. The contract
+# is also suitable for queues and workers because each file is independent and
+# returns an explicit result.
+
+# %%
+results = []
+
+if not ocr_ready:
+    print("Extraction paused: start OSII-Tesseract, then rerun from the health check.")
 else:
+    for source_file, extractor_name, extractor_config in extraction_plan:
+        result = extract_one(source_file, extractor_name, extractor_config)
+        results.append(result)
+        print(f"- {source_file.name} -> {result['file_id']}")
+
+# %% [markdown]
+# ## Rebuild the browsing view
+#
+# Folder membership and SQLite catalog rows are projections over canonical
+# objects. They make browsing fast, but they can be rebuilt from the sidecar.
+
+# %%
+if results:
     root_folder_id = get_or_create_folder_id(paths.osii_root, "")
     folder_counts = build_folder_artifacts(
         resolved_files=source_files,
@@ -128,14 +166,24 @@ else:
         root_folder_id=root_folder_id,
     )
     rebuild_catalog(paths.osii_root)
+    print("Folder rebuild summary:", folder_counts[:2])
+else:
+    print("Nothing new to catalog in this run.")
 
-    heading("Browsable document catalog")
-    for document in load_files_catalog(paths.osii_root):
-        print(f"- {document['source_relpath']}\n  {document['file_id']}")
-    print("\nFolder rebuild summary:", folder_counts[:2])
+# %%
+heading("Browsable OSII objects")
+for document in load_files_catalog(paths.osii_root):
+    print(f"- {document['source_relpath']}")
+    print(f"  object ID: {document['file_id']}")
 
 # %% [markdown]
-# Each extracted object now has a directory under `.osii/objects/<file-id>/`.
-# Its `text.txt` holds extracted text, `provenance.toml` records how extraction
-# happened, and `manifest.jsonl` connects text segments and OCR boxes back to
-# source pages. The next example creates a cited preview from that grounded text.
+# ## What to inspect before continuing
+#
+# Open one directory under `.osii/objects/<file-id>/`:
+#
+# - `text.txt` is usable extracted text;
+# - `provenance.toml` names the process that produced it;
+# - `manifest.jsonl` connects segments and OCR geometry to the source.
+#
+# Search, synthesis, and agents can now work from grounded OSII objects instead
+# of repeatedly reparsing source files or trusting an opaque model context.
