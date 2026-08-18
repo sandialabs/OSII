@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
+from string import Template
 from textwrap import dedent
 
 GENERATED_START = "<!-- LLM_WIKI_GENERATED_START -->"
@@ -57,6 +58,58 @@ def read_toml_if_exists(path: Path) -> dict[str, Any]:
         return tomllib.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+
+MANUAL_EDIT_FIELD = "manual_edit_utc"
+
+
+def split_front_matter(text: str) -> tuple[list[str], str]:
+    """
+    Return the front matter lines and the body below them.
+
+    A page without front matter yields an empty field list and its whole text.
+    """
+    lines = text.splitlines()
+
+    if not lines or lines[0].strip() != "---":
+        return [], text
+
+    try:
+        closing = lines.index("---", 1)
+    except ValueError:
+        return [], text
+
+    return lines[1:closing], "\n".join(lines[closing + 1:])
+
+
+def has_manual_edit(text: str) -> bool:
+    """
+    Whether a page was edited by hand and should be left alone.
+
+    Regeneration replaces whole sections, so a page carrying this marker is
+    skipped entirely rather than partially rewritten.
+    """
+    fields, _ = split_front_matter(text)
+    return any(line.split(":", 1)[0].strip() == MANUAL_EDIT_FIELD for line in fields)
+
+
+def stamp_manual_edit(text: str, timestamp: str) -> str:
+    """
+    Record that a page was hand-edited, adding front matter if it has none.
+    """
+    stamp = f"{MANUAL_EDIT_FIELD}: {yaml_string(timestamp)}"
+    fields, body = split_front_matter(text)
+
+    if not fields and body == text:
+        return "\n".join(["---", stamp, "---", "", text.lstrip("\n")])
+
+    kept = [
+        line
+        for line in fields
+        if line.split(":", 1)[0].strip() != MANUAL_EDIT_FIELD
+    ]
+
+    return "\n".join(["---", *kept, stamp, "---", body])
 
 
 @dataclass
@@ -195,6 +248,21 @@ class LlmWiki:
 
         if page_path.exists():
             existing = page_path.read_text(encoding="utf-8", errors="replace")
+
+            # A hand-edited page is authoritative. Refreshing the generated
+            # block would silently discard the author's work, so record the
+            # skip and leave the file untouched.
+            if has_manual_edit(existing):
+                self.append_log(
+                    action="skip-manual",
+                    title=title,
+                    details=[
+                        f"Source page: `sources/{page_path.name}`",
+                        "Page carries `manual_edit_utc`; regeneration was skipped.",
+                    ],
+                )
+                return page_path
+
             new_text = self.replace_generated_block(
                 existing=existing,
                 generated_block=generated,
@@ -254,77 +322,109 @@ class LlmWiki:
         extract_error = extract_result.get("error") or ""
         synth_error = synth_result.get("error") or ""
 
-        return dedent(f"""\
-                ---
-            title: {yaml_string(title)}
+        # The template is dedented before values are substituted. Interpolating
+        # first would defeat dedent: format_data returns multi-line text whose
+        # lines start at column 0, which drops the common indent to zero and
+        # leaves every other line indented into a Markdown code block.
+        template = Template(dedent("""\
+            ---
+            title: $title_yaml
             kind: source
             status: needs-llm-integration
-            source_relpath: {yaml_string(record.source_relpath)}
-            file_id: {yaml_string(record.file_id)}
-            created_or_refreshed_utc: {yaml_string(utc_now_iso())}
+            source_relpath: $source_relpath_yaml
+            file_id: $file_id_yaml
+            created_or_refreshed_utc: $created_utc_yaml
             tags:
             - source
             ---
 
-            # {title}
+            # $title
 
-            {GENERATED_START}
+            $generated_start
 
             ## Generated source metadata
 
-            - Source path: `{record.source_path}`
-            - Source relative path: `{record.source_relpath}`
-            - OSII file ID: `{record.file_id}`
-            - OSII object directory: `{record.object_dir}`
-            - Extracted text path: `{record.extracted_text_path}`
-            - Object synthesis path: `{record.synth_text_path}`
-            - Object synthesis TOML path: `{record.synth_toml_path}`
-            - Object metadata path: `{record.meta_toml_path}`
-            - Object provenance path: `{record.provenance_toml_path}`
+            - Source path: `$source_path`
+            - Source relative path: `$source_relpath`
+            - OSII file ID: `$file_id`
+            - OSII object directory: `$object_dir`
+            - Extracted text path: `$extracted_text_path`
+            - Object synthesis path: `$synth_text_path`
+            - Object synthesis TOML path: `$synth_toml_path`
+            - Object metadata path: `$meta_toml_path`
+            - Object provenance path: `$provenance_toml_path`
 
             ## Pipeline results
 
             - Extractor: `textract`
             - Synthesizer: `describe`
-            - Extraction error: `{extract_error}`
-            - Synthesis error: `{synth_error}`
+            - Extraction error: `$extract_error`
+            - Synthesis error: `$synth_error`
 
             ## Structured synthesis metadata
 
-            - Document type: `{doc_type}`
-            - Quality: `{quality}`
-            - Short synthesis: {short_synthesis or "_Not available._"}
+            - Document type: `$doc_type`
+            - Quality: `$quality`
+            - Short synthesis: $short_synthesis
 
             ## Object synthesis
 
-            {synth_text}
+            $synth_text
 
             ## Raw machine metadata snapshot
 
             ### `synth.toml`
 
             ```json
-            {self.format_data(synth_toml)}
+            $synth_toml_data
             ```
 
             ### `meta.toml`
 
             ```json
-            {self.format_data(meta_toml)}
+            $meta_toml_data
             ```
 
             ### `provenance.toml`
 
             ```json
-            {self.format_data(provenance_toml)}
+            $provenance_toml_data
             ```
 
-            {GENERATED_END}
-            """)
+            $generated_end
+            """))
+
+        return template.safe_substitute(
+            title_yaml=yaml_string(title),
+            source_relpath_yaml=yaml_string(record.source_relpath),
+            file_id_yaml=yaml_string(record.file_id),
+            created_utc_yaml=yaml_string(utc_now_iso()),
+            title=title,
+            generated_start=GENERATED_START,
+            source_path=record.source_path,
+            source_relpath=record.source_relpath,
+            file_id=record.file_id,
+            object_dir=record.object_dir,
+            extracted_text_path=record.extracted_text_path,
+            synth_text_path=record.synth_text_path,
+            synth_toml_path=record.synth_toml_path,
+            provenance_toml_path=record.provenance_toml_path,
+            meta_toml_path=record.meta_toml_path,
+            extract_error=extract_error,
+            synth_error=synth_error,
+            doc_type=doc_type,
+            quality=quality,
+            short_synthesis=short_synthesis or "_Not available._",
+            synth_text=synth_text,
+            synth_toml_data=self.format_data(synth_toml),
+            meta_toml_data=self.format_data(meta_toml),
+            provenance_toml_data=self.format_data(provenance_toml),
+            generated_end=GENERATED_END,
+        )
 
     def render_default_maintained_source_sections(self) -> str:
-        return dedent("""/
-                 ## LLM-maintained summary
+        return dedent("""\
+            ## LLM-maintained summary
 
             > The LLM wiki maintainer should replace this section with a durable summary.
 
@@ -404,20 +504,21 @@ class LlmWiki:
         if task_path.exists():
             return task_path
 
-        task = dedent(f"""# Integrate source into LLM-wiki: {title}
+        task = Template(dedent("""\
+            # Integrate source into LLM-wiki: $title
 
             ## Source page
 
-            - [[{source_page_rel}]]
+            - [[$source_page_rel]]
 
             ## OSII evidence
 
-            - Object directory: `{record.object_dir}`
-            - Object synthesis: `{record.synth_text_path}`
-            - Object synthesis TOML: `{record.synth_toml_path}`
-            - Extracted text: `{record.extracted_text_path}`
-            - Metadata: `{record.meta_toml_path}`
-            - Provenance: `{record.provenance_toml_path}`
+            - Object directory: `$object_dir`
+            - Object synthesis: `$synth_text_path`
+            - Object synthesis TOML: `$synth_toml_path`
+            - Extracted text: `$extracted_text_path`
+            - Metadata: `$meta_toml_path`
+            - Provenance: `$provenance_toml_path`
 
             ## Required workflow for LLM maintainer
 
@@ -442,15 +543,25 @@ class LlmWiki:
             ## Suggested log entry
 
             ```markdown
-            ## [{utc_today()}] integrate | {title}
+            ## [$today] integrate | $title
 
-            - Source page: [[{source_page_rel}]]
+            - Source page: [[$source_page_rel]]
             - Updated pages:
             - TBD
             - Notes:
             - TBD
             ```
-            """)
+            """)).safe_substitute(
+            title=title,
+            source_page_rel=source_page_rel,
+            object_dir=record.object_dir,
+            synth_text_path=record.synth_text_path,
+            synth_toml_path=record.synth_toml_path,
+            extracted_text_path=record.extracted_text_path,
+            meta_toml_path=record.meta_toml_path,
+            provenance_toml_path=record.provenance_toml_path,
+            today=utc_today(),
+        )
 
         task_path.write_text(task, encoding="utf-8")
         return task_path
@@ -601,132 +712,148 @@ class LlmWiki:
         return json.dumps(data, indent=2, ensure_ascii=False)
 
     def default_agents_md(self) -> str:
-        return dedent("""# LLM Wiki Operating Instructions
+        return dedent("""\
+            # LLM Wiki Operating Instructions
 
-        This is an LLM-maintained markdown wiki built from OSII extraction and synthesis outputs.
+            This is an LLM-maintained markdown wiki built from OSII extraction and synthesis outputs.
 
-        ## Layers
+            ## Layers
 
-        1. Raw sources are immutable.
-        2. `.osii/` contains machine-generated extraction and synthesis artifacts.
-        3. `wiki/` contains the persistent, LLM-maintained markdown knowledge base.
+            1. Raw sources are immutable.
+            2. `.osii/` contains machine-generated extraction and synthesis artifacts.
+            3. `wiki/` contains the persistent, LLM-maintained markdown knowledge base.
 
-        The LLM may edit files under `wiki/`.
+            The LLM may edit files under `wiki/`.
 
-        The LLM must not edit raw source files.
+            The LLM must not edit raw source files.
 
-        The LLM should not edit `.osii/` files unless explicitly instructed.
+            The LLM should not edit `.osii/` files unless explicitly instructed.
 
-        ## Current pipeline focus
+            ## Current pipeline focus
 
-        This wiki currently uses:
+            This wiki currently uses:
 
-        - Extractor: `textract`
-        - Object synthesizer: `describe`
+            - Extractor: `textract`
+            - Object synthesizer: `describe`
 
-        ## Important OSII object files
+            ## Important OSII object files
 
-        For each object:
+            For each object:
 
-        - `.osii/objects/<file_id>/text.txt`
-        - `.osii/objects/<file_id>/synth.txt`
-        - `.osii/objects/<file_id>/synth.toml`
-        - `.osii/objects/<file_id>/meta.toml`
-        - `.osii/objects/<file_id>/provenance.toml`
+            - `.osii/objects/<file_id>/text.txt`
+            - `.osii/objects/<file_id>/synth.txt`
+            - `.osii/objects/<file_id>/synth.toml`
+            - `.osii/objects/<file_id>/meta.toml`
+            - `.osii/objects/<file_id>/provenance.toml`
 
-        ## Preferred evidence order
+            ## Preferred evidence order
 
-        When maintaining wiki pages, prefer evidence in this order:
+            When maintaining wiki pages, prefer evidence in this order:
 
-        1. Object synthesis TOML: `synth.toml`
-        2. Object synthesis text: `synth.txt`
-        3. Extracted text: `text.txt`
-        4. Raw source file, if readable
+            1. Object synthesis TOML: `synth.toml`
+            2. Object synthesis text: `synth.txt`
+            3. Extracted text: `text.txt`
+            4. Raw source file, if readable
 
-        ## Directory structure
+            ## Directory structure
 
-        - `sources/` — one page per ingested source.
-        - `entities/<source-namespace>/` — source-specific entity pages.
-        - `concepts/<source-namespace>/` — source-specific concept pages.
-        - `notes/` — user-maintained notes pages, usually one per source namespace.
-        - `_tasks/` — generated integration tasks.
-        - `index.md` — content-oriented catalog.
-        - `log.md` — chronological activity log.
+            - `sources/` — one page per ingested source.
+            - `entities/<source-namespace>/` — source-specific entity pages.
+            - `concepts/<source-namespace>/` — source-specific concept pages.
+            - `notes/` — user-maintained notes pages, usually one per source namespace.
+            - `_tasks/` — generated integration tasks.
+            - `index.md` — content-oriented catalog.
+            - `log.md` — chronological activity log.
 
-        ## Source page convention
+            ## Source page convention
 
-        Each source page has two parts:
+            Each source page has two parts:
 
-        1. A generated block between `LLM_WIKI_GENERATED_START` and `LLM_WIKI_GENERATED_END`.
-        2. LLM-maintained sections outside that generated block.
+            1. A generated block between `LLM_WIKI_GENERATED_START` and `LLM_WIKI_GENERATED_END`.
+            2. LLM-maintained sections outside that generated block.
 
-        The generated block may be refreshed by tooling.
+            The generated block may be refreshed by tooling.
 
-        The LLM-maintained sections should preserve durable analysis and cross-links.
+            The LLM-maintained sections should preserve durable analysis and cross-links.
 
-        ## Ingest workflow
+            ## Ingest workflow
 
-        When integrating a source page:
+            When integrating a source page:
 
-        1. Read `index.md`.
-        2. Read the relevant `sources/*.md` page.
-        3. Use the generated object synthesis as the primary input.
-        4. Inspect extracted text if needed.
-        5. Update the source page with:
-        - summary;
-        - key facts;
-        - entities;
-        - concepts;
-        - related pages;
-        - caveats.
-        6. Create or update relevant `entities/`, `concepts/`, and `notes/` pages.
-        7. Update `index.md`.
-        8. Append an entry to `log.md`.
+            1. Read `index.md`.
+            2. Read the relevant `sources/*.md` page.
+            3. Use the generated object synthesis as the primary input.
+            4. Inspect extracted text if needed.
+            5. Update the source page with:
+            - summary;
+            - key facts;
+            - entities;
+            - concepts;
+            - related pages;
+            - caveats.
+            6. Create or update relevant `entities/`, `concepts/`, and `notes/` pages.
+            7. Update `index.md`.
+            8. Append an entry to `log.md`.
 
-        ## Query workflow
+            ## Query workflow
 
-        When answering a question:
+            When answering a question:
 
-        1. Read `index.md`.
-        2. Read relevant wiki pages.
-        3. Answer from the wiki first.
-        4. If the answer creates durable knowledge, add or update a page under `synthesis/`.
-        5. Append an entry to `log.md` if useful.
+            1. Read `index.md`.
+            2. Read relevant wiki pages.
+            3. Answer from the wiki first.
+            4. If the answer creates durable knowledge, add or update a page under `synthesis/`.
+            5. Append an entry to `log.md` if useful.
 
-        ## Lint workflow
+            ## Lint workflow
 
-        Periodically check for:
+            Periodically check for:
 
-        - source pages still marked `needs-llm-integration`;
-        - orphan pages;
-        - missing backlinks;
-        - duplicate concepts;
-        - stale claims;
-        - contradictions;
-        - important concepts lacking pages.
-                      
-        ## User-maintained notes
+            - source pages still marked `needs-llm-integration`;
+            - orphan pages;
+            - missing backlinks;
+            - duplicate concepts;
+            - stale claims;
+            - contradictions;
+            - important concepts lacking pages.
 
-        Pages under `notes/` are user-maintained by default.
+            ## User-maintained notes
 
-        The LLM or tooling may create a notes page if it does not exist and may add missing source grounding links, but it should not overwrite, rewrite, summarize, delete, or reorganize user notes unless explicitly instructed.
+            Pages under `notes/` are user-maintained by default.
 
-        ## Grounding rules
+            The LLM or tooling may create a notes page if it does not exist and may add missing source grounding links, but it should not overwrite, rewrite, summarize, delete, or reorganize user notes unless explicitly instructed.
 
-        - Do not invent facts.
-        - Prefer claims traceable to source pages or OSII synthesis artifacts.
-        - If information is uncertain, mark it as uncertain.
-        - If new information contradicts older information, preserve both claims and add a caveat.
+            ## Grounding rules
 
-        ## Source-specific entity/concept directories
+            - Do not invent facts.
+            - Prefer claims traceable to source pages or OSII synthesis artifacts.
+            - If information is uncertain, mark it as uncertain.
+            - If new information contradicts older information, preserve both claims and add a caveat.
 
-        For each source page, create concepts and entities under a source-specific namespace.
+            ## Source-specific entity/concept directories
 
-        Example:
+            For each source page, create concepts and entities under a source-specific namespace.
 
-        - `sources/paper1-sha256-abc123.md`
-        - `entities/paper1-sha256-abc123/*.md`
-        - `concepts/paper1-sha256-abc123/*.md`
+            Example:
 
-        This keeps per-source extraction organized and avoids mixing all concepts/entities into one flat directory.
-        """)
+            - `sources/paper1-sha256-abc123.md`
+            - `entities/paper1-sha256-abc123/*.md`
+            - `concepts/paper1-sha256-abc123/*.md`
+
+            This keeps per-source extraction organized and avoids mixing all concepts/entities into one flat directory.
+            """)
+
+def __getattr__(name: str):
+    """
+    Resolve `LlmWikiEnricher` lazily.
+
+    The enricher facade lives in `llm_wiki_stub`, which imports `LlmWiki` from
+    this module. Deferring the lookup until attribute access keeps the two
+    modules importable in either order.
+    """
+    if name == "LlmWikiEnricher":
+        from osii.enrichment.llm_wiki_stub import LlmWikiStubEnricher
+
+        return LlmWikiStubEnricher
+
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

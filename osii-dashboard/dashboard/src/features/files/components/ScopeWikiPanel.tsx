@@ -12,11 +12,10 @@ import {
 import { useQuery } from "@tanstack/react-query";
 
 import { listProcessingRuns } from "../../../api/queue";
-import type { EnrichmentListEntryFile, ScopeDescribeRequest } from "../../../api/types";
+import type { EnrichmentListEntryBundle, ScopeDescribeRequest } from "../../../api/types";
 import { useEnrichmentJob } from "../../../hooks/useEnrichmentJob";
-import { useScopeEnrichmentPayload } from "../../../hooks/useScopeEnrichmentPayload";
 import { useScopeEnrichments } from "../../../hooks/useScopeEnrichments";
-import { EnrichmentArtifactView } from "./EnrichmentArtifactView";
+import { WikiBundleBrowser } from "./WikiBundleBrowser";
 
 
 export function ScopeWikiPanel({
@@ -37,10 +36,9 @@ export function ScopeWikiPanel({
   });
 
   const wikiEntry = (enrichments.data?.enrichments ?? []).find(
-    (entry): entry is EnrichmentListEntryFile =>
-      entry.kind === "file" && entry.name === "wiki--llm_wiki.json",
+    (entry): entry is EnrichmentListEntryBundle =>
+      entry.kind === "bundle" && entry.name === "wiki--llm_wiki",
   );
-  const wiki = useScopeEnrichmentPayload(scope, wikiEntry?.name ?? "", Boolean(wikiEntry));
   const runId = enrichmentJob.data?.run_id;
   const run = runs.data?.runs.find((item) => item.id === runId);
   const generationActive = enrichmentJob.isPending || ["queued", "pending", "running"].includes(run?.status ?? "");
@@ -93,12 +91,12 @@ export function ScopeWikiPanel({
               {enrichmentJob.error instanceof Error ? enrichmentJob.error.message : "Could not start wiki generation."}
             </Alert>
           ) : null}
-          {enrichments.isLoading || wiki.isLoading ? <CircularProgress size={22} /> : null}
-          {enrichments.isError || wiki.isError ? (
+          {enrichments.isLoading ? <CircularProgress size={22} /> : null}
+          {enrichments.isError ? (
             <Alert severity="warning">The current wiki could not be loaded.</Alert>
           ) : null}
-          {wiki.data ? <EnrichmentArtifactView data={wiki.data.data} /> : null}
-          {!wiki.data && !enrichments.isLoading && !generationActive ? (
+          {wikiEntry ? <WikiBundleBrowser files={wikiEntry.files} /> : null}
+          {!wikiEntry && !enrichments.isLoading && !generationActive ? (
             <Alert severity="info">
               No LLM wiki has been generated for this {scope.scope_type} yet.
             </Alert>

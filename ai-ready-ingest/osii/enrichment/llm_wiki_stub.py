@@ -171,6 +171,60 @@ class LlmWikiStubEnricher(BaseEnricher):
         "from existing OSII synthesis artifacts."
     )
     version = "1.0"
+    config_schema = {
+        "type": "object",
+        "properties": {
+            "auto_integrate": {
+                "type": "boolean",
+                "title": "Integrate pages automatically",
+                "description": "Let the model fill the maintained sections after each source page is written.",
+                "default": True,
+            },
+            "skip_missing_synthesis": {
+                "type": "boolean",
+                "title": "Skip objects without synthesis",
+                "description": "Pass over objects that have no synth.txt or synth.toml instead of failing the run.",
+                "default": False,
+            },
+            "max_objects": {
+                "type": "integer",
+                "title": "Object limit",
+                "description": "Optional demo/debug limit. Leave blank to process every object in the scope.",
+                "minimum": 1,
+            },
+            "scope_keyword_guidance": {
+                "type": "boolean",
+                "title": "Use scope keywords as guidance",
+                "description": "Give the model the scope's frequent keywords so pages share vocabulary.",
+                "default": True,
+            },
+            "scope_keyword_top_k": {
+                "type": "integer",
+                "title": "Keyword count",
+                "description": "How many scope keywords to include in the guidance block.",
+                "minimum": 1,
+                "default": 75,
+            },
+            "scope_keyword_min_count": {
+                "type": "integer",
+                "title": "Minimum keyword occurrences",
+                "description": "Ignore keywords that appear fewer times than this across the scope.",
+                "minimum": 1,
+                "default": 2,
+            },
+            "data_root": {
+                "type": "string",
+                "title": "Source data root",
+                "description": "Directory the source relative paths are resolved against. Defaults to the OSII store's parent.",
+            },
+            "verbose": {
+                "type": "boolean",
+                "title": "Verbose run log",
+                "description": "Write per-object progress into the run log.",
+                "default": True,
+            },
+        },
+    }
 
     def enrich(
         self,

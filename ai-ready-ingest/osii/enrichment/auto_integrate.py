@@ -6,12 +6,20 @@ import json
 import re
 from pathlib import Path
 from typing import Any
+from string import Template
+from textwrap import dedent
 import hashlib
 
-from shirty.client import ShirtyClient
-
+from osii.model_clients import (
+    ChatClient,
+    ModelCapabilityUnavailable,
+    create_chat_client,
+    create_ollama_chat_client,
+    default_ollama_chat_model,
+)
 from osii.enrichment.llm_wiki import (
     LlmWiki,
+    has_manual_edit,
     read_text_if_exists,
     slugify,
     utc_today,
@@ -19,7 +27,9 @@ from osii.enrichment.llm_wiki import (
 )
 
 
-DEFAULT_MODEL = "openai/gpt-oss-120b"
+def default_model() -> str:
+    """The integrator follows whichever model the stack is configured to use."""
+    return default_ollama_chat_model()
 
 GENERIC_ENTITY_NAMES = {
     "software",
@@ -808,17 +818,26 @@ class AutoWikiIntegrator:
         user: str,
         max_tokens: int,
     ) -> str:
-        client = ShirtyClient()
-        completion = client.chat.completions.create(
+        return self._chat_client().complete(
             model=model,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
             max_tokens=max_tokens,
-        )
-        msg = completion.choices[0].message if completion and completion.choices else None
-        return (_msg_content(msg) or "").strip()
+        ).strip()
+
+    def _chat_client(self) -> ChatClient:
+        """
+        Prefer a configured OpenAI-compatible gateway, otherwise use Ollama.
+
+        A deployment that sets OSII_CHAT_BASE_URL keeps using it; the local
+        development stack has no gateway and falls through to Ollama.
+        """
+        try:
+            return create_chat_client()
+        except ModelCapabilityUnavailable:
+            return create_ollama_chat_client()
     
     def document_entities_page_path(
     self,
@@ -994,7 +1013,7 @@ class AutoWikiIntegrator:
     ) -> dict:
         integrator_config = integrator_config or {}
 
-        model = integrator_config.get("model", DEFAULT_MODEL)
+        model = integrator_config.get("model") or default_model()
         max_source_chars = int(integrator_config.get("max_source_chars", 30000))
         max_tokens = int(integrator_config.get("max_tokens", 6000))
 
@@ -1364,55 +1383,74 @@ No commentary.
         attributes_body = "\n".join(attribute_lines) if attribute_lines else "- No structured attributes identified."
 
         if not path.exists():
-            text = f"""---
-                    uid: {yaml_string(uid)}
-                    title: {yaml_string(name)}
-                    kind: entity
-                    entity_type: {yaml_string(entity_type)}
-                    source_namespace: {yaml_string(source_namespace)}
-                    created_utc: {yaml_string(utc_today())}
-                    {aliases_frontmatter}
-                    tags:
-                    - entity
-                    - {slugify(entity_type, fallback="other")}
-                    ---
+            text = Template(dedent("""\
+                ---
+                uid: $uid
+                title: $title
+                kind: entity
+                entity_type: $entity_type_yaml
+                source_namespace: $source_namespace
+                created_utc: $created_utc
+                $aliases_frontmatter
+                tags:
+                - entity
+                - $entity_type_slug
+                ---
 
-                    # {name}
+                # $name
 
-                    ## Summary
+                ## Summary
 
-                    {summary or "_No summary available yet._"}
+                $summary
 
-                    ## Entity type
+                ## Entity type
 
-                    `{entity_type}`
+                `$entity_type`
 
-                    ## Aliases
+                ## Aliases
 
-                    {alias_body}
+                $alias_body
 
-                    ## Structured attributes
+                ## Structured attributes
 
-                    {attributes_body}
+                $attributes_body
 
-                    ## Source grounding
+                ## Source grounding
 
-                    {source_bullet}
+                $source_bullet
 
-                    ## Related concepts
+                ## Related concepts
 
-                    - TBD
+                - TBD
 
-                    ## Related entities
+                ## Related entities
 
-                    - TBD
+                - TBD
 
-                    ## User notes
+                ## User notes
 
-                    User-maintained notes about this entity can go here.
-                    """
+                User-maintained notes about this entity can go here.
+                """)).safe_substitute(
+                uid=yaml_string(uid),
+                title=yaml_string(name),
+                entity_type_yaml=yaml_string(entity_type),
+                source_namespace=yaml_string(source_namespace),
+                created_utc=yaml_string(utc_today()),
+                aliases_frontmatter=aliases_frontmatter,
+                entity_type_slug=slugify(entity_type, fallback="other"),
+                name=name,
+                summary=summary or "_No summary available yet._",
+                entity_type=entity_type,
+                alias_body=alias_body,
+                attributes_body=attributes_body,
+                source_bullet=source_bullet,
+            )
         else:
             text = path.read_text(encoding="utf-8", errors="replace")
+            # A hand-edited page is left exactly as the author left it.
+            if has_manual_edit(text):
+                return path
+
 
             text = ensure_source_grounding_bullet(
                 page_text=text,
@@ -1473,6 +1511,10 @@ tags:
 """
         else:
             text = path.read_text(encoding="utf-8", errors="replace")
+            # A hand-edited page is left exactly as the author left it.
+            if has_manual_edit(text):
+                return path
+
             text = ensure_source_grounding_bullet(
                 page_text=text,
                 source_link=source_link,
@@ -1534,6 +1576,10 @@ Write source-specific notes here.
             return path
 
         text = path.read_text(encoding="utf-8", errors="replace")
+        # A hand-edited page is left exactly as the author left it.
+        if has_manual_edit(text):
+            return path
+
 
         text = ensure_source_grounding_bullet(
             page_text=text,
@@ -1565,39 +1611,52 @@ Write source-specific notes here.
         )
 
         if not path.exists():
-            text = f"""---
-    uid: {yaml_string(uid)}
-    title: {yaml_string(title)}
-    kind: document_concepts
-    source_namespace: {yaml_string(source_namespace)}
-    created_utc: {yaml_string(utc_today())}
-    tags:
-    - concepts
-    - document-concepts
-    ---
+            text = Template(dedent("""\
+                ---
+                uid: $uid
+                title: $title_yaml
+                kind: document_concepts
+                source_namespace: $source_namespace
+                created_utc: $created_utc
+                tags:
+                - concepts
+                - document-concepts
+                ---
 
-    # {title}
+                # $title
 
-    ## Overview
+                ## Overview
 
-    This page contains all concepts extracted for one source document.
+                This page contains all concepts extracted for one source document.
 
-    ## Concepts
+                ## Concepts
 
-    {concepts_body}
+                $concepts_body
 
-    ## Source grounding
+                ## Source grounding
 
-    - {source_link}
+                - $source_link
 
-    ## User notes
+                ## User notes
 
-    User-maintained notes about these concepts can go here.
-    """
+                User-maintained notes about these concepts can go here.
+                """)).safe_substitute(
+                uid=yaml_string(uid),
+                title_yaml=yaml_string(title),
+                source_namespace=yaml_string(source_namespace),
+                created_utc=yaml_string(utc_today()),
+                title=title,
+                concepts_body=concepts_body,
+                source_link=source_link,
+            )
             path.write_text(text.rstrip() + "\n", encoding="utf-8")
             return path
 
         text = path.read_text(encoding="utf-8", errors="replace")
+        # A hand-edited page is left exactly as the author left it.
+        if has_manual_edit(text):
+            return path
+
 
         text = replace_markdown_section(
             text,
@@ -1641,39 +1700,52 @@ Write source-specific notes here.
         )
 
         if not path.exists():
-            text = f"""---
-    uid: {yaml_string(uid)}
-    title: {yaml_string(title)}
-    kind: document_entities
-    source_namespace: {yaml_string(source_namespace)}
-    created_utc: {yaml_string(utc_today())}
-    tags:
-    - entities
-    - document-entities
-    ---
+            text = Template(dedent("""\
+                ---
+                uid: $uid
+                title: $title_yaml
+                kind: document_entities
+                source_namespace: $source_namespace
+                created_utc: $created_utc
+                tags:
+                - entities
+                - document-entities
+                ---
 
-    # {title}
+                # $title
 
-    ## Overview
+                ## Overview
 
-    This page contains all entities extracted for one source document, grouped by entity type.
+                This page contains all entities extracted for one source document, grouped by entity type.
 
-    ## Entities
+                ## Entities
 
-    {entities_body}
+                $entities_body
 
-    ## Source grounding
+                ## Source grounding
 
-    - {source_link}
+                - $source_link
 
-    ## User notes
+                ## User notes
 
-    User-maintained notes about these entities can go here.
-    """
+                User-maintained notes about these entities can go here.
+                """)).safe_substitute(
+                uid=yaml_string(uid),
+                title_yaml=yaml_string(title),
+                source_namespace=yaml_string(source_namespace),
+                created_utc=yaml_string(utc_today()),
+                title=title,
+                entities_body=entities_body,
+                source_link=source_link,
+            )
             path.write_text(text.rstrip() + "\n", encoding="utf-8")
             return path
 
         text = path.read_text(encoding="utf-8", errors="replace")
+        # A hand-edited page is left exactly as the author left it.
+        if has_manual_edit(text):
+            return path
+
 
         text = replace_markdown_section(
             text,
@@ -1844,6 +1916,11 @@ Write source-specific notes here.
 
         source_text = source_page.read_text(encoding="utf-8", errors="replace")
 
+        if has_manual_edit(source_text):
+            manual_source_page = True
+        else:
+            manual_source_page = False
+
         source_text = replace_markdown_section(
             source_text,
             "LLM-maintained summary",
@@ -1902,7 +1979,8 @@ Write source-specific notes here.
             ),
         )
 
-        source_page.write_text(source_text.rstrip() + "\n", encoding="utf-8")
+        if not manual_source_page:
+            source_page.write_text(source_text.rstrip() + "\n", encoding="utf-8")
 
         return {
             "source_page": str(source_page),

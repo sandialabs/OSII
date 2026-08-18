@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Request
 
+from osii.domain.artifacts.enrichment_artifacts import write_enrichment_bundle_file
 from osii.domain.artifacts.read_enrichments import (
     get_object_enrichment_payload,
     get_scope_enrichment_payload,
@@ -44,3 +45,17 @@ async def get_object_enrichment_route(request: Request, file_id: str, filename: 
     if data is None:
         return {"error": "enrichment not found"}
     return data
+
+
+@router.put("/bundle-file")
+async def put_enrichment_bundle_file_route(request: Request, payload: dict):
+    osii_root = request.app.state.osii_root.resolve()
+
+    content = payload.get("content")
+    if not isinstance(content, str):
+        return {"error": "content must be a string"}
+
+    try:
+        return write_enrichment_bundle_file(osii_root, payload.get("relpath"), content)
+    except ValueError as exc:
+        return {"error": str(exc)}

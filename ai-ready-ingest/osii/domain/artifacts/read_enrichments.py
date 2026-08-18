@@ -12,6 +12,33 @@ from osii.domain.storage.store import (
 from osii.domain.scopes.scopes import normalize_scope_type
 
 
+def _bundle_files(path: Path, rel_prefix: str) -> list[dict]:
+    """
+    Every file inside a bundle, including nested ones.
+
+    A wiki bundle nests pages under sources/, entities/, and concepts/, so a
+    single level of listing hides most of its content. Directories are left out
+    entirely: the artifact route serves files only, so a directory entry could
+    never resolve to anything.
+    """
+    files = []
+
+    for child in sorted(path.rglob("*"), key=lambda p: p.as_posix().lower()):
+        if child.is_dir():
+            continue
+
+        relative = child.relative_to(path).as_posix()
+        files.append(
+            {
+                "name": relative,
+                "relpath": f"{rel_prefix}/{relative}",
+                "is_dir": False,
+            }
+        )
+
+    return files
+
+
 def _list_enrichment_dir(path: Path, rel_prefix: str) -> list[dict]:
     if not path.exists():
         return []
@@ -20,21 +47,12 @@ def _list_enrichment_dir(path: Path, rel_prefix: str) -> list[dict]:
 
     for child in sorted(path.iterdir(), key=lambda p: p.name.lower()):
         if child.is_dir():
-            files = []
-            for sub in sorted(child.iterdir(), key=lambda p: p.name.lower()):
-                files.append(
-                    {
-                        "name": sub.name,
-                        "relpath": f"{rel_prefix}/{child.name}/{sub.name}",
-                        "is_dir": sub.is_dir(),
-                    }
-                )
             items.append(
                 {
                     "name": child.name,
                     "kind": "bundle",
                     "relpath": f"{rel_prefix}/{child.name}",
-                    "files": files,
+                    "files": _bundle_files(child, f"{rel_prefix}/{child.name}"),
                 }
             )
         else:

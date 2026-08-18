@@ -6,6 +6,7 @@ import { HomePage } from "../features/home/pages/HomePage";
 import { BrowsePage } from "../features/browse/pages/BrowsePage";
 import { SearchPage } from "../features/search/pages/SearchPage";
 import { ChatPage } from "../features/chat/pages/ChatPage";
+import { WikiPage } from "../features/wiki/pages/WikiPage";
 import { CollectionsPage } from "../features/collections/pages/CollectionsPage";
 import { CollectionPage } from "../features/collections/pages/CollectionPage";
 import { FilePage } from "../features/files/pages/FilePage";
@@ -24,6 +25,7 @@ export function AppRouter() {
         <Route path="/browse" element={<BrowsePage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/chat" element={<ChatPage />} />
+        <Route path="/wiki" element={<WikiPage />} />
         <Route path="/collections" element={<CollectionsPage />} />
         <Route path="/collections/:collectionId" element={<CollectionPage />} />
         <Route path="/files/:fileId" element={<FilePage />} />

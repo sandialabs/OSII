@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, UTC
 from pathlib import Path
 import json
 
@@ -223,3 +224,98 @@ def write_scope_enrichment_variant(
         osii_root, kind=kind, method=method,
         payload=payload, metadata=metadata,
     )
+
+
+def write_enrichment_bundle_file(osii_root: Path, relpath: str, content: str) -> dict:
+    """
+    Overwrite one Markdown page inside an enrichment bundle.
+
+    Only existing Markdown files are writable. Refusing to create new paths
+    keeps a traversal attempt from planting a file anywhere under the store,
+    and the wiki is edited page by page rather than grown from the dashboard.
+    """
+    osii_root = osii_root.resolve()
+
+    if not isinstance(relpath, str) or not relpath.strip():
+        raise ValueError("relpath is required")
+
+    target = (osii_root / relpath).resolve()
+
+    try:
+        target.relative_to(osii_root)
+    except ValueError as exc:
+        raise ValueError("relpath must stay inside the OSII store") from exc
+
+    if target.suffix.lower() != ".md":
+        raise ValueError("only Markdown pages can be edited")
+
+    if not target.is_file():
+        raise ValueError("that enrichment page does not exist")
+
+    from osii.enrichment.llm_wiki import stamp_manual_edit
+
+    edited_utc = datetime.now(UTC).isoformat()
+    previous_bytes = target.stat().st_size
+    stamped = stamp_manual_edit(content, edited_utc)
+
+    target.write_text(stamped, encoding="utf-8")
+
+    logged = _append_bundle_log(
+        target,
+        edited_utc=edited_utc,
+        previous_bytes=previous_bytes,
+        new_bytes=len(stamped.encode("utf-8")),
+    )
+
+    return {
+        "relpath": relpath,
+        "bytes_written": len(stamped.encode("utf-8")),
+        "updated_utc": edited_utc,
+        "logged": logged,
+    }
+
+
+def _bundle_root(target: Path) -> Path | None:
+    """
+    The bundle directory a page belongs to, found by walking up to the
+    enrichments directory that contains it.
+    """
+    for parent in target.parents:
+        if parent.parent.name == "enrichments" or parent.parent.name.endswith(".enrichments"):
+            return parent
+        if parent.name == "enrichments":
+            return None
+    return None
+
+
+def _append_bundle_log(target: Path, *, edited_utc: str, previous_bytes: int, new_bytes: int) -> bool:
+    """
+    Record a manual edit in the bundle's own log.md.
+
+    The wiki log is otherwise written only by generation, so hand edits would
+    leave no trace without this.
+    """
+    root = _bundle_root(target)
+    if root is None:
+        return False
+
+    log_path = root / "log.md"
+    if not log_path.exists():
+        return False
+
+    page = target.relative_to(root).as_posix()
+    delta = new_bytes - previous_bytes
+    lines = [
+        f"## [{edited_utc[:10]}] manual-edit | {page}",
+        "",
+        f"- Edited from the dashboard at `{edited_utc}`",
+        f"- Size: {previous_bytes} -> {new_bytes} bytes ({delta:+d})",
+        "- This page is now marked `manual_edit_utc` and is skipped by regeneration.",
+        "",
+        "",
+    ]
+
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write("\n".join(lines))
+
+    return True

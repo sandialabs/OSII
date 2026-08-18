@@ -81,10 +81,22 @@ def infer_source_path_from_osii_object(object_dir: Path) -> Path | None:
     """
     Try to infer the original source path from existing OSII metadata.
 
-    This checks provenance.toml and meta.toml for common path-like fields.
+    meta.toml's [file] section describes the document and is authoritative when
+    present. The best-effort search is only a fallback, and it deliberately
+    omits the generic "name" key: provenance.toml uses that key for the
+    extractor and synthesizer, so searching it first labelled every page after
+    the extractor instead of the document.
     """
     provenance = read_toml_if_exists(object_dir / "provenance.toml")
     meta = read_toml_if_exists(object_dir / "meta.toml")
+
+    file_section = meta.get("file") if isinstance(meta, dict) else None
+
+    if isinstance(file_section, dict):
+        for key in ("source_relpath", "source_path", "filename"):
+            value = file_section.get(key)
+            if isinstance(value, str) and value.strip():
+                return Path(value.strip())
 
     candidate_keys = {
         "source_path",
@@ -98,10 +110,9 @@ def infer_source_path_from_osii_object(object_dir: Path) -> Path | None:
         "original_file",
         "filename",
         "file_name",
-        "name",
     }
 
-    for data in (provenance, meta):
+    for data in (meta, provenance):
         found = _deep_find_string(data, candidate_keys)
         if found:
             return Path(found)
@@ -184,7 +195,7 @@ def process_one_object(
             if data_root:
                 final_source_path = data_root / final_source_path
             else:
-                final_source_path = final_source_path.resolve()
+                final_source_path = (osii_root.parent / final_source_path).resolve()
     else:
         # Fallback if OSII metadata does not contain a source path.
         # The wiki can still be built because the important artifacts are under .osii.

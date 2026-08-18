@@ -74,6 +74,37 @@ class OpenAICompatibleClient:
             raise RuntimeError("Embedding service returned invalid vectors.") from exc
 
 
+class OllamaChatClient:
+    """Minimal client for Ollama's native chat endpoint."""
+
+    def __init__(self, base_url: str, timeout: float = 600.0):
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+
+    def complete(self, *, model: str, messages: Sequence[Message], max_tokens: int) -> str:
+        try:
+            response = requests.post(
+                f"{self.base_url}/api/chat",
+                json={
+                    "model": model,
+                    "messages": list(messages),
+                    "stream": False,
+                    "options": {"num_predict": max_tokens},
+                },
+                headers={"Content-Type": "application/json"},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise RuntimeError(f"Ollama chat request failed: {exc}") from exc
+
+        message = payload.get("message")
+        if not isinstance(message, dict):
+            return ""
+        return str(message.get("content") or "").strip()
+
+
 def _configured_url(*names: str) -> str:
     for name in names:
         value = os.getenv(name, "").strip()
@@ -91,6 +122,19 @@ def create_chat_client() -> ChatClient:
             "OpenAI-compatible /v1 endpoint."
         )
     return OpenAICompatibleClient(base_url, os.getenv("OSII_MODEL_API_KEY"))
+
+
+def create_ollama_chat_client() -> ChatClient:
+    base_url = os.getenv("OLLAMA_BASE_URL", "").strip() or "http://127.0.0.1:11434"
+    return OllamaChatClient(base_url)
+
+
+def default_ollama_chat_model() -> str:
+    for name in ("OLLAMA_SYNTHESIS_MODEL", "OLLAMA_CHAT_MODEL"):
+        value = os.getenv(name, "").strip()
+        if value:
+            return value
+    return "llama3.2:1b"
 
 
 def create_embedding_client() -> EmbeddingClient:
