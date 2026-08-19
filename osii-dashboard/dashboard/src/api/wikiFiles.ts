@@ -2,7 +2,9 @@
 import { apiJson, buildArtifactUrl } from "./client";
 
 export async function fetchWikiFile(relpath: string): Promise<string> {
-  const response = await fetch(buildArtifactUrl(relpath));
+  // Revalidate rather than serve from cache: pages change on save and on
+  // regeneration, and a stale copy looks like the write silently failed.
+  const response = await fetch(buildArtifactUrl(relpath), { cache: "no-cache" });
 
   if (!response.ok) {
     throw new Error(`Could not load ${relpath} (status ${response.status})`);

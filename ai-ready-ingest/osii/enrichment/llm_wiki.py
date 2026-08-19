@@ -590,18 +590,33 @@ class LlmWiki:
         with self.log_path.open("a", encoding="utf-8") as f:
             f.write("\n".join(lines))
 
+    def entity_names_in(self, page: Path) -> list[str]:
+        """
+        Entity names held by a document-level entities page.
+
+        Entities are stored as `### <name>` entries inside one page per
+        document, so the catalog reads names out of the page rather than
+        listing a file per entity.
+        """
+        names = []
+
+        for line in read_text_if_exists(page).splitlines():
+            if line.startswith("### "):
+                name = line[4:].strip()
+                if name:
+                    names.append(name)
+
+        return names
+
     def rebuild_index(self) -> None:
         self.wiki_root.mkdir(parents=True, exist_ok=True)
         self.sources_dir.mkdir(parents=True, exist_ok=True)
         self.entities_dir.mkdir(parents=True, exist_ok=True)
         self.concepts_dir.mkdir(parents=True, exist_ok=True)
-        # self.synthesis_dir.mkdir(parents=True, exist_ok=True)
 
         source_pages = sorted(self.sources_dir.rglob("*.md"))
-        entity_pages = sorted(self.entities_dir.rglob("*.md"))
+        entity_pages = sorted(self.entities_dir.glob("*.md"))
         concept_pages = sorted(self.concepts_dir.rglob("*.md"))
-        note_pages = sorted(self.notes_dir.rglob("*.md"))
-        # synthesis_pages = sorted(self.synthesis_dir.rglob("*.md"))
 
         lines: list[str] = [
             "# Index",
@@ -613,90 +628,32 @@ class LlmWiki:
         ]
 
         if source_pages:
-            for path in source_pages:
-                rel = path.relative_to(self.wiki_root).as_posix()
+            for page in source_pages:
+                rel = page.relative_to(self.wiki_root).as_posix()
                 lines.append(f"- [[{rel}]]")
         else:
             lines.append("_No source pages yet._")
 
         lines.extend(["", "## Entities", ""])
 
-        if entity_pages:
-            for path in entity_pages:
-                rel = path.relative_to(self.wiki_root).as_posix()
-                lines.append(f"- [[{rel}]]")
-        else:
-            lines.append("_No entity pages yet._")
+        entity_entries = []
+        for page in entity_pages:
+            rel = page.relative_to(self.wiki_root).as_posix()
+            for name in self.entity_names_in(page):
+                entity_entries.append(f"- [[{rel}#{name}]]")
+
+        lines.extend(entity_entries or ["_No entities yet._"])
 
         lines.extend(["", "## Concepts", ""])
 
         if concept_pages:
-            for path in concept_pages:
-                rel = path.relative_to(self.wiki_root).as_posix()
+            for page in concept_pages:
+                rel = page.relative_to(self.wiki_root).as_posix()
                 lines.append(f"- [[{rel}]]")
-                
         else:
             lines.append("_No concept pages yet._")
 
-        lines.extend(["", "## Notes", ""])
-
-        if note_pages:
-            for path in note_pages:
-                rel = path.relative_to(self.wiki_root).as_posix()
-                lines.append(f"- [[{rel}]]")
-        else:
-            lines.append("_No notes pages yet._")
-
-        # lines.extend(["", "## Synthesis", ""])
-
-        # if synthesis_pages:
-        #     for path in synthesis_pages:
-        #         rel = path.relative_to(self.wiki_root).as_posix()
-        #         lines.append(f"- [[{rel}]]")
-        # else:
-        #     lines.append("_No synthesis pages yet._")
-
-        # lines.extend(
-        #     [
-        #         "",
-        #         "## Maintenance",
-        #         "",
-        #         "- [[AGENTS.md]]",
-        #         "- [[log.md]]",
-        #         "",
-        #     ]
-        # )
-
-        lines.extend(
-            [
-                "",
-                "## Lookup and manifests",
-                "",
-            ]
-        )
-
-        manifest_path = self.wiki_root / "manifest.json"
-        concept_manifest_path = self.wiki_root / "concept_manifest.md"
-
-        if concept_manifest_path.exists():
-            lines.append("- [[concept_manifest.md]]")
-
-        if manifest_path.exists():
-            lines.append("- `manifest.json`")
-
-        if not concept_manifest_path.exists() and not manifest_path.exists():
-            lines.append("_No manifest files yet._")
-
-        lines.extend(
-            [
-                "",
-                "## Maintenance",
-                "",
-                "- [[AGENTS.md]]",
-                "- [[log.md]]",
-                "",
-            ]
-        )
+        lines.append("")
 
         self.index_path.write_text("\n".join(lines), encoding="utf-8")
 

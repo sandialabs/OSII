@@ -28,6 +28,8 @@ import rehypeKatex from "rehype-katex";
 
 import type { EnrichmentBundleFileEntry } from "../../../api/types";
 import { useWikiFile } from "../../../hooks/useWikiFile";
+import { markdownSx } from "./markdownSx";
+import { EntityPageBrowser } from "./EntityPageBrowser";
 import { useSaveWikiFile } from "../../../hooks/useSaveWikiFile";
 
 type WikiSection = {
@@ -108,10 +110,14 @@ function extractSection(body: string, heading: string): string | null {
  * once a document name and content hash are in them.
  */
 function linkLabel(pagePath: string): string {
-  const stem = (pagePath.split("/").pop() ?? pagePath).replace(/\.md$/, "");
-  const withoutHash = stem.replace(/-sha256-[0-9a-f]+$/i, "");
+  // "page.md#Entity Name" is already a readable name; use it as-is.
+  const anchor = pagePath.split("#")[1];
+  const base = anchor
+    ?? (pagePath.split("/").pop() ?? pagePath)
+      .replace(/\.md$/, "")
+      .replace(/-sha256-[0-9a-f]+$/i, "");
 
-  return withoutHash.length > 44 ? `${withoutHash.slice(0, 44)}…` : withoutHash;
+  return base.length > 44 ? `${base.slice(0, 44)}…` : base;
 }
 
 /**
@@ -269,38 +275,7 @@ function WikiPage({
 
       <Box
         className="markdown-body"
-        sx={{
-          backgroundColor: "background.paper",
-          border: (theme) => `1px solid ${theme.palette.divider}`,
-          borderRadius: 1.5,
-          px: 2.5,
-          py: 2,
-          "& > :first-of-type": { mt: 0 },
-          "& > :last-child": { mb: 0 },
-          "& h1": { fontSize: "1.3rem", fontWeight: 700, letterSpacing: "-0.01em", mt: 0, mb: 1.5 },
-          "& h2": { fontSize: "1rem", fontWeight: 600, mt: 2.5, mb: 0.75 },
-          "& h3": { fontSize: "0.9rem", fontWeight: 600, mt: 2, mb: 0.5 },
-          "& p, & li": { fontSize: "0.875rem", lineHeight: 1.7, color: "text.secondary" },
-          "& ul, & ol": { pl: 2.5, my: 0.5 },
-          "& blockquote": {
-            m: 0,
-            pl: 1.5,
-            borderLeft: (theme) => `3px solid ${theme.palette.primary.main}`,
-            color: "text.secondary",
-          },
-          "& code": {
-            backgroundColor: "action.hover",
-            px: 0.75,
-            py: 0.25,
-            borderRadius: 0.75,
-            fontSize: "0.8rem",
-          },
-          "& pre": { overflowX: "auto", backgroundColor: "action.hover", p: 1.5, borderRadius: 1 },
-          "& pre code": { backgroundColor: "transparent", p: 0 },
-          "& table": { borderCollapse: "collapse" },
-          "& td, & th": { border: "1px solid", borderColor: "divider", p: 1 },
-          "& a": { color: "secondary.main" },
-        }}
+        sx={markdownSx}
       >
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkMath]}
@@ -341,6 +316,7 @@ export function WikiBundleBrowser({ files }: { files: EnrichmentBundleFileEntry[
   const [sectionId, setSectionId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Record<string, string>>({});
   const [showLog, setShowLog] = useState(false);
+  const [entityAnchor, setEntityAnchor] = useState<string | null>(null);
 
   if (sections.length === 0) {
     return <Alert severity="info">This wiki bundle contains no Markdown pages yet.</Alert>;
@@ -356,16 +332,18 @@ export function WikiBundleBrowser({ files }: { files: EnrichmentBundleFileEntry[
    * Follow a wiki link: move to the tab that owns the page and select it.
    */
   const navigateToPage = (pagePath: string) => {
-    const target = files.find((file) => file.name === pagePath);
+    const [filePath, anchor] = pagePath.split("#");
+    const target = files.find((file) => file.name === filePath);
     if (!target) return;
 
     const section = sections.find((candidate) =>
-      candidate.files.some((file) => file.name === pagePath),
+      candidate.files.some((file) => file.name === filePath),
     );
     if (!section) return;
 
     setSectionId(section.id);
     setSelected((current) => ({ ...current, [section.id]: target.relpath }));
+    setEntityAnchor(anchor ?? null);
   };
 
   return (
@@ -389,7 +367,9 @@ export function WikiBundleBrowser({ files }: { files: EnrichmentBundleFileEntry[
         ))}
       </Tabs>
 
-      {active.files.length > 1 ? (
+      {active.id === "entities" ? (
+        <EntityPageBrowser relpath={active.files[0].relpath} focusEntity={entityAnchor} />
+      ) : active.files.length > 1 ? (
         <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="flex-start">
           <List
             dense

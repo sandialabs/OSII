@@ -1827,6 +1827,9 @@ Write source-specific notes here.
         entity_pages: list[Path] = []
         entity_page_by_uid: dict[str, Path] = {}
 
+        # Entities live only in the document-level page. The dashboard splits
+        # that page into per-entity views, so a file per entity would duplicate
+        # the same content and multiply file count with the corpus.
         for entity in entities:
             name = _clean_string(entity.get("name"))
 
@@ -1835,20 +1838,13 @@ Write source-specific notes here.
 
             entity_type = normalize_entity_type(entity.get("entity_type"))
 
-            entity_page = self.upsert_entity_page(
-                entity=entity,
-                source_link=source_link,
-                source_namespace=source_namespace,
-            )
-
             uid = entity_uid(
                 source_namespace=source_namespace,
                 entity_type=entity_type,
                 name=name,
             )
 
-            entity_pages.append(entity_page)
-            entity_page_by_uid[uid] = entity_page
+            entity_page_by_uid[uid] = entities_page
 
         concept_pages: list[Path] = []
 
