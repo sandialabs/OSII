@@ -6,10 +6,13 @@ import {
   Button,
   Chip,
   CircularProgress,
+  FormControlLabel,
   List,
   ListItemButton,
   ListItemText,
+  Link,
   Stack,
+  Switch,
   Tab,
   Tabs,
   TextField,
@@ -41,7 +44,6 @@ const SECTION_ORDER: { id: string; label: string; match: (name: string) => boole
   { id: "concepts", label: "Concepts", match: (name) => name.startsWith("concepts/") },
   { id: "notes", label: "Notes", match: (name) => name.startsWith("notes/") },
   { id: "log", label: "log.md", match: (name) => name === "log.md" },
-  { id: "agents", label: "AGENTS.md", match: (name) => name === "AGENTS.md" },
 ];
 
 function buildSections(files: EnrichmentBundleFileEntry[]): WikiSection[] {
@@ -82,6 +84,47 @@ function splitFrontMatter(text: string): { fields: [string, string][]; body: str
   return { fields, body: lines.slice(closing + 1).join("\n") };
 }
 
+/**
+ * Pull one level-2 section out of a page.
+ *
+ * A generated source page is mostly machine metadata; only the synthesis is
+ * worth reading, so the Sources tab shows that section alone.
+ */
+function extractSection(body: string, heading: string): string | null {
+  const lines = body.split("\n");
+  const start = lines.findIndex((line) => line.trim() === `## ${heading}`);
+  if (start === -1) return null;
+
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => line.startsWith("## "));
+
+  return (end === -1 ? rest : rest.slice(0, end)).join("\n").trim();
+}
+
+/**
+ * A short, readable label for a wiki page path.
+ *
+ * Index entries are written as full bundle-relative paths, which are unreadable
+ * once a document name and content hash are in them.
+ */
+function linkLabel(pagePath: string): string {
+  const stem = (pagePath.split("/").pop() ?? pagePath).replace(/\.md$/, "");
+  const withoutHash = stem.replace(/-sha256-[0-9a-f]+$/i, "");
+
+  return withoutHash.length > 44 ? `${withoutHash.slice(0, 44)}…` : withoutHash;
+}
+
+/**
+ * Rewrite [[page/path.md]] wiki links into Markdown links the renderer can
+ * hand back to us, so a click moves to that page instead of leaving the app.
+ */
+function linkifyWikiLinks(body: string): string {
+  return body.replace(/\[\[([^\]]+)\]\]/g, (_match, pagePath: string) => {
+    const target = pagePath.trim();
+    return `[${linkLabel(target)}](#wiki:${encodeURIComponent(target)})`;
+  });
+}
+
 function pageLabel(name: string): string {
   const base = name.split("/").pop() ?? name;
   return base.replace(/\.md$/, "");
@@ -92,7 +135,17 @@ function pageLabel(name: string): string {
 const HIDDEN_FIELDS = new Set(["title", "source_namespace", "tags"]);
 const HIGHLIGHTED_FIELDS = new Set(["kind", "entity_type", "status"]);
 
-function WikiPage({ relpath }: { relpath: string }) {
+function WikiPage({
+  relpath,
+  onlySection,
+  onNavigate,
+  readOnly = false,
+}: {
+  relpath: string;
+  onlySection?: string;
+  onNavigate?: (pagePath: string) => void;
+  readOnly?: boolean;
+}) {
   const page = useWikiFile(relpath);
   const save = useSaveWikiFile();
   const [draft, setDraft] = useState<string | null>(null);
@@ -169,24 +222,30 @@ function WikiPage({ relpath }: { relpath: string }) {
 
   const { fields, body } = splitFrontMatter(source);
   const visibleFields = fields.filter(([key]) => !HIDDEN_FIELDS.has(key));
+  const narrowed = onlySection ? extractSection(body, onlySection) : null;
+  const rendered = linkifyWikiLinks(
+    onlySection ? (narrowed ?? "_This page has no " + onlySection + " section._") : body,
+  );
 
   return (
     <Stack spacing={1.5}>
-      <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end">
-        {save.isSuccess ? (
-          <Typography variant="caption" color="success.main">
-            Saved
-          </Typography>
-        ) : null}
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={<EditOutlinedIcon />}
-          onClick={() => setDraft(source)}
-        >
-          Edit page
-        </Button>
-      </Stack>
+      {readOnly ? null : (
+        <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end">
+          {save.isSuccess ? (
+            <Typography variant="caption" color="success.main">
+              Saved
+            </Typography>
+          ) : null}
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<EditOutlinedIcon />}
+            onClick={() => setDraft(source)}
+          >
+            Edit page
+          </Button>
+        </Stack>
+      )}
       {visibleFields.length > 0 ? (
         <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
           {visibleFields.map(([key, value]) => {
@@ -243,8 +302,34 @@ function WikiPage({ relpath }: { relpath: string }) {
           "& a": { color: "secondary.main" },
         }}
       >
-        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-          {body}
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeKatex]}
+          components={{
+            a: ({ href, children, ...rest }) => {
+              const target = typeof href === "string" && href.startsWith("#wiki:")
+                ? decodeURIComponent(href.slice("#wiki:".length))
+                : null;
+
+              if (!target || !onNavigate) {
+                return <a href={href} {...rest}>{children}</a>;
+              }
+
+              return (
+                <Link
+                  component="button"
+                  type="button"
+                  underline="hover"
+                  onClick={() => onNavigate(target)}
+                  sx={{ verticalAlign: "baseline", textAlign: "left" }}
+                >
+                  {children}
+                </Link>
+              );
+            },
+          }}
+        >
+          {rendered}
         </ReactMarkdown>
       </Box>
     </Stack>
@@ -255,6 +340,7 @@ export function WikiBundleBrowser({ files }: { files: EnrichmentBundleFileEntry[
   const sections = useMemo(() => buildSections(files), [files]);
   const [sectionId, setSectionId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Record<string, string>>({});
+  const [showLog, setShowLog] = useState(false);
 
   if (sections.length === 0) {
     return <Alert severity="info">This wiki bundle contains no Markdown pages yet.</Alert>;
@@ -265,6 +351,22 @@ export function WikiBundleBrowser({ files }: { files: EnrichmentBundleFileEntry[
     : sections[0].id;
   const active = sections.find((section) => section.id === activeId) as WikiSection;
   const activeFile = selected[active.id] ?? active.files[0].relpath;
+
+  /**
+   * Follow a wiki link: move to the tab that owns the page and select it.
+   */
+  const navigateToPage = (pagePath: string) => {
+    const target = files.find((file) => file.name === pagePath);
+    if (!target) return;
+
+    const section = sections.find((candidate) =>
+      candidate.files.some((file) => file.name === pagePath),
+    );
+    if (!section) return;
+
+    setSectionId(section.id);
+    setSelected((current) => ({ ...current, [section.id]: target.relpath }));
+  };
 
   return (
     <Stack spacing={2}>
@@ -322,15 +424,43 @@ export function WikiBundleBrowser({ files }: { files: EnrichmentBundleFileEntry[
           </List>
 
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <WikiPage relpath={activeFile} />
+            <WikiPage
+              relpath={activeFile}
+              onlySection={active.id === "sources" ? "Object synthesis" : undefined}
+              onNavigate={navigateToPage}
+            />
           </Box>
         </Stack>
+      ) : active.id === "log" ? (
+        <>
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={showLog}
+                onChange={(event) => setShowLog(event.target.checked)}
+              />
+            }
+            label={
+              <Typography variant="body2" color="text.secondary">
+                Show log
+              </Typography>
+            }
+          />
+          {showLog ? (
+            <WikiPage relpath={active.files[0].relpath} readOnly onNavigate={navigateToPage} />
+          ) : null}
+        </>
       ) : (
         <>
           <Typography variant="caption" color="text.secondary">
             {active.files[0].name}
           </Typography>
-          <WikiPage relpath={active.files[0].relpath} />
+          <WikiPage
+            relpath={active.files[0].relpath}
+            onlySection={active.id === "sources" ? "Object synthesis" : undefined}
+            onNavigate={navigateToPage}
+          />
         </>
       )}
     </Stack>

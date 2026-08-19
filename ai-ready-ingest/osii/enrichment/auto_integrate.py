@@ -1850,6 +1850,20 @@ Write source-specific notes here.
             entity_pages.append(entity_page)
             entity_page_by_uid[uid] = entity_page
 
+        concept_pages: list[Path] = []
+
+        for concept in concepts:
+            if not _clean_string(concept.get("name")):
+                continue
+
+            concept_pages.append(
+                self.upsert_concept_page(
+                    concept=concept,
+                    source_link=source_link,
+                    source_namespace=source_namespace,
+                )
+            )
+
         self.update_manifest(
             source_namespace=source_namespace,
             source_page=source_page,
@@ -1998,7 +2012,7 @@ Write source-specific notes here.
             "document_concepts_page": str(concepts_page),
 
             "entity_pages": [str(path) for path in entity_pages],
-            "concept_pages": [str(concepts_page)],
+            "concept_pages": [str(concepts_page), *[str(path) for path in concept_pages]],
 
             "entity_page_count": len(entity_pages),
 
