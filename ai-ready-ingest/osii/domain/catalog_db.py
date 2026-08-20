@@ -432,7 +432,12 @@ def _populate(conn: sqlite3.Connection, osii_root: Path) -> None:
 def rebuild_catalog(osii_root: Path) -> dict[str, Any]:
     osii_root = osii_root.resolve()
     target = catalog_path(osii_root)
-    temporary = Path(tempfile.mkstemp(prefix="catalog-", suffix=".sqlite3", dir=target.parent)[1])
+    descriptor, temporary_name = tempfile.mkstemp(prefix="catalog-", suffix=".sqlite3", dir=target.parent)
+    # mkstemp leaves its descriptor open. SQLite opens the path separately, so
+    # retain only the path and release the original handle before Windows sees
+    # the file as locked during cleanup.
+    os.close(descriptor)
+    temporary = Path(temporary_name)
     try:
         with _connect_path(temporary) as conn:
             create_schema(conn)

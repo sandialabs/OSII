@@ -1,9 +1,18 @@
 import json
+import os
 import sqlite3
+from unittest.mock import patch
 
 from osii.domain.catalog_db import catalog_path, list_documents, rebuild_catalog, verify_catalog
 from osii.domain.scopes.collections import init_collections_db, list_collections
 from osii.domain.storage.folders import write_folder_manifest
+
+
+def test_catalog_rebuild_closes_temporary_descriptor(temp_osii_root):
+    with patch("osii.domain.catalog_db.os.close", wraps=os.close) as close:
+        rebuild_catalog(temp_osii_root)
+
+    close.assert_called_once()
 
 
 def test_catalog_rebuild_and_cursor_pagination(temp_osii_root):
