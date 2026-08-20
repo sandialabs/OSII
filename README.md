@@ -17,9 +17,13 @@ dashboard and available to agents.
 
 ## Getting started
 
-OSII uses Podman for packaged deployment and for system-level development
-dependencies. The development shortcut runs editable application code directly
-on the host, so Python changes reload and dashboard changes appear immediately.
+Choose the path that matches your goal:
+
+- **Use a corporate pilot release:** follow [Corporate pilot images and Quay releases](docs/operations/publishing-images.md). It runs the supported bundle from approved images.
+- **Develop or evaluate OSII from source:** follow the steps below. This path runs editable code and reloads Python/dashboard changes.
+- **Build a processor:** start with [Extend OSII](docs/extending/index.md); a processor is an optional compute service, not a fork of core storage.
+
+OSII uses Podman for packaged deployment and system-level development dependencies.
 
 ### 1. Choose where your files live
 
@@ -81,8 +85,8 @@ cd /path/to/osii
 make dev
 ```
 
-`make dev` requires no container runtime or preexisting model download. It runs the API,
-worker, local chat, MCP server, dashboard, and four independent Processor API
+`make dev` requires no container runtime or preexisting model download. It runs the API
+(including grounded chat), worker, MCP server, dashboard, and four independent Processor API
 services directly from source: native-text extraction, cited extractive
 previews, 384-dimensional lexical hashing embeddings, and statistics/keyword
 enrichment. Scanned PDFs still require optional OCR. The launcher checks ports and dependencies,
@@ -114,7 +118,7 @@ output settles, open:
 - **Embedder docs:** <http://localhost:8085/docs>
 - **Enricher docs:** <http://localhost:8094/docs>
 - **Model-provider bridge docs:** <http://localhost:8095/docs>
-- **Chat health/docs:** <http://localhost:8611/health> · <http://localhost:8611/docs>
+- **Chat health:** <http://localhost:8511/api/chat/health>
 - **MCP server:** <http://localhost:8022/mcp>
 
 In the dashboard, select **Intake** in the first sidebar section. **Add files**
@@ -169,7 +173,7 @@ Compose service name or `host.containers.internal` for a host service. Run
 Keep the terminal window open while using OSII. Stop host processes with
 <kbd>Ctrl</kbd>+<kbd>C</kbd>. There are no containers to stop after `make dev`.
 
-### Run the packaged container stack
+### Test locally built images
 
 Use the deployment-style stack when testing images rather than editing code:
 
@@ -188,11 +192,11 @@ On Windows PowerShell:
 `make run` never rebuilds images. Use `make containers-dev` or
 `.\scripts\osii.ps1 containers-dev` when you intentionally want to rebuild and
 run the integrated stack with optional MCP and OCR. The normal `run` command
-starts the nine application/baseline containers and does not silently require
+starts the eight application/baseline containers and does not silently require
 optional MCP or OCR images.
 
-The normal release publishes only four OSII image artifacts: core (shared by
-API and worker), dashboard, chat, and baseline processors. The extractor,
+The normal release publishes three OSII image artifacts: core (shared by API,
+worker, and chat), dashboard, and baseline processors. The extractor,
 synthesizer, embedder, enricher, and model-provider bridge remain separate
 containers but select commands from the same compact baseline image. See
 [Publish OSII images to Quay](docs/operations/publishing-images.md).
@@ -206,11 +210,11 @@ containers but select commands from the same compact baseline image. See
 - `make dev-ollama` / `.\scripts\osii.ps1 dev-ollama`: explicit alias for the
   normal Ollama-first development profile.
 - `make dev-corporate` / `.\scripts\osii.ps1 dev-corporate`: prefer the
-  separately running Shirty bridge, then Ollama, then extractive fallbacks.
+  built-in Shirty HTTP adapter, then Ollama, then extractive fallbacks.
 - `make dev-extractor`, `dev-synthesizer`, `dev-embedder`, or `dev-enricher`
   (and matching PowerShell commands): run one processor independently.
 - `make dev-model-bridge` / `.\scripts\osii.ps1 dev-model-bridge`: run only the
-  HTTP-only Ollama/OpenAI-compatible bridge.
+  HTTP-only Ollama/Shirty/OpenAI-compatible provider adapter.
 - `make dev-ocr-host` / `.\scripts\osii.ps1 dev-ocr-host`: run the optional
   OpenCV/Tesseract OCR service directly on the host, with its tuning UI at
   `http://localhost:8080/demo`.
@@ -225,9 +229,9 @@ containers but select commands from the same compact baseline image. See
   and all example services in containers. Ollama remains separately managed.
 - `make containers-dev` / `.\scripts\osii.ps1 containers-dev`: rebuild and
   run the normal deployment-style container stack.
-- `make build-release` / `.\scripts\osii.ps1 build-release`: build the four
+- `make build-release` / `.\scripts\osii.ps1 build-release`: build the three
   normal publishable images exactly once each.
-- `make push-release` / `.\scripts\osii.ps1 push-release`: push those four
+- `make push-release` / `.\scripts\osii.ps1 push-release`: push those three
   explicitly tagged images after a non-local registry prefix is supplied.
 - `make logs` / `.\scripts\osii.ps1 logs`: follow service logs.
 - `make down` / `.\scripts\osii.ps1 down`: stop the stack without deleting

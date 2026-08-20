@@ -15,6 +15,8 @@ import requests
 from osii.domain.model_provider_config import (
     DEFAULT_OLLAMA_CHAT_MODEL,
     DEFAULT_OLLAMA_EMBEDDING_MODEL,
+    DEFAULT_SHIRTY_BASE_URL,
+    DEFAULT_SHIRTY_CHAT_MODEL,
 )
 
 
@@ -61,6 +63,28 @@ def _with_runtime_defaults(records: list[dict[str, Any]]) -> list[dict[str, Any]
     known = {item.get("id") for item in result}
     if "ollama-local" not in known:
         result.append({"id": "ollama-local", "type": "ollama", "base_url": os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/"), "enabled": True, "priority": 100, "embedding_model": os.getenv("OLLAMA_EMBEDDING_MODEL", "").strip() or DEFAULT_OLLAMA_EMBEDDING_MODEL, "synthesis_model": os.getenv("OLLAMA_SYNTHESIS_MODEL", "").strip() or DEFAULT_OLLAMA_CHAT_MODEL, "chat_model": os.getenv("OLLAMA_CHAT_MODEL", "").strip() or DEFAULT_OLLAMA_CHAT_MODEL, "credential_env": ""})
+    shirty_configured = (
+        os.getenv("OSII_ENVIRONMENT", "").strip().lower() == "corporate"
+        or bool(os.getenv("SHIRTY_BASE_URL", "").strip())
+        or bool(os.getenv("SHIRTY_API_KEY", "").strip())
+        or "shirty" in os.getenv("OPENAI_BASE_URL", "").lower()
+    )
+    if shirty_configured and "shirty-corporate" not in known:
+        result.append({
+            "id": "shirty-corporate",
+            "type": "shirty",
+            "base_url": (
+                os.getenv("SHIRTY_BASE_URL", "").strip()
+                or os.getenv("OPENAI_BASE_URL", "").strip()
+                or DEFAULT_SHIRTY_BASE_URL
+            ).rstrip("/"),
+            "enabled": True,
+            "priority": 10,
+            "embedding_model": "",
+            "synthesis_model": os.getenv("SHIRTY_SYNTHESIS_MODEL", "").strip() or DEFAULT_SHIRTY_CHAT_MODEL,
+            "chat_model": os.getenv("SHIRTY_CHAT_MODEL", "").strip() or DEFAULT_SHIRTY_CHAT_MODEL,
+            "credential_env": "SHIRTY_API_KEY",
+        })
     return result
 
 
@@ -95,7 +119,7 @@ def _validate(payload: dict[str, Any], provider_id: str | None = None) -> dict[s
         "base_url": base_url,
         "enabled": bool(payload.get("enabled", False)),
         "priority": int(payload.get("priority", 100)),
-        "embedding_model": str(payload.get("embedding_model") or "").strip(),
+        "embedding_model": "" if provider_type == "shirty" else str(payload.get("embedding_model") or "").strip(),
         "synthesis_model": str(payload.get("synthesis_model") or "").strip(),
         "chat_model": str(payload.get("chat_model") or "").strip(),
         "credential_env": credential_env,
@@ -104,7 +128,10 @@ def _validate(payload: dict[str, Any], provider_id: str | None = None) -> dict[s
 
 def _public(record: dict[str, Any]) -> dict[str, Any]:
     credential_env = record.get("credential_env") or ("SHIRTY_API_KEY" if record.get("type") == "shirty" else "OSII_MODEL_API_KEY")
-    return {**record, "credential_required": record.get("type") != "ollama", "credential_present": bool(os.getenv(str(credential_env))), "credential_value": None}
+    credential_present = bool(os.getenv(str(credential_env)))
+    if record.get("type") == "shirty":
+        credential_present = credential_present or bool(os.getenv("SHIRTY_API_KEY")) or bool(os.getenv("OPENAI_API_KEY"))
+    return {**record, "credential_required": record.get("type") != "ollama", "credential_present": credential_present, "credential_value": None}
 
 
 def _provider(osii_root: Path, provider_id: str) -> dict[str, Any] | None:
@@ -223,6 +250,8 @@ def provider_health(request: Request, provider_id: str):
     path = "/api/tags" if record["type"] == "ollama" else "/models"
     env_name = record.get("credential_env") or ("SHIRTY_API_KEY" if record["type"] == "shirty" else "OSII_MODEL_API_KEY")
     token = os.getenv(env_name, "")
+    if record["type"] == "shirty" and not token:
+        token = os.getenv("SHIRTY_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     try:
         response = requests.get(f"{record['base_url']}{path}", headers=headers, timeout=(3, 8))

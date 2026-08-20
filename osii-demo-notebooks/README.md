@@ -155,15 +155,19 @@ Wait until <http://127.0.0.1:8080/health> returns `{"status":"ok"}`. The
 notebook checks the service and skips extraction with a readable message if it
 is unavailable.
 
-For the corporate Shirty path, start the sibling bridge in a second terminal:
+For the corporate Shirty path, set the endpoint and credential, then start the
+bundled HTTP adapter from the repository root in a second terminal:
 
 ```powershell
-cd ..\osii-shirty-bridge
-uv run python -m app --mode real
+$env:SHIRTY_BASE_URL = "https://shirty.sandia.gov/api/v1"
+$env:SHIRTY_API_KEY = "your-api-key-here"
+.\scripts\osii.ps1 dev-model-bridge
 ```
 
-Outside the corporate environment, the bridge's explicit `--mode emulated`
-path exercises the same contract while recording that the result is emulated.
+Outside the corporate environment, use the deterministic Shirty emulator and
+point the same adapter at `http://127.0.0.1:8096/api/v1`. Exact macOS and
+PowerShell commands are in
+[`services/model-provider-bridge/README.md`](../services/model-provider-bridge/README.md).
 
 Later examples can use the independent baseline services:
 

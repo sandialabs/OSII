@@ -46,7 +46,11 @@ def get_settings() -> Settings:
                 ollama_model = str(item.get("chat_model") or ollama_model)
             elif kind in {"openai", "shirty"}:
                 chain_items.append("openai")
-                openai_url = (f"{os.getenv('OSII_SHIRTY_BRIDGE_URL', 'http://127.0.0.1:8096').rstrip('/')}/v1" if kind == "shirty" else str(item.get("base_url") or openai_url).rstrip("/"))
+                openai_url = (
+                    f"{os.getenv('OSII_MODEL_BRIDGE_URL', 'http://127.0.0.1:8095').rstrip('/')}/shirty/v1"
+                    if kind == "shirty"
+                    else str(item.get("base_url") or openai_url).rstrip("/")
+                )
                 openai_model = str(item.get("chat_model") or openai_model)
                 env_name = str(item.get("credential_env") or ("SHIRTY_API_KEY" if kind == "shirty" else "OSII_MODEL_API_KEY"))
                 openai_key = os.getenv(env_name, "")

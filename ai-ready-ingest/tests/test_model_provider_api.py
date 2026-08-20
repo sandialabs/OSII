@@ -70,7 +70,26 @@ def test_model_provider_configuration_never_persists_secret(client, temp_osii_ro
     raw = (temp_osii_root / "state" / "model_providers.json").read_text()
     assert "super-secret-value" not in raw
     assert "MY_CORPORATE_KEY" in raw
-    assert selected_processor("embedder", osii_root=temp_osii_root) == "corporate.shirty-embedding"
+    assert '"embedding_model": ""' in raw
+    assert selected_processor("embedder", osii_root=temp_osii_root) == "local.hashing"
+    assert selected_processor("synthesizer", osii_root=temp_osii_root) == "corporate.shirty-synthesis"
+
+
+def test_corporate_environment_exposes_documented_shirty_defaults(client, monkeypatch):
+    monkeypatch.setenv("OSII_ENVIRONMENT", "corporate")
+    monkeypatch.delenv("SHIRTY_BASE_URL", raising=False)
+    monkeypatch.delenv("SHIRTY_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "alias-key")
+
+    payload = client.get("/api/admin/model-providers").json()
+    provider = next(item for item in payload["providers"] if item["id"] == "shirty-corporate")
+
+    assert provider["base_url"] == "https://shirty.sandia.gov/api/v1"
+    assert provider["enabled"] is True
+    assert provider["priority"] == 10
+    assert provider["embedding_model"] == ""
+    assert provider["chat_model"] == "meta-llama/Llama-3.1-8B-Instruct"
+    assert provider["credential_present"] is True
 
 
 def test_ollama_models_are_discovered_and_allowlisted_pull_runs(client, monkeypatch):

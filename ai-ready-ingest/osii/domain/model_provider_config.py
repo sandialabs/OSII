@@ -7,6 +7,8 @@ from typing import Any
 
 DEFAULT_OLLAMA_EMBEDDING_MODEL = "all-minilm"
 DEFAULT_OLLAMA_CHAT_MODEL = "llama3.2:1b"
+DEFAULT_SHIRTY_BASE_URL = "https://shirty.sandia.gov/api/v1"
+DEFAULT_SHIRTY_CHAT_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
 
 _CAPABILITY_FIELDS = {
     "embedder": "embedding_model",
@@ -18,7 +20,6 @@ _PROCESSOR_NAMES = {
     ("ollama", "synthesizer"): "ollama.synthesizer",
     ("openai", "embedder"): "openai.embedder",
     ("openai", "synthesizer"): "openai.synthesizer",
-    ("shirty", "embedder"): "corporate.shirty-embedding",
     ("shirty", "synthesizer"): "corporate.shirty-synthesis",
 }
 
@@ -149,11 +150,11 @@ def processor_model(
             or DEFAULT_OLLAMA_CHAT_MODEL
         )
     if provider_type == "shirty":
-        variable = (
-            "SHIRTY_EMBEDDING_MODEL"
-            if capability == "embedder"
-            else "SHIRTY_SYNTHESIS_MODEL"
+        if capability != "synthesizer":
+            return ""
+        return (
+            os.getenv("SHIRTY_SYNTHESIS_MODEL", DEFAULT_SHIRTY_CHAT_MODEL).strip()
+            or DEFAULT_SHIRTY_CHAT_MODEL
         )
-        return os.getenv(variable, "").strip()
     variable = "EMBEDDING_MODEL" if capability == "embedder" else "SYNTHESIS_MODEL"
     return os.getenv(variable, "").strip()

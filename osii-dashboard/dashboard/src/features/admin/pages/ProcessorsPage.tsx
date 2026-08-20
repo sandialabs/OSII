@@ -8,6 +8,8 @@ import type { CapabilityReadiness, ModelProvider, ModelProviderHealth, ModelPull
 
 const DEFAULT_EMBEDDING_MODEL = "all-minilm";
 const DEFAULT_CHAT_MODEL = "llama3.2:1b";
+const DEFAULT_SHIRTY_MODEL = "meta-llama/Llama-3.1-8B-Instruct";
+const DEFAULT_SHIRTY_URL = "https://shirty.sandia.gov/api/v1";
 
 function modelMatches(installed: string, requested: string) {
   return installed === requested || installed === `${requested}:latest` || requested === `${installed}:latest`;
@@ -190,6 +192,41 @@ export function ProcessorsPage() {
     await loadProviderModels(provider, true);
   };
 
+  const changeProviderType = (type: ModelProvider["type"]) => {
+    if (type === "shirty") {
+      setProviderForm({
+        ...providerForm,
+        type,
+        base_url: DEFAULT_SHIRTY_URL,
+        embedding_model: "",
+        synthesis_model: DEFAULT_SHIRTY_MODEL,
+        chat_model: DEFAULT_SHIRTY_MODEL,
+        credential_env: "SHIRTY_API_KEY",
+      });
+      return;
+    }
+    if (type === "ollama") {
+      setProviderForm({
+        ...providerForm,
+        type,
+        base_url: "http://127.0.0.1:11434",
+        embedding_model: DEFAULT_EMBEDDING_MODEL,
+        synthesis_model: DEFAULT_CHAT_MODEL,
+        chat_model: DEFAULT_CHAT_MODEL,
+        credential_env: "",
+      });
+      return;
+    }
+    setProviderForm({
+      ...providerForm,
+      type,
+      embedding_model: "",
+      synthesis_model: "",
+      chat_model: "",
+      credential_env: "OSII_MODEL_API_KEY",
+    });
+  };
+
   const installModel = async (provider: ModelProvider, recommendation: OllamaRecommendation) => {
     try {
       const jobKey = `${provider.id}:${recommendation.model}`;
@@ -284,19 +321,19 @@ export function ProcessorsPage() {
           {showProviderForm ? <>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
             <TextField label="Provider ID" value={providerForm.id} onChange={(event) => setProviderForm({ ...providerForm, id: event.target.value })} />
-            <TextField select label="Type" value={providerForm.type} onChange={(event) => setProviderForm({ ...providerForm, type: event.target.value as ModelProvider["type"] })} sx={{ minWidth: 140 }}>
+            <TextField select label="Type" value={providerForm.type} onChange={(event) => changeProviderType(event.target.value as ModelProvider["type"])} sx={{ minWidth: 140 }}>
               {(["ollama", "openai", "shirty"] as const).map((type) => <MenuItem key={type} value={type}>{type}</MenuItem>)}
             </TextField>
             <TextField label="Base URL" fullWidth value={providerForm.base_url} onChange={(event) => setProviderForm({ ...providerForm, base_url: event.target.value })} />
           </Stack>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
-            <TextField label="Embedding model" value={providerForm.embedding_model} onChange={(event) => setProviderForm({ ...providerForm, embedding_model: event.target.value })} />
+            {providerForm.type !== "shirty" ? <TextField label="Embedding model" value={providerForm.embedding_model} onChange={(event) => setProviderForm({ ...providerForm, embedding_model: event.target.value })} /> : null}
             <TextField label="Synthesis model" value={providerForm.synthesis_model} onChange={(event) => setProviderForm({ ...providerForm, synthesis_model: event.target.value })} />
             <TextField label="Chat model" value={providerForm.chat_model} onChange={(event) => setProviderForm({ ...providerForm, chat_model: event.target.value })} />
             <TextField label="Credential env name" value={providerForm.credential_env} onChange={(event) => setProviderForm({ ...providerForm, credential_env: event.target.value })} helperText="Example: SHIRTY_API_KEY. Never paste the key." />
           </Stack>
           <FormControlLabel control={<Switch checked={providerForm.enabled} onChange={(event) => setProviderForm({ ...providerForm, enabled: event.target.checked })} />} label="Enable this provider" />
-          <Alert severity="info">The first-run defaults are the US-origin <code>all-minilm</code> embedding model and Meta <code>llama3.2:1b</code> for chat and synthesis. Downloads are explicit and restricted by <code>OSII_OLLAMA_ALLOWED_MODELS</code>.</Alert>
+          {providerForm.type === "shirty" ? <Alert severity="info">Built-in Shirty support covers Textract, synthesis, and chat through the documented HTTP API. The published Shirty examples do not define a remote embedding endpoint, so select Ollama or another OpenAI-compatible provider for embeddings.</Alert> : <Alert severity="info">The first-run defaults are the US-origin <code>all-minilm</code> embedding model and Meta <code>llama3.2:1b</code> for chat and synthesis. Downloads are explicit and restricted by <code>OSII_OLLAMA_ALLOWED_MODELS</code>.</Alert>}
           <Button type="submit" variant="contained" sx={{ alignSelf: "flex-start" }}>Save provider</Button>
           </> : null}
           {(providers.data?.providers ?? []).map((provider) => (
@@ -309,6 +346,7 @@ export function ProcessorsPage() {
                       <Chip size="small" label={provider.type} />
                     </Stack>
                     <Typography variant="caption" color="text.secondary">{provider.base_url} · credentials {provider.credential_required === false ? "not required" : provider.credential_present ? "present" : "not present"} · {provider.enabled ? "enabled" : "disabled"}</Typography>
+                    {provider.type === "shirty" ? <Typography variant="caption" color="text.secondary">Built in: Textract, synthesis, and chat. Embedding remains a separate provider capability.</Typography> : null}
                   </Stack>
                   <Stack direction="row" spacing={1}><Button variant="outlined" onClick={() => { setProviderForm(provider); setShowProviderForm(true); }}>Edit</Button><Button variant="outlined" onClick={() => void probeProvider(provider)}>Refresh models</Button></Stack>
                 </Stack>

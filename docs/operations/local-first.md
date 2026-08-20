@@ -25,7 +25,7 @@ make dev
 .\scripts\osii.ps1 dev
 ```
 
-It starts the API, worker, chat, MCP, dashboard, four baseline processors, and
+It starts the API (including grounded chat), worker, MCP, dashboard, four baseline processors, and
 the lightweight provider bridge from editable source. The bridge makes no
 generation or embedding request until that capability is used; Tools performs
 only model discovery. Run applications without any processor or bridge using
@@ -113,10 +113,11 @@ lemmatized noun/adjective 2-, 3-, and 4-grams and a grounded list of named
 entity candidates. Both use standard Processor API artifact formats; see
 [Example keyword and entity enrichments](../tutorials/example-enrichments.md).
 
-`make dev-corporate` registers the separately deployed Shirty bridge as first
-choice and Ollama as an optional fallback. The corresponding Windows command
-is `.\scripts\osii.ps1 dev-corporate`. The private Shirty package is resolved
-only inside the sibling `osii-shirty-bridge` repository.
+`make dev-corporate` registers OSII's bundled, HTTP-only Shirty adapter as the
+first extraction/synthesis choice and Ollama as embedding and optional model
+fallback. The corresponding Windows command is
+`.\scripts\osii.ps1 dev-corporate`. No private Shirty package is installed;
+the adapter calls the documented bearer-authenticated Shirty endpoints.
 
 ## Failure behavior
 
@@ -143,9 +144,12 @@ search carries page/segment provenance into document navigation. See
 ## Optional containers
 
 Use `make dev-containers` when editable applications should use containerized
-Tika and Tesseract. Use `make build && make run` for packaged deployment parity.
-Ollama and Shirty remain separately managed services reached through configured
-URLs; OSII images do not contain them or their model files.
+Tika and Tesseract. Use `make build && make run` to test locally built images;
+corporate pilot hosts set their approved image tag and use `make run` without a
+local build. See [Corporate pilot images and Quay releases](publishing-images.md).
+Ollama and the upstream Shirty service remain separately managed endpoints.
+OSII images contain only their lightweight HTTP adapters, not private packages
+or model files.
 
 ## Storage and disk diagnostics
 

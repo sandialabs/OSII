@@ -1,14 +1,15 @@
 # %% [markdown]
-# # 01 alternative — Put a private extractor behind a public boundary
+# # 01 alternative — Extract with Shirty through OSII's HTTP adapter
 #
 # Some valuable processors cannot live in the public repository. They may use
 # licensed software, controlled credentials, sensitive models, or specialized
 # hardware. OSII handles this by standardizing the **contract**, not the
 # implementation.
 #
-# This example reaches Shirty Textract through a small bridge. Real corporate
-# Shirty and the public emulator expose the same Processor API shape. OSII core
-# still validates and commits the result; the bridge never writes `.osii`.
+# This example reaches Shirty Textract through OSII's bundled model-provider
+# service. The adapter uses Shirty's documented HTTP endpoint directly; it does
+# not install the private Shirty Python package. OSII core still validates and
+# commits the result, and the adapter never writes `.osii`.
 
 # %% [markdown]
 # ## Why this is modularity rather than indirection
@@ -47,20 +48,23 @@ for source_file in source_files:
 # future planning agent—to decide whether a processor fits a job before sending
 # document bytes.
 #
-# Start the sibling bridge in a second corporate terminal:
+# In the corporate environment, set the Shirty credentials and start OSII's
+# bundled adapter from the repository root in a second terminal:
 #
 # ```powershell
-# cd ..\osii-shirty-bridge
-# uv run python -m app --mode real
+# $env:SHIRTY_BASE_URL = "https://shirty.sandia.gov/api/v1"
+# $env:SHIRTY_API_KEY = "your-api-key-here"
+# .\scripts\osii.ps1 dev-model-bridge
 # ```
 #
-# Outside the corporate environment, use its documented `--mode emulated`
-# path. Emulation tests orchestration while preserving an honest provenance
-# label; it does not claim equivalent extraction quality.
+# Outside the corporate environment, run the test emulator on port 8096, point
+# these same environment variables at it, and start `dev-model-bridge`. The
+# repository README gives the exact commands. Emulation validates the contract;
+# it does not claim equivalent extraction quality.
 
 # %%
-SHIRTY_BRIDGE_URL = "http://127.0.0.1:8096"
-SHIRTY_EXTRACTOR_URL = f"{SHIRTY_BRIDGE_URL}/extractor"
+MODEL_BRIDGE_URL = "http://127.0.0.1:8095"
+SHIRTY_EXTRACTOR_URL = f"{MODEL_BRIDGE_URL}/shirty/extractor"
 
 health = get_json(f"{SHIRTY_EXTRACTOR_URL}/health")
 descriptor = processor_descriptor(SHIRTY_EXTRACTOR_URL)
@@ -77,9 +81,9 @@ bridge_ready = (
 )
 
 if bridge_ready:
-    print(f"Ready: {descriptor['display_name']} ({health.get('mode')} mode)")
+    print(f"Ready: {descriptor['display_name']}")
 else:
-    print("Start or configure the Shirty bridge, then rerun the discovery cells.")
+    print("Start or configure OSII's model-provider bridge, then rerun these cells.")
 
 # %% [markdown]
 # ## Create the client adapter
@@ -97,7 +101,7 @@ EXPERT_CONTEXT = (
 )
 
 # %% [markdown]
-# ## Extract one file through the bridge
+# ## Extract one file through the adapter
 
 # %%
 def extract_one(source_file):

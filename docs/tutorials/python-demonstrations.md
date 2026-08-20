@@ -55,7 +55,7 @@ jupyter lab
 
 Choose the **OSII demo** kernel and run the examples in numerical order. There
 are two alternative step-01 extraction paths; choose local Tesseract or the
-corporate Shirty bridge.
+built-in Shirty HTTP adapter used by the corporate profile.
 
 The notebook environment and host application environment have different
 jobs:

@@ -125,6 +125,7 @@ def build_environment(
         (REPOSITORY_ROOT / "ai-ready-ingest" / "config" / "extractor_routes_native.toml").resolve()
     )
     if provider_profile == "corporate":
+        env["OSII_ENVIRONMENT"] = "corporate"
         env["OSII_EXTRACTOR_ROUTES_PATH"] = str((REPOSITORY_ROOT / "ai-ready-ingest" / "config" / "extractor_routes_corporate.toml").resolve())
     if not core_only:
         ollama_embedding_model = env.get("OLLAMA_EMBEDDING_MODEL", "").strip() or "all-minilm"
@@ -145,21 +146,22 @@ def build_environment(
         ]
         configured = [item for item in env.get("OSII_PROCESSORS", "").split(",") if item]
         if provider_profile == "corporate":
-            shirty_url = env.get("OSII_SHIRTY_BRIDGE_URL", "http://127.0.0.1:8096").rstrip("/")
-            local_urls.extend([f"{shirty_url}/extractor", f"{shirty_url}/embedder", f"{shirty_url}/synthesizer"])
+            local_urls.extend([
+                "http://127.0.0.1:8095/shirty/extractor",
+                "http://127.0.0.1:8095/shirty/synthesizer",
+            ])
         env.update({
             "OSII_PROCESSORS": ",".join(local_urls + configured),
             "OSII_DEFAULT_EXTRACTOR": "corporate.shirty-textract" if provider_profile == "corporate" else "local.native-text",
             "OSII_DEFAULT_SYNTHESIZER": "corporate.shirty-synthesis" if provider_profile == "corporate" else "ollama.synthesizer",
-            "OSII_DEFAULT_EMBEDDER": "corporate.shirty-embedding" if provider_profile == "corporate" else "ollama.embedder",
+            "OSII_DEFAULT_EMBEDDER": "ollama.embedder",
             "OSII_DEFAULT_ENRICHER": "local.stats-keywords",
-            "EMBEDDING_MODEL": env.get("SHIRTY_EMBEDDING_MODEL", "") if provider_profile == "corporate" else ollama_embedding_model,
+            "EMBEDDING_MODEL": ollama_embedding_model,
         })
         if provider_profile in {"baseline", "ollama"}:
             env.update({"CHAT_PROVIDER": "ollama", "CHAT_PROVIDER_CHAIN": "ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "ollama.synthesizer,local.extractive-preview"})
         elif provider_profile == "corporate":
-            shirty_url = env.get("OSII_SHIRTY_BRIDGE_URL", "http://127.0.0.1:8096").rstrip("/")
-            env.update({"CHAT_PROVIDER": "openai", "CHAT_PROVIDER_CHAIN": "openai,ollama,extractive", "OSII_CHAT_BASE_URL": f"{shirty_url}/v1", "OSII_SYNTHESIZER_FALLBACKS": "corporate.shirty-synthesis,ollama.synthesizer,local.extractive-preview"})
+            env.update({"CHAT_PROVIDER": "shirty", "CHAT_PROVIDER_CHAIN": "shirty,ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "corporate.shirty-synthesis,ollama.synthesizer,local.extractive-preview"})
     if examples and not env.get("OSII_PROCESSORS"):
         processor_port = env.get("OSII_EXAMPLE_PROCESSOR_PORT", "8091")
         env["OSII_PROCESSORS"] = f"http://127.0.0.1:{processor_port}"
@@ -173,8 +175,6 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str]) -> None:
             "sync",
             "--package",
             "osii",
-            "--package",
-            "ai-ready-chat",
             "--package",
             "osii-mcp",
             "--package", "osii-local-extractor",
@@ -218,7 +218,6 @@ def service_commands(
     core_only: bool,
 ) -> list[Service]:
     api_port = env.get("OSII_API_PORT", "8511")
-    chat_port = env.get("OSII_CHAT_PORT", "8611")
     dashboard_port = env.get("OSII_DASHBOARD_PORT", "5173")
     mcp_port = env.get("OSII_MCP_PORT", "8022")
     embeddings_port = env.get("OSII_EMBEDDINGS_PORT", "8085")
@@ -259,26 +258,6 @@ def service_commands(
             ),
             REPOSITORY_ROOT / "ai-ready-ingest",
             0,
-        ),
-        Service(
-            "chat",
-            (
-                uv,
-                "run",
-                "--package",
-                "ai-ready-chat",
-                "uvicorn",
-                "app.main:app",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                chat_port,
-                "--reload",
-                "--reload-dir",
-                "app",
-            ),
-            REPOSITORY_ROOT / "ai-ready-rag-chat",
-            int(chat_port),
         ),
         Service(
             "mcp",
