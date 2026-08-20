@@ -16,12 +16,19 @@ import {
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
 import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
+import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { useWikiFile } from "../../../hooks/useWikiFile";
 import { useSaveWikiFile } from "../../../hooks/useSaveWikiFile";
-import { parseEntitySections, replaceEntitySection } from "./entityPage";
+import {
+  appendEntitySection,
+  entityNameInDraft,
+  newEntityUid,
+  parseEntitySections,
+  replaceEntitySection,
+} from "./entityPage";
 import { markdownSx } from "./markdownSx";
 
 /**
@@ -41,6 +48,7 @@ export function EntityPageBrowser({
   const save = useSaveWikiFile();
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const source = page.data ?? "";
   const body = useMemo(() => stripFrontMatter(source), [source]);
@@ -49,6 +57,7 @@ export function EntityPageBrowser({
   useEffect(() => {
     setSelected(null);
     setDraft(null);
+    setCreating(false);
   }, [relpath]);
 
   // A wiki link may name the entity to open.
@@ -68,22 +77,68 @@ export function EntityPageBrowser({
     );
   }
 
-  if (sections.length === 0) {
-    return <Alert severity="info">No entities were extracted for this document.</Alert>;
-  }
-
-  const active = sections.find((section) => section.name === selected) ?? sections[0];
+  // An empty page still needs the create affordance, so the empty state is
+  // rendered inline rather than returned early.
+  const active = sections.find((section) => section.name === selected) ?? sections[0] ?? null;
 
   const commit = () => {
     if (draft === null) return;
+
+    const content = creating || !active
+      ? appendEntitySection(source, draft)
+      : replaceEntitySection(source, active, draft);
+
+    const created = creating ? entityNameInDraft(draft) : null;
+
     save.mutate(
-      { relpath, content: replaceEntitySection(source, active, draft) },
-      { onSuccess: () => setDraft(null) },
+      { relpath, content },
+      {
+        onSuccess: () => {
+          setDraft(null);
+          setCreating(false);
+          if (created) setSelected(created);
+        },
+      },
+    );
+  };
+
+  const startCreating = () => {
+    setCreating(true);
+    setDraft(
+      [
+        "### New entity",
+        "",
+        `- UID: \`${newEntityUid()}\``,
+        "- Entity type: `other`",
+        "- Summary: ",
+        "- Evidence: ",
+        "",
+      ].join("\n"),
     );
   };
 
   return (
-    <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="flex-start">
+    <Stack spacing={1.5}>
+      <Stack direction="row" justifyContent="flex-end">
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<AddOutlinedIcon />}
+          disabled={draft !== null}
+          onClick={startCreating}
+        >
+          Add entity
+        </Button>
+      </Stack>
+
+      {sections.length === 0 && draft === null ? (
+        <Alert severity="info">
+          No entities were extracted for this document. Use Add entity to create one.
+        </Alert>
+      ) : null}
+
+      <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="flex-start">
+      {sections.length > 0 ? (
       <List
         dense
         sx={{
@@ -115,6 +170,7 @@ export function EntityPageBrowser({
           </ListItemButton>
         ))}
       </List>
+      ) : null}
 
       <Box sx={{ flex: 1, minWidth: 0 }}>
         {draft !== null ? (
@@ -123,7 +179,7 @@ export function EntityPageBrowser({
               <Button
                 variant="contained"
                 startIcon={<SaveOutlinedIcon />}
-                disabled={save.isPending || draft === active.body}
+                disabled={save.isPending || (!creating && draft === active?.body)}
                 onClick={commit}
               >
                 {save.isPending ? "Saving…" : "Save"}
@@ -132,12 +188,17 @@ export function EntityPageBrowser({
                 variant="outlined"
                 startIcon={<CloseOutlinedIcon />}
                 disabled={save.isPending}
-                onClick={() => setDraft(null)}
+                onClick={() => {
+                  setDraft(null);
+                  setCreating(false);
+                }}
               >
                 Cancel
               </Button>
               <Typography variant="caption" color="text.secondary">
-                Editing this entity only; the rest of the page is untouched.
+                {creating
+                  ? "New entity; it is appended to this document's entities page."
+                  : "Editing this entity only; the rest of the page is untouched."}
               </Typography>
             </Stack>
 
@@ -162,7 +223,7 @@ export function EntityPageBrowser({
               }}
             />
           </Stack>
-        ) : (
+        ) : !active ? null : (
           <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
               {active.group ? (
@@ -189,6 +250,7 @@ export function EntityPageBrowser({
           </Stack>
         )}
       </Box>
+      </Stack>
     </Stack>
   );
 }

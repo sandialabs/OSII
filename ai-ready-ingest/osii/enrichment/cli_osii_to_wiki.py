@@ -6,7 +6,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from osii.enrichment.llm_wiki import LlmWiki, relpath_or_name, read_toml_if_exists
+from osii.enrichment.candidates import load_or_build_document_frequency
+from osii.enrichment.llm_wiki import (
+    LlmWiki,
+    read_text_if_exists,
+    read_toml_if_exists,
+    relpath_or_name,
+)
 
 
 def parse_options(option_list: list[str]) -> dict:
@@ -234,13 +240,27 @@ def process_one_object(
     integration_result = None
 
     if auto_integrate:
+        corpus_ids = [
+            path.name
+            for path in (osii_root / "objects").iterdir()
+            if path.is_dir()
+        ] if (osii_root / "objects").is_dir() else []
+        corpus_document_frequency, corpus_size = load_or_build_document_frequency(
+            osii_root, corpus_ids
+        )
+
         from osii.enrichment.auto_integrate import AutoWikiIntegrator
 
         integrator = AutoWikiIntegrator(wiki=wiki)
+        # Candidates are drawn from the extracted document, not the source
+        # page, which is mostly generated metadata around a short synthesis.
         integration_result = integrator.integrate_source_page(
             source_page=source_page,
             expert_context=expert_context,
             integrator_config=integrator_config,
+            full_text=read_text_if_exists(record.extracted_text_path),
+            document_frequency=corpus_document_frequency,
+            corpus_size=corpus_size,
         )
 
     return {

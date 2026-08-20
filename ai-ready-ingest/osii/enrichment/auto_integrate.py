@@ -17,6 +17,7 @@ from osii.model_clients import (
     create_ollama_chat_client,
     default_ollama_chat_model,
 )
+from osii.enrichment.candidates import candidate_block
 from osii.enrichment.llm_wiki import (
     LlmWiki,
     has_manual_edit,
@@ -1010,6 +1011,9 @@ class AutoWikiIntegrator:
         source_page: Path,
         expert_context: str | None = None,
         integrator_config: dict | None = None,
+        full_text: str | None = None,
+        document_frequency: dict[str, int] | None = None,
+        corpus_size: int = 0,
     ) -> dict:
         integrator_config = integrator_config or {}
 
@@ -1036,7 +1040,44 @@ class AutoWikiIntegrator:
         source_link = f"[[{source_rel}]]"
 
         source_namespace = source_namespace_from_page(source_page)
-        source_excerpt = source_text[:max_source_chars]
+        if full_text and full_text.strip():
+            # Deliberately smaller than max_source_chars. A shortlist works only
+            # if the model can still hold the output schema in view; a small
+            # local model drops the entities array when the block grows large.
+            evidence_block, candidates = candidate_block(
+                full_text,
+                top_k=int(integrator_config.get("candidate_top_k", 25)),
+                max_chars=int(integrator_config.get("candidate_max_chars", 8000)),
+                document_frequency=document_frequency,
+                corpus_size=corpus_size,
+            )
+        else:
+            evidence_block, candidates = "", []
+
+        # Fall back to the source page when no document text was supplied.
+        source_excerpt = evidence_block or source_text[:max_source_chars]
+
+        candidate_instructions = (
+            """
+How to use CANDIDATES:
+- Each candidate was found by scanning the complete document, not an excerpt.
+- Decide for each whether it is a real, specific entity worth a wiki page.
+- Reject candidates that are language keywords, section headings, formatting
+  artifacts, generic categories, or the document's own title.
+- Use the quoted EVIDENCE to decide, and reuse it verbatim in the evidence field.
+- Assign the most precise entity_type the evidence supports.
+- You may add an entity that the evidence clearly supports even if it is not in
+  the candidate list, but never invent one that the evidence does not show.
+- ABBREVIATIONS were defined by the document itself. Use them as aliases on the
+  matching entity rather than as entities of their own.
+- CANDIDATE CONCEPTS are recurring phrases. Promote the ones that name a real
+  idea the document explains, and ignore the rest.
+- Names must contain only the term itself. Never copy list markers, numbering,
+  or any annotation from this prompt into a name field.
+"""
+            if candidates
+            else ""
+        )
 
         system = """You are an LLM-wiki maintainer.
 
@@ -1065,8 +1106,10 @@ SOURCE PAGE PATH:
 SOURCE NAMESPACE:
 {source_namespace}
 
-SOURCE PAGE CONTENT:
+{"CANDIDATES FOUND IN THE FULL DOCUMENT (with evidence quoted from it):" if candidates else "SOURCE PAGE CONTENT:"}
 {source_excerpt}
+
+{candidate_instructions}
 
 Return JSON with this exact shape:
 

@@ -89,3 +89,27 @@ function countFrontMatterLines(text: string): number {
   const closing = lines.indexOf("---", 1);
   return closing === -1 ? 0 : closing + 1;
 }
+
+/**
+ * Append a new entity section to the end of the page.
+ *
+ * New entities go after the existing ones rather than into a type group, so
+ * creating one never rewrites a section somebody else is editing.
+ */
+export function appendEntitySection(fullText: string, newBody: string): string {
+  return `${fullText.trimEnd()}\n\n${newBody.trim()}\n`;
+}
+
+/** The `### ` heading a draft declares, used to select it after saving. */
+export function entityNameInDraft(draft: string): string | null {
+  const heading = draft.split("\n").find((line) => line.startsWith("### "));
+  return heading ? heading.slice(4).trim() || null : null;
+}
+
+/** A short id in the same shape the integrator emits. */
+export function newEntityUid(): string {
+  const hex = Array.from({ length: 12 }, () =>
+    Math.floor(Math.random() * 16).toString(16),
+  ).join("");
+  return `ent-${hex}`;
+}
