@@ -432,16 +432,11 @@ export function WikiBundleBrowser({ files }: { files: EnrichmentBundleFileEntry[
           ) : null}
         </>
       ) : (
-        <>
-          <Typography variant="caption" color="text.secondary">
-            {active.files[0].name}
-          </Typography>
-          <WikiPage
-            relpath={active.files[0].relpath}
-            onlySection={active.id === "sources" ? "Object synthesis" : undefined}
-            onNavigate={navigateToPage}
-          />
-        </>
+        <WikiPage
+          relpath={active.files[0].relpath}
+          onlySection={active.id === "sources" ? "Object synthesis" : undefined}
+          onNavigate={navigateToPage}
+        />
       )}
     </Stack>
   );

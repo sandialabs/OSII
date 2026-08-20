@@ -1532,10 +1532,14 @@ tags:
         *,
         source_link: str,
         source_namespace: str,
-        source_summary: str,
     ) -> Path:
         """
         Create or update a user-maintained notes page.
+
+        The page holds only the grounding link and the author's own notes. A
+        summary snapshot was previously copied in at creation time, which
+        duplicated the source page and went stale as soon as the source was
+        regenerated.
 
         Important behavior:
         - If the notes page does not exist, create it with a starter template.
@@ -1563,10 +1567,6 @@ tags:
 ## User notes
 
 Write source-specific notes here.
-
-## Source summary at creation time
-
-{source_summary or "_No source summary was available when this notes page was created._"}
 
 ## Source grounding
 
@@ -1809,7 +1809,6 @@ Write source-specific notes here.
         notes_page = self.upsert_notes_page(
             source_link=source_link,
             source_namespace=source_namespace,
-            source_summary=source_summary,
         )
 
         entities_page = self.upsert_document_entities_page(
