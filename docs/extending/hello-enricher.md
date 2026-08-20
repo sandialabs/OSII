@@ -74,8 +74,8 @@ A-102 | 24.1 | 100.8
 Start the required services:
 
 ```bash
-docker compose --profile examples --profile chat --profile ocr up --build \
-  api worker dashboard chat tika tesseract table-pdf-enricher
+docker compose --profile examples --profile ocr up --build \
+  api worker dashboard tika tesseract table-pdf-enricher
 ```
 
 Podman users can replace `docker compose` with `podman compose`.

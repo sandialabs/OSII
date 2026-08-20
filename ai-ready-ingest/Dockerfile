@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 ARG OSII_VERSION=development
 LABEL org.opencontainers.image.title="OSII Core" \
-      org.opencontainers.image.description="API and worker runtime for the On-Store Intelligence Index" \
+      org.opencontainers.image.description="API, worker, and grounded chat runtime for the On-Store Intelligence Index" \
       org.opencontainers.image.source="https://github.com/heidikmkv/osii" \
       org.opencontainers.image.version="${OSII_VERSION}"
 

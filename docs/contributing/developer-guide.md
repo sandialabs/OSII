@@ -12,11 +12,11 @@ Read:
 
 The main repository boundaries are:
 
-- `ai-ready-ingest/osii`: core domain logic, persistence, REST API, and worker;
+- `ai-ready-ingest/osii`: core domain logic, persistence, REST API, worker, and grounded chat;
 - `packages/osii-processor-sdk`: public processor contracts and service helpers;
 - `services`: independently deployable processor implementations;
 - `osii-dashboard/dashboard`: React and TypeScript user interface;
-- `ai-ready-rag-chat`: grounded chat orchestration;
+- `ai-ready-rag-chat`: standalone chat reference; the standard release serves chat from the core API;
 - `ai-ready-mcp`: agent-facing OSII tools.
 
 ## Design invariants

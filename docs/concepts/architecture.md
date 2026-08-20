@@ -10,10 +10,10 @@ resources. A standard artifact written by an enricher must be usable by both a
 person in the dashboard and an agent without processor-specific integration.
 
 ```text
-Dashboard / MCP / chat
-          |
-          v
-      OSII API  ----> job worker (migration target)
+Dashboard / MCP
+      |
+      v
+OSII API + grounded chat  ----> job worker (migration target)
           |
           +----> extractor services
           +----> synthesizer services
@@ -67,9 +67,9 @@ core-side commit adapters.
 
 - `packages/osii-processor-sdk`: public contracts and service/client helpers
 - `services`: independently deployable processors
-- `ai-ready-ingest`: core domain, persistence, API, and transitional local processors
+- `ai-ready-ingest`: core domain, persistence, API, grounded chat, and transitional local processors
 - `osii-dashboard`: browser application
-- `ai-ready-rag-chat`: chat orchestration
+- `ai-ready-rag-chat`: standalone chat reference retained for compatibility testing; the bundled release serves chat from core
 - `ai-ready-mcp`: agent-facing adapter
 - `ai-ready-tool-shelf`: optional third-party/model runtimes pending migration
 

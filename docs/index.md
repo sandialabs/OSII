@@ -6,7 +6,8 @@ matches what you want to do.
 
 ## Start here
 
-- [Get started from the repository README](https://github.com/heidikmkv/osii#getting-started--no-development-experience-required)
+- Read the repository README included with your checkout for the first-run path.
+- [Run the corporate pilot bundle](operations/publishing-images.md)
 - [Follow the friendly Python walkthrough](tutorials/python-demonstrations.md)
 - [Process one file through the CLI](tutorials/single-file.md)
 

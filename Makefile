@@ -10,7 +10,7 @@ unexport VIRTUAL_ENV
 
 .PHONY: dev dev-host dev-core dev-ollama dev-corporate dev-extractor dev-synthesizer dev-embedder dev-enricher dev-model-bridge dev-ocr-host dev-containers dev-services dev-examples containers-dev run dev-all down logs test build build-release push-release docs docs-serve doctor catalog-rebuild catalog-verify
 
-# Default development path: API, worker, chat, MCP, dashboard, and extraction
+# Default development path: API (including chat), worker, MCP, dashboard, and extraction
 # all run from source on the host. No container runtime is required.
 dev: dev-host
 
@@ -54,7 +54,7 @@ dev-services:
 
 # Start the normal integrated stack from existing images, without rebuilding.
 run:
-	$(COMPOSE) up --no-build --pull missing local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker chat dashboard
+	$(COMPOSE) up --no-build --pull missing local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker dashboard
 
 dev-examples: dev-services
 	$(COMPOSE) --profile examples up -d --build table-pdf-enricher
@@ -62,13 +62,13 @@ dev-examples: dev-services
 
 # Rebuild and run the deployment-style container stack.
 containers-dev: build
-	$(COMPOSE) --profile chat --profile agents --profile ocr up local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker chat mcp dashboard tika tesseract
+	$(COMPOSE) --profile agents --profile ocr up local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker mcp dashboard tika tesseract
 
 dev-all: build
-	$(COMPOSE) --profile examples --profile chat --profile agents --profile ocr up
+	$(COMPOSE) --profile examples --profile agents --profile ocr up
 
 down:
-	$(COMPOSE) --profile examples --profile chat --profile agents --profile ocr down
+	$(COMPOSE) --profile examples --profile agents --profile ocr down
 
 logs:
 	$(COMPOSE) logs -f
@@ -87,17 +87,17 @@ test:
 	$(UV) run --no-project --python 3.11 --with pytest --with 'uvicorn[standard]' python -m pytest services/baseline-processors/tests
 	cd osii-dashboard/dashboard && npm test --if-present && npm run build
 
-# Build each distinct image once. API/worker share core; all five baseline
-# processor services share one selectable-command image.
+# Build each distinct release image once. API/worker/chat share core; all five
+# baseline processor services share one selectable-command image.
 build: build-release
 	$(COMPOSE) --profile examples --profile agents --profile ocr build mcp table-pdf-enricher tesseract
 
 build-release:
-	$(COMPOSE) build api dashboard chat local-extractor
+	$(COMPOSE) build api dashboard local-extractor
 
 push-release:
 	@if echo "$(OSII_IMAGE_PREFIX)" | grep -q '^localhost/'; then echo "Set OSII_IMAGE_PREFIX to a registry path such as quay.io/your-org/osii."; exit 2; fi
-	$(COMPOSE) push api dashboard chat local-extractor
+	$(COMPOSE) push api dashboard local-extractor
 
 doctor:
 	$(UV) run --no-project --python 3.11 python scripts/disk_usage.py
