@@ -24,8 +24,11 @@ class LocalStatsKeywordsEnricher(Enricher):
     descriptor = ProcessorDescriptor(
         name="local.stats-keywords",
         version="1.0.0",
-        display_name="Local Statistics and Keywords",
-        description="Creates a standard table of document statistics and frequent keywords.",
+        display_name="Document statistics and frequent keywords",
+        description=(
+            "Counts characters and words and lists frequent terms from extracted text. "
+            "It is deterministic Python processing and does not call an AI model."
+        ),
         kind=ProcessorKind.ENRICHER,
         capabilities=Capability(
             scope_types=["object", "folder", "collection", "root"],
@@ -73,4 +76,3 @@ class LocalStatsKeywordsEnricher(Enricher):
 
 
 app = create_processor_app(LocalStatsKeywordsEnricher())
-

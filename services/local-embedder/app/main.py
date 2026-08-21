@@ -38,7 +38,7 @@ class LocalHashingEmbedder(Embedder):
     descriptor = ProcessorDescriptor(
         name="local.hashing",
         version="1.0.0",
-        display_name="Local Lexical Hashing Embedder",
+        display_name="Lexical hashing vectors (no AI model)",
         description=(
             "A zero-download lexical baseline that converts tokens and adjacent word pairs "
             "into deterministic, normalized 384-dimensional vectors. It helps match shared "

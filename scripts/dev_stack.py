@@ -18,6 +18,17 @@ import time
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+SERVICE_DISPLAY_NAMES = {
+    "extractor": "Python text-layer PDF and Office extractor",
+    "synthesizer": "cited source-excerpt preview (no AI)",
+    "embedder": "lexical hashing vectors (no AI model)",
+    "enricher": "document statistics and frequent keywords",
+    "model-bridge": "Ollama/Shirty/OpenAI HTTP adapter (not Ollama itself)",
+    "api": "OSII backend API and grounded chat",
+    "worker": "sequential intake worker",
+    "mcp": "MCP server for agents",
+    "dashboard": "dashboard web interface",
+}
 
 
 @dataclass(frozen=True)
@@ -324,11 +335,13 @@ def ensure_ports_available(services: list[Service]) -> None:
 
 def render_command(service: Service) -> str:
     command = subprocess.list2cmdline(service.command)
-    return f"[{service.name}] ({service.working_directory}) {command}"
+    display_name = SERVICE_DISPLAY_NAMES.get(service.name, service.name)
+    return f"[{display_name}] ({service.working_directory}) {command}"
 
 
 def start_service(service: Service, env: dict[str, str]) -> subprocess.Popen[bytes]:
-    print(f"[dev] Starting {service.name}...")
+    display_name = SERVICE_DISPLAY_NAMES.get(service.name, service.name)
+    print(f"[dev] Starting {display_name}...")
     kwargs: dict[str, object] = {
         "args": service.command,
         "cwd": service.working_directory,
@@ -389,8 +402,15 @@ def run(
         print(f"[dev] MCP: http://localhost:{env.get('OSII_MCP_PORT', '8022')}/mcp")
         print("[dev] Press Ctrl+C to stop host processes.")
         if not core_only:
-            print("[dev] Local processors: extractor 8092, synthesizer 8093, embedder 8085, enricher 8094")
-            print(f"[dev] Provider profile: {provider_profile}; model downloads require an explicit Tools action")
+            print("[dev] Python text-layer/Office extraction: http://localhost:8092/docs")
+            print("[dev] Cited source-excerpt preview (no AI): http://localhost:8093/docs")
+            print("[dev] Lexical hashing vectors (no AI model): http://localhost:8085/docs")
+            print("[dev] Document statistics and keywords: http://localhost:8094/docs")
+            print("[dev] Model HTTP adapter: http://localhost:8095/docs")
+            print("[dev] Ollama is NOT installed or started by OSII; install and start Ollama separately.")
+            print("[dev] Tesseract OCR is NOT started; install Tesseract, then run make dev-ocr-host.")
+            if provider_profile == "corporate":
+                print("[dev] Corporate profile: Shirty is preferred when SHIRTY_BASE_URL and SHIRTY_API_KEY are set.")
 
         while True:
             for name, (_, process) in processes.items():

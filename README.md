@@ -87,18 +87,27 @@ make dev
 
 `make dev` requires no container runtime or preexisting model download. It runs the API
 (including grounded chat), worker, MCP server, dashboard, and four independent Processor API
-services directly from source: native-text extraction, cited extractive
-previews, 384-dimensional lexical hashing embeddings, and statistics/keyword
-enrichment. Scanned PDFs still require optional OCR. The launcher checks ports and dependencies,
+services directly from source: Python text-layer PDF/Office extraction, cited
+source-excerpt previews that do not use AI, 384-dimensional lexical token/word-pair
+hashing, and deterministic document statistics/frequent-keyword enrichment.
+Scanned PDFs still require optional Tesseract OCR. The launcher checks ports and dependencies,
 reloads backend services when source changes, and keeps generated data under
 `osii-data/`.
 
-OSII first tries a separately installed Ollama service with `all-minilm` for
+**Ollama is not installed or started by `make dev`.** Install the Ollama
+application manually and start it before using model-backed features. OSII then
+tries that separately running Ollama service with `all-minilm` for
 semantic embeddings and Meta `llama3.2:1b` for chat and synthesis. Open
-**Tools → Model providers** to see installed models and explicitly download
+**Tools & services → AI models** to check the connection, see installed models, and explicitly download
 either approved starter model when missing. OSII bundles neither Ollama nor
-model weights. Hashing, BM25, and extractive chat remain the automatic
-model-free fallbacks.
+model weights. BM25 and extractive chat remain the automatic model-free
+fallbacks. Lexical hashing is available as an explicit no-model vector option;
+it is not presented as semantic search.
+
+**The Tesseract executable is also a separate manual installation** in the
+bare-metal workflow. Confirm `tesseract --version` works, then start OSII's
+OpenCV/Tesseract wrapper with `make dev-ocr-host` or
+`.\scripts\osii.ps1 dev-ocr-host`. Normal `make dev` does not start OCR.
 
 On Windows PowerShell, use the equivalent launcher:
 
@@ -162,8 +171,10 @@ another system; duplicate file IDs retain local data and union their labels.
 products, source file, and indexes before requiring exact confirmation. See
 [Sensitive data, transfer, and deletion](docs/operations/sensitive-data.md).
 
-Open **Tools** before the first intake. Its Overview, Model providers, Local
-capabilities, and Processor endpoints submenus keep setup details separate.
+Open **Tools & services** before the first intake. Its **Start & status**, **AI
+models**, **Processing methods**, and **Custom services** submenus state what
+`make dev` started, what must be installed separately, and what each method
+actually does.
 For a domain
 processor running on the host, use a base URL such as
 `http://127.0.0.1:8091`; a packaged API container should use the processor's

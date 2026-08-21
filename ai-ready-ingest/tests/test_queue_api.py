@@ -114,13 +114,13 @@ def test_intake_readiness_hides_compatibility_duplicates_and_labels_model(
     descriptors = [
         {
             "name": "local.native-text",
-            "display_name": "Local Native Text Extractor",
+            "display_name": "Python text-layer PDF and Office extractor",
             "kind": "extractor",
             "base_url": "http://127.0.0.1:8092",
         },
         {
             "name": "local.extractive-preview",
-            "display_name": "Local Extractive Preview",
+            "display_name": "Cited source-excerpt preview (no AI)",
             "kind": "synthesizer",
             "base_url": "http://127.0.0.1:8093",
         },
@@ -132,9 +132,15 @@ def test_intake_readiness_hides_compatibility_duplicates_and_labels_model(
         },
         {
             "name": "local.hashing",
-            "display_name": "Local Lexical Hashing Embedder",
+            "display_name": "Lexical hashing vectors (no AI model)",
             "kind": "embedder",
             "base_url": "http://127.0.0.1:8085",
+        },
+        {
+            "name": "local.stats-keywords",
+            "display_name": "Document statistics and frequent keywords",
+            "kind": "enricher",
+            "base_url": "http://127.0.0.1:8094",
         },
     ]
     monkeypatch.setattr(
@@ -156,6 +162,11 @@ def test_intake_readiness_hides_compatibility_duplicates_and_labels_model(
             "model": "all-minilm",
         },
     )
+    monkeypatch.setattr(
+        capability_readiness,
+        "_ollama_model_status",
+        lambda model: (True, f"Ollama model {model} is installed."),
+    )
     monkeypatch.setenv("OLLAMA_SYNTHESIS_MODEL", "llama3.2:3b")
 
     payload = client.get("/api/intake/readiness").json()
@@ -170,10 +181,57 @@ def test_intake_readiness_hides_compatibility_duplicates_and_labels_model(
     )
     assert ollama["display_name"] == "Ollama Synthesizer · llama3.2:3b"
     assert ollama["model"] == "llama3.2:3b"
+    assert ollama["available"] is True
     assert [item["id"] for item in payload["embedders"]] == [
         "ollama.embedder",
         "local.hashing",
     ]
+    assert "local.stats-keywords" in [item["id"] for item in payload["enrichers"]]
+    assert "stats_keywords" not in [item["id"] for item in payload["enrichers"]]
+
+
+def test_ollama_adapter_is_not_ready_when_ollama_is_missing(
+    client,
+    monkeypatch,
+):
+    from osii.domain.processing import capability_readiness
+
+    monkeypatch.setattr(
+        capability_readiness,
+        "discover_remote_processors",
+        lambda **kwargs: [
+            {
+                "name": "ollama.synthesizer",
+                "display_name": "Ollama Synthesizer",
+                "kind": "synthesizer",
+                "base_url": "http://127.0.0.1:8095/ollama/synthesizer",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        capability_readiness,
+        "_service_probe",
+        lambda *args, **kwargs: (False, "not running"),
+    )
+    monkeypatch.setattr(
+        capability_readiness,
+        "embedding_readiness",
+        lambda osii_root: {"id": "embedding", "available": False},
+    )
+    monkeypatch.setattr(
+        capability_readiness,
+        "_ollama_model_status",
+        lambda model: (
+            False,
+            "OSII's adapter is running, but Ollama is not reachable.",
+        ),
+    )
+
+    payload = client.get("/api/intake/readiness").json()
+    ollama = payload["synthesizers"][0]
+
+    assert ollama["available"] is False
+    assert "Ollama is not reachable" in ollama["detail"]
 
 
 def test_embedding_cannot_be_queued_without_a_tested_embedder(

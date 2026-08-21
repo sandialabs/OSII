@@ -16,7 +16,7 @@ class LocalExtractivePreviewSynthesizer(Synthesizer):
     descriptor = ProcessorDescriptor(
         name="local.extractive-preview",
         version="1.0.0",
-        display_name="Local Extractive Preview",
+        display_name="Cited source-excerpt preview (no AI)",
         description=(
             "Model-free synthesis over text that has already been extracted. It selects "
             "short source excerpts and formats them as cited Markdown; it does not run OCR, "

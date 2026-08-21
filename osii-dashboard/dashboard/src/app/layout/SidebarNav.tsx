@@ -64,7 +64,7 @@ export function SidebarNav({ drawerWidth }: SidebarNavProps) {
           onClick={() => navigate("/admin/processors")}
         >
           <SettingsOutlinedIcon fontSize="small" style={{ marginRight: 12 }} />
-          <ListItemText primary="Tools" primaryTypographyProps={{ variant: "body2" }} />
+          <ListItemText primary="Tools & services" primaryTypographyProps={{ variant: "body2" }} />
         </ListItemButton>
         <ListItemButton
           dense

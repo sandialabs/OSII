@@ -26,7 +26,10 @@ make dev
 ```
 
 It starts the API (including grounded chat), worker, MCP, dashboard, four baseline processors, and
-the lightweight provider bridge from editable source. The bridge makes no
+the lightweight provider bridge from editable source. The four processors are
+the Python text-layer PDF/Office extractor, the no-AI cited source-excerpt
+preview, lexical token/word-pair hashing vectors, and deterministic document
+statistics/frequent keywords. The bridge makes no
 generation or embedding request until that capability is used; Tools performs
 only model discovery. Run applications without any processor or bridge using
 `make dev-core`.
@@ -36,7 +39,9 @@ that visible name because current macOS Python releases can skip editable
 package path files beneath a hidden `.venv` directory.
 
 Normal `make dev` is Ollama-first when the separately installed Ollama service
-is reachable. In **Tools → Model providers**, OSII queries `/api/tags` and shows
+is reachable. **OSII does not install or launch Ollama:** install the Ollama
+application manually, then open it or run `ollama serve`. In **Tools & services
+→ AI models**, OSII queries `/api/tags` and shows
 the installed models beside the endpoint configuration. The two approved US
 starter models are:
 
@@ -47,6 +52,9 @@ Select **Download** to ask Ollama to pull a missing starter model and show its
 progress. OSII bundles no model weights. Downloads are limited to
 `OSII_OLLAMA_ALLOWED_MODELS`; corporate administrators can extend that list
 with other approved models.
+
+BM25 is the automatic no-model retrieval fallback. Lexical hashing remains an
+explicit vector-plumbing/shared-wording option and is never labeled semantic.
 
 The equivalent manual command remains available, for example:
 
@@ -64,7 +72,9 @@ On Windows, append `-DryRun` to any host profile command to validate its
 service plan without opening ports, for example
 `.\scripts\osii.ps1 dev-corporate -DryRun`.
 
-The optional OpenCV/Tesseract OCR service can also run without a container:
+The optional OpenCV/Tesseract OCR service can also run without a container.
+The Tesseract executable is a separate manual installation and must already be
+on `PATH`; verify that first with `tesseract --version`, then run:
 
 ```bash
 make dev-ocr-host
@@ -74,9 +84,8 @@ make dev-ocr-host
 .\scripts\osii.ps1 dev-ocr-host
 ```
 
-It listens on port 8080 and exposes its region-tuning interface at
-`http://localhost:8080/demo`. Tesseract must already be available on `PATH`.
-OCR extraction stores normalized region boxes, which the Source and Split View
+The OSII wrapper listens on port 8080 and exposes its region-tuning interface at
+`http://localhost:8080/demo`. OCR extraction stores normalized region boxes, which the Source and Split View
 can overlay on the PDF.
 
 On ordinary laptop-width screens, Split View places the source and grounded

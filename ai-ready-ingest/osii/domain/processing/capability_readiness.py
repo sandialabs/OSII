@@ -24,6 +24,40 @@ def _service_probe(url: str, *, timeout: float = 3.0) -> tuple[bool, str]:
         return False, str(exc)
 
 
+def _model_name_matches(installed: str, requested: str) -> bool:
+    return (
+        installed == requested
+        or installed == f"{requested}:latest"
+        or requested == f"{installed}:latest"
+    )
+
+
+def _ollama_model_status(model: str) -> tuple[bool, str]:
+    """Distinguish a running OSII adapter from a usable Ollama model."""
+
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+    try:
+        response = requests.get(f"{base_url}/api/tags", timeout=(3, 8))
+        response.raise_for_status()
+        rows = response.json().get("models") or []
+        names = [
+            str(item.get("model") or item.get("name") or "")
+            for item in rows
+            if isinstance(item, dict)
+        ]
+    except (requests.RequestException, ValueError, AttributeError) as exc:
+        return False, (
+            "OSII's Ollama adapter is running, but the separately installed Ollama "
+            f"application is not reachable at {base_url}: {exc}"
+        )
+    if not any(_model_name_matches(name, model) for name in names):
+        return False, (
+            f"Ollama is running, but model '{model}' is not installed. "
+            "Download it from Tools → AI models."
+        )
+    return True, f"Ollama is running and model '{model}' is installed."
+
+
 def _embedding_probe(osii_root: Path | None = None) -> dict[str, Any]:
     selected = selected_processor("embedder", osii_root=osii_root)
     if selected:
@@ -31,10 +65,12 @@ def _embedding_probe(osii_root: Path | None = None) -> dict[str, Any]:
             if descriptor.get("name") != selected:
                 continue
             available = not descriptor.get("error")
-            model = selected
+            model = processor_model(selected, "embedder", osii_root=osii_root) or selected
             dimensions = None
             provider = selected
             detail = "Descriptor validated."
+            if available and selected.startswith("ollama."):
+                available, detail = _ollama_model_status(model)
             if available:
                 try:
                     probe = requests.post(
@@ -61,9 +97,12 @@ def _embedding_probe(osii_root: Path | None = None) -> dict[str, Any]:
                 ) as exc:
                     available = False
                     detail = f"Embedding operation test failed: {exc}"
+            display_name = descriptor.get("display_name", selected)
+            if model and not selected.startswith("local."):
+                display_name = f"{display_name} · {model}"
             return {
                 "id": selected,
-                "display_name": descriptor.get("display_name", selected),
+                "display_name": display_name,
                 "description": descriptor.get("description", "Configured embedding processor."),
                 "kind": "embedder",
                 "available": available,
@@ -274,6 +313,14 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
             }
         )
 
+    for kind in ("synthesizer", "embedder"):
+        for item in remote_by_kind[kind]:
+            if not str(item.get("id", "")).startswith("ollama."):
+                continue
+            model = str(item.get("model") or "").strip()
+            if item.get("available") and model:
+                item["available"], item["detail"] = _ollama_model_status(model)
+
     remote_extractor_ids = {item["id"] for item in remote_by_kind["extractor"]}
     if "local.native-text" not in remote_extractor_ids:
         extractors.insert(
@@ -281,10 +328,10 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
             {
                 "id": "native_text",
                 "aliases": ["native_text", "local.native-text"],
-                "display_name": "Local Native Text Extractor",
+                "display_name": "Python text-layer PDF and Office extractor",
                 "description": (
-                    "Container-free extraction for text-layer PDFs, modern Office "
-                    "documents, and common text formats."
+                    "Reads text already stored inside PDFs, Office documents, and "
+                    "common text formats. It does not perform OCR."
                 ),
                 "available": True,
                 "detail": "Using the compatibility implementation in OSII core.",
@@ -339,6 +386,57 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
         not in {"local.extractive-preview", "firstN", "recursive"}
     )
 
+    compatibility_enrichers = [
+        {
+            "id": "stats_keywords",
+            "display_name": "Document statistics and frequent keywords",
+            "kind": "enricher",
+            "description": "Creates deterministic word counts and frequent-keyword artifacts from extracted text.",
+            "available": True,
+            "detail": "Python implementation inside OSII core; no model required.",
+            "bundled": True,
+        },
+        {
+            "id": "noun_adjective_ngrams",
+            "display_name": "Noun/adjective phrase keywords",
+            "kind": "enricher",
+            "description": "Ranks recurring 2-, 3-, and 4-word noun/adjective phrases to provide a compact content snapshot.",
+            "available": True,
+            "detail": "Bundled local 2-, 3-, and 4-gram keyword snapshot; no model required.",
+            "bundled": True,
+        },
+        {
+            "id": "entity_candidates",
+            "display_name": "Named entity candidates",
+            "kind": "enricher",
+            "description": "Finds grounded capitalized-name and acronym candidates without requiring a model download.",
+            "available": True,
+            "detail": "Bundled local capitalized-name and acronym candidates with grounded mentions.",
+            "bundled": True,
+        },
+        {
+            "id": "llm_wiki",
+            "display_name": "LLM Wiki",
+            "kind": "enricher",
+            "description": "Uses the selected model-backed synthesizer to create a cited Markdown knowledge page for a document or collection.",
+            "available": llm_wiki_available,
+            "detail": (
+                f"Uses the selected model-backed synthesizer: {selected_synthesizer}."
+                if llm_wiki_available
+                else "Select and test an Ollama or OpenAI-compatible synthesis model first."
+            ),
+            "bundled": False,
+            "config_schema": LlmWikiEnricher.config_schema,
+        },
+    ]
+    if any(
+        item["id"] == "local.stats-keywords"
+        for item in remote_by_kind["enricher"]
+    ):
+        compatibility_enrichers = [
+            item for item in compatibility_enrichers if item["id"] != "stats_keywords"
+        ]
+
     return {
         "defaults": {
             "extractor": os.getenv("OSII_DEFAULT_EXTRACTOR", "native_text"),
@@ -349,50 +447,7 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
         "extractors": remote_by_kind["extractor"] + extractors,
         "synthesizers": synthesizers,
         "embedders": embedders,
-        "enrichers": remote_by_kind["enricher"]
-        + [
-            {
-                "id": "stats_keywords",
-                "display_name": "Statistics and keywords",
-                "kind": "enricher",
-                "description": "Creates deterministic word counts and frequent-keyword artifacts from extracted text.",
-                "available": True,
-                "detail": "Bundled locally; run after intake from a file or collection.",
-                "bundled": True,
-            },
-            {
-                "id": "noun_adjective_ngrams",
-                "display_name": "Noun/adjective phrase keywords",
-                "kind": "enricher",
-                "description": "Ranks recurring 2-, 3-, and 4-word noun/adjective phrases to provide a compact content snapshot.",
-                "available": True,
-                "detail": "Bundled local 2-, 3-, and 4-gram keyword snapshot; no model required.",
-                "bundled": True,
-            },
-            {
-                "id": "entity_candidates",
-                "display_name": "Named entity candidates",
-                "kind": "enricher",
-                "description": "Finds grounded capitalized-name and acronym candidates without requiring a model download.",
-                "available": True,
-                "detail": "Bundled local capitalized-name and acronym candidates with grounded mentions.",
-                "bundled": True,
-            },
-            {
-                "id": "llm_wiki",
-                "display_name": "LLM Wiki",
-                "kind": "enricher",
-                "description": "Uses the selected model-backed synthesizer to create a cited Markdown knowledge page for a document or collection.",
-                "available": llm_wiki_available,
-                "detail": (
-                    f"Uses the selected model-backed synthesizer: {selected_synthesizer}."
-                    if llm_wiki_available
-                    else "Select and test an Ollama or OpenAI-compatible synthesis model first."
-                ),
-                "bundled": False,
-                "config_schema": LlmWikiEnricher.config_schema,
-            },
-        ],
+        "enrichers": remote_by_kind["enricher"] + compatibility_enrichers,
         "external": external,
         "semantic_indexes": list_semantic_indexes(osii_root),
     }

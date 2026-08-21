@@ -100,7 +100,7 @@ page region or visually mapping table columns.
 
 ## Register and verify
 
-Register the service base URL under **Tools**. **Health** verifies
+Register the service base URL under **Tools & services → Custom services**. **Health** verifies
 liveness. **Test** reads the descriptor, checks that its kind matches the
 registration, and sends a small contract-valid operation request.
 

@@ -27,7 +27,7 @@ progress. The default download allowlist contains only those two names and can b
 `OSII_OLLAMA_ALLOWED_MODELS`. OSII installs no Ollama Python package and
 bundles no server or weights.
 
-Configure non-secret fields in **Tools → Model providers**: provider ID, base
+Configure non-secret fields in **Tools & services → AI models**: provider ID, base
 URL, enabled state, priority, and exact embedding/synthesis/chat model names.
 Missing installed models still include copy-paste `ollama pull <model>`
 commands for environments where browser-initiated downloads are disabled.

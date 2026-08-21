@@ -170,6 +170,15 @@ export function QueuePage() {
     queryFn: getIntakeReadiness,
     staleTime: 30_000,
   });
+  const availableSynthesizers = readiness.data?.synthesizers.filter(
+    (item) => item.available,
+  ) ?? [];
+  const configuredSynthesizer = readiness.data?.defaults.synthesizer;
+  const effectiveSynthesizer = selectedSynthesizer
+    || availableSynthesizers.find((item) => item.id === configuredSynthesizer)?.id
+    || availableSynthesizers.find((item) => item.id === "local.extractive-preview")?.id
+    || availableSynthesizers[0]?.id
+    || "";
 
   const sharedRootPath = rootBrowse.data?.current_path ?? "";
   const queuePaths = useMemo(() => {
@@ -206,7 +215,7 @@ export function QueuePage() {
       chunkSize,
       chunkOverlap,
       enrich,
-      selectedSynthesizer,
+      effectiveSynthesizer,
       selectedEnricher,
     ],
     queryFn: () => resolveIntake({
@@ -220,7 +229,7 @@ export function QueuePage() {
       run_extraction: runExtraction,
       extract_mode: extractMode,
       synthesizer_name: synthesize
-        ? (selectedSynthesizer || readiness.data?.defaults.synthesizer || "local.extractive-preview")
+        ? (effectiveSynthesizer || null)
         : null,
       build_embeddings: embed,
       chunking_method: chunkingMethod,
@@ -306,7 +315,7 @@ export function QueuePage() {
         extract_mode: extractMode,
         extraction_policy: extractionPolicy,
         synthesizer_name: synthesize
-          ? (selectedSynthesizer || readiness.data?.defaults.synthesizer || "local.extractive-preview")
+          ? (effectiveSynthesizer || null)
           : null,
         build_embeddings: embed,
         chunking_method: chunkingMethod,
@@ -448,11 +457,11 @@ export function QueuePage() {
         severity="info"
         action={(
           <Button color="inherit" size="small" onClick={() => navigate("/admin/processors")}>
-            Open Tools
+            Open Tools &amp; services
           </Button>
         )}
       >
-        Before your first Intake, review Tools and test any external processors you expect to use. Bundled local extraction and text previews require no setup.
+        <strong><code>make dev</code> already started OSII&apos;s Python text extractor and no-AI source-excerpt preview.</strong> It did not install Ollama or Tesseract. Open Tools &amp; services for exact status and startup commands before processing scanned PDFs or requesting AI models.
       </Alert>
 
       <Paper variant="outlined" sx={{ p: 2 }}>
@@ -485,7 +494,7 @@ export function QueuePage() {
                 startIcon={<SettingsOutlinedIcon />}
                 onClick={() => navigate("/admin/processors")}
               >
-                Manage tools
+                Manage tools &amp; services
               </Button>
             </Stack>
           </Stack>
@@ -503,19 +512,21 @@ export function QueuePage() {
                 <Chip
                   color={extractorPlanReady ? "success" : "error"}
                   variant="outlined"
-                  label={extractorPlanReady ? "Extractors ready" : "Extractor unavailable"}
+                  label={extractorPlanReady ? "Selected text extractors are running" : "A selected extractor needs setup"}
                 />
               ) : <Chip color="success" variant="outlined" label="Using current extraction" />}
-              <Chip color="success" variant="outlined" label="Local preview ready" />
+              <Chip color="success" variant="outlined" label="Cited source-excerpt preview ready (no AI)" />
               <Chip
                 color={embeddingAvailable ? "success" : "default"}
                 variant="outlined"
-                label={embeddingAvailable ? "Embedder ready" : "No embedder"}
+                label={embeddingAvailable
+                  ? `${embeddingStatus?.display_name ?? "Embedding method"} is usable`
+                  : "No embedding model — BM25 keyword search still works"}
               />
               <Chip
                 color="success"
                 variant="outlined"
-                label={`${readiness.data.enrichers.filter((item) => item.available).length} enrichers ready after intake`}
+                label={`${readiness.data.enrichers.filter((item) => item.available).length} enrichment methods available`}
               />
             </Stack>
           ) : null}
@@ -593,7 +604,7 @@ export function QueuePage() {
             <Typography variant="caption" color="text.secondary">
               {readiness.data.external.filter((item) => item.available).length} of{" "}
               {readiness.data.external.length} registered external tools responded.
-              Use Manage tools to run their full contract tests.
+              Use Manage tools &amp; services to run their full contract tests.
             </Typography>
           ) : null}
         </Stack>
@@ -953,16 +964,18 @@ export function QueuePage() {
               select
               size="small"
               label="Synthesizer"
-              value={selectedSynthesizer || readiness.data?.defaults.synthesizer || ""}
+              value={effectiveSynthesizer}
               onChange={(event) => setSelectedSynthesizer(event.target.value)}
             >
-              {(readiness.data?.synthesizers ?? []).filter((item) => item.available).map((item) => (
+              {availableSynthesizers.map((item) => (
                 <MenuItem key={item.id} value={item.id}>{item.display_name}</MenuItem>
               ))}
             </TextField>
           ) : null}
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
-            Select the extractive baseline or a connected model-backed synthesizer.
+            {effectiveSynthesizer === "local.extractive-preview"
+              ? "Using the no-AI baseline: OSII copies cited source excerpts and does not generate new prose."
+              : "Using a connected model-backed synthesizer; its provider and model are recorded with the result."}
           </Typography>
           {embed ? (
             <Accordion variant="outlined" disableGutters>
@@ -1169,6 +1182,7 @@ export function QueuePage() {
               || preview.isLoading
               || readiness.isLoading
               || (runExtraction && !extractorPlanReady)
+              || (synthesize && !effectiveSynthesizer)
               || (embed && !embeddingAvailable)
               || (embed && !chunkSettingsValid)
               || (extractionPolicy === "save_variant" && runExtraction && (synthesize || embed || enrich))

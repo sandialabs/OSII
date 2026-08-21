@@ -77,7 +77,7 @@ def test_remote_synthesis_omits_absent_citation_fields_from_toml(
     descriptor = ProcessorDescriptor(
         name="local.extractive-preview",
         version="1.0.0",
-        display_name="Local Extractive Preview",
+        display_name="Cited source-excerpt preview (no AI)",
         description="Test synthesizer",
         kind=ProcessorKind.SYNTHESIZER,
         capabilities=Capability(scope_types=["object"]),
