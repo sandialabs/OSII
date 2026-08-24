@@ -27,7 +27,11 @@ function runNextThumbnailJob() {
 function scheduleThumbnail<T>(work: () => Promise<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     thumbnailJobs.push(() => {
-      void work()
+      // Start through a promise boundary so a synchronous cancellation/error
+      // still reaches `finally` and releases this shared queue slot. React's
+      // development StrictMode intentionally cancels the first effect run.
+      void Promise.resolve()
+        .then(work)
         .then(resolve, reject)
         .finally(() => {
           activeThumbnailJobs -= 1;

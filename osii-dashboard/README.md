@@ -231,6 +231,17 @@ http://localhost:8511
 
 and that Vite proxy settings in `vite.config.ts` are correct.
 
+### PDF thumbnails do not appear
+
+Thumbnails are rendered in the browser from the original PDF; they are not
+created by Intake, Tesseract, or another backend processor. First hard-refresh
+the page (<kbd>Command</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> on macOS or
+<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> on Windows). If one PDF still has
+no preview, open `/api/objects/<file-id>/source` through the dashboard address.
+A missing response means the original file is no longer available at the
+source path recorded by OSII; put the original back at that path or intake it
+from its new location.
+
 ### Dependency issues
 
 If installs seem broken, from the repo root you can remove local install artifacts and reinstall:
