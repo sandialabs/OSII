@@ -32,6 +32,66 @@ from osii.enrichment.linguistic_examples import (
 ACRONYM_DEFINITION_RE = re.compile(
     r"\b((?:[A-Z][\w'-]*)(?:[ -](?:[A-Za-z][\w'-]*)){0,5})\s*\(([A-Z][A-Z0-9]{1,7})s?\)"
 )
+LOWERCASE_TECH_RE = re.compile(
+    r"\b[a-z][a-z0-9]{2,}(?:[-_.:/][a-z0-9][a-z0-9_.:/-]*)+\b"
+)
+
+VERSIONED_NAME_RE = re.compile(
+    r"\b[a-zA-Z][a-zA-Z0-9_.-]*\s+v?\d+(?:\.\d+){1,4}\b"
+)
+
+FILE_OR_PATH_RE = re.compile(
+    r"\b[\w.-]+\.(?:txt|toml|json|yaml|yml|csv|tsv|h5|hdf5|nc|py|js|ts|java|c|cc|cpp|h|hpp|md|pdf|docx|pptx)\b"
+)
+
+LABELED_REFERENCE_RE = re.compile(
+    r"\b(?:figure|fig\.?|table|appendix|section|sec\.?|requirement|req\.?|run|case|sample|specimen|test|experiment|model|dataset)\s+[A-Za-z0-9_.:#/-]+\b",
+    flags=re.IGNORECASE,
+)
+
+CODE_LITERAL_RE = re.compile(
+    r"`([^`\n]{2,80})`"
+)
+
+GENERIC_LOWERCASE_CANDIDATES = {
+    "model",
+    "models",
+    "data",
+    "dataset",
+    "datasets",
+    "database",
+    "databases",
+    "software",
+    "system",
+    "systems",
+    "component",
+    "components",
+    "method",
+    "methods",
+    "process",
+    "processes",
+    "approach",
+    "analysis",
+    "result",
+    "results",
+    "discussion",
+    "conclusion",
+    "introduction",
+    "background",
+    "experiment",
+    "experiments",
+    "simulation",
+    "simulations",
+    "test",
+    "tests",
+    "document",
+    "documents",
+    "report",
+    "reports",
+    "figure",
+    "table",
+    "section",
+}
 
 
 def _clean_candidate(raw: str) -> str:
@@ -128,6 +188,70 @@ def evidence_snippets(
 
     return snippets
 
+def merge_candidate_lists(*candidate_lists: list[dict]) -> list[dict]:
+    """
+    Merge candidates by normalized lowercase name while preserving counts and source types.
+    """
+    merged: dict[str, dict] = {}
+
+    for candidate_list in candidate_lists:
+        for candidate in candidate_list:
+            name = " ".join(str(candidate.get("name") or "").split()).strip()
+            if not name:
+                continue
+
+            key = name.lower()
+
+            if key not in merged:
+                merged[key] = {
+                    **candidate,
+                    "name": name,
+                    "count": int(candidate.get("count") or 1),
+                    "candidate_types": [candidate.get("candidate_type") or "candidate"],
+                }
+            else:
+                merged[key]["count"] += int(candidate.get("count") or 1)
+                ctype = candidate.get("candidate_type") or "candidate"
+                if ctype not in merged[key]["candidate_types"]:
+                    merged[key]["candidate_types"].append(ctype)
+
+    return list(merged.values())
+
+def candidate_quality_score(candidate: dict) -> float:
+    name = str(candidate.get("name") or "").strip()
+    count = int(candidate.get("count") or 1)
+    candidate_types = candidate.get("candidate_types") or [candidate.get("candidate_type")]
+
+    score = float(count)
+
+    # Acronyms and proper names are useful.
+    if re.search(r"\b[A-Z]{2,}\b", name):
+        score += 4.0
+
+    # IDs, versions, figures, tables, files, paths, and run names are useful.
+    if re.search(r"\d", name):
+        score += 3.0
+
+    if re.search(r"[-_./:#]", name):
+        score += 3.0
+
+    # Multi-word title-case names are usually good.
+    words = name.split()
+    if len(words) >= 2 and any(word[:1].isupper() for word in words):
+        score += 2.0
+
+    # Code literals and lowercase technical names are strong.
+    if "lowercase_specific_candidate" in candidate_types:
+        score += 3.0
+
+    # Penalize generic section-ish words.
+    if name.lower() in ENTITY_NOISE_WORDS:
+        score -= 5.0
+
+    if name.lower() in ENTITY_HEADER_WORDS:
+        score -= 5.0
+
+    return score
 
 def candidate_block(
     text: str,
@@ -138,28 +262,56 @@ def candidate_block(
     corpus_size: int = 0,
 ) -> tuple[str, list[dict]]:
     """
-    Render entity, abbreviation, and concept candidates as one prompt block.
-
-    Three signals, because each sees something the others cannot: capitalized
-    runs find named things, author-defined abbreviations supply reliable
-    aliases, and noun phrases find the lowercase terms that make up concepts.
+    Render entity, abbreviation, lowercase technical, and concept candidates
+    as one prompt block.
     """
-    candidates = candidate_names(text, top_k=top_k)
+    capitalized = candidate_names(
+        text,
+        top_k=top_k * 4,
+        min_count=2,
+    )
+
+    lowercase_specific = lowercase_specific_candidates(
+        text,
+        top_k=top_k * 4,
+        min_count=1,
+    )
+
+    candidates = merge_candidate_lists(capitalized, lowercase_specific)
 
     if document_frequency:
-        candidates = rank_by_distinctiveness(candidates, document_frequency, corpus_size)
+        candidates = rank_by_distinctiveness(
+            candidates,
+            document_frequency,
+            corpus_size,
+        )
+
+    candidates = sorted(
+        candidates,
+        key=lambda item: -candidate_quality_score(item),
+    )
 
     lines: list[str] = []
     used: list[dict] = []
     size = 0
 
     for candidate in candidates:
+        if len(used) >= top_k:
+            break
+
         snippets = evidence_snippets(text, candidate["name"])
         if not snippets:
             continue
 
-        entry = [f'- CANDIDATE: {candidate["name"]}']
+        ctype = candidate.get("candidate_type") or ",".join(candidate.get("candidate_types") or [])
+
+        entry = [
+            f'- CANDIDATE: {candidate["name"]}',
+            f'  CANDIDATE_TYPE: {ctype}',
+            f'  COUNT: {candidate.get("count", "")}',
+        ]
         entry.extend(f"  EVIDENCE: {snippet}" for snippet in snippets)
+
         rendered = "\n".join(entry)
 
         if size + len(rendered) > max_chars:
@@ -173,21 +325,37 @@ def candidate_block(
 
     abbreviations = acronym_definitions(text)
     if abbreviations:
-        block += "\n\nABBREVIATIONS DEFINED IN THE DOCUMENT (use as aliases):\n"
-        block += "\n".join(
-            f'- {item["acronym"]} = {item["name"]}' for item in abbreviations[:20]
-        )
+        abbrev_lines = [
+            "",
+            "ABBREVIATIONS DEFINED IN THE DOCUMENT (use as aliases):",
+            *[
+                f'- {item["acronym"]} = {item["name"]}'
+                for item in abbreviations[:20]
+            ],
+        ]
+
+        rendered = "\n".join(abbrev_lines)
+        if size + len(rendered) <= max_chars:
+            block += "\n" + rendered
+            size += len(rendered)
 
     concepts = concept_candidates(text)
+
     if document_frequency:
         concepts = rank_by_distinctiveness(concepts, document_frequency, corpus_size)
 
     if concepts:
-        block += "\n\nCANDIDATE CONCEPTS (frequent phrases from the full document):\n"
-        block += "\n".join(f'- {item["name"]}' for item in concepts[:20])
+        concept_lines = [
+            "",
+            "CANDIDATE CONCEPTS (frequent phrases from the full document):",
+            *[f'- {item["name"]}' for item in concepts[:20]],
+        ]
+
+        rendered = "\n".join(concept_lines)
+        if size + len(rendered) <= max_chars:
+            block += "\n" + rendered
 
     return block, used
-
 
 def acronym_definitions(text: str, *, max_items: int = 40) -> list[dict]:
     """
@@ -342,3 +510,142 @@ def load_or_build_document_frequency(osii_root: Path, file_ids: list[str]) -> tu
     )
 
     return dict(document_frequency), len(ordered)
+
+def lowercase_specific_candidates(
+    text: str,
+    *,
+    top_k: int = 60,
+    min_count: int = 1,
+) -> list[dict]:
+    """
+    Find lowercase/code-like specific entities that capitalized-name extraction misses.
+
+    This intentionally favors things with identifiers, punctuation, versions,
+    file extensions, code formatting, or labeled references.
+    """
+    counts: Counter[str] = Counter()
+
+    regexes = [
+        LOWERCASE_TECH_RE,
+        VERSIONED_NAME_RE,
+        FILE_OR_PATH_RE,
+        LABELED_REFERENCE_RE,
+    ]
+
+    for regex in regexes:
+        for match in regex.finditer(text):
+            name = " ".join(match.group(0).split()).strip(" .,:;()[]{}")
+            if _is_bad_lowercase_candidate(name):
+                continue
+            counts[name] += 1
+
+    for match in CODE_LITERAL_RE.finditer(text):
+        name = " ".join(match.group(1).split()).strip(" .,:;()[]{}")
+        if _is_bad_lowercase_candidate(name):
+            continue
+        if _looks_like_code_entity(name):
+            counts[name] += 2  # code formatting is strong evidence
+
+    ranked = sorted(
+        counts.items(),
+        key=lambda pair: (-_lowercase_specificity_score(pair[0], pair[1]), pair[0].lower()),
+    )
+
+    return [
+        {
+            "name": name,
+            "count": count,
+            "candidate_type": "lowercase_specific_candidate",
+        }
+        for name, count in ranked[:top_k]
+        if count >= min_count
+    ]
+
+
+def _is_bad_lowercase_candidate(name: str) -> bool:
+    value = " ".join(str(name or "").split()).strip().lower()
+
+    if not value:
+        return True
+
+    if value in GENERIC_LOWERCASE_CANDIDATES:
+        return True
+
+    if len(value) < 3:
+        return True
+
+    # Reject plain lowercase prose words unless they have some identifying feature.
+    if re.fullmatch(r"[a-z]+", value) and value not in _KNOWN_LOWERCASE_TECH_NAMES:
+        return True
+
+    return False
+
+
+_KNOWN_LOWERCASE_TECH_NAMES = {
+    "numpy",
+    "pandas",
+    "scipy",
+    "sklearn",
+    "matplotlib",
+    "seaborn",
+    "xarray",
+    "dask",
+    "sqlite",
+    "postgres",
+    "postgresql",
+    "mysql",
+    "redis",
+    "hdf5",
+    "netcdf",
+    "yaml",
+    "json",
+    "toml",
+    "python",
+    "pytest",
+    "ollama",
+}
+
+
+def _looks_like_code_entity(name: str) -> bool:
+    value = str(name or "").strip()
+
+    if not value:
+        return False
+
+    if value.lower() in GENERIC_LOWERCASE_CANDIDATES:
+        return False
+
+    if value.lower() in _KNOWN_LOWERCASE_TECH_NAMES:
+        return True
+
+    if re.search(r"\d", value):
+        return True
+
+    if re.search(r"[-_./:#]", value):
+        return True
+
+    if re.search(r"\.(txt|toml|json|yaml|yml|csv|tsv|h5|hdf5|nc|py|md)$", value, re.I):
+        return True
+
+    return False
+
+
+def _lowercase_specificity_score(name: str, count: int) -> float:
+    score = float(count)
+
+    if re.search(r"\d", name):
+        score += 3.0
+
+    if re.search(r"[-_./:#]", name):
+        score += 3.0
+
+    if re.search(r"\.(txt|toml|json|yaml|yml|csv|tsv|h5|hdf5|nc|py|md)$", name, re.I):
+        score += 4.0
+
+    if name.lower() in _KNOWN_LOWERCASE_TECH_NAMES:
+        score += 4.0
+
+    if len(name) >= 8:
+        score += 1.0
+
+    return score
