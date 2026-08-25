@@ -165,3 +165,29 @@ def test_reconcile_moved_file(temp_data_root, temp_osii_root):
     )
 
     assert result["summary"]["moved"] == 1
+
+
+def test_reconcile_does_not_call_a_second_identical_path_a_new_document(
+    temp_data_root,
+    temp_osii_root,
+):
+    from osii.domain.processing.reconcile import reconcile_osii_with_source
+
+    content = b"%PDF-1.4 duplicated exact content"
+    _build_real_object_from_source(
+        temp_data_root,
+        temp_osii_root,
+        "reports/example.pdf",
+        content,
+    )
+    duplicate = temp_data_root / "archive" / "example-copy.pdf"
+    duplicate.parent.mkdir(parents=True, exist_ok=True)
+    duplicate.write_bytes(content)
+
+    result = reconcile_osii_with_source(
+        osii_root=temp_osii_root,
+        data_root=temp_data_root,
+    )
+
+    assert result["summary"]["unchanged"] == 1
+    assert result["summary"]["new_files"] == 0

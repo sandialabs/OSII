@@ -241,6 +241,8 @@ def service_commands(
                 "run",
                 "--package",
                 "osii",
+                "python",
+                "-m",
                 "uvicorn",
                 "osii.main:app",
                 "--host",
@@ -261,6 +263,8 @@ def service_commands(
                 "run",
                 "--package",
                 "osii",
+                "python",
+                "-m",
                 "watchfiles",
                 "--filter",
                 "python",
@@ -307,9 +311,9 @@ def service_commands(
         )
         for name, package, default_port, env_name, directory in reversed(processors):
             port = env.get(env_name, default_port)
-            services.insert(0, Service(name, (uv, "run", "--package", package, "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "services" / directory, int(port)))
+            services.insert(0, Service(name, (uv, "run", "--package", package, "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "services" / directory, int(port)))
         bridge_port = env.get("OSII_MODEL_BRIDGE_PORT", "8095")
-        services.insert(4, Service("model-bridge", (uv, "run", "--package", "osii-model-provider-bridge", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", bridge_port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "services" / "model-provider-bridge", int(bridge_port)))
+        services.insert(4, Service("model-bridge", (uv, "run", "--package", "osii-model-provider-bridge", "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", bridge_port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "services" / "model-provider-bridge", int(bridge_port)))
     return services
 
 
@@ -407,8 +411,9 @@ def run(
             print("[dev] Lexical hashing vectors (no AI model): http://localhost:8085/docs")
             print("[dev] Document statistics and keywords: http://localhost:8094/docs")
             print("[dev] Model HTTP adapter: http://localhost:8095/docs")
-            print("[dev] Ollama is NOT installed or started by OSII; install and start Ollama separately.")
-            print("[dev] Tesseract OCR is NOT started; install Tesseract, then run make dev-ocr-host.")
+            print("[dev] OSII does not manage Ollama; Tools checks the separately configured Ollama URL.")
+            print("[dev] Tesseract OCR is not started; after installing Tesseract, run make dev-ocr-host.")
+            print("[dev] Apache Tika is not started; run make dev-tika in a second terminal if needed.")
             if provider_profile == "corporate":
                 print("[dev] Corporate profile: Shirty is preferred when SHIRTY_BASE_URL and SHIRTY_API_KEY are set.")
 

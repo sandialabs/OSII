@@ -39,8 +39,8 @@ that visible name because current macOS Python releases can skip editable
 package path files beneath a hidden `.venv` directory.
 
 Normal `make dev` is Ollama-first when the separately installed Ollama service
-is reachable. **OSII does not install or launch Ollama:** install the Ollama
-application manually, then open it or run `ollama serve`. In **Tools & services
+is reachable. **OSII does not install or launch Ollama:** manage the separate
+application yourself when you use it, then open it or run `ollama serve`. In **Tools & services
 → AI models**, OSII queries `/api/tags` and shows
 the installed models beside the endpoint configuration. The two approved US
 starter models are:
@@ -52,6 +52,11 @@ Select **Download** to ask Ollama to pull a missing starter model and show its
 progress. OSII bundles no model weights. Downloads are limited to
 `OSII_OLLAMA_ALLOWED_MODELS`; corporate administrators can extend that list
 with other approved models.
+
+The dashboard starter buttons deliberately cover only the small recommended
+models. Use `ollama list` to inspect everything installed and `ollama pull
+<model>` for other models permitted in your environment, then select **Check
+connection & models** again.
 
 BM25 is the automatic no-model retrieval fallback. Lexical hashing remains an
 explicit vector-plumbing/shared-wording option and is never labeled semantic.
@@ -108,6 +113,14 @@ document matched from the selected files or folders, appears in the final
 review and Activity history, is saved in the intake manifest, and is passed to
 extractors, synthesizers, and enrichers that support it.
 
+Intake browses only within `OSII_SOURCE_DIR`. This boundary prevents a browser
+session from walking the entire host filesystem. A mounted shared/network drive
+works when `OSII_SOURCE_DIR` points to that mount and the OSII process can read
+it. If folders are reorganized afterward, use **Document scope → Rescan source
+paths**. OSII hashes current files, previews exact-content matches, and can
+remap moved originals without re-running extraction; changed and new files are
+left for a normal Intake run.
+
 ## Generate an LLM wiki
 
 With a model-backed synthesizer selected in Tools, OSII can compose that
@@ -159,6 +172,26 @@ local build. See [Corporate pilot images and Quay releases](publishing-images.md
 Ollama and the upstream Shirty service remain separately managed endpoints.
 OSII images contain only their lightweight HTTP adapters, not private packages
 or model files.
+
+To add only Apache Tika while the complete editable stack runs on the host,
+use two terminals:
+
+```bash
+# Terminal 1
+make dev
+
+# Terminal 2
+make dev-tika
+```
+
+On Windows, the second command is `.\scripts\osii.ps1 dev-tika`. The existing
+`TIKA_URL` configuration lets the running host services detect it on port 9998.
+
+When a Podman registry must be contacted without verifiable TLS certificates,
+use the explicit opt-in `make dev-containers-insecure`, or on Windows
+`.\scripts\osii.ps1 dev-containers -InsecureRegistries`. This disables registry
+TLS verification for image pulls/builds; it does not disable HTTPS checks for
+OSII model or processor endpoints.
 
 ## Storage and disk diagnostics
 

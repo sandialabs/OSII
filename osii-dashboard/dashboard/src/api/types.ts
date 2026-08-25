@@ -122,6 +122,30 @@ export type ObjectSummariesResponse = {
   summaries: ObjectSummary[];
 };
 
+export type SourceRescanSummary = {
+  unchanged: number;
+  changed: number;
+  moved: number;
+  missing_source: number;
+  new_files: number;
+};
+
+export type SourceRescanResponse = {
+  summary: SourceRescanSummary;
+  unchanged: Array<{ source_relpath: string; file_id: string }>;
+  changed: Array<{ source_relpath: string; old_file_id: string; new_file_id: string }>;
+  moved: Array<{ old_source_relpath: string; new_source_relpath: string; file_id: string }>;
+  missing_source: Array<{ source_relpath: string; file_id: string }>;
+  new_files: Array<{ source_relpath: string; file_id: string }>;
+  applied?: {
+    moved_updated: number;
+    missing_marked: number;
+    changed_marked: number;
+    active_marked: number;
+    folder_tree_rebuilt: boolean;
+  };
+};
+
 export type FileMeta = {
   source_relpath: string;
   filename: string;

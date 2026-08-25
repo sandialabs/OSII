@@ -210,6 +210,10 @@ The rescan workflow compares the current source data root against the existing O
 - missing source files
 - new files
 
+For ordinary OSII use, the simpler path is **Intake → Document scope → Rescan
+source paths**. It previews hash-matched moves and applies path repairs without
+extracting new or changed files. The CLI below is the advanced batch interface.
+
 ```powershell
 python -m osii.rescan `
   --data-root ".\osii-data\source" `

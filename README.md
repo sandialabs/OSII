@@ -72,6 +72,11 @@ On Windows, use a forward-slash path such as:
 OSII_SOURCE_DIR=C:/Users/your-name/Documents/my-files
 ```
 
+A mounted shared or network drive works the same way; point
+`OSII_SOURCE_DIR` at its mounted path (for example `S:/project-files`) and make
+sure the account running OSII can read it. Intake intentionally browses only
+inside this configured root rather than exposing the whole host filesystem.
+
 Files added with the dashboard's **Upload files** button are stored separately.
 Canonical extracted text and provenance stay as inspectable `.osii` files;
 queue state and the rebuildable SQLite catalog stay under `.osii/state/`.
@@ -94,13 +99,14 @@ Scanned PDFs still require optional Tesseract OCR. The launcher checks ports and
 reloads backend services when source changes, and keeps generated data under
 `osii-data/`.
 
-**Ollama is not installed or started by `make dev`.** Install the Ollama
-application manually and start it before using model-backed features. OSII then
+**OSII does not install or start the separate Ollama application.** If you use
+Ollama, manage it separately. OSII then
 tries that separately running Ollama service with `all-minilm` for
 semantic embeddings and Meta `llama3.2:1b` for chat and synthesis. Open
 **Tools & services → AI models** to check the connection, see installed models, and explicitly download
 either approved starter model when missing. OSII bundles neither Ollama nor
-model weights. BM25 and extractive chat remain the automatic model-free
+model weights. Use `ollama list` and `ollama pull <model>` for additional model
+choices available in your environment. BM25 and extractive chat remain the automatic model-free
 fallbacks. Lexical hashing is available as an explicit no-model vector option;
 it is not presented as semantic search.
 
@@ -229,9 +235,16 @@ containers but select commands from the same compact baseline image. See
 - `make dev-ocr-host` / `.\scripts\osii.ps1 dev-ocr-host`: run the optional
   OpenCV/Tesseract OCR service directly on the host, with its tuning UI at
   `http://localhost:8080/demo`.
+- `make dev-tika` / `.\scripts\osii.ps1 dev-tika`: start only Apache Tika in
+  Podman. Run it in a second terminal beside `make dev` to keep all OSII code
+  editable on the host.
 - `make dev-containers` / `.\scripts\osii.ps1 dev-containers`: run application
   services from source while Tika and Tesseract run in Podman for deployment
   parity.
+- `make dev-containers-insecure`: the same hybrid workflow with Podman registry
+  TLS verification disabled for image pulls and builds. On Windows use
+  `.\scripts\osii.ps1 dev-containers -InsecureRegistries`. This is an explicit
+  trust decision; prefer verified registry certificates when available.
 - `make dev-services` / `.\scripts\osii.ps1 dev-services`: start only the
   Podman OCR services used by `dev-containers`.
 - `make dev-examples` / `.\scripts\osii.ps1 dev-examples`: run editable OSII

@@ -21,6 +21,8 @@ The dashboard is intentionally modular. It is a standalone frontend that talks t
 - Apply structured sensitivity-awareness labels, handling notes, and reusable plain-text tags
 - Preview and surgically remove one file's OSII data, with a separate option to delete the writable original too
 - Expand Library Insights on Home to view root-level standard enrichments without loading them into the normal file grid
+- Open root-level derived artifacts only when needed; long lists and wiki content stay within scrollable regions and standard table columns are sortable
+- Rescan the configured source root for moved originals and safely remap exact hash matches without rerunning extraction
 - Prepare for future document chat workflows
 
 ---

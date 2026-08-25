@@ -74,6 +74,60 @@ def test_browse_and_preview_report_processed_files(
     )
 
 
+def test_source_rescan_previews_then_applies_hash_matched_move(
+    client,
+    temp_data_root: Path,
+    temp_osii_root: Path,
+):
+    from osii.extraction.common import init_doc_context
+    from osii.domain.read.docs import get_doc_meta
+    from osii.domain.storage.objects import (
+        write_meta_toml,
+        write_provenance_toml,
+        write_text_file,
+    )
+
+    original = temp_data_root / "reports" / "example.pdf"
+    original.parent.mkdir(parents=True, exist_ok=True)
+    original.write_bytes(b"%PDF-1.4 exact bytes used as identity")
+    context = init_doc_context(original, temp_data_root.parent)
+    write_meta_toml(
+        temp_osii_root,
+        file_id=context["file_id"],
+        source_relpath=context["source_relpath"],
+        filename=original.name,
+        mime=context["mime"],
+        size_bytes=context["size_bytes"],
+        mtime_utc=context["mtime_utc"],
+        sha256_hex=context["sha256_hex"],
+    )
+    write_text_file(temp_osii_root, context["file_id"], "existing extraction")
+    write_provenance_toml(
+        temp_osii_root,
+        context["file_id"],
+        "test",
+        status="done",
+        extractor_name="test",
+        extractor_version="1",
+    )
+
+    moved = temp_data_root / "archive" / original.name
+    moved.parent.mkdir(parents=True, exist_ok=True)
+    original.rename(moved)
+
+    preview = client.post("/api/intake/rescan-sources", json={"apply": False})
+    assert preview.status_code == 200
+    assert preview.json()["summary"]["moved"] == 1
+    assert "applied" not in preview.json()
+
+    applied = client.post("/api/intake/rescan-sources", json={"apply": True})
+    assert applied.status_code == 200
+    assert applied.json()["applied"]["moved_updated"] == 1
+    meta = get_doc_meta(temp_osii_root, context["file_id"])
+    assert meta is not None
+    assert meta["file"]["source_relpath"] == "my_data/archive/example.pdf"
+
+
 def test_intake_readiness_reports_bundled_tools(
     client,
     monkeypatch,

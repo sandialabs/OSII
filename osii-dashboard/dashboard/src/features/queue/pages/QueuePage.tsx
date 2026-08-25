@@ -41,11 +41,13 @@ import {
   createProcessingRun,
   getIntakeReadiness,
   listProcessingRuns,
+  rescanSourcePaths,
   resolveIntake,
   uploadQueueFiles,
 } from "../../../api/queue";
 import type {
   QueueBrowseEntry,
+  SourceRescanResponse,
   UploadResponse,
 } from "../../../api/types";
 
@@ -125,6 +127,8 @@ export function QueuePage() {
   const [expertContext, setExpertContext] = useState("");
   const [uploading, setUploading] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [rescanning, setRescanning] = useState(false);
+  const [rescanResult, setRescanResult] = useState<SourceRescanResponse | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const selectedFilter = FILE_FILTERS.find(
@@ -298,6 +302,29 @@ export function QueuePage() {
     }
   };
 
+  const rescanSources = async (apply: boolean) => {
+    setRescanning(true);
+    setNotice(null);
+    try {
+      const result = await rescanSourcePaths(apply);
+      setRescanResult(result);
+      if (apply) {
+        setNotice({
+          severity: "success",
+          text: `${result.applied?.moved_updated ?? 0} moved source path(s) remapped by matching file content hashes.`,
+        });
+        await queryClient.invalidateQueries();
+      }
+    } catch (error) {
+      setNotice({
+        severity: "error",
+        text: error instanceof Error ? error.message : "Could not rescan source paths.",
+      });
+    } finally {
+      setRescanning(false);
+    }
+  };
+
   const start = async () => {
     if (!queuePaths.length || !preview.data?.preview.matched_count) return;
     setStarting(true);
@@ -461,154 +488,8 @@ export function QueuePage() {
           </Button>
         )}
       >
-        <strong><code>make dev</code> already started OSII&apos;s Python text extractor and no-AI source-excerpt preview.</strong> It did not install Ollama or Tesseract. Open Tools &amp; services for exact status and startup commands before processing scanned PDFs or requesting AI models.
+        <strong><code>make dev</code> already started OSII&apos;s Python text extractor and no-AI source-excerpt preview.</strong> OSII does not manage the separate Ollama or Tesseract applications. Open Tools &amp; services for exact connection status and startup commands before processing scanned PDFs or requesting AI models.
       </Alert>
-
-      <Paper variant="outlined" sx={{ p: 2 }}>
-        <Stack spacing={2}>
-          <Stack
-            direction={{ xs: "column", md: "row" }}
-            justifyContent="space-between"
-            spacing={1}
-          >
-            <Stack spacing={0.25}>
-              <Typography fontWeight={700}>Tools and extraction routing</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Confirm the capabilities this run will use. Completed files remain browsable while processing continues.
-              </Typography>
-            </Stack>
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<RefreshOutlinedIcon />}
-                onClick={() => void queryClient.invalidateQueries({
-                  queryKey: ["intake", "readiness"],
-                })}
-              >
-                Retest tools
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<SettingsOutlinedIcon />}
-                onClick={() => navigate("/admin/processors")}
-              >
-                Manage tools &amp; services
-              </Button>
-            </Stack>
-          </Stack>
-
-          {readiness.isLoading ? <LinearProgress /> : null}
-          {readiness.isError ? (
-            <Alert severity="error">
-              Tool readiness could not be tested. Intake is paused until the tools can be checked.
-            </Alert>
-          ) : null}
-
-          {readiness.data ? (
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              {runExtraction ? (
-                <Chip
-                  color={extractorPlanReady ? "success" : "error"}
-                  variant="outlined"
-                  label={extractorPlanReady ? "Selected text extractors are running" : "A selected extractor needs setup"}
-                />
-              ) : <Chip color="success" variant="outlined" label="Using current extraction" />}
-              <Chip color="success" variant="outlined" label="Cited source-excerpt preview ready (no AI)" />
-              <Chip
-                color={embeddingAvailable ? "success" : "default"}
-                variant="outlined"
-                label={embeddingAvailable
-                  ? `${embeddingStatus?.display_name ?? "Embedding method"} is usable`
-                  : "No embedding model — BM25 keyword search still works"}
-              />
-              <Chip
-                color="success"
-                variant="outlined"
-                label={`${readiness.data.enrichers.filter((item) => item.available).length} enrichment methods available`}
-              />
-            </Stack>
-          ) : null}
-
-          {runExtraction ? <Stack spacing={1}>
-            <Typography variant="subtitle2">Extractor rules for matched files</Typography>
-            {(preview.data?.preview.extractor_plan ?? []).map((plan) => {
-              const selectedStatus = extractorStatus(plan.extractor);
-              return (
-                <Paper key={plan.extension} variant="outlined" sx={{ p: 1.5 }}>
-                  <Stack
-                    direction={{ xs: "column", md: "row" }}
-                    alignItems={{ md: "center" }}
-                    justifyContent="space-between"
-                    spacing={1.5}
-                  >
-                    <Stack minWidth={0}>
-                      <Typography fontWeight={600}>
-                        {plan.extension} · {plan.count} file{plan.count === 1 ? "" : "s"}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" noWrap>
-                        {plan.sample.join(", ")}
-                      </Typography>
-                    </Stack>
-                    <TextField
-                      select
-                      size="small"
-                      label="Extractor"
-                      value={selectedStatus?.id ?? plan.extractor}
-                      onChange={(event) => setExtractorOverrides((current) => ({
-                        ...current,
-                        [plan.extension]: event.target.value,
-                      }))}
-                      sx={{ minWidth: 240 }}
-                    >
-                      {(readiness.data?.extractors ?? []).map((extractor) => (
-                        <MenuItem
-                          key={extractor.id}
-                          value={extractor.id}
-                          disabled={!extractor.available}
-                        >
-                          {extractor.display_name}
-                          {extractor.available ? "" : " — unavailable"}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                    <Chip
-                      size="small"
-                      color={selectedStatus?.available ? "success" : "error"}
-                      label={selectedStatus?.available ? "Ready" : "Unavailable"}
-                      sx={{ alignSelf: { xs: "flex-start", md: "center" } }}
-                    />
-                  </Stack>
-                </Paper>
-              );
-            })}
-            {preview.isLoading ? <LinearProgress /> : null}
-            {!preview.isLoading && !(preview.data?.preview.extractor_plan.length) ? (
-              <Typography variant="body2" color="text.secondary">
-                Extractor routing appears after files match the source scope and rules below.
-              </Typography>
-            ) : null}
-          </Stack> : (
-            <Alert severity="success">
-              Extraction will not run. OSII will reuse each document&apos;s current primary extraction.
-            </Alert>
-          )}
-
-          {runExtraction && unavailableExtractorPlan.length ? (
-            <Alert severity="error">
-              Start the required extractor service or choose another ready extractor.
-            </Alert>
-          ) : null}
-          {readiness.data?.external.length ? (
-            <Typography variant="caption" color="text.secondary">
-              {readiness.data.external.filter((item) => item.available).length} of{" "}
-              {readiness.data.external.length} registered external tools responded.
-              Use Manage tools &amp; services to run their full contract tests.
-            </Typography>
-          ) : null}
-        </Stack>
-      </Paper>
 
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={2}>
@@ -620,7 +501,7 @@ export function QueuePage() {
             <Stack spacing={0.25}>
               <Typography fontWeight={700}>Document scope</Typography>
               <Typography variant="body2" color="text.secondary">
-                The default scope is every file under the shared root. Choose individual paths only when a broad folder selection is not suitable.
+                The default scope is every file under the configured source root. Choose individual paths only when a broad folder selection is not suitable.
               </Typography>
             </Stack>
             {preview.data ? (
@@ -632,6 +513,50 @@ export function QueuePage() {
             ) : null}
           </Stack>
 
+          <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "action.hover" }}>
+            <Stack spacing={1}>
+              <Stack
+                direction={{ xs: "column", md: "row" }}
+                justifyContent="space-between"
+                alignItems={{ md: "center" }}
+                spacing={1}
+              >
+                <Stack spacing={0.25}>
+                  <Typography variant="body2" fontWeight={700}>Originals moved or reorganized?</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Rescan the configured source root and match existing OSII objects by exact file-content hash. Previewing does not change files or rerun extraction.
+                  </Typography>
+                </Stack>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<RefreshOutlinedIcon />}
+                  disabled={rescanning}
+                  onClick={() => void rescanSources(false)}
+                >
+                  {rescanning ? "Scanning…" : "Rescan source paths"}
+                </Button>
+              </Stack>
+              {rescanResult ? (
+                <Alert
+                  severity={rescanResult.applied ? "success" : "info"}
+                  action={!rescanResult.applied && rescanResult.summary.moved > 0 ? (
+                    <Button
+                      color="inherit"
+                      size="small"
+                      disabled={rescanning}
+                      onClick={() => void rescanSources(true)}
+                    >
+                      Apply {rescanResult.summary.moved} path update{rescanResult.summary.moved === 1 ? "" : "s"}
+                    </Button>
+                  ) : undefined}
+                >
+                  {rescanResult.summary.moved} moved · {rescanResult.summary.missing_source} missing · {rescanResult.summary.changed} changed in place · {rescanResult.summary.new_files} new. New and changed files are left for a normal Intake run.
+                </Alert>
+              ) : null}
+            </Stack>
+          </Paper>
+
           <FormControlLabel
             control={(
               <Checkbox
@@ -639,7 +564,7 @@ export function QueuePage() {
                 onChange={(event) => setIncludeSharedRoot(event.target.checked)}
               />
             )}
-            label="Include the entire shared volume"
+            label="Include every file in the configured source root"
           />
 
           <Accordion variant="outlined" disableGutters>
@@ -657,10 +582,11 @@ export function QueuePage() {
                   <TextField
                     size="small"
                     fullWidth
-                    label="Browse folder"
+                    label="Current folder (inside source root)"
                     value={path}
                     onChange={(event) => setPath(event.target.value)}
-                    placeholder="Leave blank for shared root"
+                    placeholder="Leave blank for source root"
+                    helperText="Navigate here or click a folder below; this is not an operating-system file picker."
                   />
                   <Button variant="outlined" onClick={() => setPath("")}>
                     Root
@@ -671,9 +597,13 @@ export function QueuePage() {
                     onClick={selectCurrentFolder}
                     disabled={!browse.data?.current_path}
                   >
-                    Select folder
+                    Select this folder
                   </Button>
                 </Stack>
+
+                <Alert severity="info" sx={{ py: 0.25 }}>
+                  OSII browses only within <code>OSII_SOURCE_DIR</code>. A mounted shared or network drive works when that setting points to the drive and the OSII process has access; restart <code>make dev</code> after changing it.
+                </Alert>
 
                 {browse.isLoading ? <LinearProgress /> : null}
                 <List
@@ -830,7 +760,7 @@ export function QueuePage() {
           <Stack spacing={0.25}>
             <Typography fontWeight={700}>Scope rules</Typography>
             <Typography variant="body2" color="text.secondary">
-              Rules narrow the source scope above; they never replace it. The default is all files under the shared root with no include rule.
+              Rules narrow the source scope above; they never replace it. The default is all files under the configured source root with no include rule.
             </Typography>
           </Stack>
 
@@ -894,6 +824,158 @@ export function QueuePage() {
               label="Include hidden files"
             />
           </Stack>
+        </Stack>
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Stack spacing={2}>
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            justifyContent="space-between"
+            spacing={1}
+          >
+            <Stack spacing={0.25}>
+              <Typography fontWeight={700}>Tools and extraction routing</Typography>
+              <Typography variant="body2" color="text.secondary">
+                These choices are calculated from the document scope and file rules above. Completed files remain browsable while processing continues.
+              </Typography>
+            </Stack>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<RefreshOutlinedIcon />}
+                onClick={() => void queryClient.invalidateQueries({
+                  queryKey: ["intake", "readiness"],
+                })}
+              >
+                Retest tools
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<SettingsOutlinedIcon />}
+                onClick={() => navigate("/admin/processors")}
+              >
+                Manage tools &amp; services
+              </Button>
+            </Stack>
+          </Stack>
+
+          {readiness.isLoading ? <LinearProgress /> : null}
+          {readiness.isError ? (
+            <Alert severity="error">
+              Tool readiness could not be tested. Intake is paused until the tools can be checked.
+            </Alert>
+          ) : null}
+
+          {readiness.data ? (
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              {runExtraction ? (
+                <Chip
+                  color={extractorPlanReady ? "success" : "error"}
+                  variant="outlined"
+                  label={extractorPlanReady
+                    ? "Selected text extractors are running"
+                    : "A selected extractor needs setup"}
+                />
+              ) : (
+                <Chip color="success" variant="outlined" label="Using current extraction" />
+              )}
+              <Chip color="success" variant="outlined" label="Cited source-excerpt preview ready (no AI)" />
+              <Chip
+                color={embeddingAvailable ? "success" : "default"}
+                variant="outlined"
+                label={embeddingAvailable
+                  ? `${embeddingStatus?.display_name ?? "Embedding method"} is usable`
+                  : "No embedding model — BM25 keyword search still works"}
+              />
+              <Chip
+                color="success"
+                variant="outlined"
+                label={`${readiness.data.enrichers.filter((item) => item.available).length} enrichment methods available`}
+              />
+            </Stack>
+          ) : null}
+
+          {runExtraction ? (
+            <Stack spacing={1}>
+              <Typography variant="subtitle2">Extractor rules for matched files</Typography>
+              {(preview.data?.preview.extractor_plan ?? []).map((plan) => {
+                const selectedStatus = extractorStatus(plan.extractor);
+                return (
+                  <Paper key={plan.extension} variant="outlined" sx={{ p: 1.5 }}>
+                    <Stack
+                      direction={{ xs: "column", md: "row" }}
+                      alignItems={{ md: "center" }}
+                      justifyContent="space-between"
+                      spacing={1.5}
+                    >
+                      <Stack minWidth={0}>
+                        <Typography fontWeight={600}>
+                          {plan.extension} · {plan.count} file{plan.count === 1 ? "" : "s"}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" noWrap>
+                          {plan.sample.join(", ")}
+                        </Typography>
+                      </Stack>
+                      <TextField
+                        select
+                        size="small"
+                        label="Extractor"
+                        value={selectedStatus?.id ?? plan.extractor}
+                        onChange={(event) => setExtractorOverrides((current) => ({
+                          ...current,
+                          [plan.extension]: event.target.value,
+                        }))}
+                        sx={{ minWidth: 240 }}
+                      >
+                        {(readiness.data?.extractors ?? []).map((extractor) => (
+                          <MenuItem
+                            key={extractor.id}
+                            value={extractor.id}
+                            disabled={!extractor.available}
+                          >
+                            {extractor.display_name}
+                            {extractor.available ? "" : " — unavailable"}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                      <Chip
+                        size="small"
+                        color={selectedStatus?.available ? "success" : "error"}
+                        label={selectedStatus?.available ? "Ready" : "Unavailable"}
+                        sx={{ alignSelf: { xs: "flex-start", md: "center" } }}
+                      />
+                    </Stack>
+                  </Paper>
+                );
+              })}
+              {preview.isLoading ? <LinearProgress /> : null}
+              {!preview.isLoading && !(preview.data?.preview.extractor_plan.length) ? (
+                <Typography variant="body2" color="text.secondary">
+                  No files currently match the source scope and rules above.
+                </Typography>
+              ) : null}
+            </Stack>
+          ) : (
+            <Alert severity="success">
+              Extraction will not run. OSII will reuse each document&apos;s current primary extraction.
+            </Alert>
+          )}
+
+          {runExtraction && unavailableExtractorPlan.length ? (
+            <Alert severity="error">
+              Start the required extractor service or choose another ready extractor.
+            </Alert>
+          ) : null}
+          {readiness.data?.external.length ? (
+            <Typography variant="caption" color="text.secondary">
+              {readiness.data.external.filter((item) => item.available).length} of{" "}
+              {readiness.data.external.length} registered external tools responded.
+              Use Manage tools &amp; services to run their full contract tests.
+            </Typography>
+          ) : null}
         </Stack>
       </Paper>
 

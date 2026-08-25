@@ -120,6 +120,43 @@ def test_apply_reconciliation_updates_moved_relpath(temp_data_root, temp_osii_ro
     assert meta["file"]["source_relpath"] == "renamed/example.pdf"
 
 
+def test_apply_source_path_reconciliation_only_remaps_matching_hashes(
+    temp_data_root,
+    temp_osii_root,
+):
+    from osii.domain.processing.reconcile import reconcile_osii_with_source
+    from osii.domain.processing.reconcile_apply import apply_source_path_reconciliation
+    from osii.domain.read.docs import get_doc_meta
+
+    content = b"%PDF-1.4 stable content identity"
+    obj = _build_real_object_from_source(
+        temp_data_root,
+        temp_osii_root,
+        "reports/example.pdf",
+        content,
+    )
+    moved_path = temp_data_root / "archive" / "example.pdf"
+    moved_path.parent.mkdir(parents=True, exist_ok=True)
+    moved_path.write_bytes(content)
+    obj["source_file"].unlink()
+
+    result = reconcile_osii_with_source(
+        osii_root=temp_osii_root,
+        data_root=temp_data_root,
+    )
+    applied = apply_source_path_reconciliation(
+        reconcile_result=result,
+        osii_root=temp_osii_root,
+        source_root=temp_data_root,
+    )
+
+    assert applied["moved_updated"] == 1
+    assert applied["folder_tree_rebuilt"] is True
+    meta = get_doc_meta(temp_osii_root, obj["file_id"])
+    assert meta is not None
+    assert meta["file"]["source_relpath"] == "archive/example.pdf"
+
+
 def test_apply_reconciliation_rebuilds_folders(monkeypatch, temp_data_root, temp_osii_root):
     from osii.domain.processing.reconcile import reconcile_osii_with_source
     from osii.domain.processing.reconcile_apply import apply_reconciliation

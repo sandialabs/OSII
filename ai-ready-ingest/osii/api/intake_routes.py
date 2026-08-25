@@ -16,7 +16,10 @@ from osii.domain.processing.intake import (
     processed_source_relpaths,
 )
 from osii.domain.processing.capability_readiness import intake_capability_readiness
+from osii.domain.processing.reconcile import reconcile_osii_with_source
+from osii.domain.processing.reconcile_apply import apply_source_path_reconciliation
 from osii.domain.processing.pathing import display_rel, path_within
+from osii.domain.catalog_db import rebuild_catalog
 
 router = APIRouter(prefix="/api", tags=["intake"])
 
@@ -49,6 +52,34 @@ def safe_resolve_user_path(raw: str | None, fallback: Path) -> Path:
 @router.get("/intake/readiness")
 async def intake_readiness(request: Request):
     return intake_capability_readiness(request.app.state.osii_root.resolve())
+
+
+@router.post("/intake/rescan-sources")
+def rescan_sources(request: Request, payload: dict):
+    """Find moved originals by content hash and optionally repair their paths."""
+    shared_root = request.app.state.shared_volume_root.resolve()
+    osii_root = request.app.state.osii_root.resolve()
+    data_volume_root = shared_root.parent.resolve()
+    # The filesystem is canonical; make sure a stale/empty derived catalog
+    # cannot hide objects from the hash comparison.
+    rebuild_catalog(osii_root)
+    result = reconcile_osii_with_source(
+        osii_root=osii_root,
+        data_root=shared_root,
+        relpath_root=data_volume_root,
+        include_patterns=[],
+        exclude_patterns=[],
+        show_hidden=bool(payload.get("show_hidden", False)),
+    )
+    if bool(payload.get("apply", False)):
+        result["applied"] = apply_source_path_reconciliation(
+            reconcile_result=result,
+            osii_root=osii_root,
+            source_root=shared_root,
+            data_volume_root=data_volume_root,
+        )
+        rebuild_catalog(osii_root)
+    return result
 
 
 @router.get("/browse")

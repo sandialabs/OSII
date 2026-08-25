@@ -166,6 +166,7 @@ export function ProcessorsPage() {
     priority: 100, embedding_model: DEFAULT_EMBEDDING_MODEL, synthesis_model: DEFAULT_CHAT_MODEL, chat_model: DEFAULT_CHAT_MODEL, credential_env: "",
   });
   const [providerHealth, setProviderHealth] = useState<Record<string, ModelProviderHealth>>({});
+  const [checkingProviderId, setCheckingProviderId] = useState<string | null>(null);
   const [pullJobs, setPullJobs] = useState<Record<string, ModelPullJob>>({});
   const [section, setSection] = useState<"overview" | "models" | "capabilities" | "endpoints">("overview");
   const [showProviderForm, setShowProviderForm] = useState(false);
@@ -229,7 +230,12 @@ export function ProcessorsPage() {
   };
 
   const probeProvider = async (provider: ModelProvider) => {
-    await loadProviderModels(provider, true);
+    setCheckingProviderId(provider.id);
+    try {
+      await loadProviderModels(provider, true);
+    } finally {
+      setCheckingProviderId(null);
+    }
   };
 
   const changeProviderType = (type: ModelProvider["type"]) => {
@@ -337,8 +343,8 @@ export function ProcessorsPage() {
         <Stack spacing={1.5}>
           <Typography fontWeight={700}>AI model connections</Typography>
           <Typography variant="body2" color="text.secondary">Models are optional. OSII connects to Ollama, Shirty, or a generic OpenAI-compatible server through the small adapter that <code>make dev</code> started on port 8095.</Typography>
-          <Alert severity="warning">
-            <strong>Ollama itself is not included with OSII.</strong> Install the Ollama application manually and start it before checking this connection. <code>make dev</code> starts only OSII&apos;s adapter; it does not install Ollama, launch Ollama, or contain model files.
+          <Alert severity="info">
+            <strong>OSII does not manage the Ollama application.</strong> If you use Ollama, install and start it separately. <code>make dev</code> starts only OSII&apos;s HTTP adapter; the connection check below reports whether the configured Ollama URL is reachable.
           </Alert>
           <Button variant="outlined" onClick={() => setShowProviderForm((current) => !current)} sx={{ alignSelf: "flex-start" }}>
             {showProviderForm ? "Hide connection settings" : "Add or edit a model connection"}
@@ -373,8 +379,9 @@ export function ProcessorsPage() {
                     <Typography variant="caption" color="text.secondary">{provider.base_url} · credentials {provider.credential_required === false ? "not required" : provider.credential_present ? "present" : "not present"} · {provider.enabled ? "enabled" : "disabled"}</Typography>
                     {provider.type === "shirty" ? <Typography variant="caption" color="text.secondary">Built in: Textract, synthesis, and chat. Embedding remains a separate provider capability.</Typography> : null}
                   </Stack>
-                  <Stack direction="row" spacing={1}><Button variant="outlined" onClick={() => { setProviderForm(provider); setShowProviderForm(true); }}>Edit</Button><Button variant="outlined" onClick={() => void probeProvider(provider)}>Check connection &amp; models</Button></Stack>
+                  <Stack direction="row" spacing={1}><Button variant="outlined" onClick={() => { setProviderForm(provider); setShowProviderForm(true); }}>Edit</Button><Button variant="outlined" disabled={checkingProviderId === provider.id} onClick={() => void probeProvider(provider)}>{checkingProviderId === provider.id ? "Checking…" : "Check connection & models"}</Button></Stack>
                 </Stack>
+                {provider.type === "ollama" && providerHealth[provider.id]?.ok ? <Alert severity="success">Connected to Ollama. Found {providerHealth[provider.id].models.length} installed model{providerHealth[provider.id].models.length === 1 ? "" : "s"}.</Alert> : null}
                 {provider.type === "ollama" && providerHealth[provider.id]?.ok ? (
                   <Stack spacing={0.75}>
                     <Typography variant="body2" fontWeight={700}>Installed Ollama models</Typography>
@@ -391,10 +398,11 @@ export function ProcessorsPage() {
                     {!providerHealth[provider.id].model_details.length ? <Typography variant="caption" color="text.secondary">Ollama is connected, but no models are installed.</Typography> : null}
                   </Stack>
                 ) : null}
-                {provider.type === "ollama" && providerHealth[provider.id] && !providerHealth[provider.id].ok ? <Alert severity="warning"><strong>Ollama is not running at this URL.</strong> Install Ollama manually if needed, then open the Ollama application or run <code>ollama serve</code>. Select <strong>Check connection &amp; models</strong> afterward.</Alert> : null}
+                {provider.type === "ollama" && providerHealth[provider.id] && !providerHealth[provider.id].ok ? <Alert severity="info"><strong>OSII could not reach Ollama at this URL.</strong> Ollama may be stopped, installed at another address, or not installed. Start the application or run <code>ollama serve</code>, verify the URL, and check again.</Alert> : null}
                 {provider.type === "ollama" ? (
                   <Stack spacing={1}>
                     <Typography variant="body2" fontWeight={700}>Approved starter models</Typography>
+                    <Typography variant="caption" color="text.secondary">These buttons cover OSII&apos;s small starter models. Use <code>ollama list</code> and <code>ollama pull &lt;model&gt;</code> in the CLI for other models allowed in your environment, then check the connection again.</Typography>
                     {(providers.data?.ollama_recommendations ?? []).map((recommendation) => {
                       const installed = (providerHealth[provider.id]?.models ?? []).some((name) => modelMatches(name, recommendation.model));
                       const job = pullJobs[`${provider.id}:${recommendation.model}`];

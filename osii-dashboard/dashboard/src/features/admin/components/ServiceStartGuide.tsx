@@ -162,13 +162,13 @@ export function ServiceStartGuide({ readiness }: ServiceStartGuideProps) {
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(2, minmax(0, 1fr))" }, gap: 1.5 }}>
         <OptionalServiceCard
           name="Ollama models"
-          status={ollamaReady ? "Model ready" : ollamaDetected ? "Running; model missing" : "Install separately"}
-          statusColor={ollamaReady ? "success" : "warning"}
+          status={ollamaReady ? "Model ready" : ollamaDetected ? "Running; model missing" : "Not detected"}
+          statusColor={ollamaReady ? "success" : "default"}
         >
           <Typography variant="body2">
-            <strong>Ollama is not bundled with OSII.</strong> Install the Ollama application yourself, then open it or run <code>ollama serve</code>. Return to <strong>AI models</strong> to check the connection and download an approved model through Ollama.
+            <strong>OSII does not install or start Ollama.</strong> If you use it, manage the application separately, then return to <strong>AI models</strong> to check its configured URL and see installed models.
           </Typography>
-          <Typography variant="caption" color="text.secondary">Used for semantic embeddings, generated synthesis, and model-backed chat.</Typography>
+          <Typography variant="caption" color="text.secondary">Used for semantic embeddings, generated synthesis, and model-backed chat. The CLI supports additional choices with <code>ollama list</code> and <code>ollama pull &lt;model&gt;</code>.</Typography>
         </OptionalServiceCard>
 
         <OptionalServiceCard name="Tesseract OCR for scanned PDFs" status={tesseractReady ? "Running" : "Install separately"} statusColor={tesseractReady ? "success" : "warning"}>
@@ -181,9 +181,9 @@ export function ServiceStartGuide({ readiness }: ServiceStartGuideProps) {
 
         <OptionalServiceCard name="Apache Tika extraction" status={tikaReady ? "Running" : "Optional container"} statusColor={tikaReady ? "success" : "default"}>
           <Typography variant="body2">
-            Apache Tika is not started by <code>make dev</code>. With Podman available, this profile starts Apache Tika and the containerized Tesseract OCR service while keeping editable OSII code on the host.
+            Apache Tika is not started by <code>make dev</code>. In a second terminal, start only Tika below while keeping all editable OSII services on the host. Use <code>dev-containers</code> only when you also want containerized Tesseract OCR.
           </Typography>
-          <CommandPair mac="make dev-containers" windows=".\\scripts\\osii.ps1 dev-containers" />
+          <CommandPair mac="make dev-tika" windows=".\\scripts\\osii.ps1 dev-tika" />
         </OptionalServiceCard>
 
         <OptionalServiceCard name="Corporate Shirty" status="Corporate endpoint" statusColor="default">

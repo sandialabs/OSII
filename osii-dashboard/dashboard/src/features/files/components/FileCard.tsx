@@ -1,7 +1,6 @@
 // src/features/files/components/FileCard.tsx
 import {
   Box,
-  Button,
   Card,
   CardActionArea,
   CardContent,
@@ -207,18 +206,10 @@ export function FileCard({ file, onOpen }: FileCardProps) {
               {file.synthesisPreview ?? "No synthesis preview available."}
             </Typography>
 
-            <Button
-              size="small"
-              variant="contained"
-              startIcon={<OpenInNewOutlinedIcon />}
-              onClick={(event) => {
-                event.stopPropagation();
-                onOpen(file.fileId);
-              }}
-              sx={{ alignSelf: "flex-start" }}
-            >
-              Open
-            </Button>
+            <Stack direction="row" spacing={0.5} alignItems="center" sx={{ alignSelf: "flex-start" }}>
+              <OpenInNewOutlinedIcon fontSize="small" />
+              <Typography variant="button">Open</Typography>
+            </Stack>
           </Stack>
         </Box>
       </CardActionArea>

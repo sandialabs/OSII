@@ -9,6 +9,7 @@ import type {
   ModelPullJob,
   OllamaRecommendation,
   QueueBrowseResponse,
+  SourceRescanResponse,
   UploadResponse,
 } from "./types";
 
@@ -46,6 +47,13 @@ export async function resolveIntake(payload: Record<string, unknown>): Promise<I
 
 export async function getIntakeReadiness(): Promise<IntakeReadiness> {
   return apiJson<IntakeReadiness>("/api/intake/readiness");
+}
+
+export async function rescanSourcePaths(apply = false): Promise<SourceRescanResponse> {
+  return apiJson<SourceRescanResponse>("/api/intake/rescan-sources", {
+    method: "POST",
+    json: { apply },
+  });
 }
 
 export async function getProcessorSettings(): Promise<{ settings: Record<string, Record<string, unknown>> }> {

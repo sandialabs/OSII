@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("dev", "dev-host", "dev-core", "dev-ollama", "dev-corporate", "dev-extractor", "dev-synthesizer", "dev-embedder", "dev-enricher", "dev-model-bridge", "dev-ocr-host", "dev-containers", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build", "build-release", "push-release", "doctor", "catalog-rebuild", "catalog-verify")]
+    [ValidateSet("dev", "dev-host", "dev-core", "dev-ollama", "dev-corporate", "dev-extractor", "dev-synthesizer", "dev-embedder", "dev-enricher", "dev-model-bridge", "dev-ocr-host", "dev-tika", "dev-containers", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build", "build-release", "push-release", "doctor", "catalog-rebuild", "catalog-verify")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
@@ -10,6 +10,8 @@ param(
     [string]$ImagePrefix = "",
 
     [string]$ImageTag = "latest",
+
+    [switch]$InsecureRegistries,
 
     [switch]$DryRun
 )
@@ -38,7 +40,17 @@ function Invoke-OsiiCompose {
     if (-not (Get-Command $ComposeExecutable -ErrorAction SilentlyContinue)) {
         throw "$ComposeExecutable was not found. Install $Runtime Desktop/CLI, then try again."
     }
-    & $ComposeExecutable @ComposePrefix @Arguments
+    $SecurityArguments = @()
+    if ($InsecureRegistries) {
+        if ($Runtime -ne "Podman") {
+            throw "-InsecureRegistries is supported only with the Podman runtime."
+        }
+        $SecurityArguments = @(
+            "--podman-pull-args=--tls-verify=false",
+            "--podman-build-args=--tls-verify=false"
+        )
+    }
+    & $ComposeExecutable @ComposePrefix @SecurityArguments @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "Compose command failed with exit code $LASTEXITCODE."
     }
@@ -84,19 +96,19 @@ try {
             Invoke-OsiiDevLauncher @("--provider-profile", "corporate")
         }
         "dev-extractor" {
-            & uv run --python 3.11 --package osii-local-extractor uvicorn app.main:app --app-dir services/local-extractor --host 127.0.0.1 --port 8092 --reload
+            & uv run --python 3.11 --package osii-local-extractor python -m uvicorn app.main:app --app-dir services/local-extractor --host 127.0.0.1 --port 8092 --reload
         }
         "dev-synthesizer" {
-            & uv run --python 3.11 --package osii-local-synthesizer uvicorn app.main:app --app-dir services/local-synthesizer --host 127.0.0.1 --port 8093 --reload
+            & uv run --python 3.11 --package osii-local-synthesizer python -m uvicorn app.main:app --app-dir services/local-synthesizer --host 127.0.0.1 --port 8093 --reload
         }
         "dev-embedder" {
-            & uv run --python 3.11 --package osii-local-embedder uvicorn app.main:app --app-dir services/local-embedder --host 127.0.0.1 --port 8085 --reload
+            & uv run --python 3.11 --package osii-local-embedder python -m uvicorn app.main:app --app-dir services/local-embedder --host 127.0.0.1 --port 8085 --reload
         }
         "dev-enricher" {
-            & uv run --python 3.11 --package osii-local-enricher uvicorn app.main:app --app-dir services/local-enricher --host 127.0.0.1 --port 8094 --reload
+            & uv run --python 3.11 --package osii-local-enricher python -m uvicorn app.main:app --app-dir services/local-enricher --host 127.0.0.1 --port 8094 --reload
         }
         "dev-model-bridge" {
-            & uv run --python 3.11 --package osii-model-provider-bridge uvicorn app.main:app --app-dir services/model-provider-bridge --host 127.0.0.1 --port 8095 --reload
+            & uv run --python 3.11 --package osii-model-provider-bridge python -m uvicorn app.main:app --app-dir services/model-provider-bridge --host 127.0.0.1 --port 8095 --reload
         }
         "dev-ocr-host" {
             $env:ENABLE_DEMO = "true"
@@ -111,6 +123,9 @@ try {
         "dev-containers" {
             Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
             Invoke-OsiiDevLauncher
+        }
+        "dev-tika" {
+            Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika")
         }
         "dev-services" {
             Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
