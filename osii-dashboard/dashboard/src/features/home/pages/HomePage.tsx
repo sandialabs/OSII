@@ -1,5 +1,5 @@
 // src/features/home/pages/HomePage.tsx
-import { Stack, Typography } from "@mui/material";
+import { Alert, Button, Paper, Stack, Typography } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 
 import { useScopeSummaries } from "../../../hooks/useScopeSummaries";
@@ -18,6 +18,26 @@ export function HomePage() {
 
   return (
     <Stack spacing={2}>
+      {!isLoading && !isError && !files.length ? (
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Stack spacing={1.5}>
+            <Stack spacing={0.25}>
+              <Typography variant="h6" fontWeight={700}>Start your first OSII library</Typography>
+              <Typography variant="body2" color="text.secondary">
+                <code>make dev</code> started OSII&apos;s dashboard, backend, Python text extraction, no-AI previews, lexical search tools, and local enrichments. Ollama and Tesseract are optional programs that must be installed separately.
+              </Typography>
+            </Stack>
+            <Alert severity="info">
+              First check <strong>Tools &amp; services</strong> to see exactly what is running. Then put documents in <code>osii-data/source</code> and use <strong>Intake</strong>.
+            </Alert>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+              <Button variant="outlined" onClick={() => navigate("/admin/processors")}>Review tools &amp; services</Button>
+              <Button variant="contained" onClick={() => navigate("/intake")}>Open Intake</Button>
+            </Stack>
+          </Stack>
+        </Paper>
+      ) : null}
+
       <LibraryInsights />
 
       <Stack spacing={0.5}>

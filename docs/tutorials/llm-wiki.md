@@ -9,7 +9,7 @@ changing the source document or its extraction.
 
 1. Start OSII with `make dev` on macOS/Linux or
    `.\scripts\osii.ps1 dev` on Windows.
-2. Open **Tools → Model providers**.
+2. Open **Tools & services → AI models**.
 3. Confirm that Ollama is connected and select an installed synthesis model.
    The small US-origin starter model is `llama3.2:1b` from Meta.
 4. Intake at least one supported document.

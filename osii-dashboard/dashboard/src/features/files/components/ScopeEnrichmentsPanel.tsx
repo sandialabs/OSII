@@ -1,4 +1,6 @@
-import { Alert, Card, CardContent, Stack, Typography } from "@mui/material";
+import { useState } from "react";
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Stack, Typography } from "@mui/material";
+import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
 
 import type {
   EnrichmentListEntryFile,
@@ -16,15 +18,22 @@ function ScopeArtifact({
   scope: ScopeDescribeRequest;
   entry: EnrichmentListEntryFile;
 }) {
-  const payload = useScopeEnrichmentPayload(scope, entry.name);
+  const [expanded, setExpanded] = useState(false);
+  const payload = useScopeEnrichmentPayload(scope, entry.name, expanded);
   return (
-    <Card>
-      <CardContent>
+    <Accordion expanded={expanded} onChange={(_, next) => setExpanded(next)} variant="outlined" disableGutters>
+      <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
+        <Stack spacing={0.15}>
+          <Typography fontWeight={650}>{entry.name.replace(/\.json$/i, "")}</Typography>
+          <Typography variant="caption" color="text.secondary">Open to browse this derived artifact</Typography>
+        </Stack>
+      </AccordionSummary>
+      <AccordionDetails>
         {payload.isLoading ? <Typography>Loading {entry.name}…</Typography> : null}
         {payload.isError ? <Alert severity="warning">Failed to load {entry.name}.</Alert> : null}
         {payload.data ? <EnrichmentArtifactView data={payload.data.data} /> : null}
-      </CardContent>
-    </Card>
+      </AccordionDetails>
+    </Accordion>
   );
 }
 

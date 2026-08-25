@@ -21,6 +21,8 @@ The dashboard is intentionally modular. It is a standalone frontend that talks t
 - Apply structured sensitivity-awareness labels, handling notes, and reusable plain-text tags
 - Preview and surgically remove one file's OSII data, with a separate option to delete the writable original too
 - Expand Library Insights on Home to view root-level standard enrichments without loading them into the normal file grid
+- Open root-level derived artifacts only when needed; long lists and wiki content stay within scrollable regions and standard table columns are sortable
+- Rescan the configured source root for moved originals and safely remap exact hash matches without rerunning extraction
 - Prepare for future document chat workflows
 
 ---
@@ -230,6 +232,17 @@ http://localhost:8511
 ```
 
 and that Vite proxy settings in `vite.config.ts` are correct.
+
+### PDF thumbnails do not appear
+
+Thumbnails are rendered in the browser from the original PDF; they are not
+created by Intake, Tesseract, or another backend processor. First hard-refresh
+the page (<kbd>Command</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> on macOS or
+<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> on Windows). If one PDF still has
+no preview, open `/api/objects/<file-id>/source` through the dashboard address.
+A missing response means the original file is no longer available at the
+source path recorded by OSII; put the original back at that path or intake it
+from its new location.
 
 ### Dependency issues
 

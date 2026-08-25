@@ -40,6 +40,25 @@ def test_configured_processor_urls_includes_enabled_admin_registry(tmp_path, mon
     ]
 
 
+def test_shirty_provider_uses_bundled_http_adapters_without_fake_embedding(tmp_path, monkeypatch):
+    monkeypatch.setenv("OSII_ROOT", str(tmp_path))
+    monkeypatch.setenv("OSII_MODEL_BRIDGE_URL", "http://model-bridge:8095")
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "model_providers.json").write_text(
+        '[{"id":"shirty-corporate","type":"shirty","base_url":"https://shirty.example/api/v1","enabled":true}]',
+        encoding="utf-8",
+    )
+
+    urls = remote.configured_processor_urls()
+
+    assert urls == [
+        "http://model-bridge:8095/shirty/extractor",
+        "http://model-bridge:8095/shirty/synthesizer",
+    ]
+    assert not any("embedder" in url for url in urls)
+
+
 def test_discovery_ignores_unavailable_processors(monkeypatch):
     monkeypatch.setenv("OSII_PROCESSORS", "http://unavailable")
 
@@ -58,7 +77,7 @@ def test_remote_synthesis_omits_absent_citation_fields_from_toml(
     descriptor = ProcessorDescriptor(
         name="local.extractive-preview",
         version="1.0.0",
-        display_name="Local Extractive Preview",
+        display_name="Cited source-excerpt preview (no AI)",
         description="Test synthesizer",
         kind=ProcessorKind.SYNTHESIZER,
         capabilities=Capability(scope_types=["object"]),

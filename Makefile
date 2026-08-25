@@ -8,9 +8,9 @@ export UV_PROJECT_ENVIRONMENT := $(CURDIR)/osii-env
 export OSII_IMAGE_PREFIX OSII_IMAGE_TAG
 unexport VIRTUAL_ENV
 
-.PHONY: dev dev-host dev-core dev-ollama dev-corporate dev-extractor dev-synthesizer dev-embedder dev-enricher dev-model-bridge dev-ocr-host dev-containers dev-services dev-examples containers-dev run dev-all down logs test build build-release push-release docs docs-serve doctor catalog-rebuild catalog-verify
+.PHONY: dev dev-host dev-core dev-ollama dev-corporate dev-extractor dev-synthesizer dev-embedder dev-enricher dev-model-bridge dev-ocr-host dev-tika dev-containers dev-containers-insecure dev-services dev-examples containers-dev run dev-all down logs test build build-release push-release docs docs-serve doctor catalog-rebuild catalog-verify
 
-# Default development path: API, worker, chat, MCP, dashboard, and extraction
+# Default development path: API (including chat), worker, MCP, dashboard, and extraction
 # all run from source on the host. No container runtime is required.
 dev: dev-host
 
@@ -27,26 +27,37 @@ dev-corporate:
 	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py --provider-profile corporate
 
 dev-extractor:
-	$(UV) run --python 3.11 --package osii-local-extractor uvicorn app.main:app --app-dir services/local-extractor --host 127.0.0.1 --port 8092 --reload
+	$(UV) run --python 3.11 --package osii-local-extractor python -m uvicorn app.main:app --app-dir services/local-extractor --host 127.0.0.1 --port 8092 --reload
 
 dev-synthesizer:
-	$(UV) run --python 3.11 --package osii-local-synthesizer uvicorn app.main:app --app-dir services/local-synthesizer --host 127.0.0.1 --port 8093 --reload
+	$(UV) run --python 3.11 --package osii-local-synthesizer python -m uvicorn app.main:app --app-dir services/local-synthesizer --host 127.0.0.1 --port 8093 --reload
 
 dev-embedder:
-	$(UV) run --python 3.11 --package osii-local-embedder uvicorn app.main:app --app-dir services/local-embedder --host 127.0.0.1 --port 8085 --reload
+	$(UV) run --python 3.11 --package osii-local-embedder python -m uvicorn app.main:app --app-dir services/local-embedder --host 127.0.0.1 --port 8085 --reload
 
 dev-enricher:
-	$(UV) run --python 3.11 --package osii-local-enricher uvicorn app.main:app --app-dir services/local-enricher --host 127.0.0.1 --port 8094 --reload
+	$(UV) run --python 3.11 --package osii-local-enricher python -m uvicorn app.main:app --app-dir services/local-enricher --host 127.0.0.1 --port 8094 --reload
 
 dev-model-bridge:
-	$(UV) run --python 3.11 --package osii-model-provider-bridge uvicorn app.main:app --app-dir services/model-provider-bridge --host 127.0.0.1 --port 8095 --reload
+	$(UV) run --python 3.11 --package osii-model-provider-bridge python -m uvicorn app.main:app --app-dir services/model-provider-bridge --host 127.0.0.1 --port 8095 --reload
 
 dev-ocr-host:
 	cd ai-ready-tool-shelf/osii-tesseract && ENABLE_DEMO=true $(UV) run --no-project --python 3.11 --with-requirements requirements.txt python -m uvicorn app.main:app --host 127.0.0.1 --port 8080
 
+# Run only Apache Tika in a container. Use this in a second terminal alongside
+# `make dev` when the editable application stack should remain on the host.
+dev-tika:
+	$(COMPOSE) --profile ocr up -d tika
+
 # Hybrid development for deployment-parity extraction: Tika and Tesseract use
 # containers while the application services continue to run from source.
 dev-containers: dev-services
+	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py
+
+# Explicit opt-in for registries whose TLS certificates cannot be verified.
+# This affects image pulls/builds only and is intentionally Podman-specific.
+dev-containers-insecure:
+	$(COMPOSE) --podman-pull-args=--tls-verify=false --podman-build-args=--tls-verify=false --profile ocr up -d tika tesseract
 	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py
 
 dev-services:
@@ -54,7 +65,7 @@ dev-services:
 
 # Start the normal integrated stack from existing images, without rebuilding.
 run:
-	$(COMPOSE) up --no-build --pull missing local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker chat dashboard
+	$(COMPOSE) up --no-build --pull missing local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker dashboard
 
 dev-examples: dev-services
 	$(COMPOSE) --profile examples up -d --build table-pdf-enricher
@@ -62,13 +73,13 @@ dev-examples: dev-services
 
 # Rebuild and run the deployment-style container stack.
 containers-dev: build
-	$(COMPOSE) --profile chat --profile agents --profile ocr up local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker chat mcp dashboard tika tesseract
+	$(COMPOSE) --profile agents --profile ocr up local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker mcp dashboard tika tesseract
 
 dev-all: build
-	$(COMPOSE) --profile examples --profile chat --profile agents --profile ocr up
+	$(COMPOSE) --profile examples --profile agents --profile ocr up
 
 down:
-	$(COMPOSE) --profile examples --profile chat --profile agents --profile ocr down
+	$(COMPOSE) --profile examples --profile agents --profile ocr down
 
 logs:
 	$(COMPOSE) logs -f
@@ -87,17 +98,17 @@ test:
 	$(UV) run --no-project --python 3.11 --with pytest --with 'uvicorn[standard]' python -m pytest services/baseline-processors/tests
 	cd osii-dashboard/dashboard && npm test --if-present && npm run build
 
-# Build each distinct image once. API/worker share core; all five baseline
-# processor services share one selectable-command image.
+# Build each distinct release image once. API/worker/chat share core; all five
+# baseline processor services share one selectable-command image.
 build: build-release
 	$(COMPOSE) --profile examples --profile agents --profile ocr build mcp table-pdf-enricher tesseract
 
 build-release:
-	$(COMPOSE) build api dashboard chat local-extractor
+	$(COMPOSE) build api dashboard local-extractor
 
 push-release:
 	@if echo "$(OSII_IMAGE_PREFIX)" | grep -q '^localhost/'; then echo "Set OSII_IMAGE_PREFIX to a registry path such as quay.io/your-org/osii."; exit 2; fi
-	$(COMPOSE) push api dashboard chat local-extractor
+	$(COMPOSE) push api dashboard local-extractor
 
 doctor:
 	$(UV) run --no-project --python 3.11 python scripts/disk_usage.py

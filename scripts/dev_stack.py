@@ -18,6 +18,17 @@ import time
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+SERVICE_DISPLAY_NAMES = {
+    "extractor": "Python text-layer PDF and Office extractor",
+    "synthesizer": "cited source-excerpt preview (no AI)",
+    "embedder": "lexical hashing vectors (no AI model)",
+    "enricher": "document statistics and frequent keywords",
+    "model-bridge": "Ollama/Shirty/OpenAI HTTP adapter (not Ollama itself)",
+    "api": "OSII backend API and grounded chat",
+    "worker": "sequential intake worker",
+    "mcp": "MCP server for agents",
+    "dashboard": "dashboard web interface",
+}
 
 
 @dataclass(frozen=True)
@@ -125,6 +136,7 @@ def build_environment(
         (REPOSITORY_ROOT / "ai-ready-ingest" / "config" / "extractor_routes_native.toml").resolve()
     )
     if provider_profile == "corporate":
+        env["OSII_ENVIRONMENT"] = "corporate"
         env["OSII_EXTRACTOR_ROUTES_PATH"] = str((REPOSITORY_ROOT / "ai-ready-ingest" / "config" / "extractor_routes_corporate.toml").resolve())
     if not core_only:
         ollama_embedding_model = env.get("OLLAMA_EMBEDDING_MODEL", "").strip() or "all-minilm"
@@ -145,21 +157,22 @@ def build_environment(
         ]
         configured = [item for item in env.get("OSII_PROCESSORS", "").split(",") if item]
         if provider_profile == "corporate":
-            shirty_url = env.get("OSII_SHIRTY_BRIDGE_URL", "http://127.0.0.1:8096").rstrip("/")
-            local_urls.extend([f"{shirty_url}/extractor", f"{shirty_url}/embedder", f"{shirty_url}/synthesizer"])
+            local_urls.extend([
+                "http://127.0.0.1:8095/shirty/extractor",
+                "http://127.0.0.1:8095/shirty/synthesizer",
+            ])
         env.update({
             "OSII_PROCESSORS": ",".join(local_urls + configured),
             "OSII_DEFAULT_EXTRACTOR": "corporate.shirty-textract" if provider_profile == "corporate" else "local.native-text",
             "OSII_DEFAULT_SYNTHESIZER": "corporate.shirty-synthesis" if provider_profile == "corporate" else "ollama.synthesizer",
-            "OSII_DEFAULT_EMBEDDER": "corporate.shirty-embedding" if provider_profile == "corporate" else "ollama.embedder",
+            "OSII_DEFAULT_EMBEDDER": "ollama.embedder",
             "OSII_DEFAULT_ENRICHER": "local.stats-keywords",
-            "EMBEDDING_MODEL": env.get("SHIRTY_EMBEDDING_MODEL", "") if provider_profile == "corporate" else ollama_embedding_model,
+            "EMBEDDING_MODEL": ollama_embedding_model,
         })
         if provider_profile in {"baseline", "ollama"}:
             env.update({"CHAT_PROVIDER": "ollama", "CHAT_PROVIDER_CHAIN": "ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "ollama.synthesizer,local.extractive-preview"})
         elif provider_profile == "corporate":
-            shirty_url = env.get("OSII_SHIRTY_BRIDGE_URL", "http://127.0.0.1:8096").rstrip("/")
-            env.update({"CHAT_PROVIDER": "openai", "CHAT_PROVIDER_CHAIN": "openai,ollama,extractive", "OSII_CHAT_BASE_URL": f"{shirty_url}/v1", "OSII_SYNTHESIZER_FALLBACKS": "corporate.shirty-synthesis,ollama.synthesizer,local.extractive-preview"})
+            env.update({"CHAT_PROVIDER": "shirty", "CHAT_PROVIDER_CHAIN": "shirty,ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "corporate.shirty-synthesis,ollama.synthesizer,local.extractive-preview"})
     if examples and not env.get("OSII_PROCESSORS"):
         processor_port = env.get("OSII_EXAMPLE_PROCESSOR_PORT", "8091")
         env["OSII_PROCESSORS"] = f"http://127.0.0.1:{processor_port}"
@@ -173,8 +186,6 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str]) -> None:
             "sync",
             "--package",
             "osii",
-            "--package",
-            "ai-ready-chat",
             "--package",
             "osii-mcp",
             "--package", "osii-local-extractor",
@@ -218,7 +229,6 @@ def service_commands(
     core_only: bool,
 ) -> list[Service]:
     api_port = env.get("OSII_API_PORT", "8511")
-    chat_port = env.get("OSII_CHAT_PORT", "8611")
     dashboard_port = env.get("OSII_DASHBOARD_PORT", "5173")
     mcp_port = env.get("OSII_MCP_PORT", "8022")
     embeddings_port = env.get("OSII_EMBEDDINGS_PORT", "8085")
@@ -231,6 +241,8 @@ def service_commands(
                 "run",
                 "--package",
                 "osii",
+                "python",
+                "-m",
                 "uvicorn",
                 "osii.main:app",
                 "--host",
@@ -251,6 +263,8 @@ def service_commands(
                 "run",
                 "--package",
                 "osii",
+                "python",
+                "-m",
                 "watchfiles",
                 "--filter",
                 "python",
@@ -259,26 +273,6 @@ def service_commands(
             ),
             REPOSITORY_ROOT / "ai-ready-ingest",
             0,
-        ),
-        Service(
-            "chat",
-            (
-                uv,
-                "run",
-                "--package",
-                "ai-ready-chat",
-                "uvicorn",
-                "app.main:app",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                chat_port,
-                "--reload",
-                "--reload-dir",
-                "app",
-            ),
-            REPOSITORY_ROOT / "ai-ready-rag-chat",
-            int(chat_port),
         ),
         Service(
             "mcp",
@@ -317,9 +311,9 @@ def service_commands(
         )
         for name, package, default_port, env_name, directory in reversed(processors):
             port = env.get(env_name, default_port)
-            services.insert(0, Service(name, (uv, "run", "--package", package, "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "services" / directory, int(port)))
+            services.insert(0, Service(name, (uv, "run", "--package", package, "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "services" / directory, int(port)))
         bridge_port = env.get("OSII_MODEL_BRIDGE_PORT", "8095")
-        services.insert(4, Service("model-bridge", (uv, "run", "--package", "osii-model-provider-bridge", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", bridge_port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "services" / "model-provider-bridge", int(bridge_port)))
+        services.insert(4, Service("model-bridge", (uv, "run", "--package", "osii-model-provider-bridge", "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", bridge_port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "services" / "model-provider-bridge", int(bridge_port)))
     return services
 
 
@@ -345,11 +339,13 @@ def ensure_ports_available(services: list[Service]) -> None:
 
 def render_command(service: Service) -> str:
     command = subprocess.list2cmdline(service.command)
-    return f"[{service.name}] ({service.working_directory}) {command}"
+    display_name = SERVICE_DISPLAY_NAMES.get(service.name, service.name)
+    return f"[{display_name}] ({service.working_directory}) {command}"
 
 
 def start_service(service: Service, env: dict[str, str]) -> subprocess.Popen[bytes]:
-    print(f"[dev] Starting {service.name}...")
+    display_name = SERVICE_DISPLAY_NAMES.get(service.name, service.name)
+    print(f"[dev] Starting {display_name}...")
     kwargs: dict[str, object] = {
         "args": service.command,
         "cwd": service.working_directory,
@@ -410,8 +406,16 @@ def run(
         print(f"[dev] MCP: http://localhost:{env.get('OSII_MCP_PORT', '8022')}/mcp")
         print("[dev] Press Ctrl+C to stop host processes.")
         if not core_only:
-            print("[dev] Local processors: extractor 8092, synthesizer 8093, embedder 8085, enricher 8094")
-            print(f"[dev] Provider profile: {provider_profile}; model downloads require an explicit Tools action")
+            print("[dev] Python text-layer/Office extraction: http://localhost:8092/docs")
+            print("[dev] Cited source-excerpt preview (no AI): http://localhost:8093/docs")
+            print("[dev] Lexical hashing vectors (no AI model): http://localhost:8085/docs")
+            print("[dev] Document statistics and keywords: http://localhost:8094/docs")
+            print("[dev] Model HTTP adapter: http://localhost:8095/docs")
+            print("[dev] OSII does not manage Ollama; Tools checks the separately configured Ollama URL.")
+            print("[dev] Tesseract OCR is not started; after installing Tesseract, run make dev-ocr-host.")
+            print("[dev] Apache Tika is not started; run make dev-tika in a second terminal if needed.")
+            if provider_profile == "corporate":
+                print("[dev] Corporate profile: Shirty is preferred when SHIRTY_BASE_URL and SHIRTY_API_KEY are set.")
 
         while True:
             for name, (_, process) in processes.items():

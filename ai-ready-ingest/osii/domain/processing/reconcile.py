@@ -55,6 +55,7 @@ def reconcile_osii_with_source(
     *,
     osii_root: Path,
     data_root: Path,
+    relpath_root: Path | None = None,
     include_patterns: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
     show_hidden: bool = False,
@@ -69,11 +70,12 @@ def reconcile_osii_with_source(
         show_hidden=show_hidden,
     )
 
+    relative_root = (relpath_root or data_root).resolve()
     current_by_relpath = {}
     current_by_file_id = {}
 
     for path in source_files:
-        relpath = path.relative_to(data_root).as_posix()
+        relpath = path.relative_to(relative_root).as_posix()
         file_id = compute_file_id(path)
         current_by_relpath[relpath] = {
             "path": path,
@@ -85,6 +87,11 @@ def reconcile_osii_with_source(
         }
 
     catalog_entries = load_files_catalog(osii_root)
+    catalog_file_ids = {
+        entry.get("file_id")
+        for entry in catalog_entries
+        if entry.get("file_id")
+    }
 
     unchanged = []
     changed = []
@@ -136,9 +143,10 @@ def reconcile_osii_with_source(
             )
 
     for relpath, current in current_by_relpath.items():
-        if relpath not in seen_catalog_relpaths and current["file_id"] not in {
-            item["file_id"] for item in moved
-        }:
+        if (
+            relpath not in seen_catalog_relpaths
+            and current["file_id"] not in catalog_file_ids
+        ):
             new_files.append(
                 {
                     "source_relpath": relpath,

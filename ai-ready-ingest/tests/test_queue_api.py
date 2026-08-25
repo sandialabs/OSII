@@ -74,6 +74,60 @@ def test_browse_and_preview_report_processed_files(
     )
 
 
+def test_source_rescan_previews_then_applies_hash_matched_move(
+    client,
+    temp_data_root: Path,
+    temp_osii_root: Path,
+):
+    from osii.extraction.common import init_doc_context
+    from osii.domain.read.docs import get_doc_meta
+    from osii.domain.storage.objects import (
+        write_meta_toml,
+        write_provenance_toml,
+        write_text_file,
+    )
+
+    original = temp_data_root / "reports" / "example.pdf"
+    original.parent.mkdir(parents=True, exist_ok=True)
+    original.write_bytes(b"%PDF-1.4 exact bytes used as identity")
+    context = init_doc_context(original, temp_data_root.parent)
+    write_meta_toml(
+        temp_osii_root,
+        file_id=context["file_id"],
+        source_relpath=context["source_relpath"],
+        filename=original.name,
+        mime=context["mime"],
+        size_bytes=context["size_bytes"],
+        mtime_utc=context["mtime_utc"],
+        sha256_hex=context["sha256_hex"],
+    )
+    write_text_file(temp_osii_root, context["file_id"], "existing extraction")
+    write_provenance_toml(
+        temp_osii_root,
+        context["file_id"],
+        "test",
+        status="done",
+        extractor_name="test",
+        extractor_version="1",
+    )
+
+    moved = temp_data_root / "archive" / original.name
+    moved.parent.mkdir(parents=True, exist_ok=True)
+    original.rename(moved)
+
+    preview = client.post("/api/intake/rescan-sources", json={"apply": False})
+    assert preview.status_code == 200
+    assert preview.json()["summary"]["moved"] == 1
+    assert "applied" not in preview.json()
+
+    applied = client.post("/api/intake/rescan-sources", json={"apply": True})
+    assert applied.status_code == 200
+    assert applied.json()["applied"]["moved_updated"] == 1
+    meta = get_doc_meta(temp_osii_root, context["file_id"])
+    assert meta is not None
+    assert meta["file"]["source_relpath"] == "my_data/archive/example.pdf"
+
+
 def test_intake_readiness_reports_bundled_tools(
     client,
     monkeypatch,
@@ -114,13 +168,13 @@ def test_intake_readiness_hides_compatibility_duplicates_and_labels_model(
     descriptors = [
         {
             "name": "local.native-text",
-            "display_name": "Local Native Text Extractor",
+            "display_name": "Python text-layer PDF and Office extractor",
             "kind": "extractor",
             "base_url": "http://127.0.0.1:8092",
         },
         {
             "name": "local.extractive-preview",
-            "display_name": "Local Extractive Preview",
+            "display_name": "Cited source-excerpt preview (no AI)",
             "kind": "synthesizer",
             "base_url": "http://127.0.0.1:8093",
         },
@@ -132,9 +186,15 @@ def test_intake_readiness_hides_compatibility_duplicates_and_labels_model(
         },
         {
             "name": "local.hashing",
-            "display_name": "Local Lexical Hashing Embedder",
+            "display_name": "Lexical hashing vectors (no AI model)",
             "kind": "embedder",
             "base_url": "http://127.0.0.1:8085",
+        },
+        {
+            "name": "local.stats-keywords",
+            "display_name": "Document statistics and frequent keywords",
+            "kind": "enricher",
+            "base_url": "http://127.0.0.1:8094",
         },
     ]
     monkeypatch.setattr(
@@ -156,6 +216,11 @@ def test_intake_readiness_hides_compatibility_duplicates_and_labels_model(
             "model": "all-minilm",
         },
     )
+    monkeypatch.setattr(
+        capability_readiness,
+        "_ollama_model_status",
+        lambda model: (True, f"Ollama model {model} is installed."),
+    )
     monkeypatch.setenv("OLLAMA_SYNTHESIS_MODEL", "llama3.2:3b")
 
     payload = client.get("/api/intake/readiness").json()
@@ -170,10 +235,57 @@ def test_intake_readiness_hides_compatibility_duplicates_and_labels_model(
     )
     assert ollama["display_name"] == "Ollama Synthesizer · llama3.2:3b"
     assert ollama["model"] == "llama3.2:3b"
+    assert ollama["available"] is True
     assert [item["id"] for item in payload["embedders"]] == [
         "ollama.embedder",
         "local.hashing",
     ]
+    assert "local.stats-keywords" in [item["id"] for item in payload["enrichers"]]
+    assert "stats_keywords" not in [item["id"] for item in payload["enrichers"]]
+
+
+def test_ollama_adapter_is_not_ready_when_ollama_is_missing(
+    client,
+    monkeypatch,
+):
+    from osii.domain.processing import capability_readiness
+
+    monkeypatch.setattr(
+        capability_readiness,
+        "discover_remote_processors",
+        lambda **kwargs: [
+            {
+                "name": "ollama.synthesizer",
+                "display_name": "Ollama Synthesizer",
+                "kind": "synthesizer",
+                "base_url": "http://127.0.0.1:8095/ollama/synthesizer",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        capability_readiness,
+        "_service_probe",
+        lambda *args, **kwargs: (False, "not running"),
+    )
+    monkeypatch.setattr(
+        capability_readiness,
+        "embedding_readiness",
+        lambda osii_root: {"id": "embedding", "available": False},
+    )
+    monkeypatch.setattr(
+        capability_readiness,
+        "_ollama_model_status",
+        lambda model: (
+            False,
+            "OSII's adapter is running, but Ollama is not reachable.",
+        ),
+    )
+
+    payload = client.get("/api/intake/readiness").json()
+    ollama = payload["synthesizers"][0]
+
+    assert ollama["available"] is False
+    assert "Ollama is not reachable" in ollama["detail"]
 
 
 def test_embedding_cannot_be_queued_without_a_tested_embedder(

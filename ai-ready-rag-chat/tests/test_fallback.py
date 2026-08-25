@@ -37,3 +37,31 @@ def test_disabling_all_saved_providers_selects_extractive_chat(monkeypatch, tmp_
 
     assert settings.chat_provider == "extractive"
     assert settings.chat_provider_chain == ("extractive",)
+
+
+def test_saved_shirty_provider_uses_bundled_model_bridge(monkeypatch, tmp_path):
+    provider_path = tmp_path / "state" / "model_providers.json"
+    provider_path.parent.mkdir(parents=True)
+    provider_path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "corporate",
+                    "type": "shirty",
+                    "base_url": "https://shirty.sandia.gov/api/v1",
+                    "enabled": True,
+                    "priority": 10,
+                    "chat_model": "meta-llama/Llama-3.1-8B-Instruct",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OSII_ROOT", str(tmp_path))
+    monkeypatch.setenv("OSII_MODEL_BRIDGE_URL", "http://127.0.0.1:18095")
+
+    settings = get_settings()
+
+    assert settings.chat_provider == "openai"
+    assert settings.openai_compatible_base_url == "http://127.0.0.1:18095/shirty/v1"
+    assert settings.openai_chat_model == "meta-llama/Llama-3.1-8B-Instruct"

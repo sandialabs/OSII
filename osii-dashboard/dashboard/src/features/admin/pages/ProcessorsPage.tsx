@@ -5,9 +5,12 @@ import { useNavigate } from "react-router-dom";
 
 import { checkModelProvider, checkProcessorEndpoint, createModelProvider, createProcessorEndpoint, getIntakeReadiness, getOllamaPullStatus, getProcessorSettings, listModelProviders, listProcessorEndpoints, pullOllamaModel, saveProcessorSettings } from "../../../api/queue";
 import type { CapabilityReadiness, ModelProvider, ModelProviderHealth, ModelPullJob, OllamaRecommendation, ProcessorConfigProperty, ProcessorEndpoint } from "../../../api/types";
+import { ServiceStartGuide } from "../components/ServiceStartGuide";
 
 const DEFAULT_EMBEDDING_MODEL = "all-minilm";
 const DEFAULT_CHAT_MODEL = "llama3.2:1b";
+const DEFAULT_SHIRTY_MODEL = "meta-llama/Llama-3.1-8B-Instruct";
+const DEFAULT_SHIRTY_URL = "https://shirty.sandia.gov/api/v1";
 
 function modelMatches(installed: string, requested: string) {
   return installed === requested || installed === `${requested}:latest` || requested === `${installed}:latest`;
@@ -22,26 +25,26 @@ function formatBytes(value?: number | null) {
 const LOCAL_CAPABILITY_GROUPS = [
   {
     key: "extractors" as const,
-    title: "Extraction",
-    description: "Turns source files into grounded text with source, page, and region provenance.",
+    title: "Extraction — read text from files",
+    description: "Choose the actual program that reads each source file. OCR is separate from reading text already stored in a PDF.",
     defaultKey: "extractor" as const,
   },
   {
     key: "synthesizers" as const,
-    title: "Synthesis",
-    description: "Creates cited document, folder, collection, or library-level Markdown summaries.",
+    title: "Synthesis — make cited previews or summaries",
+    description: "A source-excerpt preview copies existing text; an Ollama, Shirty, or OpenAI model can generate a new grounded summary.",
     defaultKey: "synthesizer" as const,
   },
   {
     key: "embedders" as const,
-    title: "Embedding",
-    description: "Builds vectors for similarity search; local hashing is lexical rather than semantic.",
+    title: "Embedding — build vectors for similarity search",
+    description: "Lexical hashing matches shared words. Ollama or another embedding model is required for semantic similarity. BM25 search works without either.",
     defaultKey: "embedder" as const,
   },
   {
     key: "enrichers" as const,
-    title: "Enrichment",
-    description: "Produces reusable knowledge products such as tables, entity lists, graphs, and wiki Markdown.",
+    title: "Enrichment — create additional knowledge products",
+    description: "Build tables, phrase keywords, entity lists, graphs, or wiki Markdown from text that has already been extracted.",
     defaultKey: "enricher" as const,
   },
 ];
@@ -57,10 +60,49 @@ function isSelectedDefault(item: CapabilityReadiness, selected: string) {
 }
 
 function localRuntimeLabel(item: CapabilityReadiness) {
-  if (item.bundled && item.base_url) return "Host service · started by make dev";
-  if (item.base_url) return "Connected service or model-provider bridge";
-  if (!item.available) return "Optional tool · start separately";
-  return "Built into OSII core";
+  const concreteLabels: Record<string, string> = {
+    "local.native-text": "Python service on port 8092 · started by make dev · reads existing text, not scanned-page images",
+    "local.extractive-preview": "Python service on port 8093 · started by make dev · copies cited excerpts without an AI model",
+    "local.hashing": "Python service on port 8085 · started by make dev · token and word-pair hashing, not semantic understanding",
+    "local.stats-keywords": "Python service on port 8094 · started by make dev · deterministic counts and frequent terms",
+    stats_keywords: "Python enrichment inside OSII core · no model or additional service",
+    noun_adjective_ngrams: "Python enrichment inside OSII core · lemmatized noun/adjective phrase counts · no model",
+    entity_candidates: "Python enrichment inside OSII core · capitalized-name and acronym candidates · no model",
+    osii_tesseract: "OpenCV + Tesseract OCR service on port 8080 · not started by make dev",
+    tika: "Apache Tika server on port 9998 · not started by make dev",
+    pdf_default: "External Nemotron vision-language-model service · not included with OSII",
+    llm_wiki: "OSII enrichment that calls the selected model-backed synthesizer",
+  };
+  if (concreteLabels[item.id]) return concreteLabels[item.id];
+  if (item.id.startsWith("ollama.")) {
+    return "OSII's adapter runs on port 8095; the Ollama application and model run separately";
+  }
+  if (item.id.startsWith("corporate.shirty")) {
+    return "OSII's adapter runs on port 8095 and calls the configured corporate Shirty endpoint";
+  }
+  if (item.bundled && item.base_url) return `Bundled Python service at ${item.base_url} · started by make dev`;
+  if (item.base_url) return `Connected Processor API service at ${item.base_url}`;
+  if (!item.available) return "Optional implementation · connect or start it separately";
+  return "Python implementation inside OSII core";
+}
+
+function unavailableHelp(item: CapabilityReadiness) {
+  if (item.id === "osii_tesseract") {
+    return "Install Tesseract and confirm `tesseract --version`, then run `make dev-ocr-host` or `.\\scripts\\osii.ps1 dev-ocr-host`.";
+  }
+  if (item.id === "tika") {
+    return "Apache Tika is optional. With Podman available, run `make dev-containers` or `.\\scripts\\osii.ps1 dev-containers`.";
+  }
+  if (item.id === "pdf_default") {
+    return "Set NEMOTRON_BASE_URL to a running Nemotron/Banyan PDF parser endpoint.";
+  }
+  if (item.id.startsWith("ollama.")) {
+    return "Install and start Ollama separately, then open AI models, check the connection, and download the model shown in this method's name.";
+  }
+  if (item.id === "llm_wiki") {
+    return "Connect and test an Ollama, Shirty, or OpenAI-compatible synthesis model first.";
+  }
+  return "Start or connect this implementation, then retest tools.";
 }
 
 function capabilitySchema(item: CapabilityReadiness) {
@@ -124,6 +166,7 @@ export function ProcessorsPage() {
     priority: 100, embedding_model: DEFAULT_EMBEDDING_MODEL, synthesis_model: DEFAULT_CHAT_MODEL, chat_model: DEFAULT_CHAT_MODEL, credential_env: "",
   });
   const [providerHealth, setProviderHealth] = useState<Record<string, ModelProviderHealth>>({});
+  const [checkingProviderId, setCheckingProviderId] = useState<string | null>(null);
   const [pullJobs, setPullJobs] = useState<Record<string, ModelPullJob>>({});
   const [section, setSection] = useState<"overview" | "models" | "capabilities" | "endpoints">("overview");
   const [showProviderForm, setShowProviderForm] = useState(false);
@@ -187,7 +230,47 @@ export function ProcessorsPage() {
   };
 
   const probeProvider = async (provider: ModelProvider) => {
-    await loadProviderModels(provider, true);
+    setCheckingProviderId(provider.id);
+    try {
+      await loadProviderModels(provider, true);
+    } finally {
+      setCheckingProviderId(null);
+    }
+  };
+
+  const changeProviderType = (type: ModelProvider["type"]) => {
+    if (type === "shirty") {
+      setProviderForm({
+        ...providerForm,
+        type,
+        base_url: DEFAULT_SHIRTY_URL,
+        embedding_model: "",
+        synthesis_model: DEFAULT_SHIRTY_MODEL,
+        chat_model: DEFAULT_SHIRTY_MODEL,
+        credential_env: "SHIRTY_API_KEY",
+      });
+      return;
+    }
+    if (type === "ollama") {
+      setProviderForm({
+        ...providerForm,
+        type,
+        base_url: "http://127.0.0.1:11434",
+        embedding_model: DEFAULT_EMBEDDING_MODEL,
+        synthesis_model: DEFAULT_CHAT_MODEL,
+        chat_model: DEFAULT_CHAT_MODEL,
+        credential_env: "",
+      });
+      return;
+    }
+    setProviderForm({
+      ...providerForm,
+      type,
+      embedding_model: "",
+      synthesis_model: "",
+      chat_model: "",
+      credential_env: "OSII_MODEL_API_KEY",
+    });
   };
 
   const installModel = async (provider: ModelProvider, recommendation: OllamaRecommendation) => {
@@ -227,76 +310,61 @@ export function ProcessorsPage() {
   return (
     <Stack spacing={3}>
       <Stack spacing={0.5}>
-        <Typography variant="h5" fontWeight={700}>Tools</Typography>
+        <Typography variant="h5" fontWeight={700}>Tools &amp; services</Typography>
         <Typography color="text.secondary">
-          Guaranteed local capabilities work offline. Model providers and domain Processor services are separate, optional connections.
+          See what <code>make dev</code> already started, what each processing method actually does, and which optional programs you must install or connect yourself.
         </Typography>
       </Stack>
       {message ? <Alert severity={message.includes("failed") || message.includes("Could not") ? "error" : "info"}>{message}</Alert> : null}
 
       <Paper variant="outlined" sx={{ px: 1 }}>
         <Tabs value={section} onChange={(_, value) => setSection(value)} variant="scrollable" allowScrollButtonsMobile aria-label="Tool sections">
-          <Tab value="overview" label="Overview" />
-          <Tab value="models" label="Model providers" />
-          <Tab value="capabilities" label="Capabilities & settings" />
-          <Tab value="endpoints" label="Processor endpoints" />
+          <Tab value="overview" label="Start & status" />
+          <Tab value="models" label="AI models" />
+          <Tab value="capabilities" label="Processing methods" />
+          <Tab value="endpoints" label="Custom services" />
         </Tabs>
       </Paper>
 
       {section === "overview" ? <Paper variant="outlined" sx={{ p: 2 }}>
-        <Stack spacing={1.25}>
-          <Typography fontWeight={700}>Guaranteed local capabilities</Typography>
-          <Typography variant="body2">Native extraction, extractive previews and chat, hashing vectors, BM25 search, and statistics/keyword enrichment require no account, model download, or container.</Typography>
-          <Alert severity="info">Hashing vectors are lexical—not semantic. Intake and BM25 search remain available when every optional provider is down.</Alert>
+        <Stack spacing={2.5}>
+          <ServiceStartGuide readiness={readiness.data} />
           <Divider />
-          <Typography fontWeight={700}>How to connect a domain processor</Typography>
-          <Typography variant="body2">
-            1. Start the processor service and confirm that its base URL is reachable from the OSII API.
-          </Typography>
-          <Typography variant="body2">
-            2. Add that base URL below. Do not include <code>/health</code> or <code>/v1</code> in the URL.
-          </Typography>
-          <Typography variant="body2">
-            3. Select <strong>Health</strong> to check connectivity, then <strong>Test</strong> to validate its descriptor and operation contract.
-          </Typography>
-          <Typography variant="body2">
-            4. Return to Intake and select <strong>Retest tools</strong>. The processor will then appear in readiness and routing choices supported by the core.
-          </Typography>
-          <Alert severity="info">
-            With <code>make dev</code>, a service running on this computer normally uses a URL such as <code>http://127.0.0.1:8091</code>. From the packaged container stack, use its Compose service name or <code>host.containers.internal</code> when calling a service on the host.
-          </Alert>
           <Typography variant="caption" color="text.secondary">
-            Core commits validated results from every Processor API kind. Processor services never write the `.osii` store directly.
+            OSII core validates and saves results from every processing method. Optional services compute results but never write the canonical <code>.osii</code> store directly.
           </Typography>
           <Button variant="outlined" onClick={() => navigate("/intake")} sx={{ alignSelf: "flex-start" }}>
-            Return to Intake
+            Continue to Intake
           </Button>
         </Stack>
       </Paper> : null}
 
       {section === "models" ? <Paper component="form" onSubmit={(event) => void addProvider(event)} variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
-          <Typography fontWeight={700}>Model providers</Typography>
-          <Typography variant="body2" color="text.secondary">Ollama, Shirty, and generic OpenAI-compatible servers are adapted by a thin HTTP bridge. Ollama itself and its model files remain separate from OSII, so this module can be disabled when a reliable endpoint is available.</Typography>
+          <Typography fontWeight={700}>AI model connections</Typography>
+          <Typography variant="body2" color="text.secondary">Models are optional. OSII connects to Ollama, Shirty, or a generic OpenAI-compatible server through the small adapter that <code>make dev</code> started on port 8095.</Typography>
+          <Alert severity="info">
+            <strong>OSII does not manage the Ollama application.</strong> If you use Ollama, install and start it separately. <code>make dev</code> starts only OSII&apos;s HTTP adapter; the connection check below reports whether the configured Ollama URL is reachable.
+          </Alert>
           <Button variant="outlined" onClick={() => setShowProviderForm((current) => !current)} sx={{ alignSelf: "flex-start" }}>
-            {showProviderForm ? "Hide provider settings" : "Add or edit a provider"}
+            {showProviderForm ? "Hide connection settings" : "Add or edit a model connection"}
           </Button>
           {showProviderForm ? <>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
             <TextField label="Provider ID" value={providerForm.id} onChange={(event) => setProviderForm({ ...providerForm, id: event.target.value })} />
-            <TextField select label="Type" value={providerForm.type} onChange={(event) => setProviderForm({ ...providerForm, type: event.target.value as ModelProvider["type"] })} sx={{ minWidth: 140 }}>
+            <TextField select label="Type" value={providerForm.type} onChange={(event) => changeProviderType(event.target.value as ModelProvider["type"])} sx={{ minWidth: 140 }}>
               {(["ollama", "openai", "shirty"] as const).map((type) => <MenuItem key={type} value={type}>{type}</MenuItem>)}
             </TextField>
             <TextField label="Base URL" fullWidth value={providerForm.base_url} onChange={(event) => setProviderForm({ ...providerForm, base_url: event.target.value })} />
           </Stack>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
-            <TextField label="Embedding model" value={providerForm.embedding_model} onChange={(event) => setProviderForm({ ...providerForm, embedding_model: event.target.value })} />
+            {providerForm.type !== "shirty" ? <TextField label="Embedding model" value={providerForm.embedding_model} onChange={(event) => setProviderForm({ ...providerForm, embedding_model: event.target.value })} /> : null}
             <TextField label="Synthesis model" value={providerForm.synthesis_model} onChange={(event) => setProviderForm({ ...providerForm, synthesis_model: event.target.value })} />
             <TextField label="Chat model" value={providerForm.chat_model} onChange={(event) => setProviderForm({ ...providerForm, chat_model: event.target.value })} />
             <TextField label="Credential env name" value={providerForm.credential_env} onChange={(event) => setProviderForm({ ...providerForm, credential_env: event.target.value })} helperText="Example: SHIRTY_API_KEY. Never paste the key." />
           </Stack>
           <FormControlLabel control={<Switch checked={providerForm.enabled} onChange={(event) => setProviderForm({ ...providerForm, enabled: event.target.checked })} />} label="Enable this provider" />
-          <Alert severity="info">The first-run defaults are the US-origin <code>all-minilm</code> embedding model and Meta <code>llama3.2:1b</code> for chat and synthesis. Downloads are explicit and restricted by <code>OSII_OLLAMA_ALLOWED_MODELS</code>.</Alert>
+          {providerForm.type === "shirty" ? <Alert severity="info">Built-in Shirty support covers Textract, synthesis, and chat through the documented HTTP API. The published Shirty examples do not define a remote embedding endpoint, so select Ollama or another OpenAI-compatible provider for embeddings.</Alert> : <Alert severity="info">The first-run defaults are the US-origin <code>all-minilm</code> embedding model and Meta <code>llama3.2:1b</code> for chat and synthesis. Downloads are explicit and restricted by <code>OSII_OLLAMA_ALLOWED_MODELS</code>.</Alert>}
           <Button type="submit" variant="contained" sx={{ alignSelf: "flex-start" }}>Save provider</Button>
           </> : null}
           {(providers.data?.providers ?? []).map((provider) => (
@@ -305,13 +373,15 @@ export function ProcessorsPage() {
                 <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1}>
                   <Stack>
                     <Stack direction="row" spacing={0.75} alignItems="center">
-                      <Typography fontWeight={600}>{provider.id}</Typography>
+                      <Typography fontWeight={600}>{provider.type === "ollama" ? "Ollama on this computer" : provider.type === "shirty" ? "Corporate Shirty" : provider.id}</Typography>
                       <Chip size="small" label={provider.type} />
                     </Stack>
                     <Typography variant="caption" color="text.secondary">{provider.base_url} · credentials {provider.credential_required === false ? "not required" : provider.credential_present ? "present" : "not present"} · {provider.enabled ? "enabled" : "disabled"}</Typography>
+                    {provider.type === "shirty" ? <Typography variant="caption" color="text.secondary">Built in: Textract, synthesis, and chat. Embedding remains a separate provider capability.</Typography> : null}
                   </Stack>
-                  <Stack direction="row" spacing={1}><Button variant="outlined" onClick={() => { setProviderForm(provider); setShowProviderForm(true); }}>Edit</Button><Button variant="outlined" onClick={() => void probeProvider(provider)}>Refresh models</Button></Stack>
+                  <Stack direction="row" spacing={1}><Button variant="outlined" onClick={() => { setProviderForm(provider); setShowProviderForm(true); }}>Edit</Button><Button variant="outlined" disabled={checkingProviderId === provider.id} onClick={() => void probeProvider(provider)}>{checkingProviderId === provider.id ? "Checking…" : "Check connection & models"}</Button></Stack>
                 </Stack>
+                {provider.type === "ollama" && providerHealth[provider.id]?.ok ? <Alert severity="success">Connected to Ollama. Found {providerHealth[provider.id].models.length} installed model{providerHealth[provider.id].models.length === 1 ? "" : "s"}.</Alert> : null}
                 {provider.type === "ollama" && providerHealth[provider.id]?.ok ? (
                   <Stack spacing={0.75}>
                     <Typography variant="body2" fontWeight={700}>Installed Ollama models</Typography>
@@ -328,10 +398,11 @@ export function ProcessorsPage() {
                     {!providerHealth[provider.id].model_details.length ? <Typography variant="caption" color="text.secondary">Ollama is connected, but no models are installed.</Typography> : null}
                   </Stack>
                 ) : null}
-                {provider.type === "ollama" && providerHealth[provider.id] && !providerHealth[provider.id].ok ? <Alert severity="warning">Ollama is not reachable at this URL. Start Ollama, then refresh this pane.</Alert> : null}
+                {provider.type === "ollama" && providerHealth[provider.id] && !providerHealth[provider.id].ok ? <Alert severity="info"><strong>OSII could not reach Ollama at this URL.</strong> Ollama may be stopped, installed at another address, or not installed. Start the application or run <code>ollama serve</code>, verify the URL, and check again.</Alert> : null}
                 {provider.type === "ollama" ? (
                   <Stack spacing={1}>
                     <Typography variant="body2" fontWeight={700}>Approved starter models</Typography>
+                    <Typography variant="caption" color="text.secondary">These buttons cover OSII&apos;s small starter models. Use <code>ollama list</code> and <code>ollama pull &lt;model&gt;</code> in the CLI for other models allowed in your environment, then check the connection again.</Typography>
                     {(providers.data?.ollama_recommendations ?? []).map((recommendation) => {
                       const installed = (providerHealth[provider.id]?.models ?? []).some((name) => modelMatches(name, recommendation.model));
                       const job = pullJobs[`${provider.id}:${recommendation.model}`];
@@ -373,9 +444,9 @@ export function ProcessorsPage() {
       {section === "capabilities" ? <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={2}>
           <Stack spacing={0.5}>
-            <Typography fontWeight={700}>Capabilities and processor defaults</Typography>
+            <Typography fontWeight={700}>Processing methods and defaults</Typography>
             <Typography variant="body2" color="text.secondary">
-              Local, model-backed, and connected implementations are grouped by the four OSII processing concepts. A Default badge means Intake selects that capability automatically.
+              Each card says what the implementation actually uses and produces. <strong>Default for Intake</strong> means OSII selects it automatically; it does not mean optional software is installed.
             </Typography>
           </Stack>
           {readiness.data ? <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(2, minmax(0, 1fr))" }, gap: 2 }}>
@@ -394,13 +465,20 @@ export function ProcessorsPage() {
                       <Stack key={item.id} spacing={0.5}>
                         <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
                           <Typography variant="body2" fontWeight={650}>{item.display_name}</Typography>
-                          {isSelectedDefault(item, selected) ? <Chip size="small" color="primary" label="Default" /> : null}
-                          <Chip size="small" color={item.available ? "success" : "default"} label={item.available ? "Ready" : "Unavailable"} />
+                          {isSelectedDefault(item, selected) ? <Chip size="small" color="primary" label="Default for Intake" /> : null}
+                          <Chip size="small" color={item.available ? "success" : "warning"} label={item.available ? "Running and usable" : "Needs setup"} />
                         </Stack>
-                        <Typography variant="caption" color="text.secondary">{item.id}</Typography>
                         {item.description ? <Typography variant="body2">{item.description}</Typography> : null}
                         <Typography variant="caption" color="text.secondary">{localRuntimeLabel(item)}</Typography>
-                        {!item.available ? <Typography variant="caption">Not currently running.</Typography> : null}
+                        {!item.available ? <Alert severity="warning" sx={{ py: 0.25 }}>{unavailableHelp(item)}</Alert> : null}
+                        <Box component="details" sx={{ color: "text.secondary" }}>
+                          <Typography component="summary" variant="caption" sx={{ cursor: "pointer" }}>Technical details</Typography>
+                          <Stack spacing={0.25} sx={{ mt: 0.5 }}>
+                            <Typography variant="caption">Processor ID: <code>{item.id}</code></Typography>
+                            {item.base_url ? <Typography variant="caption">Service URL: <code>{item.base_url}</code></Typography> : null}
+                            <Typography variant="caption">Readiness check: {item.detail}</Typography>
+                          </Stack>
+                        </Box>
                         {Object.keys(capabilitySchema(item)?.properties ?? {}).length ? (
                           <Button size="small" variant="text" onClick={() => editingCapability === item.id ? setEditingCapability(null) : editCapability(item)} sx={{ alignSelf: "flex-start", px: 0 }}>
                             {editingCapability === item.id ? "Hide settings" : "View and edit settings"}
@@ -421,7 +499,7 @@ export function ProcessorsPage() {
                         </Paper> : null}
                       </Stack>
                     ))}
-                    {!items.length ? <Alert severity="info">No local {group.title.toLowerCase()} capability was discovered.</Alert> : null}
+                    {!items.length ? <Alert severity="info">No implementation was discovered for this processing step.</Alert> : null}
                   </Stack>
                 </Paper>
               );
@@ -434,11 +512,14 @@ export function ProcessorsPage() {
       <Paper component="form" onSubmit={(event) => void add(event)} variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={2}>
           <Stack spacing={0.25}>
-            <Typography fontWeight={700}>Add an OSII Processor service</Typography>
+            <Typography fontWeight={700}>Connect a custom OSII processing service</Typography>
             <Typography variant="body2" color="text.secondary">
-              The service must implement OSII Processor API v1: <code>/health</code>, <code>/v1/descriptor</code>, and one operation endpoint for its kind.
+              Use this for an SME&apos;s custom extractor, synthesizer, embedder, or enricher. Start that service first; it must implement Processor API v1: <code>/health</code>, <code>/v1/descriptor</code>, and one operation endpoint for its kind.
             </Typography>
           </Stack>
+          <Alert severity="info">
+            <strong>Host development:</strong> use its localhost base URL, such as <code>http://127.0.0.1:8091</code>. <strong>Packaged containers:</strong> use its Compose service name, or <code>host.containers.internal</code> for a service running on the host. Add the base address only—never append <code>/health</code> or <code>/v1</code>.
+          </Alert>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
             <TextField label="ID" required value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })} />
             <TextField label="Display name" required fullWidth value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} />
@@ -447,7 +528,7 @@ export function ProcessorsPage() {
             </TextField>
           </Stack>
           <TextField label="Base URL" required fullWidth value={form.base_url} onChange={(event) => setForm({ ...form, base_url: event.target.value })} placeholder="http://127.0.0.1:8091" helperText="Base address only; OSII appends the health, descriptor, and operation paths." />
-          <Button type="submit" variant="contained" sx={{ alignSelf: "flex-start" }}>Add processor</Button>
+          <Button type="submit" variant="contained" sx={{ alignSelf: "flex-start" }}>Add custom service</Button>
         </Stack>
       </Paper>
 

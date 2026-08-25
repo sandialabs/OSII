@@ -51,6 +51,7 @@ data_volume/
 .ipynb_checkpoints/
 .cache/
 *.ipynb
+!osii-demo-notebooks/[0-9][0-9]_*.ipynb
 
 # Editors and operating systems
 .DS_Store

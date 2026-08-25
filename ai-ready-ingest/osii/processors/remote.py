@@ -66,7 +66,6 @@ def configured_processor_urls() -> list[str]:
         except (OSError, json.JSONDecodeError):
             providers = []
         bridge_url = os.getenv("OSII_MODEL_BRIDGE_URL", "http://127.0.0.1:8095").rstrip("/")
-        shirty_bridge_url = os.getenv("OSII_SHIRTY_BRIDGE_URL", "http://127.0.0.1:8096").rstrip("/")
         for provider in providers:
             if not provider.get("enabled"):
                 continue
@@ -74,7 +73,7 @@ def configured_processor_urls() -> list[str]:
             if provider_type in {"ollama", "openai"}:
                 configured.extend([f"{bridge_url}/{provider_type}/embedder", f"{bridge_url}/{provider_type}/synthesizer"])
             elif provider_type == "shirty":
-                configured.extend([f"{shirty_bridge_url}/extractor", f"{shirty_bridge_url}/embedder", f"{shirty_bridge_url}/synthesizer"])
+                configured.extend([f"{bridge_url}/shirty/extractor", f"{bridge_url}/shirty/synthesizer"])
 
     # An endpoint may be configured in both places; only probe it once.
     return list(dict.fromkeys(configured))

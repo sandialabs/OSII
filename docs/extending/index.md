@@ -27,7 +27,7 @@ turning that recovered text into an experiment-results table is enrichment.
 4. Implement the one method for its processor kind.
 5. Test representative, redistributable examples locally.
 6. Package the service in a container.
-7. Register its base URL under **Tools**.
+7. Register its base URL under **Tools & services → Custom services**.
 8. Use **Health** to test liveness and **Test** to validate the v1 contract.
 9. Run it against an ingested file and inspect the result in the dashboard.
 

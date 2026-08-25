@@ -27,7 +27,7 @@ progress. The default download allowlist contains only those two names and can b
 `OSII_OLLAMA_ALLOWED_MODELS`. OSII installs no Ollama Python package and
 bundles no server or weights.
 
-Configure non-secret fields in **Tools → Model providers**: provider ID, base
+Configure non-secret fields in **Tools & services → AI models**: provider ID, base
 URL, enabled state, priority, and exact embedding/synthesis/chat model names.
 Missing installed models still include copy-paste `ollama pull <model>`
 commands for environments where browser-initiated downloads are disabled.
@@ -47,27 +47,28 @@ environment.
 
 ## Shirty
 
-The public workspace has no Shirty dependency. The sibling
-`osii-shirty-bridge` repository resolves `shirty[client]` only against the
-corporate package index and exposes:
+Shirty compatibility is included in OSII's existing HTTP-only provider
+service; the public workspace does not install or import `shirty[client]`.
+The adapter follows the documented API directly:
 
-- `corporate.shirty-textract` using `client.extract.textract.create(file=...)`
-- `corporate.shirty-embedding` using `client.embeddings.create(...)`
-- `corporate.shirty-synthesis` and chat using
-  `client.chat.completions.create(...)`
-- an OpenAI-compatible `/v1/chat/completions` route for OSII chat
+- `POST /extract/textract/create` for `corporate.shirty-textract`
+- `POST /chat/completions` for `corporate.shirty-synthesis` and chat
+- `GET /models` for connection and model discovery
 
-Outside the corporate network, run that same bridge with
-`uv run python -m app --mode emulated`. Its extractor delegates to
-OSII-Tesseract and its model calls delegate to Ollama while preserving the
-bridge URLs and request flow. Emulated descriptors and provenance are labeled
-`emulated`; this validates integration behavior without claiming corporate
-Shirty quality or identity.
+Set `SHIRTY_BASE_URL`, `SHIRTY_API_KEY`, and an explicit chat/synthesis model.
+The documented `OPENAI_BASE_URL` and `OPENAI_API_KEY` aliases are also
+accepted. OSII stores only the configured environment-variable name.
 
-Run it at port 8096, set `OSII_SHIRTY_BRIDGE_URL`, and use
-`make dev-corporate`. The corporate order is Shirty, then selected Ollama, then
-the extractive baseline. An unavailable Shirty service is expected and trips a
-short circuit breaker rather than hanging every request.
+OSII does not advertise a Shirty embedder. The published Shirty embedding
+example installs a local Sentence Transformers implementation and does not
+define a server-side embedding route. Use Ollama or a verified generic
+OpenAI-compatible embedding endpoint instead.
+
+`make dev-corporate` selects the bundled Shirty extraction and synthesis
+adapters, Ollama embedding, and labeled fallbacks. A test-only exact HTTP
+emulator lives in `services/model-provider-bridge/tests/fake_shirty_server.py`;
+the service README includes deterministic, Tesseract-forwarding, commercial
+OpenAI-forwarding, and live corporate contract-test commands.
 
 Intake advertises the independent `local.native-text` and
 `local.extractive-preview` services when they are running. Legacy sanity-check

@@ -62,8 +62,11 @@ class LocalNativeTextExtractor(Extractor):
     descriptor = ProcessorDescriptor(
         name="local.native-text",
         version="1.0.0",
-        display_name="Local Native Text Extractor",
-        description="Container-free extraction for text PDFs, Office documents, RTF, and text files.",
+        display_name="Python text-layer PDF and Office extractor",
+        description=(
+            "Reads text already stored inside PDFs, Office documents, RTF, and common "
+            "text files with Python libraries. It does not perform OCR on scanned pages."
+        ),
         kind=ProcessorKind.EXTRACTOR,
         capabilities=Capability(
             file_extensions=SUPPORTED_EXTENSIONS,

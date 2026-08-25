@@ -8,6 +8,7 @@ import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 
 import { usePdfThumbnail } from "../../../hooks/usePdfThumbnail";
+import { getObjectSourceUrl } from "../../../api/source";
 
 type DocumentThumbnailProps = {
   fileId: string;
@@ -24,8 +25,9 @@ export function DocumentThumbnail({
 }: DocumentThumbnailProps) {
   const isPdf = mime === "application/pdf";
   const shouldGenerate = isPdf && previewAvailable;
+  const sourceUrl = shouldGenerate ? getObjectSourceUrl(fileId) : null;
 
-  const { thumbnailUrl, isLoading } = usePdfThumbnail(fileId, shouldGenerate);
+  const { thumbnailUrl, isLoading } = usePdfThumbnail(sourceUrl, shouldGenerate);
 
   if (thumbnailUrl) {
     return (

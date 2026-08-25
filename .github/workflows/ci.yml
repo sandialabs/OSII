@@ -71,10 +71,21 @@ jobs:
 
   containers:
     runs-on: ubuntu-latest
+    env:
+      CHAT_PROVIDER: extractive
+      CHAT_PROVIDER_CHAIN: extractive
     steps:
       - uses: actions/checkout@v4
-      - run: docker compose --profile examples config --quiet
-      - run: docker compose --profile examples build api dashboard table-pdf-enricher local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge
+      - run: docker compose config --quiet
+      - run: docker compose build api dashboard local-extractor
+      - run: docker compose up --detach --wait local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker dashboard
+      - run: curl --fail --retry 20 --retry-connrefused http://localhost:5173/health
+      - run: >-
+          curl --fail --show-error --request POST http://localhost:5173/api/chat
+          --header 'Content-Type: application/json'
+          --data '{"query":"What information is available?","scope":{"scope_type":"root"}}'
+      - if: always()
+        run: docker compose down --volumes --remove-orphans
 
   documentation:
     runs-on: ubuntu-latest
