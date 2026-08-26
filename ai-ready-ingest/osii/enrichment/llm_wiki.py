@@ -13,6 +13,70 @@ GENERATED_START = "<!-- LLM_WIKI_GENERATED_START -->"
 GENERATED_END = "<!-- LLM_WIKI_GENERATED_END -->"
 
 
+SAFE_FILE_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+
+
+def validate_file_id(file_id: Any) -> str:
+    """
+    Validate OSII file IDs before using them in filesystem paths.
+
+    This prevents path traversal such as ../../outside.
+    """
+    value = str(file_id or "").strip()
+
+    if not SAFE_FILE_ID_RE.fullmatch(value):
+        raise ValueError(f"Invalid file_id: {file_id!r}")
+
+    if value in {".", ".."}:
+        raise ValueError(f"Invalid file_id: {file_id!r}")
+
+    return value
+
+
+def ensure_path_within(root: Path, path: Path) -> Path:
+    """
+    Resolve a path and verify it remains under root.
+
+    Raises ValueError if path escapes root.
+    """
+    root_resolved = root.resolve()
+    path_resolved = path.resolve()
+
+    try:
+        path_resolved.relative_to(root_resolved)
+    except ValueError as exc:
+        raise ValueError(
+            f"Path escapes expected root: path={path_resolved} root={root_resolved}"
+        ) from exc
+
+    return path_resolved
+
+
+def reject_symlink_path(path: Path) -> None:
+    """
+    Refuse direct symlink paths.
+
+    This is a basic symlink safety check. It does not fully eliminate TOCTOU
+    races, but it prevents common accidental or malicious symlink use.
+    """
+    if path.exists() and path.is_symlink():
+        raise RuntimeError(f"Refusing to use symlink path: {path}")
+
+
+def reject_symlinks_under(root: Path) -> None:
+    """
+    Refuse any existing symlinks under a controlled root.
+    """
+    if not root.exists():
+        return
+
+    if root.is_symlink():
+        raise RuntimeError(f"Refusing symlink root: {root}")
+
+    for path in root.rglob("*"):
+        if path.is_symlink():
+            raise RuntimeError(f"Refusing symlink under controlled root: {path}")
+
 def utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -167,6 +231,9 @@ class LlmWiki:
         self.agents_path = self.wiki_root / "AGENTS.md"
 
     def initialize(self) -> None:
+        if self.wiki_root.exists():
+            reject_symlinks_under(self.wiki_root)
+        
         self.wiki_root.mkdir(parents=True, exist_ok=True)
         self.sources_dir.mkdir(parents=True, exist_ok=True)
         self.entities_dir.mkdir(parents=True, exist_ok=True)
@@ -193,6 +260,7 @@ class LlmWiki:
         osii_root: Path,
         source_relpath: str | None = None,
     ) -> WikiObjectRecord:
+        file_id = validate_file_id(file_id)
         source_path = source_path.resolve()
         data_root = data_root.resolve()
         osii_root = osii_root.resolve()

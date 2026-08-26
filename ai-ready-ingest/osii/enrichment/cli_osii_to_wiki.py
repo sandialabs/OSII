@@ -12,6 +12,9 @@ from osii.enrichment.llm_wiki import (
     read_text_if_exists,
     read_toml_if_exists,
     relpath_or_name,
+    ensure_path_within,
+    reject_symlinks_under,
+    validate_file_id
 )
 
 
@@ -177,7 +180,12 @@ def process_one_object(
     expert_context: str | None,
     integrator_config: dict,
 ) -> dict:
-    object_dir = osii_root / "objects" / file_id
+    file_id = validate_file_id(file_id)
+
+    objects_root = (osii_root / "objects").resolve()
+    object_dir = ensure_path_within(objects_root, objects_root / file_id)
+    if object_dir.exists():
+        reject_symlinks_under(object_dir)    
 
     if not object_dir.exists() or not object_dir.is_dir():
         raise RuntimeError(f"OSII object directory does not exist: {object_dir}")
@@ -339,9 +347,17 @@ def discover_file_ids(osii_root: Path) -> list[str]:
     file_ids: list[str] = []
 
     for path in sorted(objects_dir.iterdir()):
+        if path.is_symlink():
+            continue
+
         if not path.is_dir():
             continue
 
+        try:
+            validate_file_id(path.name)
+        except ValueError:
+            continue
+        
         if (path / "synth.txt").exists() or (path / "synth.toml").exists():
             file_ids.append(path.name)
 
