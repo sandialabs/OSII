@@ -58,6 +58,7 @@ the `.osii` store directly.
 - [API compatibility](reference/api/compatibility.md)
 - [Processor API v1](reference/processor-api/index.md)
 - [Model-provider capabilities](reference/model-providers.md)
+- [Catalog and flat-file browsing](reference/catalog.md)
 - [Collection file format](reference/collection-file-format.md)
 - [CLI cheat sheet](reference/cli.md)
 

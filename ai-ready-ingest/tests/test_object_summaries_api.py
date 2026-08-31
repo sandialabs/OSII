@@ -17,6 +17,8 @@ def test_object_summaries_route(client, sample_osii_object):
     assert "filename" in summary
     assert "source_relpath" in summary
     assert "source_file_relpath" in summary
+    assert summary["size_bytes"] == 1234
+    assert summary["mtime_utc"] == "2026-05-21T00:00:00Z"
     assert "processing" in summary
     assert "source_state" in summary
     assert "has_preferred_text" in summary

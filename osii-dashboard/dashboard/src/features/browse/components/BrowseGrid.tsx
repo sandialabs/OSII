@@ -7,8 +7,8 @@ import {
 
 import type { FolderScopeDescriptor } from "../../../api/types";
 import type { FileCardModel } from "../../../domain/files";
+import { FileGrid } from "../../files/components/FileGrid";
 import { FolderTile } from "./FolderTile";
-import { FileTile } from "./FileTile";
 
 type BrowseGridProps = {
   folders: FolderScopeDescriptor[];
@@ -62,19 +62,7 @@ export function BrowseGrid({
       ) : null}
 
       {files.length > 0 ? (
-        <Stack spacing={1}>
-          <Typography variant="subtitle2" fontWeight={600}>
-            Files
-          </Typography>
-
-          <Box sx={tileGridSx}>
-            {files.map((file) => (
-              <Box key={file.fileId}>
-                <FileTile file={file} onOpen={onOpenFile} />
-              </Box>
-            ))}
-          </Box>
-        </Stack>
+        <FileGrid files={files} title="Files" onOpen={onOpenFile} />
       ) : null}
     </Stack>
   );

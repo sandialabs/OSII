@@ -43,6 +43,8 @@ def get_object_summary(osii_root: Path, file_id: str) -> dict | None:
         "source_relpath": file_meta.get("source_relpath"),
         "source_file_relpath": file_meta.get("source_relpath"),
         "mime": mime,
+        "size_bytes": file_meta.get("size_bytes"),
+        "mtime_utc": file_meta.get("mtime_utc"),
         "collections": list_collections_for_file(osii_root, file_id),
         "processing": processing,
         "source_state": (artifact_summary or {}).get("source_state"),

@@ -98,6 +98,8 @@ export type ObjectSummary = {
   source_relpath?: string | null;
   source_file_relpath?: string | null;
   mime?: string | null;
+  size_bytes?: number | null;
+  mtime_utc?: string | null;
   collections: CollectionReference[];
   processing: ObjectProcessing;
   source_state?: ObjectSourceState | null;
@@ -634,6 +636,7 @@ export type IntakeResolveResponse = {
 export type ProcessingRun = {
   id: string;
   status: "pending" | "queued" | "running" | "done" | "error" | string;
+  control_state?: "running" | "pause_requested" | "paused" | "cancel_requested" | "cancelled" | string;
   created_at: string;
   started_at?: string | null;
   finished_at?: string | null;
@@ -662,6 +665,9 @@ export type ProcessingRun = {
     error?: string | null;
     extractor?: string | null;
     extraction_variant_id?: string | null;
+    started_at?: string | null;
+    finished_at?: string | null;
+    duration_seconds?: number | null;
   }>;
   logs?: string[];
   queue_job_id?: string;

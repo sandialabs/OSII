@@ -23,6 +23,30 @@ type FileCardProps = {
   onOpen: (fileId: string) => void;
 };
 
+function formatFileSize(sizeBytes: number | null) {
+  if (sizeBytes === null || sizeBytes < 0) return null;
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = sizeBytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unitIndex]}`;
+}
+
+function formatModifiedDate(modifiedAt: string | null) {
+  if (!modifiedAt) return null;
+  const parsed = new Date(modifiedAt);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function Thumbnail({
   file,
 }: {
@@ -85,6 +109,9 @@ function Thumbnail({
 }
 
 export function FileCard({ file, onOpen }: FileCardProps) {
+  const fileSize = formatFileSize(file.sizeBytes);
+  const modifiedDate = formatModifiedDate(file.modifiedAt);
+
   return (
     <Card
       sx={{
@@ -153,6 +180,14 @@ export function FileCard({ file, onOpen }: FileCardProps) {
             >
               {file.subtitle || "No source path"}
             </Typography>
+
+            {fileSize || modifiedDate ? (
+              <Typography variant="caption" color="text.secondary">
+                {[fileSize, modifiedDate ? `Modified ${modifiedDate}` : null]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </Typography>
+            ) : null}
 
             <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
               {file.hasSynthesis ? (

@@ -44,6 +44,11 @@ catalog endpoints add stable cursor pagination and filtering:
 - `GET /api/catalog/folders`
 - `GET /api/catalog/artifacts?scope_type=object&scope_id=...&kind=enrichment`
 
+The dashboard's flat file grids provide an immediate browser-local filename,
+path, and file-type filter. They can sort the returned files alphabetically,
+by original modification date, or by original file size. These controls do not
+alter canonical `.osii` data or require a separate search index.
+
 Run the synthetic 1,000/10,000-document benchmark with:
 
 ```bash
