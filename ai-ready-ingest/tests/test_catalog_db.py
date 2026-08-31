@@ -3,6 +3,8 @@ import os
 import sqlite3
 from unittest.mock import patch
 
+import pytest
+
 import osii.domain.catalog_db as catalog_db
 from osii.domain.catalog_db import catalog_path, list_documents, rebuild_catalog, verify_catalog
 from osii.domain.scopes.collections import init_collections_db, list_collections
@@ -49,6 +51,25 @@ def test_catalog_rebuild_closes_sqlite_before_atomic_replace(temp_osii_root):
         rebuild_catalog(temp_osii_root)
 
     assert tracked_connections
+
+
+def test_catalog_connection_closes_if_database_setup_fails(tmp_path):
+    class FailingConnection:
+        closed = False
+        row_factory = None
+
+        def execute(self, _statement):
+            raise sqlite3.DatabaseError("file is not a database")
+
+        def close(self):
+            self.closed = True
+
+    connection = FailingConnection()
+    with patch("osii.domain.catalog_db.sqlite3.connect", return_value=connection):
+        with pytest.raises(sqlite3.DatabaseError, match="file is not a database"):
+            catalog_db._connect_path(tmp_path / "catalog.sqlite3")
+
+    assert connection.closed is True
 
 
 def test_catalog_rebuild_and_cursor_pagination(temp_osii_root):

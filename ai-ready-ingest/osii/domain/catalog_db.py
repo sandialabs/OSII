@@ -28,11 +28,18 @@ def catalog_path(osii_root: Path) -> Path:
 
 def _connect_path(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(path, timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 30000")
-    conn.execute("PRAGMA journal_mode = WAL")
-    return conn
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA busy_timeout = 30000")
+        conn.execute("PRAGMA journal_mode = WAL")
+        return conn
+    except Exception:
+        # A corrupt database can fail while configuring its PRAGMAs.  On
+        # Windows that connection retains an exclusive file handle unless it
+        # is explicitly closed before ensure_catalog quarantines the file.
+        conn.close()
+        raise
 
 
 def connect_catalog(osii_root: Path) -> sqlite3.Connection:
