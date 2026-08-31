@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 import shlex
 import shutil
-import signal
 import socket
 import subprocess
 import sys
@@ -361,11 +360,26 @@ def start_service(service: Service, env: dict[str, str]) -> subprocess.Popen[byt
 def stop_service(process: subprocess.Popen[bytes]) -> None:
     if process.poll() is not None:
         return
+    if os.name == "nt":
+        # uvicorn --reload, watchfiles, and npm/Vite all create child
+        # processes. Stopping only the uv/npm parent leaves those children
+        # listening on their ports on Windows. taskkill /T tears down the
+        # complete tree; /F is equivalent to the existing kill fallback and
+        # is necessary for reloaders that do not handle CTRL_BREAK reliably.
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+        return
     try:
-        if os.name == "nt":
-            process.send_signal(signal.CTRL_BREAK_EVENT)
-        else:
-            process.terminate()
+        process.terminate()
         process.wait(timeout=5)
     except (OSError, subprocess.TimeoutExpired):
         if process.poll() is None:

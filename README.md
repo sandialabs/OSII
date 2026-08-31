@@ -140,6 +140,23 @@ that exited or timed out. When the terminal output settles, open:
 - **Chat health:** <http://localhost:8511/api/chat/health>
 - **MCP server:** <http://localhost:8022/mcp>
 
+On Windows, Ctrl+C shuts down each complete Uvicorn, watchfiles, MCP, and Vite
+process tree. If an older checkout already left development processes behind,
+list and stop only listeners on OSII's host-development ports before restarting:
+
+```powershell
+$ports = 5173,8022,8085,8092,8093,8094,8095,8511
+$listeners = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+  Where-Object { $ports -contains $_.LocalPort }
+$listeners | Select-Object LocalPort,OwningProcess,
+  @{Name="Process";Expression={(Get-Process -Id $_.OwningProcess).ProcessName}}
+$listeners.OwningProcess | Sort-Object -Unique |
+  ForEach-Object { taskkill.exe /PID $_ /T /F }
+```
+
+This deliberately excludes Ollama's port 11434 and optional OCR/container
+ports.
+
 In the dashboard, select **Intake** in the first sidebar section. **Add files**
 tests required tools and shows the extractor selected for each matched file
 type. **Process library** adds embeddings, summaries, enrichments, or a better

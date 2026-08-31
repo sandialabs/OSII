@@ -117,3 +117,30 @@ def test_ollama_models_are_discovered_and_allowlisted_pull_runs(client, monkeypa
 
     denied = client.post("/api/admin/model-providers/ollama-local/models/pull", json={"model": "deepseek-r1"})
     assert denied.status_code == 403
+
+
+def test_ollama_pull_stream_error_is_reported(client, monkeypatch):
+    monkeypatch.setattr(
+        "osii.api.model_provider_routes.requests.post",
+        lambda *_, **__: FakeResponse(
+            lines=[json.dumps({"error": "registry access was denied"}).encode()]
+        ),
+    )
+
+    started = client.post(
+        "/api/admin/model-providers/ollama-local/models/pull",
+        json={"model": "all-minilm"},
+    )
+    assert started.status_code == 200
+    job = started.json()
+    for _ in range(50):
+        job = client.get(
+            f"/api/admin/model-providers/ollama-local/models/pull/{job['job_id']}"
+        ).json()
+        if job["status"] not in {"queued", "running"}:
+            break
+        time.sleep(0.01)
+
+    assert job["status"] == "error"
+    assert job["status_text"] == "Download failed"
+    assert job["detail"] == "registry access was denied"

@@ -40,6 +40,13 @@ responds. This is especially important on Windows, where several simultaneous
 produces a specific terminal error instead of a dashboard that repeatedly
 reports Vite proxy failures.
 
+On Windows, Ctrl+C terminates the complete child-process trees created by
+Uvicorn reloaders, watchfiles, MCP, and npm/Vite. This prevents an apparently
+stopped development stack from leaving ports 5173, 8022, 8085, 8092–8095, or
+8511 occupied. The repository README includes a scoped recovery command for
+processes left behind by older checkouts; it excludes Ollama and containerized
+OCR services.
+
 Host Python dependencies live in the ignored `osii-env/` directory. OSII uses
 that visible name because current macOS Python releases can skip editable
 package path files beneath a hidden `.venv` directory.

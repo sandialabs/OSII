@@ -27,6 +27,16 @@ progress. The default download allowlist contains only those two names and can b
 `OSII_OLLAMA_ALLOWED_MODELS`. OSII installs no Ollama Python package and
 bundles no server or weights.
 
+Ollama reports some registry and model errors inside its streaming response
+even when the HTTP request itself succeeded. OSII treats those updates as
+failed jobs and displays the returned detail beside the affected model instead
+of briefly showing progress and silently returning to the Download button.
+For proxy, certificate, DNS, and other registry failures, the model card makes
+clear that OSII reached the local Ollama server and that the outbound failure
+occurred inside Ollama. It also provides a copyable `ollama pull <model>`
+command for the full native diagnostic. Configure proxy credentials and trust
+for the Ollama application or service; OSII never requests or stores them.
+
 Configure non-secret fields in **Tools & services → AI models**: provider ID, base
 URL, enabled state, priority, and exact embedding/synthesis/chat model names.
 After checking an Ollama connection, use the three selectors under **Use

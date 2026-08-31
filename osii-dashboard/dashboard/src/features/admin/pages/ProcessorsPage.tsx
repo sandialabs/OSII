@@ -24,6 +24,20 @@ function formatBytes(value?: number | null) {
   return `${Math.round(value / 1024 ** 2)} MB`;
 }
 
+function ollamaDownloadGuidance(detail?: string | null) {
+  const normalized = (detail ?? "").toLocaleLowerCase();
+  if (normalized.includes("proxy")) {
+    return "OSII reached Ollama, but Ollama reported a proxy failure while contacting its model registry. Configure the proxy for the Ollama application or service, not in OSII.";
+  }
+  if (["certificate", "x509", "tls"].some((term) => normalized.includes(term))) {
+    return "OSII reached Ollama, but Ollama could not validate the registry connection. Configure the required certificate trust for the Ollama application or service.";
+  }
+  if (["timeout", "connection", "resolve", "dns", "network"].some((term) => normalized.includes(term))) {
+    return "OSII reached Ollama, but Ollama could not reach its model registry. Check the network and proxy environment used by the Ollama application or service.";
+  }
+  return "OSII reached Ollama, but Ollama could not complete the registry download. The command below shows Ollama's full diagnostics directly.";
+}
+
 function modelSelection(provider: ModelProvider): ProviderModelSelection {
   return {
     embedding_model: provider.embedding_model,
@@ -190,6 +204,7 @@ export function ProcessorsPage() {
   const [checkingProviderId, setCheckingProviderId] = useState<string | null>(null);
   const [savingProviderId, setSavingProviderId] = useState<string | null>(null);
   const [pullJobs, setPullJobs] = useState<Record<string, ModelPullJob>>({});
+  const [copiedPullCommand, setCopiedPullCommand] = useState<string | null>(null);
   const [section, setSection] = useState<"overview" | "models" | "capabilities" | "endpoints">("overview");
   const [showProviderForm, setShowProviderForm] = useState(false);
   const [editingCapability, setEditingCapability] = useState<string | null>(null);
@@ -310,6 +325,16 @@ export function ProcessorsPage() {
       await loadProviderModels(provider);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Model download failed.");
+    }
+  };
+
+  const copyPullCommand = async (model: string) => {
+    const command = `ollama pull ${model}`;
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopiedPullCommand(model);
+    } catch {
+      setMessage(`Copy and run this command in a terminal: ${command}`);
     }
   };
 
@@ -538,10 +563,34 @@ export function ProcessorsPage() {
                                 <Typography variant="caption" color="text.secondary">{recommendation.description}</Typography>
                               </Stack>
                               <Button disabled={installed || active || !providerHealth[provider.id]?.ok} variant={installed ? "outlined" : "contained"} onClick={() => void installModel(provider, recommendation)}>
-                                {installed ? "Installed" : active ? "Downloading…" : `Download ${recommendation.size_label}`}
+                                {installed ? "Installed" : active ? "Downloading…" : job?.status === "error" ? "Try again" : `Download ${recommendation.size_label}`}
                               </Button>
                             </Stack>
                             {active ? <Stack spacing={0.25}><LinearProgress variant={progress === undefined ? "indeterminate" : "determinate"} value={progress} /><Typography variant="caption" color="text.secondary">{job.status_text}{progress === undefined ? "" : ` · ${Math.round(progress)}%`}</Typography></Stack> : null}
+                            {job?.status === "error" ? (
+                              <Alert severity="error">
+                                <Stack spacing={0.75}>
+                                  <Typography variant="body2" fontWeight={700}>
+                                    Ollama could not download <code>{recommendation.model}</code>.
+                                  </Typography>
+                                  <Typography variant="body2">
+                                    {ollamaDownloadGuidance(job.detail)}
+                                  </Typography>
+                                  <Box
+                                    component="pre"
+                                    sx={{ m: 0, p: 1, overflow: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere", bgcolor: "action.hover", borderRadius: 1, fontSize: "0.75rem" }}
+                                  >
+                                    {job.detail || "Ollama returned no additional error detail."}
+                                  </Box>
+                                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }}>
+                                    <Typography component="code" variant="body2">ollama pull {recommendation.model}</Typography>
+                                    <Button size="small" variant="outlined" onClick={() => void copyPullCommand(recommendation.model)}>
+                                      {copiedPullCommand === recommendation.model ? "Copied" : "Copy diagnostic command"}
+                                    </Button>
+                                  </Stack>
+                                </Stack>
+                              </Alert>
+                            ) : null}
                           </Stack>
                         </Paper>
                       );

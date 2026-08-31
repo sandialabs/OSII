@@ -185,6 +185,10 @@ def _run_ollama_pull(job_id: str, base_url: str, model: str) -> None:
                 if not line:
                     continue
                 update = json.loads(line)
+                if not isinstance(update, dict):
+                    raise ValueError("Ollama returned an invalid model-download update")
+                if update.get("error"):
+                    raise ValueError(str(update["error"]))
                 with PULL_JOBS_LOCK:
                     job = PULL_JOBS[job_id]
                     job["status_text"] = str(update.get("status") or "Downloading")
