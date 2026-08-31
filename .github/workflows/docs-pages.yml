@@ -1,14 +1,9 @@
 name: Publish documentation
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "docs/**"
-      - "README.md"
-      - "mkdocs.yml"
-      - "scripts/check_docs_links.py"
-      - ".github/workflows/docs-pages.yml"
+  # Pages is not enabled for this repository. Documentation validation remains
+  # in CI; publishing is an explicit administrative action until Pages is
+  # approved and configured by the organization.
   workflow_dispatch:
 
 permissions:
