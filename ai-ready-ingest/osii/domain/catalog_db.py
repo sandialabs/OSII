@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from contextlib import closing
 from datetime import UTC, datetime
 import json
 import os
@@ -215,7 +216,7 @@ def upsert_document(osii_root: Path, file_id: str) -> bool:
     if not documents:
         return False
     document = documents[0]
-    with connect_catalog(osii_root) as conn:
+    with closing(connect_catalog(osii_root)) as conn:
         conn.execute(
             """INSERT INTO documents VALUES (:file_id, :source_relpath, :filename, :mime, :suffix,
             :size_bytes, :mtime_utc, :sha256, :status, :extractor_name, :extractor_version, :updated_utc)
@@ -439,7 +440,10 @@ def rebuild_catalog(osii_root: Path) -> dict[str, Any]:
     os.close(descriptor)
     temporary = Path(temporary_name)
     try:
-        with _connect_path(temporary) as conn:
+        # sqlite3.Connection's context manager commits or rolls back but does
+        # not close the connection. Windows will not replace or remove an open
+        # SQLite file, so closing() is required before the atomic swap below.
+        with closing(_connect_path(temporary)) as conn:
             create_schema(conn)
             _populate(conn, osii_root)
             conn.commit()
@@ -463,7 +467,7 @@ def verify_catalog(osii_root: Path) -> dict[str, Any]:
     if not path.exists():
         return {"status": "missing", "path": str(path), "ok": False}
     try:
-        with connect_catalog(osii_root) as conn:
+        with closing(connect_catalog(osii_root)) as conn:
             integrity = str(conn.execute("PRAGMA integrity_check").fetchone()[0])
             version = conn.execute("SELECT value FROM catalog_meta WHERE key='schema_version'").fetchone()
             generated = conn.execute("SELECT value FROM catalog_meta WHERE key='generated_utc'").fetchone()
@@ -525,7 +529,7 @@ def list_documents(
         values.extend([cursor_path, cursor_path, cursor_id])
     clause = f"WHERE {' AND '.join(where)}" if where else ""
     limit = min(max(1, limit), 500)
-    with connect_catalog(osii_root) as conn:
+    with closing(connect_catalog(osii_root)) as conn:
         total = int(conn.execute(f"SELECT COUNT(*) FROM documents {clause}", values).fetchone()[0])
         rows = conn.execute(f"SELECT * FROM documents {clause} ORDER BY source_relpath COLLATE NOCASE, file_id LIMIT ?", (*values, limit + 1)).fetchall()
     has_more = len(rows) > limit
@@ -537,7 +541,7 @@ def list_documents(
 
 def list_folders(osii_root: Path) -> list[dict[str, Any]]:
     ensure_catalog(osii_root)
-    with connect_catalog(osii_root) as conn:
+    with closing(connect_catalog(osii_root)) as conn:
         return [dict(row) for row in conn.execute("SELECT folder_id, path, indexed_utc AS last_seen_utc FROM folders ORDER BY path COLLATE NOCASE")]
 
 
@@ -557,7 +561,7 @@ def page_folders(osii_root: Path, *, limit: int = 100, cursor: str | None = None
         values.extend([cursor_path, cursor_path, cursor_id])
     clause = f"WHERE {' AND '.join(where)}" if where else ""
     limit = min(max(1, limit), 500)
-    with connect_catalog(osii_root) as conn:
+    with closing(connect_catalog(osii_root)) as conn:
         total = int(conn.execute(f"SELECT COUNT(*) FROM folders {clause}", values).fetchone()[0])
         rows = conn.execute(f"SELECT folder_id, path, indexed_utc AS last_seen_utc FROM folders {clause} ORDER BY path COLLATE NOCASE, folder_id LIMIT ?", (*values, limit + 1)).fetchall()
     has_more = len(rows) > limit
@@ -567,27 +571,27 @@ def page_folders(osii_root: Path, *, limit: int = 100, cursor: str | None = None
 
 def list_collection_records(osii_root: Path) -> list[dict[str, Any]]:
     ensure_catalog(osii_root)
-    with connect_catalog(osii_root) as conn:
+    with closing(connect_catalog(osii_root)) as conn:
         rows = conn.execute("""SELECT c.*, COUNT(cd.file_id) AS document_count FROM collections c LEFT JOIN collection_documents cd ON cd.collection_id=c.id GROUP BY c.id ORDER BY lower(c.name)""").fetchall()
     return [dict(row) for row in rows]
 
 
 def get_collection_record(osii_root: Path, collection_id: str) -> dict[str, Any] | None:
     ensure_catalog(osii_root)
-    with connect_catalog(osii_root) as conn:
+    with closing(connect_catalog(osii_root)) as conn:
         row = conn.execute("""SELECT c.*, COUNT(cd.file_id) AS document_count FROM collections c LEFT JOIN collection_documents cd ON cd.collection_id=c.id WHERE c.id=? GROUP BY c.id""", (collection_id,)).fetchone()
     return dict(row) if row else None
 
 
 def get_collection_member_ids(osii_root: Path, collection_id: str) -> list[str]:
     ensure_catalog(osii_root)
-    with connect_catalog(osii_root) as conn:
+    with closing(connect_catalog(osii_root)) as conn:
         return [str(row[0]) for row in conn.execute("SELECT file_id FROM collection_documents WHERE collection_id=? ORDER BY created_utc, file_id", (collection_id,))]
 
 
 def get_file_collection_records(osii_root: Path, file_id: str) -> list[dict[str, Any]]:
     ensure_catalog(osii_root)
-    with connect_catalog(osii_root) as conn:
+    with closing(connect_catalog(osii_root)) as conn:
         rows = conn.execute("""SELECT c.id, c.name, c.kind FROM collections c JOIN collection_documents cd ON cd.collection_id=c.id WHERE cd.file_id=? ORDER BY lower(c.name)""", (file_id,)).fetchall()
     return [dict(row) for row in rows]
 
@@ -601,12 +605,12 @@ def list_artifact_records(osii_root: Path, *, scope_type: str | None = None, sco
             where.append(f"{column} = ?")
             values.append(value)
     clause = f"WHERE {' AND '.join(where)}" if where else ""
-    with connect_catalog(osii_root) as conn:
+    with closing(connect_catalog(osii_root)) as conn:
         rows = conn.execute(f"SELECT * FROM artifacts {clause} ORDER BY scope_type, scope_id, kind, relpath", values).fetchall()
     return [dict(row) for row in rows]
 
 
 def list_semantic_indexes(osii_root: Path) -> list[dict[str, Any]]:
     ensure_catalog(osii_root)
-    with connect_catalog(osii_root) as conn:
+    with closing(connect_catalog(osii_root)) as conn:
         return [dict(row) for row in conn.execute("SELECT * FROM semantic_indexes ORDER BY created_utc DESC, provider_id, model")]

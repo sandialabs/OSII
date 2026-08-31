@@ -16,6 +16,11 @@ integrity failure quarantines the corrupt database as
 `catalog.corrupt-<timestamp>.sqlite3` and rebuilds it; filesystem reads remain
 the compatibility fallback while that happens.
 
+Catalog rebuilds close every SQLite connection before atomically replacing the
+derived database. This is required on Windows, where an open database handle
+prevents `catalog.sqlite3` or its temporary replacement from being moved or
+deleted.
+
 Legacy `.osii/.collections/collections.sqlite` data is migrated once into:
 
 ```text

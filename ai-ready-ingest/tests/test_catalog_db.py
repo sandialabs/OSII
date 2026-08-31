@@ -3,6 +3,7 @@ import os
 import sqlite3
 from unittest.mock import patch
 
+import osii.domain.catalog_db as catalog_db
 from osii.domain.catalog_db import catalog_path, list_documents, rebuild_catalog, verify_catalog
 from osii.domain.scopes.collections import init_collections_db, list_collections
 from osii.domain.storage.folders import write_folder_manifest
@@ -13,6 +14,41 @@ def test_catalog_rebuild_closes_temporary_descriptor(temp_osii_root):
         rebuild_catalog(temp_osii_root)
 
     close.assert_called_once()
+
+
+def test_catalog_rebuild_closes_sqlite_before_atomic_replace(temp_osii_root):
+    real_connect = catalog_db._connect_path
+    real_replace = os.replace
+    tracked_connections = []
+
+    class TrackedConnection:
+        def __init__(self, connection):
+            self.connection = connection
+            self.closed = False
+
+        def __getattr__(self, name):
+            return getattr(self.connection, name)
+
+        def close(self):
+            self.connection.close()
+            self.closed = True
+
+    def tracked_connect(path):
+        connection = TrackedConnection(real_connect(path))
+        tracked_connections.append(connection)
+        return connection
+
+    def assert_closed_then_replace(source, target):
+        assert tracked_connections[-1].closed is True
+        real_replace(source, target)
+
+    with (
+        patch("osii.domain.catalog_db._connect_path", side_effect=tracked_connect),
+        patch("osii.domain.catalog_db.os.replace", side_effect=assert_closed_then_replace),
+    ):
+        rebuild_catalog(temp_osii_root)
+
+    assert tracked_connections
 
 
 def test_catalog_rebuild_and_cursor_pagination(temp_osii_root):
