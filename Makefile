@@ -6,12 +6,14 @@ OSII_IMAGE_PREFIX ?= localhost/osii
 OSII_IMAGE_TAG ?= latest
 export UV_PROJECT_ENVIRONMENT := $(CURDIR)/osii-env
 export OSII_IMAGE_PREFIX OSII_IMAGE_TAG
+export OSII_COMPOSE_COMMAND := $(COMPOSE)
 unexport VIRTUAL_ENV
 
-.PHONY: dev dev-host dev-core dev-ollama dev-corporate dev-extractor dev-synthesizer dev-embedder dev-enricher dev-model-bridge dev-ocr-host dev-tika dev-containers dev-containers-insecure dev-services dev-examples containers-dev run dev-all down logs test build build-release push-release docs docs-serve doctor catalog-rebuild catalog-verify
+.PHONY: dev dev-host dev-core dev-ollama dev-commercial dev-corporate dev-extractor dev-synthesizer dev-embedder dev-enricher dev-model-bridge dev-ocr-host dev-tika dev-containers dev-containers-insecure dev-services dev-examples containers-dev run dev-all down logs test build build-release push-release docs docs-serve doctor catalog-rebuild catalog-verify provider-check
 
 # Default development path: API (including chat), worker, MCP, dashboard, and extraction
-# all run from source on the host. No container runtime is required.
+# all run from source on the host. Setup can start optional Tika when a container
+# runtime is available; the core development stack does not require one.
 dev: dev-host
 
 dev-host:
@@ -23,8 +25,14 @@ dev-core:
 dev-ollama:
 	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py --provider-profile ollama
 
+dev-commercial:
+	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py --provider-profile commercial
+
 dev-corporate:
 	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py --provider-profile corporate
+
+provider-check:
+	$(UV) run --no-project --python 3.11 python scripts/check_openai_endpoint.py
 
 dev-extractor:
 	$(UV) run --python 3.11 --package osii-local-extractor python -m uvicorn app.main:app --app-dir services/local-extractor --host 127.0.0.1 --port 8092 --reload

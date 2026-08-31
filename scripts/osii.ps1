@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("dev", "dev-host", "dev-core", "dev-ollama", "dev-corporate", "dev-extractor", "dev-synthesizer", "dev-embedder", "dev-enricher", "dev-model-bridge", "dev-ocr-host", "dev-tika", "dev-containers", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build", "build-release", "push-release", "doctor", "catalog-rebuild", "catalog-verify")]
+    [ValidateSet("dev", "dev-host", "dev-core", "dev-ollama", "dev-commercial", "dev-corporate", "dev-extractor", "dev-synthesizer", "dev-embedder", "dev-enricher", "dev-model-bridge", "dev-ocr-host", "dev-tika", "dev-containers", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build", "build-release", "push-release", "doctor", "catalog-rebuild", "catalog-verify", "provider-check")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
@@ -34,6 +34,7 @@ else {
     $ComposeExecutable = "podman-compose"
     $ComposePrefix = @()
 }
+$env:OSII_COMPOSE_COMMAND = if ($Runtime -eq "Docker") { "docker compose" } else { "podman-compose" }
 
 function Invoke-OsiiCompose {
     param([string[]]$Arguments)
@@ -92,8 +93,17 @@ try {
         "dev-ollama" {
             Invoke-OsiiDevLauncher @("--provider-profile", "ollama")
         }
+        "dev-commercial" {
+            Invoke-OsiiDevLauncher @("--provider-profile", "commercial")
+        }
         "dev-corporate" {
             Invoke-OsiiDevLauncher @("--provider-profile", "corporate")
+        }
+        "provider-check" {
+            & uv run --no-project --python 3.11 python scripts/check_openai_endpoint.py
+            if ($LASTEXITCODE -ne 0) {
+                throw "Commercial provider check failed with exit code $LASTEXITCODE."
+            }
         }
         "dev-extractor" {
             & uv run --python 3.11 --package osii-local-extractor python -m uvicorn app.main:app --app-dir services/local-extractor --host 127.0.0.1 --port 8092 --reload

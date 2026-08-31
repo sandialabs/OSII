@@ -131,6 +131,11 @@ def test_shirty_chat_and_synthesis_use_openai_compatible_route(monkeypatch, tmp_
 
     def fake_request(method, path, **kwargs):
         calls.append((method, path, kwargs["payload"]))
+        if path == "/embeddings":
+            return {
+                "model": kwargs["payload"]["model"],
+                "data": [{"index": 0, "embedding": [0.25, 0.75]}],
+            }
         return {
             "model": kwargs["payload"]["model"],
             "choices": [
@@ -158,15 +163,25 @@ def test_shirty_chat_and_synthesis_use_openai_compatible_route(monkeypatch, tmp_
         "/shirty/v1/chat/completions",
         json={"messages": [{"role": "user", "content": "Hello"}]},
     )
+    embedded = client.post(
+        "/shirty/embedder/v1/embed",
+        json={
+            "request_id": "e1",
+            "inputs": [{"id": "doc-1", "text": "Grounded fact."}],
+            "config": {"model": "shirty-embed-v1"},
+        },
+    )
 
     assert descriptor["name"] == "corporate.shirty-synthesis"
     assert synthesis.status_code == 200
     assert synthesis.json()["metadata"]["provider"] == "shirty"
     assert chat.status_code == 200
+    assert embedded.status_code == 200
+    assert embedded.json()["vectors"][0]["dimensions"] == 2
+    assert embedded.json()["metadata"]["endpoint_type"] == "openai-compatible"
     assert chat.json()["provider"] == "shirty"
-    assert all(path == "/chat/completions" for _, path, _ in calls)
-    assert all(payload["model"] == DEFAULT_SHIRTY_CHAT_MODEL for _, _, payload in calls)
-    assert client.get("/shirty/embedder/v1/descriptor").status_code == 404
+    assert [path for _, path, _ in calls].count("/chat/completions") == 2
+    assert [path for _, path, _ in calls].count("/embeddings") == 1
 
 
 def test_shirty_http_aliases_and_multipart_upload(monkeypatch, tmp_path):
@@ -222,11 +237,18 @@ def test_fake_shirty_server_enforces_contract():
             "messages": [{"role": "user", "content": "Hello"}],
         },
     )
+    embeddings = client.post(
+        "/api/v1/embeddings",
+        headers=headers,
+        json={"model": "fixture-embedding-model", "input": ["hello"]},
+    )
     extraction = client.post(
         "/api/v1/extract/textract/create",
         headers=headers,
         files={"file": ("notes.txt", b"safe fixture text", "text/plain")},
     )
+    assert embeddings.status_code == 200
+    assert len(embeddings.json()["data"][0]["embedding"]) == 3
 
     assert models.status_code == 200
     assert chat.json()["choices"][0]["message"]["content"]

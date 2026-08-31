@@ -73,7 +73,7 @@ def configured_processor_urls() -> list[str]:
             if provider_type in {"ollama", "openai"}:
                 configured.extend([f"{bridge_url}/{provider_type}/embedder", f"{bridge_url}/{provider_type}/synthesizer"])
             elif provider_type == "shirty":
-                configured.extend([f"{bridge_url}/shirty/extractor", f"{bridge_url}/shirty/synthesizer"])
+                configured.extend([f"{bridge_url}/shirty/embedder", f"{bridge_url}/shirty/synthesizer"])
 
     # An endpoint may be configured in both places; only probe it once.
     return list(dict.fromkeys(configured))

@@ -542,11 +542,11 @@ export function QueuePage() {
         severity="info"
         action={(
           <Button color="inherit" size="small" onClick={() => navigate("/admin/processors")}>
-            Open Tools &amp; services
+            Open Setup
           </Button>
         )}
       >
-        <strong><code>make dev</code> already started OSII&apos;s Python text extractor and no-AI source-excerpt preview.</strong> OSII does not manage the separate Ollama or Tesseract applications. Open Tools &amp; services for exact connection status and startup commands before processing scanned PDFs or requesting AI models.
+        <strong>Basic document reading is included.</strong> Open Setup only when you need OCR, Apache Tika, semantic embeddings, or generated summaries.
       </Alert>
 
       <Paper variant="outlined" sx={{ p: 2 }}>
@@ -893,7 +893,7 @@ export function QueuePage() {
             spacing={1}
           >
             <Stack spacing={0.25}>
-              <Typography fontWeight={700}>Tools and extraction routing</Typography>
+              <Typography fontWeight={700}>Extraction for this run</Typography>
               <Typography variant="body2" color="text.secondary">
                 These choices are calculated from the document scope and file rules above. Completed files remain browsable while processing continues.
               </Typography>
@@ -915,7 +915,7 @@ export function QueuePage() {
                 startIcon={<SettingsOutlinedIcon />}
                 onClick={() => navigate("/admin/processors")}
               >
-                Manage tools &amp; services
+                Open Setup
               </Button>
             </Stack>
           </Stack>
@@ -940,7 +940,6 @@ export function QueuePage() {
               ) : (
                 <Chip color="success" variant="outlined" label="Using current extraction" />
               )}
-              <Chip color="success" variant="outlined" label="Cited source-excerpt preview ready (no AI)" />
               <Chip
                 color={embeddingAvailable ? "success" : "default"}
                 variant="outlined"
@@ -1031,7 +1030,7 @@ export function QueuePage() {
             <Typography variant="caption" color="text.secondary">
               {readiness.data.external.filter((item) => item.available).length} of{" "}
               {readiness.data.external.length} registered external tools responded.
-              Use Manage tools &amp; services to run their full contract tests.
+              Open Setup to run their full contract tests.
             </Typography>
           ) : null}
         </Stack>

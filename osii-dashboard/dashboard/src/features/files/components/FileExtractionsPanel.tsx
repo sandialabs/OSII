@@ -108,7 +108,7 @@ export function FileExtractionsPanel({ fileId }: { fileId: string }) {
             </Button>
           </Stack>
           {!readiness.isLoading && !extractorOptions.length ? (
-            <Alert severity="info">No extractor is currently ready. Start or configure one in Tools &amp; services.</Alert>
+            <Alert severity="info">No extractor is currently ready. Start or configure one in Setup.</Alert>
           ) : null}
           {extractionActive ? <Alert severity="info">Extraction is queued. Existing document data remains available while it runs.</Alert> : null}
           {queuedRun?.status === "done" ? <Alert severity="success">Extraction finished and the version list was refreshed.</Alert> : null}

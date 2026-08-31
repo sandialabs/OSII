@@ -5,10 +5,10 @@ credential, or model cache.
 
 | Capability | Guaranteed baseline | Optional enhancement |
 |---|---|---|
-| Extraction | native text-layer PDF, Office, RTF, and text/data formats | Tika, OCR, Shirty Textract, domain processor |
+| Extraction | native text-layer PDF, Office, RTF, and text/data formats | Tika, Tesseract OCR, domain processor |
 | Synthesis | cited extractive Markdown preview | selected Ollama, OpenAI-compatible, or Shirty chat model |
-| Embedding | 384D token/bigram hashing (lexical) | selected semantic embedding model |
-| Search | BM25; hashing similarity | provider/model-specific semantic FAISS index |
+| Embedding | none required; lexical hashing remains an advanced compatibility method | selected Shirty, Ollama, or OpenAI-compatible embedding model |
+| Search | BM25 | provider/model-specific semantic FAISS index |
 | Enrichment | statistics and keywords table | LLM wiki through the selected model-backed synthesizer; domain Processor API service |
 | Chat | grounded extractive answer | selected model provider |
 | Browse/API/MCP | local dashboard, backend, and MCP | same contracts |
@@ -30,7 +30,7 @@ the lightweight provider bridge from editable source. The four processors are
 the Python text-layer PDF/Office extractor, the no-AI cited source-excerpt
 preview, lexical token/word-pair hashing vectors, and deterministic document
 statistics/frequent keywords. The bridge makes no
-generation or embedding request until that capability is used; Tools performs
+generation or embedding request until that capability is used; Setup performs
 only model discovery. Run applications without any processor or bridge using
 `make dev-core`.
 
@@ -53,8 +53,8 @@ package path files beneath a hidden `.venv` directory.
 
 Normal `make dev` is Ollama-first when the separately installed Ollama service
 is reachable. **OSII does not install or launch Ollama:** manage the separate
-application yourself when you use it, then open it or run `ollama serve`. In **Tools & services
-→ AI models**, OSII queries `/api/tags` and shows
+application yourself when you use it, then open it or run `ollama serve`. In
+**Setup → Connect AI**, OSII queries `/api/tags` and shows
 the installed models beside the endpoint configuration. The two approved US
 starter models are:
 
@@ -81,7 +81,7 @@ ollama pull all-minilm
 ```
 
 `make dev-ollama` and `.\scripts\osii.ps1 dev-ollama` remain explicit aliases
-for this profile. Disable the Ollama provider in Tools to return chat,
+for this profile. Disable the Ollama provider in Setup to return chat,
 synthesis, and embedding to their guaranteed local baselines. A higher-priority
 enabled OpenAI-compatible or Shirty provider replaces Ollama capability by
 capability, without changing the rest of OSII.
@@ -90,9 +90,32 @@ On Windows, append `-DryRun` to any host profile command to validate its
 service plan without opening ports, for example
 `.\scripts\osii.ps1 dev-corporate -DryRun`.
 
+## Setup and local service control
+
+The host launcher includes a loopback-only capability supervisor. The backend
+uses a per-run private token to ask it for status or to start, stop, and restart
+the extractor, preview synthesizer, compatibility embedder, enricher,
+model-provider bridge, Apache Tika, and Tesseract OCR. The browser never sends
+commands, paths, or executable names; it can invoke only those fixed service
+IDs. Processes found on the expected ports but not started by the current OSII
+launcher are shown as **Running externally** and are never stopped by OSII.
+
+API, worker, dashboard, MCP, and chat remain owned by the top-level development
+launcher because stopping the management plane from its own page would make
+recovery confusing. Container deployments report capability health but disable
+local lifecycle controls.
+
+For host development, **Setup → Connect AI** can save an API key in the
+repository-root `.env`. The file is plaintext and excluded by `.gitignore`; it
+must not be copied or shared. Only the key's environment-variable name enters
+`.osii`. The backend and model-provider bridge reread the file as needed.
+Process environment values take precedence, and file writes are disabled in
+container or administrator-managed deployments.
+
 The optional OpenCV/Tesseract OCR service can also run without a container.
 The Tesseract executable is a separate manual installation and must already be
-on `PATH`; verify that first with `tesseract --version`, then run:
+on `PATH`; verify that first with `tesseract --version`, then select **Start**
+beside **Tesseract OCR** in Setup. The equivalent direct commands remain:
 
 ```bash
 make dev-ocr-host
@@ -154,7 +177,7 @@ selected processors can vary substantially.
 
 ## Generate an LLM wiki
 
-With a model-backed synthesizer selected in Tools, OSII can compose that
+With a model-backed synthesizer selected in Setup, OSII can compose that
 capability into a standard wiki-Markdown enrichment. Generate a document wiki
 from the document's **Wiki** tab or a collection wiki from the collection view.
 The operation runs in the background, records the actual provider and model,
@@ -166,9 +189,10 @@ lemmatized noun/adjective 2-, 3-, and 4-grams and a grounded list of named
 entity candidates. Both use standard Processor API artifact formats; see
 [Example keyword and entity enrichments](../tutorials/example-enrichments.md).
 
-`make dev-corporate` registers OSII's bundled, HTTP-only Shirty adapter as the
-first extraction/synthesis choice and Ollama as embedding and optional model
-fallback. The corresponding Windows command is
+`make dev-corporate` registers OSII's HTTP-only, OpenAI-compatible Shirty
+adapter for embeddings, synthesis, and chat. Extraction remains local through
+native Python, Tika, Tesseract, or a domain Processor API service. The
+corresponding Windows command is
 `.\scripts\osii.ps1 dev-corporate`. No private Shirty package is installed;
 the adapter calls the documented bearer-authenticated Shirty endpoints.
 
@@ -179,9 +203,8 @@ the adapter calls the documented bearer-authenticated Shirty endpoints.
 - Embedding retries and resumes its own checkpoint. It never substitutes a
   different provider or model into an existing vector index.
 - Semantic search falls back to BM25 when query embedding is unavailable.
-- Shirty Textract may fall back to native extraction only for formats whose
-  usable text layer can be handled natively. Scanned documents remain pending
-  with an OCR/Textract explanation.
+- Scanned documents remain pending with an actionable Tesseract/OCR status when
+  no OCR extractor is available.
 
 Semantic indexes live under provider/model-specific directories and record
 provider, model, digest when supplied, dimensions, normalization, chunking,
@@ -204,8 +227,10 @@ Ollama and the upstream Shirty service remain separately managed endpoints.
 OSII images contain only their lightweight HTTP adapters, not private packages
 or model files.
 
-To add only Apache Tika while the complete editable stack runs on the host,
-use two terminals:
+To add Apache Tika while the editable stack runs, select **Start** beside
+**Apache Tika** in Setup. OSII invokes its fixed Compose service and reports
+the actual Podman/Docker failure when the runtime or image is unavailable. The
+equivalent two-terminal workflow remains:
 
 ```bash
 # Terminal 1

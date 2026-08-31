@@ -20,6 +20,7 @@ _PROCESSOR_NAMES = {
     ("ollama", "synthesizer"): "ollama.synthesizer",
     ("openai", "embedder"): "openai.embedder",
     ("openai", "synthesizer"): "openai.synthesizer",
+    ("shirty", "embedder"): "shirty.embedder",
     ("shirty", "synthesizer"): "corporate.shirty-synthesis",
 }
 
@@ -150,8 +151,8 @@ def processor_model(
             or DEFAULT_OLLAMA_CHAT_MODEL
         )
     if provider_type == "shirty":
-        if capability != "synthesizer":
-            return ""
+        if capability == "embedder":
+            return os.getenv("SHIRTY_EMBEDDING_MODEL", "").strip()
         return (
             os.getenv("SHIRTY_SYNTHESIS_MODEL", DEFAULT_SHIRTY_CHAT_MODEL).strip()
             or DEFAULT_SHIRTY_CHAT_MODEL

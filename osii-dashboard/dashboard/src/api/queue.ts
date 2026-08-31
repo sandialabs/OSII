@@ -8,6 +8,8 @@ import type {
   ModelProviderHealth,
   ModelPullJob,
   OllamaRecommendation,
+  ManagedCapabilityService,
+  SetupSummary,
   QueueBrowseResponse,
   SourceRescanResponse,
   UploadResponse,
@@ -109,6 +111,38 @@ export async function checkModelProvider(id: string) {
     `/api/admin/model-providers/${encodeURIComponent(id)}/health`,
     { method: "POST", json: {} },
   );
+}
+
+export async function saveModelProviderCredential(id: string, apiKey: string) {
+  return apiJson<{ provider_id: string; credential_present: boolean; credential_source: string }>(
+    `/api/admin/model-providers/${encodeURIComponent(id)}/credential`,
+    { method: "PUT", json: { api_key: apiKey } },
+  );
+}
+
+export async function deleteModelProviderCredential(id: string) {
+  return apiJson<{ provider_id: string; credential_present: boolean }>(
+    `/api/admin/model-providers/${encodeURIComponent(id)}/credential`,
+    { method: "DELETE" },
+  );
+}
+
+export async function getSetupSummary(): Promise<SetupSummary> {
+  return apiJson<SetupSummary>("/api/admin/setup");
+}
+
+export async function controlCapabilityService(
+  id: string,
+  action: "start" | "stop" | "restart",
+): Promise<ManagedCapabilityService> {
+  return apiJson(`/api/admin/services/${encodeURIComponent(id)}/${action}`, {
+    method: "POST",
+    json: {},
+  });
+}
+
+export async function getCapabilityServiceLogs(id: string): Promise<{ service_id: string; lines: string[] }> {
+  return apiJson(`/api/admin/services/${encodeURIComponent(id)}/logs`);
 }
 
 export async function pullOllamaModel(id: string, model: string): Promise<ModelPullJob> {

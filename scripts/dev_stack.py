@@ -4,15 +4,20 @@
 from __future__ import annotations
 
 import argparse
+from collections import defaultdict, deque
 from dataclasses import dataclass
 import hashlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
 import os
 from pathlib import Path
+import secrets
 import shlex
 import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -38,6 +43,18 @@ class Service:
     command: tuple[str, ...]
     working_directory: Path
     port: int
+    environment: tuple[tuple[str, str], ...] = ()
+
+
+CAPABILITY_SERVICE_INFO = {
+    "extractor": ("Python document extractor", "Reads text-layer PDFs, Office files, and text formats.", "/health"),
+    "synthesizer": ("Source excerpt preview", "Creates a cited preview without an AI model.", "/health"),
+    "embedder": ("Lexical hashing compatibility embedder", "Optional lexical vectors; BM25 search works without it.", "/health"),
+    "enricher": ("Statistics and keywords enricher", "Creates local document statistics and keyword artifacts.", "/health"),
+    "model-bridge": ("AI provider bridge", "Connects OSII to Shirty, Ollama, or another OpenAI-compatible endpoint.", "/health"),
+    "tika": ("Apache Tika", "Adds broad document-format text extraction using Podman or Docker.", "/version"),
+    "tesseract": ("Tesseract OCR", "Reads scanned PDFs and returns page-region coordinates.", "/health"),
+}
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
@@ -131,6 +148,8 @@ def build_environment(
             "MCP_HOST": "127.0.0.1",
             "MCP_PORT": mcp_port,
             "DEBUG": "true",
+            "OSII_ENV_FILE": str((REPOSITORY_ROOT / ".env").resolve()),
+            "OSII_ALLOW_LOCAL_CONFIG_WRITES": "true",
         }
     )
     env["OSII_EXTRACTOR_ROUTES_PATH"] = str(
@@ -157,16 +176,26 @@ def build_environment(
             "http://127.0.0.1:8095/ollama/synthesizer",
         ]
         configured = [item for item in env.get("OSII_PROCESSORS", "").split(",") if item]
+        if provider_profile == "commercial":
+            # A personal/commercial OpenAI-compatible provider is deliberately
+            # separate from the corporate profile. It supplies generation; the
+            # local lexical embedder remains the default unless the selected
+            # deployment also implements /embeddings.
+            local_urls.append("http://127.0.0.1:8095/openai/synthesizer")
         if provider_profile == "corporate":
             local_urls.extend([
-                "http://127.0.0.1:8095/shirty/extractor",
+                "http://127.0.0.1:8095/shirty/embedder",
                 "http://127.0.0.1:8095/shirty/synthesizer",
             ])
         env.update({
             "OSII_PROCESSORS": ",".join(local_urls + configured),
-            "OSII_DEFAULT_EXTRACTOR": "corporate.shirty-textract" if provider_profile == "corporate" else "local.native-text",
-            "OSII_DEFAULT_SYNTHESIZER": "corporate.shirty-synthesis" if provider_profile == "corporate" else "ollama.synthesizer",
-            "OSII_DEFAULT_EMBEDDER": "ollama.embedder",
+            "OSII_DEFAULT_EXTRACTOR": "local.native-text",
+            "OSII_DEFAULT_SYNTHESIZER": (
+                "corporate.shirty-synthesis" if provider_profile == "corporate"
+                else "openai.synthesizer" if provider_profile == "commercial"
+                else "ollama.synthesizer"
+            ),
+            "OSII_DEFAULT_EMBEDDER": "shirty.embedder" if provider_profile == "corporate" else ("local.hashing" if provider_profile == "commercial" else "ollama.embedder"),
             "OSII_DEFAULT_ENRICHER": "local.stats-keywords",
             "EMBEDDING_MODEL": ollama_embedding_model,
         })
@@ -174,6 +203,8 @@ def build_environment(
             env.update({"CHAT_PROVIDER": "ollama", "CHAT_PROVIDER_CHAIN": "ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "ollama.synthesizer,local.extractive-preview"})
         elif provider_profile == "corporate":
             env.update({"CHAT_PROVIDER": "shirty", "CHAT_PROVIDER_CHAIN": "shirty,ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "corporate.shirty-synthesis,ollama.synthesizer,local.extractive-preview"})
+        elif provider_profile == "commercial":
+            env.update({"CHAT_PROVIDER": "openai", "CHAT_PROVIDER_CHAIN": "openai,extractive", "OSII_SYNTHESIZER_FALLBACKS": "openai.synthesizer,local.extractive-preview"})
     if examples and not env.get("OSII_PROCESSORS"):
         processor_port = env.get("OSII_EXAMPLE_PROCESSOR_PORT", "8091")
         env["OSII_PROCESSORS"] = f"http://127.0.0.1:{processor_port}"
@@ -350,11 +381,258 @@ def start_service(service: Service, env: dict[str, str]) -> subprocess.Popen[byt
     kwargs: dict[str, object] = {
         "args": service.command,
         "cwd": service.working_directory,
-        "env": env,
+        "env": {**env, **dict(service.environment)},
     }
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     return subprocess.Popen(**kwargs)  # type: ignore[arg-type]
+
+
+class CapabilitySupervisor:
+    """Own the optional/local processing processes exposed by the Setup UI."""
+
+    def __init__(
+        self,
+        *,
+        services: list[Service],
+        env: dict[str, str],
+        uv: str,
+        token: str,
+    ) -> None:
+        self.env = env
+        self.token = token
+        self.lock = threading.RLock()
+        self.processes: dict[str, subprocess.Popen] = {}
+        self.logs: dict[str, deque[str]] = defaultdict(lambda: deque(maxlen=250))
+        self.services = {
+            service.name: service
+            for service in services
+            if service.name in CAPABILITY_SERVICE_INFO
+        }
+        tesseract_port = int(env.get("OSII_TESSERACT_PORT", "8080"))
+        self.services["tesseract"] = Service(
+            "tesseract",
+            (
+                uv, "run", "--no-project", "--python", "3.11",
+                "--with-requirements", "requirements.txt", "python", "-m",
+                "uvicorn", "app.main:app", "--host", "127.0.0.1",
+                "--port", str(tesseract_port),
+            ),
+            REPOSITORY_ROOT / "ai-ready-tool-shelf" / "osii-tesseract",
+            tesseract_port,
+            (("ENABLE_DEMO", "true"),),
+        )
+        self.tika_port = int(env.get("OSII_TIKA_PORT", "9998"))
+        self.server: ThreadingHTTPServer | None = None
+
+    def _reachable(self, service_id: str) -> bool:
+        port = self.tika_port if service_id == "tika" else self.services[service_id].port
+        if port <= 0:
+            return False
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(0.15)
+            return probe.connect_ex(("127.0.0.1", port)) == 0
+
+    def _capture_output(self, service_id: str, process: subprocess.Popen) -> None:
+        assert process.stdout is not None
+        for raw in iter(process.stdout.readline, b""):
+            line = raw.decode("utf-8", errors="replace").rstrip()
+            if line:
+                self.logs[service_id].append(line)
+                print(f"[{service_id}] {line}")
+
+    def _start_process(self, service_id: str) -> None:
+        service = self.services[service_id]
+        if self._reachable(service_id):
+            raise RuntimeError(f"{CAPABILITY_SERVICE_INFO[service_id][0]} is already running externally.")
+        kwargs: dict[str, object] = {
+            "args": service.command,
+            "cwd": service.working_directory,
+            "env": {**self.env, **dict(service.environment)},
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+        }
+        if os.name == "nt":
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        process = subprocess.Popen(**kwargs)  # type: ignore[arg-type]
+        self.processes[service_id] = process
+        threading.Thread(
+            target=self._capture_output,
+            args=(service_id, process),
+            daemon=True,
+        ).start()
+
+    def start_initial(self, service: Service) -> subprocess.Popen:
+        with self.lock:
+            self._start_process(service.name)
+            return self.processes[service.name]
+
+    def _compose_command(self) -> list[str] | None:
+        configured = self.env.get("OSII_COMPOSE_COMMAND", "").strip()
+        if configured:
+            return shlex.split(configured, posix=os.name != "nt")
+        if shutil.which("podman-compose"):
+            return ["podman-compose"]
+        if shutil.which("docker"):
+            return ["docker", "compose"]
+        return None
+
+    def _compose(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        command = self._compose_command()
+        if command is None:
+            raise RuntimeError("Podman Compose or Docker Compose is required to start Apache Tika.")
+        return subprocess.run(
+            [*command, "--profile", "ocr", *arguments],
+            cwd=REPOSITORY_ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            timeout=180,
+            check=False,
+        )
+
+    def status(self, service_id: str) -> dict[str, object]:
+        if service_id not in {*self.services, "tika"}:
+            raise KeyError(service_id)
+        with self.lock:
+            process = self.processes.get(service_id)
+            owned_running = process is not None and process.poll() is None
+            reachable = self._reachable(service_id)
+            if owned_running:
+                state, ownership = "running", "osii"
+            elif reachable:
+                state, ownership = "external", "external"
+            elif process is not None and process.returncode not in (None, 0):
+                state, ownership = "failed", "osii"
+            else:
+                state, ownership = "stopped", "none"
+            title, description, health_path = CAPABILITY_SERVICE_INFO[service_id]
+            port = self.tika_port if service_id == "tika" else self.services[service_id].port
+            prerequisite = None
+            if service_id == "tika" and self._compose_command() is None:
+                prerequisite = "Install Podman Compose or Docker Compose to run Apache Tika."
+            elif service_id == "tesseract" and shutil.which("tesseract") is None:
+                prerequisite = "Install the Tesseract executable and make it available on PATH."
+            return {
+                "id": service_id,
+                "display_name": title,
+                "description": description,
+                "status": state,
+                "ownership": ownership,
+                "url": f"http://127.0.0.1:{port}",
+                "health_path": health_path,
+                "can_start": state in {"stopped", "failed"} and prerequisite is None,
+                "can_stop": owned_running,
+                "can_restart": owned_running,
+                "prerequisite": prerequisite,
+                "detail": self.logs[service_id][-1] if self.logs[service_id] else None,
+            }
+
+    def list_status(self) -> list[dict[str, object]]:
+        return [self.status(item) for item in (*self.services.keys(), "tika")]
+
+    def action(self, service_id: str, action: str) -> dict[str, object]:
+        if service_id not in {*self.services, "tika"}:
+            raise KeyError(service_id)
+        if action not in {"start", "stop", "restart"}:
+            raise ValueError("Unsupported service action")
+        with self.lock:
+            if action in {"stop", "restart"}:
+                if service_id == "tika":
+                    result = self._compose("stop", "tika")
+                    if result.returncode != 0:
+                        raise RuntimeError((result.stderr or result.stdout).strip())
+                else:
+                    process = self.processes.get(service_id)
+                    if process is None or process.poll() is not None:
+                        raise RuntimeError("OSII does not own this service process.")
+                    stop_service(process)
+                    self.processes.pop(service_id, None)
+            if action in {"start", "restart"}:
+                if service_id == "tika":
+                    result = self._compose("up", "-d", "tika")
+                    self.logs[service_id].extend(
+                        line for line in (result.stdout + result.stderr).splitlines() if line
+                    )
+                    if result.returncode != 0:
+                        raise RuntimeError((result.stderr or result.stdout).strip())
+                else:
+                    self._start_process(service_id)
+            return self.status(service_id)
+
+    def service_logs(self, service_id: str) -> list[str]:
+        if service_id not in {*self.services, "tika"}:
+            raise KeyError(service_id)
+        if service_id == "tika" and self._compose_command() is not None:
+            result = self._compose("logs", "--tail", "200", "tika")
+            if result.stdout:
+                self.logs[service_id].extend(result.stdout.splitlines())
+        return list(self.logs[service_id])
+
+    def start_http(self, port: int) -> None:
+        supervisor = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def _json(self, status: int, payload: object) -> None:
+                body = json.dumps(payload).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _authorized(self) -> bool:
+                return self.headers.get("Authorization") == f"Bearer {supervisor.token}"
+
+            def do_GET(self) -> None:  # noqa: N802
+                if not self._authorized():
+                    self._json(403, {"detail": "Forbidden"})
+                    return
+                parts = self.path.strip("/").split("/")
+                try:
+                    if self.path == "/services":
+                        self._json(200, {"services": supervisor.list_status()})
+                    elif len(parts) == 3 and parts[0] == "services" and parts[2] == "logs":
+                        self._json(200, {"service_id": parts[1], "lines": supervisor.service_logs(parts[1])})
+                    else:
+                        self._json(404, {"detail": "Not found"})
+                except KeyError:
+                    self._json(404, {"detail": "Unknown service"})
+
+            def do_POST(self) -> None:  # noqa: N802
+                if not self._authorized():
+                    self._json(403, {"detail": "Forbidden"})
+                    return
+                parts = self.path.strip("/").split("/")
+                try:
+                    if len(parts) == 3 and parts[0] == "services":
+                        self._json(200, supervisor.action(parts[1], parts[2]))
+                    else:
+                        self._json(404, {"detail": "Not found"})
+                except KeyError:
+                    self._json(404, {"detail": "Unknown service"})
+                except (RuntimeError, ValueError) as exc:
+                    self._json(409, {"detail": str(exc)})
+
+            def log_message(self, *_: object) -> None:
+                return
+
+        try:
+            self.server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+        except OSError as exc:
+            raise RuntimeError(
+                f"Cannot start the local capability supervisor on port {port}: {exc}"
+            ) from exc
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self) -> None:
+        if self.server is not None:
+            self.server.shutdown()
+            self.server.server_close()
+        with self.lock:
+            for process in reversed(list(self.processes.values())):
+                stop_service(process)
+            self.processes.clear()
 
 
 def stop_service(process: subprocess.Popen[bytes]) -> None:
@@ -438,6 +716,23 @@ def run(
         env = build_environment(examples, provider_profile, core_only)
         services = service_commands(uv, npm, env, core_only)
 
+        supervisor: CapabilitySupervisor | None = None
+        if not core_only:
+            supervisor_token = secrets.token_urlsafe(32)
+            supervisor_port = int(env.get("OSII_SERVICE_SUPERVISOR_PORT", "8510"))
+            env.update(
+                {
+                    "OSII_SERVICE_SUPERVISOR_URL": f"http://127.0.0.1:{supervisor_port}",
+                    "OSII_SERVICE_SUPERVISOR_TOKEN": supervisor_token,
+                }
+            )
+            supervisor = CapabilitySupervisor(
+                services=services,
+                env=env,
+                uv=uv,
+                token=supervisor_token,
+            )
+
         if dry_run:
             print("[dev] Bare-metal service plan:")
             for service in services:
@@ -450,11 +745,16 @@ def run(
             prepare_dependencies(uv, npm, env)
 
         processes: dict[str, tuple[Service, subprocess.Popen[bytes]]] = {}
+        if supervisor is not None:
+            supervisor.start_http(int(env.get("OSII_SERVICE_SUPERVISOR_PORT", "8510")))
         dashboard_service = next(service for service in services if service.name == "dashboard")
         for service in services:
             if service.name == "dashboard":
                 continue
-            processes[service.name] = (service, start_service(service, env))
+            if supervisor is not None and service.name in CAPABILITY_SERVICE_INFO:
+                processes[service.name] = (service, supervisor.start_initial(service))
+            else:
+                processes[service.name] = (service, start_service(service, env))
         dashboard_port = env.get("OSII_DASHBOARD_PORT", "5173")
         api_port = env.get("OSII_API_PORT", "8511")
         wait_for_http_service(
@@ -472,21 +772,19 @@ def run(
         print(f"[dev] MCP: http://localhost:{env.get('OSII_MCP_PORT', '8022')}/mcp")
         print("[dev] Press Ctrl+C to stop host processes.")
         if not core_only:
-            print("[dev] Python text-layer/Office extraction: http://localhost:8092/docs")
-            print("[dev] Cited source-excerpt preview (no AI): http://localhost:8093/docs")
-            print("[dev] Lexical hashing vectors (no AI model): http://localhost:8085/docs")
-            print("[dev] Document statistics and keywords: http://localhost:8094/docs")
-            print("[dev] Model HTTP adapter: http://localhost:8095/docs")
-            print("[dev] OSII does not manage Ollama; Tools checks the separately configured Ollama URL.")
-            print("[dev] Tesseract OCR is not started; after installing Tesseract, run make dev-ocr-host.")
-            print("[dev] Apache Tika is not started; run make dev-tika in a second terminal if needed.")
+            print("[dev] Open Dashboard → Setup to connect AI or start optional Tika/Tesseract capabilities.")
+            print("[dev] Setup → Advanced & diagnostics contains processor URLs, settings, controls, and logs.")
             if provider_profile == "corporate":
-                print("[dev] Corporate profile: Shirty is preferred when SHIRTY_BASE_URL and SHIRTY_API_KEY are set.")
+                print("[dev] Corporate profile: Shirty chat, synthesis, and embeddings are preferred when configured.")
+            elif provider_profile == "commercial":
+                print("[dev] Commercial profile: the configured OpenAI-compatible endpoint is preferred; local extractive fallbacks remain enabled.")
 
         while True:
             for name, (_, process) in processes.items():
                 return_code = process.poll()
                 if return_code is not None:
+                    if name in CAPABILITY_SERVICE_INFO:
+                        continue
                     raise RuntimeError(
                         f"{name} exited unexpectedly with code {return_code}"
                     )
@@ -498,6 +796,8 @@ def run(
         print(f"[dev] {exc}", file=sys.stderr)
         return 1
     finally:
+        if "supervisor" in locals() and supervisor is not None:
+            supervisor.close()
         if "processes" in locals():
             for _, process in reversed(list(processes.values())):
                 stop_service(process)
@@ -512,7 +812,7 @@ def main() -> int:
         action="store_true",
         help="Connect the example processor at its localhost port.",
     )
-    parser.add_argument("--provider-profile", choices=("baseline", "ollama", "corporate"), default="baseline")
+    parser.add_argument("--provider-profile", choices=("baseline", "ollama", "commercial", "corporate"), default="baseline")
     parser.add_argument("--core-only", action="store_true", help="Start app services without local processors.")
     parser.add_argument(
         "--dry-run",

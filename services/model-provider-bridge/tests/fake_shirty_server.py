@@ -67,6 +67,25 @@ def chat(
     }
 
 
+@app.post("/api/v1/embeddings")
+def embeddings(
+    payload: dict[str, Any],
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _authorize(authorization)
+    values = payload.get("input") or []
+    if isinstance(values, str):
+        values = [values]
+    return {
+        "object": "list",
+        "model": str(payload.get("model") or "fixture-embedding-model"),
+        "data": [
+            {"object": "embedding", "index": index, "embedding": [float(len(str(value))), 1.0, 0.0]}
+            for index, value in enumerate(values)
+        ],
+    }
+
+
 @app.post("/api/v1/extract/textract/create")
 async def extract(
     file: UploadFile = File(...),

@@ -133,6 +133,23 @@ Collection membership must reference stable object identifiers such as `file_id`
 - `GET /api/embeddings/build/{job_id}`
 - `GET /api/embeddings/meta`
 
+### Setup and local administration
+
+- `GET /api/admin/setup` returns the human-facing readiness summary, selected
+  methods, provider presence, and capability-service state.
+- `PUT /api/admin/model-providers/{provider_id}/credential` accepts an API key
+  as a write-only value when local `.env` writes are enabled.
+- `DELETE /api/admin/model-providers/{provider_id}/credential` forgets a key
+  previously saved by OSII.
+- `GET /api/admin/services` lists allowlisted capability services.
+- `POST /api/admin/services/{service_id}/{start|stop|restart}` controls only a
+  service owned by the local launcher.
+- `GET /api/admin/services/{service_id}/logs` returns a bounded recent log tail.
+
+Credential responses report presence and source but never return the value.
+The service-control endpoints return `503` in deployments without the local
+loopback supervisor.
+
 ### Compatibility and artifact serving
 
 - compatibility read routes under `/api/osii/...`

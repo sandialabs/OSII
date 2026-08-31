@@ -54,6 +54,7 @@ nav:
           - Standard artifacts: reference/processor-api/standard-artifacts.md
   - Operate offline:
       - Local-first operation: operations/local-first.md
+      - Commercial vLLM testing: operations/commercial-vllm-testing.md
       - Guaranteed local processors: operations/local-processors.md
       - Extractor routing: reference/extractor-routing.md
       - Sensitive data and transfer: operations/sensitive-data.md

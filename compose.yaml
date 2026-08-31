@@ -11,7 +11,7 @@ services:
       OSII_ROOT: /data/.osii
       SHARED_VOLUME_ROOT: /data/source
       UPLOAD_ORIGINALS_ROOT: /data/uploads
-      OSII_PROCESSORS: ${OSII_PROCESSORS:-http://local-extractor:8092,http://local-synthesizer:8093,http://local-embedder:8085,http://local-enricher:8094,http://model-provider-bridge:8095/ollama/embedder,http://model-provider-bridge:8095/ollama/synthesizer}
+      OSII_PROCESSORS: ${OSII_PROCESSORS:-http://local-extractor:8092,http://local-synthesizer:8093,http://local-embedder:8085,http://local-enricher:8094,http://model-provider-bridge:8095/ollama/embedder,http://model-provider-bridge:8095/ollama/synthesizer,http://model-provider-bridge:8095/openai/synthesizer}
       OSII_DEFAULT_SYNTHESIZER: ${OSII_DEFAULT_SYNTHESIZER:-ollama.synthesizer}
       OSII_DEFAULT_EMBEDDER: ${OSII_DEFAULT_EMBEDDER:-ollama.embedder}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-minilm}
@@ -23,6 +23,8 @@ services:
       OSII_MODEL_BASE_URL: ${OSII_MODEL_BASE_URL:-}
       OSII_CHAT_BASE_URL: ${OSII_CHAT_BASE_URL:-}
       OSII_MODEL_API_KEY: ${OSII_MODEL_API_KEY:-}
+      OSII_CHAT_MODEL: ${OSII_CHAT_MODEL:-}
+      OSII_SYNTHESIS_MODEL: ${OSII_SYNTHESIS_MODEL:-}
       OSII_MODEL_BRIDGE_URL: http://model-provider-bridge:8095
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.containers.internal:11434}
       OSII_OLLAMA_ALLOWED_MODELS: ${OSII_OLLAMA_ALLOWED_MODELS:-all-minilm,llama3.2:1b}
@@ -32,6 +34,7 @@ services:
       OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-llama3.2:1b}
       SHIRTY_BASE_URL: ${SHIRTY_BASE_URL:-}
       SHIRTY_API_KEY: ${SHIRTY_API_KEY:-}
+      SHIRTY_EMBEDDING_MODEL: ${SHIRTY_EMBEDDING_MODEL:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       SHIRTY_SYNTHESIS_MODEL: ${SHIRTY_SYNTHESIS_MODEL:-meta-llama/Llama-3.1-8B-Instruct}
@@ -61,7 +64,7 @@ services:
       UPLOAD_ORIGINALS_ROOT: /data/uploads
       TIKA_URL: http://tika:9998
       OSII_TESSERACT_URL: http://tesseract:8080
-      OSII_PROCESSORS: ${OSII_PROCESSORS:-http://local-extractor:8092,http://local-synthesizer:8093,http://local-embedder:8085,http://local-enricher:8094,http://model-provider-bridge:8095/ollama/embedder,http://model-provider-bridge:8095/ollama/synthesizer}
+      OSII_PROCESSORS: ${OSII_PROCESSORS:-http://local-extractor:8092,http://local-synthesizer:8093,http://local-embedder:8085,http://local-enricher:8094,http://model-provider-bridge:8095/ollama/embedder,http://model-provider-bridge:8095/ollama/synthesizer,http://model-provider-bridge:8095/openai/synthesizer}
       OSII_DEFAULT_SYNTHESIZER: ${OSII_DEFAULT_SYNTHESIZER:-ollama.synthesizer}
       OSII_DEFAULT_EMBEDDER: ${OSII_DEFAULT_EMBEDDER:-ollama.embedder}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-minilm}
@@ -71,6 +74,8 @@ services:
       OSII_MODEL_BASE_URL: ${OSII_MODEL_BASE_URL:-}
       OSII_CHAT_BASE_URL: ${OSII_CHAT_BASE_URL:-}
       OSII_MODEL_API_KEY: ${OSII_MODEL_API_KEY:-}
+      OSII_CHAT_MODEL: ${OSII_CHAT_MODEL:-}
+      OSII_SYNTHESIS_MODEL: ${OSII_SYNTHESIS_MODEL:-}
       OSII_MODEL_BRIDGE_URL: http://model-provider-bridge:8095
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.containers.internal:11434}
       OSII_WORKER_POLL_SECONDS: ${OSII_WORKER_POLL_SECONDS:-1}
@@ -202,8 +207,10 @@ services:
       OSII_MODEL_BASE_URL: ${OSII_MODEL_BASE_URL:-}
       OSII_MODEL_API_KEY: ${OSII_MODEL_API_KEY:-}
       OSII_MODEL_API_KEY_ENV: ${OSII_MODEL_API_KEY_ENV:-OSII_MODEL_API_KEY}
+      OSII_SYNTHESIS_MODEL: ${OSII_SYNTHESIS_MODEL:-}
       SHIRTY_BASE_URL: ${SHIRTY_BASE_URL:-}
       SHIRTY_API_KEY: ${SHIRTY_API_KEY:-}
+      SHIRTY_EMBEDDING_MODEL: ${SHIRTY_EMBEDDING_MODEL:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       SHIRTY_SYNTHESIS_MODEL: ${SHIRTY_SYNTHESIS_MODEL:-meta-llama/Llama-3.1-8B-Instruct}

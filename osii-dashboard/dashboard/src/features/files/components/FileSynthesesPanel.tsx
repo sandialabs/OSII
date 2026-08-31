@@ -53,7 +53,7 @@ export function FileSynthesesPanel({ fileId }: FileSynthesesPanelProps) {
                 value={selectedSynthesizer}
                 onChange={(event) => setSynthesizerName(event.target.value)}
                 sx={{ minWidth: 280 }}
-                helperText="Choose a ready synthesis method configured in Tools & services."
+                helperText="Choose a ready synthesis method configured in Setup."
               >
                 {synthesizerOptions.map((item) => (
                   <MenuItem key={item.id} value={item.id}>{item.display_name}</MenuItem>
@@ -69,7 +69,7 @@ export function FileSynthesesPanel({ fileId }: FileSynthesesPanelProps) {
               </Button>
             </Stack>
             {!readiness.isLoading && !synthesizerOptions.length ? (
-              <Alert severity="info">No synthesis method is currently ready. Start or configure one in Tools &amp; services.</Alert>
+              <Alert severity="info">No synthesis method is currently ready. Start or configure one in Setup.</Alert>
             ) : null}
             {synthesisJob.isSuccess ? <Alert severity="success">Synthesis job started.</Alert> : null}
             {synthesisJob.isError ? (

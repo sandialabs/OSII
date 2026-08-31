@@ -12,6 +12,8 @@ import requests
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from app.env_credentials import resolve_secret
+
 from osii_processor_sdk import (
     Capability,
     Embedder,
@@ -92,7 +94,7 @@ class ProviderHTTP:
                 configured_env,
                 os.getenv("OSII_MODEL_API_KEY_ENV", "OSII_MODEL_API_KEY"),
             ]
-        key = next((os.getenv(name, "") for name in env_names if name and os.getenv(name, "")), "")
+        key = resolve_secret(*env_names)
         if key:
             headers["Authorization"] = f"Bearer {key}"
         return headers
@@ -406,7 +408,7 @@ class ChatRequest(BaseModel):
 
 
 app = FastAPI(title="OSII Model Provider Bridge", version="0.1.0")
-for provider in ("ollama", "openai"):
+for provider in ("ollama", "openai", "shirty"):
     app.mount(f"/{provider}/embedder", create_processor_app(ProviderEmbedder(provider)))
 for provider in ("ollama", "openai", "shirty"):
     app.mount(f"/{provider}/synthesizer", create_processor_app(ProviderSynthesizer(provider)))

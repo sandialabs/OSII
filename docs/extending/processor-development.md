@@ -72,7 +72,8 @@ for exact payloads.
 
 ## Expose settings without dashboard code
 
-Tools renders `config_schema` as a generic settings form. String and multiline
+Setup renders `config_schema` as a generic settings form under **Advanced &
+diagnostics**. String and multiline
 prompt fields, numbers, integers, Booleans, and enums require no custom
 frontend implementation. Saved non-secret defaults live in
 `.osii/state/processor_settings.json`; explicit values in an API request take
@@ -100,7 +101,7 @@ page region or visually mapping table columns.
 
 ## Register and verify
 
-Register the service base URL under **Tools & services → Custom services**. **Health** verifies
+Register the service base URL under **Setup → Advanced & diagnostics → Custom Processor API services**. **Health** verifies
 liveness. **Test** reads the descriptor, checks that its kind matches the
 registration, and sends a small contract-valid operation request.
 

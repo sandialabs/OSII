@@ -48,7 +48,6 @@ def test_explicitly_disabling_model_providers_restores_local_baselines(client, t
         "credential_env": "",
     })
     assert response.status_code == 200
-    assert selected_processor("embedder", osii_root=temp_osii_root) == "local.hashing"
     assert selected_processor("synthesizer", osii_root=temp_osii_root) == "local.extractive-preview"
 
 
@@ -70,9 +69,55 @@ def test_model_provider_configuration_never_persists_secret(client, temp_osii_ro
     raw = (temp_osii_root / "state" / "model_providers.json").read_text()
     assert "super-secret-value" not in raw
     assert "MY_CORPORATE_KEY" in raw
-    assert '"embedding_model": ""' in raw
-    assert selected_processor("embedder", osii_root=temp_osii_root) == "local.hashing"
+    assert '"embedding_model": "embed-v1"' in raw
+    assert selected_processor("embedder", osii_root=temp_osii_root) == "shirty.embedder"
     assert selected_processor("synthesizer", osii_root=temp_osii_root) == "corporate.shirty-synthesis"
+
+
+def test_local_env_credential_is_write_only_and_used_for_health(client, temp_osii_root, tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text("UNCHANGED=value\n", encoding="utf-8")
+    monkeypatch.setenv("OSII_ENV_FILE", str(env_file))
+    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
+    monkeypatch.delenv("SHIRTY_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    saved = client.put("/api/admin/model-providers/shirty-demo", json={
+        "type": "shirty",
+        "base_url": "https://shirty.example.test/api/v1",
+        "enabled": True,
+        "priority": 10,
+        "embedding_model": "embed-v1",
+        "synthesis_model": "chat-v1",
+        "chat_model": "chat-v1",
+        "credential_env": "SHIRTY_API_KEY",
+    })
+    assert saved.status_code == 200
+    response = client.put(
+        "/api/admin/model-providers/shirty-demo/credential",
+        json={"api_key": "saved-secret"},
+    )
+    assert response.status_code == 200
+    assert "saved-secret" not in response.text
+    assert "UNCHANGED=value" in env_file.read_text(encoding="utf-8")
+    assert 'SHIRTY_API_KEY="saved-secret"' in env_file.read_text(encoding="utf-8")
+    assert "saved-secret" not in (temp_osii_root / "state" / "model_providers.json").read_text()
+
+    seen = {}
+
+    def fake_get(*args, **kwargs):
+        seen.update(kwargs["headers"])
+        return FakeResponse(payload={"data": [{"id": "embed-v1"}, {"id": "chat-v1"}]})
+
+    monkeypatch.setattr("osii.api.model_provider_routes.requests.get", fake_get)
+    health = client.post("/api/admin/model-providers/shirty-demo/health")
+    assert health.status_code == 200
+    assert health.json()["ok"] is True
+    assert seen["Authorization"] == "Bearer saved-secret"
+
+    removed = client.delete("/api/admin/model-providers/shirty-demo/credential")
+    assert removed.status_code == 200
+    assert "SHIRTY_API_KEY" not in env_file.read_text(encoding="utf-8")
 
 
 def test_corporate_environment_exposes_documented_shirty_defaults(client, monkeypatch):

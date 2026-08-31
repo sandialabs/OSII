@@ -696,6 +696,44 @@ export type ModelProvider = {
   credential_env: string;
   credential_required?: boolean;
   credential_present?: boolean;
+  credential_source?: "environment" | "repo_env" | null;
+  credential_writable?: boolean;
+  implicit?: boolean;
+};
+
+export type ManagedCapabilityService = {
+  id: string;
+  display_name: string;
+  description: string;
+  status: "running" | "external" | "stopped" | "failed" | string;
+  ownership: "osii" | "external" | "none" | string;
+  url: string;
+  health_path: string;
+  can_start: boolean;
+  can_stop: boolean;
+  can_restart: boolean;
+  prerequisite?: string | null;
+  detail?: string | null;
+};
+
+export type SetupMethod = {
+  id: string;
+  display_name: string;
+  available: boolean;
+  description: string;
+  model?: string | null;
+};
+
+export type SetupSummary = {
+  overall_status: "ready" | "ready_optional" | "action_required";
+  headline: string;
+  extraction_ready: boolean;
+  ai_ready: boolean;
+  methods: Record<"extractor" | "synthesizer" | "embedder" | "enricher", SetupMethod>;
+  providers: ModelProvider[];
+  services: ManagedCapabilityService[];
+  service_control_available: boolean;
+  readiness: IntakeReadiness;
 };
 
 export type OllamaModelDetail = {

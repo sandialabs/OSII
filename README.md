@@ -90,31 +90,25 @@ cd /path/to/osii
 make dev
 ```
 
-`make dev` requires no container runtime or preexisting model download. It runs the API
-(including grounded chat), worker, MCP server, dashboard, and four independent Processor API
-services directly from source: Python text-layer PDF/Office extraction, cited
-source-excerpt previews that do not use AI, 384-dimensional lexical token/word-pair
-hashing, and deterministic document statistics/frequent-keyword enrichment.
-Scanned PDFs still require optional Tesseract OCR. The launcher checks ports and dependencies,
-reloads backend services when source changes, and keeps generated data under
-`osii-data/`.
+`make dev` requires no container runtime or model download. It starts the
+dashboard, backend, worker, MCP server, and OSII's small model-free processing
+services directly from source. The included workflow can read ordinary
+text-layer PDFs and Office files, browse them, enrich them, and search them
+with BM25.
 
-**OSII does not install or start the separate Ollama application.** If you use
-Ollama, manage it separately. OSII then
-tries that separately running Ollama service with `all-minilm` for
-semantic embeddings and Meta `llama3.2:1b` for chat and synthesis. Open
-**Tools & services → AI models** to check the connection, see installed models,
-select any installed model independently for embedding, synthesis, and chat,
-and explicitly download either approved starter model when missing. OSII bundles neither Ollama nor
-model weights. Use `ollama list` and `ollama pull <model>` for additional model
-choices available in your environment. BM25 and extractive chat remain the automatic model-free
-fallbacks. Lexical hashing is available as an explicit no-model vector option;
-it is not presented as semantic search.
+Open **Setup** in the dashboard for anything optional. From one screen you can:
 
-**The Tesseract executable is also a separate manual installation** in the
-bare-metal workflow. Confirm `tesseract --version` works, then start OSII's
-OpenCV/Tesseract wrapper with `make dev-ocr-host` or
-`.\scripts\osii.ps1 dev-ocr-host`. Normal `make dev` does not start OCR.
+- connect Shirty, Ollama, or another OpenAI-compatible endpoint;
+- paste and save an API key in the ignored repository-root `.env`;
+- select separate language and embedding models;
+- start Apache Tika through Podman or Docker;
+- start OSII's OCR wrapper after installing the Tesseract executable.
+
+OSII does not install or start the separate Ollama application, Tesseract
+executable, or container runtime. Setup detects those prerequisites, performs
+the remaining launch or connection step, and keeps technical details behind
+**Advanced & diagnostics**. BM25 remains available whenever no embedding model
+is connected.
 
 On Windows PowerShell, use the equivalent launcher:
 
@@ -132,13 +126,9 @@ that exited or timed out. When the terminal output settles, open:
 
 - **OSII dashboard:** <http://localhost:5173>
 - **Backend status:** <http://localhost:8511/health>
-- **Extractor docs:** <http://localhost:8092/docs>
-- **Synthesizer docs:** <http://localhost:8093/docs>
-- **Embedder docs:** <http://localhost:8085/docs>
-- **Enricher docs:** <http://localhost:8094/docs>
-- **Model-provider bridge docs:** <http://localhost:8095/docs>
-- **Chat health:** <http://localhost:8511/api/chat/health>
-- **MCP server:** <http://localhost:8022/mcp>
+
+Service URLs and live API documentation are listed under **Setup → Advanced &
+diagnostics** and in the [REST API reference](docs/reference/api/index.md).
 
 On Windows, Ctrl+C shuts down each complete Uvicorn, watchfiles, MCP, and Vite
 process tree. If an older checkout already left development processes behind,
@@ -198,15 +188,12 @@ another system; duplicate file IDs retain local data and union their labels.
 products, source file, and indexes before requiring exact confirmation. See
 [Sensitive data, transfer, and deletion](docs/operations/sensitive-data.md).
 
-Open **Tools & services** before the first intake. Its **Start & status**, **AI
-models**, **Processing methods**, and **Custom services** submenus state what
-`make dev` started, what must be installed separately, and what each method
-actually does.
-For a domain
-processor running on the host, use a base URL such as
-`http://127.0.0.1:8091`; a packaged API container should use the processor's
-Compose service name or `host.containers.internal` for a host service. Run
-**Health**, then **Test**, and return to Intake to select **Retest tools**.
+Open **Setup** when you want to add OCR, broader format support, an AI
+connection, or a custom Processor API service. The normal view answers whether
+OSII can read documents, whether AI is connected, and which extraction,
+synthesis, embedding, and enrichment methods Intake will use. Ports, health
+tests, schemas, custom service registration, and logs are available only under
+**Advanced & diagnostics**.
 
 Keep the terminal window open while using OSII. Stop host processes with
 <kbd>Ctrl</kbd>+<kbd>C</kbd>. There are no containers to stop after `make dev`.
@@ -247,8 +234,12 @@ containers but select commands from the same compact baseline image. See
   without processors for external-integration testing.
 - `make dev-ollama` / `.\scripts\osii.ps1 dev-ollama`: explicit alias for the
   normal Ollama-first development profile.
-- `make dev-corporate` / `.\scripts\osii.ps1 dev-corporate`: prefer the
-  built-in Shirty HTTP adapter, then Ollama, then extractive fallbacks.
+- `make dev-commercial` / `.\scripts\osii.ps1 dev-commercial`: use a personal,
+  OpenAI-compatible endpoint for grounded chat and synthesis, while retaining
+  local extractive and lexical fallback methods. See [commercial vLLM testing](docs/operations/commercial-vllm-testing.md).
+- `make dev-corporate` / `.\scripts\osii.ps1 dev-corporate`: prefer Shirty's
+  OpenAI-compatible chat, synthesis, and embedding APIs while keeping document
+  extraction local and retaining BM25/extractive fallbacks.
 - `make dev-extractor`, `dev-synthesizer`, `dev-embedder`, or `dev-enricher`
   (and matching PowerShell commands): run one processor independently.
 - `make dev-model-bridge` / `.\scripts\osii.ps1 dev-model-bridge`: run only the

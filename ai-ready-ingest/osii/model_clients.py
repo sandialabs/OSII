@@ -13,6 +13,8 @@ from typing import Protocol, Sequence
 
 import requests
 
+from osii.domain.env_credentials import resolve_env_value
+
 
 Message = dict[str, object]
 
@@ -90,7 +92,7 @@ def create_chat_client() -> ChatClient:
             "OSII_CHAT_BASE_URL (or OSII_MODEL_BASE_URL) to an "
             "OpenAI-compatible /v1 endpoint."
         )
-    return OpenAICompatibleClient(base_url, os.getenv("OSII_MODEL_API_KEY"))
+    return OpenAICompatibleClient(base_url, resolve_env_value("OSII_MODEL_API_KEY")[0])
 
 
 def create_embedding_client() -> EmbeddingClient:
@@ -98,7 +100,7 @@ def create_embedding_client() -> EmbeddingClient:
 
     base_url = _configured_url("OSII_EMBEDDING_BASE_URL", "OSII_MODEL_BASE_URL")
     if base_url and (os.getenv("OSII_EMBEDDING_BASE_URL", "").strip() or os.getenv("OSII_MODEL_BASE_URL", "").strip()):
-        return OpenAICompatibleClient(base_url, os.getenv("OSII_EMBEDDING_API_KEY") or os.getenv("OSII_MODEL_API_KEY"))
+        return OpenAICompatibleClient(base_url, resolve_env_value("OSII_EMBEDDING_API_KEY", "OSII_MODEL_API_KEY")[0])
     processor_name = selected_processor("embedder")
     if processor_name:
         from osii.processors.remote import ProcessorEmbeddingClient, resolve_remote_processor
@@ -108,4 +110,4 @@ def create_embedding_client() -> EmbeddingClient:
             "Embeddings are not configured. Start the bundled embeddings service "
             "or set OSII_EMBEDDING_BASE_URL to an OpenAI-compatible /v1 endpoint."
         )
-    return OpenAICompatibleClient(base_url, os.getenv("OSII_EMBEDDING_API_KEY") or os.getenv("OSII_MODEL_API_KEY"))
+    return OpenAICompatibleClient(base_url, resolve_env_value("OSII_EMBEDDING_API_KEY", "OSII_MODEL_API_KEY")[0])
