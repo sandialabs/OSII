@@ -1,13 +1,13 @@
 import json
 
-from osii.api.chat_routes import get_chat_settings
+from osii.rag.config import get_chat_settings
 
 
 def test_chat_api_falls_back_to_extractive(monkeypatch, client, temp_osii_root):
     monkeypatch.setenv("CHAT_PROVIDER", "openai")
     monkeypatch.setenv("CHAT_PROVIDER_CHAIN", "openai,extractive")
     monkeypatch.setattr(
-        "osii.api.chat_routes.dashboard_search",
+        "osii.rag.service.dashboard_search",
         lambda *_args, **_kwargs: (
             "lexical",
             [{"file_id": "a", "filename": "a.txt", "snippet": "grounded evidence"}],
@@ -19,7 +19,7 @@ def test_chat_api_falls_back_to_extractive(monkeypatch, client, temp_osii_root):
             raise RuntimeError("provider down")
         return "extractive answer"
 
-    monkeypatch.setattr("osii.api.chat_routes.run_chat_completion", completion)
+    monkeypatch.setattr("osii.rag.service.run_chat_completion", completion)
 
     response = client.post(
         "/api/chat",
@@ -60,6 +60,18 @@ def test_saved_shirty_provider_uses_bundled_model_bridge(monkeypatch, temp_osii_
     assert settings.openai_compatible_api_key == ""
 
 
+def test_disabling_all_saved_providers_selects_extractive_chat(monkeypatch, temp_osii_root):
+    provider_path = temp_osii_root / "state" / "model_providers.json"
+    provider_path.parent.mkdir(parents=True)
+    provider_path.write_text("[]", encoding="utf-8")
+    monkeypatch.setenv("CHAT_PROVIDER", "ollama")
+    monkeypatch.setenv("CHAT_PROVIDER_CHAIN", "ollama,extractive")
+
+    settings = get_chat_settings(temp_osii_root)
+
+    assert settings.chat_provider_chain == ("extractive",)
+
+
 def test_chat_health(client):
     response = client.get("/api/chat/health")
 
@@ -70,7 +82,7 @@ def test_chat_health(client):
 def test_chat_api_handles_a_new_empty_catalog(monkeypatch, client):
     monkeypatch.setenv("CHAT_PROVIDER", "extractive")
     monkeypatch.setattr(
-        "osii.api.chat_routes.dashboard_search",
+        "osii.rag.service.dashboard_search",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             RuntimeError("No valid chunk rows found in chunk manifest: /data/.osii/embeddings/chunks/chunks.jsonl")
         ),
@@ -85,3 +97,31 @@ def test_chat_api_handles_a_new_empty_catalog(monkeypatch, client):
     assert response.json()["provider"] == "extractive"
     assert response.json()["retrieval_mode"] == "empty"
     assert "could not find grounded text" in response.json()["answer"]
+
+
+def test_chat_passes_collection_scope_to_retrieval(monkeypatch, client):
+    seen_scope = None
+
+    def search(_root, **kwargs):
+        nonlocal seen_scope
+        seen_scope = kwargs["scope"]
+        return "lexical", []
+
+    monkeypatch.setenv("CHAT_PROVIDER", "extractive")
+    monkeypatch.setattr("osii.rag.service.dashboard_search", search)
+
+    response = client.post(
+        "/api/chat",
+        json={
+            "query": "What changed?",
+            "scope": {"scope_type": "collection", "collection_id": "collection-123"},
+        },
+    )
+
+    assert response.status_code == 200
+    assert seen_scope == {
+        "scope_type": "collection",
+        "folder_id": None,
+        "collection_id": "collection-123",
+        "file_id": None,
+    }

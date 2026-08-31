@@ -111,10 +111,11 @@ can inspect and discuss.
 
 ## Modularity
 
-- The backend, dashboard, MCP server, chat service, processor SDK, and tools
-  must remain independently usable. Do not introduce an implicit dependency on
-  the monorepo filesystem when a service boundary or package dependency is
-  appropriate.
+- The OSII Core package owns RAG orchestration and the grounded chat API. The
+  dashboard and MCP server remain independent clients of Core; the processor
+  SDK and tools remain independently usable. Do not introduce an implicit
+  dependency on the monorepo filesystem when a service boundary or package
+  dependency is appropriate.
 - Custom extractors, synthesizers, embedders, and enrichers use the documented
   processor API. The core owns canonical `.osii` persistence; processors return
   typed outputs and do not write the store directly.

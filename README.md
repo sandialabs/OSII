@@ -306,7 +306,7 @@ The repository currently includes:
 - a backend for creating local OSII databases from source collections
 - a REST API for serving OSII content, search, and derived artifacts
 - a frontend for browsing and inspecting the resulting data
-- supporting services for OCR and chat/RAG workflows
+- Core-owned RAG orchestration plus optional OCR and model-provider services
 - a versioned processor SDK and copyable extension examples
 
 ## What this does
@@ -340,7 +340,7 @@ The monorepo currently contains components such as:
 - OSII backend
 - frontend dashboard / data viewer
 - OCR service integrations
-- chat / RAG support
+- Core-owned grounded chat / RAG support
 - MCP and related tooling
 
 ## Typical usage

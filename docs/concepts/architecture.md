@@ -63,13 +63,29 @@ Remote enrichers are supported in the first migration slice. Remote extractors,
 synthesizers, and embedders now have explicit wire contracts but still need
 core-side commit adapters.
 
+## RAG ownership
+
+OSII Core owns the complete grounded-answer pipeline under `osii/rag`:
+
+1. validate the requested scope;
+2. retrieve lexical, semantic, or hybrid evidence from the canonical corpus;
+3. preserve source spans and citations;
+4. invoke the selected model method or the local extractive fallback; and
+5. return one typed answer with the retrieval mode and actual provider used.
+
+The FastAPI `/api/chat` route is a thin transport adapter over this pipeline.
+The dashboard calls that route; there is no separate RAG service or RAG image.
+Future query planning and iterative retrieval belong in this Core pipeline.
+Model-heavy reranking may be supplied by a stateless processor, but Core keeps
+ownership of the sequence, scope, evidence, and final citations.
+
 ## Repository boundaries
 
 - `packages/osii-processor-sdk`: public contracts and service/client helpers
 - `services`: independently deployable processors
-- `ai-ready-ingest`: core domain, persistence, API, grounded chat, and transitional local processors
+- `ai-ready-ingest`: core domain, persistence, API, RAG orchestration, grounded
+  chat, and transitional local processors
 - `osii-dashboard`: browser application
-- `ai-ready-rag-chat`: standalone chat reference retained for compatibility testing; the bundled release serves chat from core
 - `ai-ready-mcp`: agent-facing adapter
 - `ai-ready-tool-shelf`: optional third-party/model runtimes pending migration
 

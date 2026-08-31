@@ -40,10 +40,6 @@ COMPONENTS: dict[str, tuple[ExportEntry, ...]] = {
         ExportEntry("docs/reference/api", "docs/reference/api"),
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
-    "chat": (
-        ExportEntry("ai-ready-rag-chat", "."),
-        ExportEntry("docs/reference/api", "docs/reference/api"),
-    ),
     "tools": (
         ExportEntry("ai-ready-tool-shelf", "tools"),
         ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),

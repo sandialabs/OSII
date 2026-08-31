@@ -29,8 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync --python 3.11 --package ai-ready-chat --package osii-local-extractor --package osii-local-synthesizer --package osii-local-embedder --package osii-local-enricher --package osii-model-provider-bridge --extra dev
-      - run: cd ai-ready-rag-chat && uv run --python 3.11 --package ai-ready-chat python -m pytest tests
+      - run: uv sync --python 3.11 --package osii-local-extractor --package osii-local-synthesizer --package osii-local-embedder --package osii-local-enricher --package osii-model-provider-bridge --extra dev
       - run: cd services/local-extractor && uv run --python 3.11 --package osii-local-extractor python -m pytest tests
       - run: cd services/local-synthesizer && uv run --python 3.11 --package osii-local-synthesizer python -m pytest tests
       - run: cd services/local-embedder && uv run --python 3.11 --package osii-local-embedder python -m pytest tests
@@ -52,7 +51,7 @@ jobs:
           .\scripts\osii.ps1 dev-ollama -DryRun
           .\scripts\osii.ps1 dev-corporate -DryRun
       - shell: pwsh
-        run: uv run --no-project --python 3.11 python scripts/export_components.py --output "$env:RUNNER_TEMP\osii-export" --components backend,frontend,mcp,chat,tools,local-extractor,local-synthesizer,local-embedder,local-enricher,model-provider-bridge
+        run: uv run --no-project --python 3.11 python scripts/export_components.py --output "$env:RUNNER_TEMP\osii-export" --components backend,frontend,mcp,tools,local-extractor,local-synthesizer,local-embedder,local-enricher,model-provider-bridge
 
   dashboard:
     runs-on: ubuntu-latest

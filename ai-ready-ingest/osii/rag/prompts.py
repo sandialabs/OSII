@@ -11,20 +11,12 @@ def build_user_prompt(*, query: str, scope: dict, history: list[dict], evidence:
         f"{turn.get('role', 'user').upper()}: {turn.get('content', '')}"
         for turn in history
     ) or "(no prior history)"
-
-    evidence_lines = []
-    for i, item in enumerate(evidence, start=1):
-        evidence_lines.append(
-            f"[{i}] file_id={item.get('file_id')} "
-            f"source_relpath={item.get('source_relpath')} "
-            f"chunk_id={item.get('chunk_id')} "
-            f"char_start={item.get('char_start')} "
-            f"char_end={item.get('char_end')}\n"
-            f"snippet: {item.get('snippet')}"
-        )
-
-    evidence_block = "\n\n".join(evidence_lines) if evidence_lines else "(no evidence)"
-
+    evidence_text = "\n\n".join(
+        f"[{index}] file_id={item.get('file_id')} source_relpath={item.get('source_relpath')} "
+        f"chunk_id={item.get('chunk_id')} char_start={item.get('char_start')} char_end={item.get('char_end')}\n"
+        f"snippet: {item.get('snippet')}"
+        for index, item in enumerate(evidence, start=1)
+    ) or "(no evidence)"
     return f"""Query:
 {query}
 
@@ -35,7 +27,7 @@ Conversation history:
 {history_text}
 
 Evidence:
-{evidence_block}
+{evidence_text}
 
 Instructions:
 - Answer the query using the evidence above.

@@ -97,7 +97,6 @@ test:
 	$(UV) run --python 3.11 --package osii --extra dev python -m pytest ai-ready-ingest/tests
 	$(UV) sync --python 3.11 --package osii-processor-sdk --extra dev
 	$(UV) run --python 3.11 --package osii-processor-sdk --extra dev python -m pytest packages/osii-processor-sdk/tests
-	cd ai-ready-rag-chat && $(UV) run --python 3.11 --package ai-ready-chat --extra dev python -m pytest tests
 	cd services/local-extractor && $(UV) run --python 3.11 --package osii-local-extractor --extra dev python -m pytest tests
 	cd services/local-synthesizer && $(UV) run --python 3.11 --package osii-local-synthesizer --extra dev python -m pytest tests
 	cd services/local-embedder && $(UV) run --python 3.11 --package osii-local-embedder --extra dev python -m pytest tests
