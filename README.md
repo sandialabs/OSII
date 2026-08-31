@@ -214,11 +214,10 @@ On Windows PowerShell:
 .\scripts\osii.ps1 run
 ```
 
-`make run` never rebuilds images. Use `make containers-dev` or
-`.\scripts\osii.ps1 containers-dev` when you intentionally want to rebuild and
-run the integrated stack with optional MCP and OCR. The normal `run` command
-starts the eight application/baseline containers and does not silently require
-optional MCP or OCR images.
+`make run` never rebuilds images. Use `make build` first when you intentionally
+want to rebuild the release images. The normal `run` command starts the eight
+application/baseline containers and does not silently require optional MCP or
+OCR images.
 
 The normal release publishes three OSII image artifacts: core (shared by API,
 worker, and chat), dashboard, and baseline processors. The extractor,
@@ -226,63 +225,31 @@ synthesizer, embedder, enricher, and model-provider bridge remain separate
 containers but select commands from the same compact baseline image. See
 [Publish OSII images to Quay](docs/operations/publishing-images.md).
 
-### Useful shortcuts
+### Everyday commands
 
-- `make dev` / `make dev-host` / `.\scripts\osii.ps1 dev`: run the complete
-  editable development stack without containers.
-- `make dev-core` / `.\scripts\osii.ps1 dev-core`: run application services
-  without processors for external-integration testing.
-- `make dev-ollama` / `.\scripts\osii.ps1 dev-ollama`: explicit alias for the
-  normal Ollama-first development profile.
-- `make dev-openai` / `.\scripts\osii.ps1 dev-openai`: prefer a configured
-  OpenAI-compatible endpoint for chat, synthesis, and embeddings, while keeping
-  document extraction local and retaining Ollama/BM25/extractive fallbacks.
-- `make dev-extractor`, `dev-synthesizer`, `dev-embedder`, or `dev-enricher`
-  (and matching PowerShell commands): run one processor independently.
-- `make dev-model-bridge` / `.\scripts\osii.ps1 dev-model-bridge`: run only the
-  HTTP-only Ollama/OpenAI-compatible provider adapter.
-- `make dev-ocr-host` / `.\scripts\osii.ps1 dev-ocr-host`: run the optional
-  OpenCV/Tesseract OCR service directly on the host, with its tuning UI at
-  `http://localhost:8080/demo`.
-- `make dev-tika` / `.\scripts\osii.ps1 dev-tika`: start only Apache Tika in
-  Podman. Run it in a second terminal beside `make dev` to keep all OSII code
-  editable on the host.
-- `make dev-containers` / `.\scripts\osii.ps1 dev-containers`: run application
-  services from source while Tika and Tesseract run in Podman for deployment
-  parity.
-- `make dev-containers-insecure`: the same hybrid workflow with Podman registry
-  TLS verification disabled for image pulls and builds. On Windows use
-  `.\scripts\osii.ps1 dev-containers -InsecureRegistries`. This is an explicit
-  trust decision; prefer verified registry certificates when available.
-- `make dev-services` / `.\scripts\osii.ps1 dev-services`: start only the
-  Podman OCR services used by `dev-containers`.
-- `make dev-examples` / `.\scripts\osii.ps1 dev-examples`: run editable OSII
-  plus the example table enricher.
-- `make dev-all` / `.\scripts\osii.ps1 dev-all`: include optional agents, OCR,
-  and all example services in containers. Ollama remains separately managed.
-- `make containers-dev` / `.\scripts\osii.ps1 containers-dev`: rebuild and
-  run the normal deployment-style container stack.
-- `make build-release` / `.\scripts\osii.ps1 build-release`: build the three
-  normal publishable images exactly once each.
-- `make push-release` / `.\scripts\osii.ps1 push-release`: push those three
-  explicitly tagged images after a non-local registry prefix is supplied.
-- `make logs` / `.\scripts\osii.ps1 logs`: follow service logs.
-- `make down` / `.\scripts\osii.ps1 down`: stop the stack without deleting
-  your data volume.
-- `make doctor` / `.\scripts\osii.ps1 doctor`: report generated environments,
-  model caches, `node_modules`, OSII data, and container storage without deleting anything.
-- `make catalog-rebuild` and `make catalog-verify` (with matching PowerShell
-  commands): manage the disposable `.osii/state/catalog.sqlite3` read index.
+- `make dev` / `.\scripts\osii.ps1 dev`: run the editable stack. A configured
+  `OPENAI_BASE_URL` is preferred automatically; otherwise OSII uses Ollama when
+  it is available, then its local fallbacks.
+- `make run` / `.\scripts\osii.ps1 run`: pull and start the published images.
+- `make build` / `.\scripts\osii.ps1 build`: build the three release images.
+- `make push-release OSII_IMAGE_PREFIX=quay.io/your-org/osii OSII_IMAGE_TAG=…`:
+  publish those images.
+- `make logs`, `make down`, `make test`, `make docs`, and `make doctor`: inspect,
+  stop, validate, document, or diagnose the project.
+
+Optional services such as Tika, Tesseract, MCP, and example processors are
+configured from the dashboard or deployed deliberately with their Compose
+service name; they are not alternate top-level OSII launch modes.
 - [Export components for separate corporate repositories](docs/operations/component-export.md).
 
 Docker is supported as an override when it is your local container runtime:
 
 ```bash
-make COMPOSE='docker compose' dev-containers
+make COMPOSE='docker compose' run
 ```
 
 ```powershell
-.\scripts\osii.ps1 dev-containers -Runtime Docker
+.\scripts\osii.ps1 run -Runtime Docker
 ```
 
 See the [documentation index](docs/index.md) for three short starting paths.

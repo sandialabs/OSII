@@ -17,9 +17,8 @@ command, so the HTTP contracts and process boundaries remain independent. See
 | Enricher | `local.stats-keywords` | 8094 | Standard table artifact with counts and keywords |
 
 Each exposes `/health`, `/v1/descriptor`, its `/v1/...` operation, `/docs`,
-`/redoc`, and `/openapi.json`. Run one alone with `make dev-extractor`,
-`make dev-synthesizer`, `make dev-embedder`, or `make dev-enricher`; PowerShell
-uses the same command names after `.\scripts\osii.ps1`.
+`/redoc`, and `/openapi.json`. `make dev` starts all four together; packaged
+deployments run the same contracts as separate containers.
 
 The extractor reads source bytes and returns grounded segments. It cannot OCR a
 scanned PDF; connect Tesseract or another OCR Processor API service for that.

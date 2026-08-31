@@ -69,9 +69,10 @@ Setup. OSII stores only the configured environment-variable name in `.osii`; a
 locally saved value lives in the repository-root `.env`.
 
 Extraction remains local through the Python extractor, Apache Tika, Tesseract,
-or a custom Processor API extractor. `make dev-openai` selects the bundled
-OpenAI-compatible embedding/synthesis/chat adapters and keeps Ollama, BM25,
-and extractive fallbacks. A test-only OpenAI-compatible emulator lives in
+or a custom Processor API extractor. `make dev` automatically selects the
+bundled OpenAI-compatible embedding/synthesis/chat adapters when
+`OPENAI_BASE_URL` is configured, and keeps Ollama, BM25, and extractive
+fallbacks. A test-only OpenAI-compatible emulator lives in
 `services/model-provider-bridge/tests/fake_openai_server.py`.
 
 Intake advertises the independent `local.native-text` and

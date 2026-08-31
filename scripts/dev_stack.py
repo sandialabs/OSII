@@ -89,7 +89,6 @@ def command_path(name: str) -> str:
 
 def build_environment(
     examples: bool,
-    provider_profile: str,
     core_only: bool,
 ) -> dict[str, str]:
     env = os.environ.copy()
@@ -155,6 +154,7 @@ def build_environment(
     env["OSII_EXTRACTOR_ROUTES_PATH"] = str(
         (REPOSITORY_ROOT / "ai-ready-ingest" / "config" / "extractor_routes_native.toml").resolve()
     )
+    provider_profile = "openai" if env.get("OPENAI_BASE_URL", "").strip() else "ollama"
     if not core_only:
         ollama_embedding_model = env.get("OLLAMA_EMBEDDING_MODEL", "").strip() or "all-minilm"
         ollama_chat_model = env.get("OLLAMA_CHAT_MODEL", "").strip() or "llama3.2:1b"
@@ -693,7 +693,6 @@ def wait_for_http_service(
 
 def run(
     examples: bool,
-    provider_profile: str,
     core_only: bool,
     dry_run: bool,
     skip_setup: bool,
@@ -701,7 +700,8 @@ def run(
     try:
         uv = command_path("uv")
         npm = command_path("npm")
-        env = build_environment(examples, provider_profile, core_only)
+        env = build_environment(examples, core_only)
+        provider_profile = "openai" if env.get("OPENAI_BASE_URL", "").strip() else "ollama"
         services = service_commands(uv, npm, env, core_only)
 
         supervisor: CapabilitySupervisor | None = None
@@ -798,7 +798,6 @@ def main() -> int:
         action="store_true",
         help="Connect the example processor at its localhost port.",
     )
-    parser.add_argument("--provider-profile", choices=("baseline", "ollama", "openai"), default="baseline")
     parser.add_argument("--core-only", action="store_true", help="Start app services without local processors.")
     parser.add_argument(
         "--dry-run",
@@ -813,7 +812,6 @@ def main() -> int:
     args = parser.parse_args()
     return run(
         args.examples,
-        args.provider_profile,
         args.core_only,
         args.dry_run,
         args.skip_setup,

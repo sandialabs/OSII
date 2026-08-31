@@ -135,54 +135,33 @@ Put files in `demo-workspace/documents/`, beside the bundled `purcell.pdf`.
 Additional files there are ignored by Git. OSII reads the originals in place
 and writes all derived data under `demo-workspace/.osii/`.
 
-The bundled PDF is scanned. To run the public OCR path, install Tesseract and
-start the OCR service from the repository root in a second terminal:
+The bundled PDF is scanned. To run the public OCR path, install Tesseract,
+start the normal stack, then select **Start** beside **Tesseract OCR** in
+**Setup**:
 
 ```bash
 tesseract --version
-make dev-ocr-host
-```
-
-Windows PowerShell:
-
-```powershell
-tesseract --version
-.\scripts\osii.ps1 dev-ocr-host
+make dev
 ```
 
 Wait until <http://127.0.0.1:8080/health> returns `{"status":"ok"}`. The
 notebook checks the service and skips extraction with a readable message if it
 is unavailable.
 
-For an OpenAI-compatible model endpoint, set the endpoint and credential, then
-start the bundled HTTP adapter from the repository root in a second terminal.
-It provides model-backed synthesis, embeddings, and chat; extraction remains a
-local or Processor API capability:
+For an OpenAI-compatible model endpoint, set the endpoint and credential in
+`.env`, then start the normal stack. It provides model-backed synthesis,
+embeddings, and chat; extraction remains a local or Processor API capability:
 
 ```powershell
 $env:OPENAI_BASE_URL = "https://models.example.test/v1"
 $env:OPENAI_API_KEY = "your-api-key-here"
-.\scripts\osii.ps1 dev-model-bridge
+.\scripts\osii.ps1 dev
 ```
 
 Outside the corporate environment, use the deterministic OpenAI-compatible emulator and
 point the same adapter at `http://127.0.0.1:8096/api/v1`. Exact macOS and
 PowerShell commands are in
 [`services/model-provider-bridge/README.md`](../services/model-provider-bridge/README.md).
-
-Later examples can use the independent baseline services:
-
-```bash
-make dev-synthesizer
-make dev-embedder
-```
-
-Windows PowerShell:
-
-```powershell
-.\scripts\osii.ps1 dev-synthesizer
-.\scripts\osii.ps1 dev-embedder
-```
 
 `make dev` or `.\scripts\osii.ps1 dev` starts the complete editable stack.
 

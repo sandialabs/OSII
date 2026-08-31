@@ -30,7 +30,7 @@ failed experiment cannot leave expensive workers running.
 Copy the values from the repository-root `.env.commercial.example` file into
 the ignored repository-root `.env` file. Replace `ENDPOINT_ID` and
 `YOUR_SERVED_CHAT_MODEL`, then place the personal API key only in
-`OSII_MODEL_API_KEY`.
+`OPENAI_API_KEY`.
 
 The commercial profile makes the remote endpoint the preferred chat and
 synthesis provider. It deliberately uses OSII's local lexical embedder by
@@ -46,28 +46,21 @@ chat completion has content. It prints only model IDs, response shape, token
 usage keys, and response length; it never prints the API key or a response
 body.
 
-```bash
-make provider-check
-```
-
-```powershell
-.\scripts\osii.ps1 provider-check
-```
-
-When you have a separate embedding deployment, set both
-`OSII_EMBEDDING_BASE_URL` and `OSII_EMBEDDING_MODEL`; the same check then
-validates the vector response and reports only its dimension.
+Run `make dev`, then use **Setup → Connect AI → Check connection & models**.
+It performs the same bounded model-discovery and request validation without
+printing your API key or response body.
 
 ## 4. Run the isolated OSII lifecycle
 
-Start the commercial profile:
+Start OSII. The configured `OPENAI_BASE_URL` makes this endpoint the preferred
+provider automatically:
 
 ```bash
-make dev-openai
+make dev
 ```
 
 ```powershell
-.\scripts\osii.ps1 dev-openai
+.\scripts\osii.ps1 dev
 ```
 
 Open <http://localhost:5173>. Process a small synthetic corpus first, then
@@ -88,7 +81,7 @@ verify these stages in order:
    from `.env` or the secret manager.
 
 For container parity, put the same non-secret variables and key in `.env`, then
-run `make containers-dev`. The Compose services receive the generic
+run `make build` followed by `make run`. The Compose services receive the generic
 OpenAI-compatible endpoint variables; credentials remain outside the image and
 OSII store.
 

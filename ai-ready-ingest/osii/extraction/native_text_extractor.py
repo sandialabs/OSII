@@ -123,8 +123,8 @@ class NativeTextExtractor(BaseExtractor):
         else:
             raise RuntimeError(
                 f"The host-native extractor does not support '{suffix or 'files without an extension'}'. "
-                "Exclude that file type during development or use make dev-containers "
-                "to test the Tika/OCR deployment path."
+                "Exclude that file type during development or start Tika/OCR "
+                "from Setup to test that extraction path."
             )
 
         return [

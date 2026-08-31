@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("dev", "dev-host", "dev-core", "dev-ollama", "dev-openai", "dev-extractor", "dev-synthesizer", "dev-embedder", "dev-enricher", "dev-model-bridge", "dev-ocr-host", "dev-tika", "dev-containers", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build", "build-release", "push-release", "doctor", "catalog-rebuild", "catalog-verify", "provider-check")]
+    [ValidateSet("dev", "run", "build", "push-release", "down", "logs", "doctor")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
@@ -84,88 +84,16 @@ try {
         "dev" {
             Invoke-OsiiDevLauncher
         }
-        "dev-host" {
-            Invoke-OsiiDevLauncher
-        }
-        "dev-core" {
-            Invoke-OsiiDevLauncher @("--core-only")
-        }
-        "dev-ollama" {
-            Invoke-OsiiDevLauncher @("--provider-profile", "ollama")
-        }
-        "dev-openai" {
-            Invoke-OsiiDevLauncher @("--provider-profile", "openai")
-        }
-        "provider-check" {
-            & uv run --no-project --python 3.11 python scripts/check_openai_endpoint.py
-            if ($LASTEXITCODE -ne 0) {
-                throw "Commercial provider check failed with exit code $LASTEXITCODE."
-            }
-        }
-        "dev-extractor" {
-            & uv run --python 3.11 --package osii-local-extractor python -m uvicorn app.main:app --app-dir services/local-extractor --host 127.0.0.1 --port 8092 --reload
-        }
-        "dev-synthesizer" {
-            & uv run --python 3.11 --package osii-local-synthesizer python -m uvicorn app.main:app --app-dir services/local-synthesizer --host 127.0.0.1 --port 8093 --reload
-        }
-        "dev-embedder" {
-            & uv run --python 3.11 --package osii-local-embedder python -m uvicorn app.main:app --app-dir services/local-embedder --host 127.0.0.1 --port 8085 --reload
-        }
-        "dev-enricher" {
-            & uv run --python 3.11 --package osii-local-enricher python -m uvicorn app.main:app --app-dir services/local-enricher --host 127.0.0.1 --port 8094 --reload
-        }
-        "dev-model-bridge" {
-            & uv run --python 3.11 --package osii-model-provider-bridge python -m uvicorn app.main:app --app-dir services/model-provider-bridge --host 127.0.0.1 --port 8095 --reload
-        }
-        "dev-ocr-host" {
-            $env:ENABLE_DEMO = "true"
-            Push-Location (Join-Path $RepositoryRoot "ai-ready-tool-shelf/osii-tesseract")
-            try {
-                & uv run --no-project --python 3.11 --with-requirements requirements.txt python -m uvicorn app.main:app --host 127.0.0.1 --port 8080
-            }
-            finally {
-                Pop-Location
-            }
-        }
-        "dev-containers" {
-            Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
-            Invoke-OsiiDevLauncher
-        }
-        "dev-tika" {
-            Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika")
-        }
-        "dev-services" {
-            Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
-        }
         "run" {
             Invoke-OsiiCompose @("up", "--no-build", "--pull", "missing", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "dashboard")
         }
-        "dev-examples" {
-            Invoke-OsiiCompose @("--profile", "ocr", "up", "-d", "tika", "tesseract")
-            Invoke-OsiiCompose @("--profile", "examples", "up", "-d", "--build", "table-pdf-enricher")
-            Invoke-OsiiDevLauncher @("--examples")
-        }
-        "containers-dev" {
-            Invoke-OsiiCompose @("build", "api", "dashboard", "local-extractor")
-            Invoke-OsiiCompose @("--profile", "agents", "--profile", "ocr", "build", "mcp", "tesseract")
-            Invoke-OsiiCompose @("--profile", "agents", "--profile", "ocr", "up", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "mcp", "dashboard", "tika", "tesseract")
-        }
-        "dev-all" {
-            Invoke-OsiiCompose @("build", "api", "dashboard", "local-extractor")
-            Invoke-OsiiCompose @("--profile", "examples", "--profile", "agents", "--profile", "ocr", "build", "mcp", "table-pdf-enricher", "tesseract")
-            Invoke-OsiiCompose @("--profile", "examples", "--profile", "agents", "--profile", "ocr", "up")
-        }
         "down" {
-            Invoke-OsiiCompose @("--profile", "examples", "--profile", "agents", "--profile", "ocr", "down")
+            Invoke-OsiiCompose @("down")
         }
         "logs" {
             Invoke-OsiiCompose @("logs", "-f")
         }
         "build" {
-            Invoke-OsiiCompose @("build", "api", "dashboard", "local-extractor")
-            Invoke-OsiiCompose @("--profile", "examples", "--profile", "agents", "--profile", "ocr", "build", "mcp", "table-pdf-enricher", "tesseract")
-        }
-        "build-release" {
             Invoke-OsiiCompose @("build", "api", "dashboard", "local-extractor")
         }
         "push-release" {
@@ -176,12 +104,6 @@ try {
         }
         "doctor" {
             & uv run --no-project --python 3.11 python scripts/disk_usage.py
-        }
-        "catalog-rebuild" {
-            & uv run --python 3.11 --package osii python -m osii.catalog_cli rebuild
-        }
-        "catalog-verify" {
-            & uv run --python 3.11 --package osii python -m osii.catalog_cli verify
         }
     }
 }

@@ -16,16 +16,10 @@
 # grounded Markdown. It does not re-open the original PDF and it does not write
 # the store. Those limits make it independently testable and safe to replace.
 #
-# Start the service in a second terminal:
+# Start the normal stack from the repository root:
 #
 # ```bash
-# make dev-synthesizer
-# ```
-#
-# Windows PowerShell:
-#
-# ```powershell
-# .\scripts\osii.ps1 dev-synthesizer
+# make dev
 # ```
 
 # %%

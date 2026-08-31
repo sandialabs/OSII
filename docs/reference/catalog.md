@@ -31,14 +31,8 @@ Legacy `.osii/.collections/collections.sqlite` data is migrated once into:
 
 The old database is retained for recovery but is no longer authoritative.
 
-Commands:
-
-```bash
-make catalog-verify
-make catalog-rebuild
-```
-
-PowerShell uses `.\scripts\osii.ps1 catalog-verify` and `catalog-rebuild`.
+Use the dashboard's catalog status and rebuild controls when maintenance is
+needed. The catalog is derived state, not a normal deployment workflow.
 
 The existing `/api/osii/files` and `/api/osii/folders` endpoints remain. New
 catalog endpoints add stable cursor pagination and filtering:

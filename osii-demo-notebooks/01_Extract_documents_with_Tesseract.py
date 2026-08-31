@@ -50,16 +50,11 @@ for source_file in source_files:
 # a separate service because OCR has different system dependencies and can be
 # replaced independently of the store.
 #
-# In a second terminal at the repository root, run:
+# From the repository root, run `make dev`, then select **Start** beside
+# **Tesseract OCR** in **Setup**.
 #
 # ```bash
-# make dev-ocr-host
-# ```
-#
-# Windows PowerShell:
-#
-# ```powershell
-# .\scripts\osii.ps1 dev-ocr-host
+# make dev
 # ```
 #
 # Keeping OCR outside the notebook is intentional. A production extractor may

@@ -31,8 +31,7 @@ the Python text-layer PDF/Office extractor, the no-AI cited source-excerpt
 preview, lexical token/word-pair hashing vectors, and deterministic document
 statistics/frequent keywords. The bridge makes no
 generation or embedding request until that capability is used; Setup performs
-only model discovery. Run applications without any processor or bridge using
-`make dev-core`.
+only model discovery.
 
 The host launcher starts the dashboard only after `http://127.0.0.1:8511/health`
 responds. This is especially important on Windows, where several simultaneous
@@ -51,8 +50,9 @@ Host Python dependencies live in the ignored `osii-env/` directory. OSII uses
 that visible name because current macOS Python releases can skip editable
 package path files beneath a hidden `.venv` directory.
 
-Normal `make dev` is Ollama-first when the separately installed Ollama service
-is reachable. **OSII does not install or launch Ollama:** manage the separate
+When `OPENAI_BASE_URL` is set in `.env`, normal `make dev` prefers that
+OpenAI-compatible endpoint. Otherwise it uses an available separately installed
+Ollama service. **OSII does not install or launch Ollama:** manage the separate
 application yourself when you use it, then open it or run `ollama serve`. In
 **Setup → Connect AI**, OSII queries `/api/tags` and shows
 the installed models beside the endpoint configuration. The two approved US
@@ -80,15 +80,9 @@ The equivalent manual command remains available, for example:
 ollama pull all-minilm
 ```
 
-`make dev-ollama` and `.\scripts\osii.ps1 dev-ollama` remain explicit aliases
-for this profile. Disable the Ollama provider in Setup to return chat,
-synthesis, and embedding to their guaranteed local baselines. A higher-priority
-enabled OpenAI-compatible provider replaces Ollama capability by
-capability, without changing the rest of OSII.
-
-On Windows, append `-DryRun` to any host profile command to validate its
-service plan without opening ports, for example
-`.\scripts\osii.ps1 dev-openai -DryRun`.
+Disable the Ollama provider in Setup to return chat, synthesis, and embedding
+to their guaranteed local baselines. A configured OpenAI-compatible provider
+replaces Ollama capability by capability, without changing the rest of OSII.
 
 ## Setup and local service control
 
@@ -115,15 +109,7 @@ container or administrator-managed deployments.
 The optional OpenCV/Tesseract OCR service can also run without a container.
 The Tesseract executable is a separate manual installation and must already be
 on `PATH`; verify that first with `tesseract --version`, then select **Start**
-beside **Tesseract OCR** in Setup. The equivalent direct commands remain:
-
-```bash
-make dev-ocr-host
-```
-
-```powershell
-.\scripts\osii.ps1 dev-ocr-host
-```
+beside **Tesseract OCR** in Setup.
 
 The OSII wrapper listens on port 8080 and exposes its region-tuning interface at
 `http://localhost:8080/demo`. OCR extraction stores normalized region boxes, which the Source and Split View
@@ -189,12 +175,11 @@ lemmatized noun/adjective 2-, 3-, and 4-grams and a grounded list of named
 entity candidates. Both use standard Processor API artifact formats; see
 [Example keyword and entity enrichments](../tutorials/example-enrichments.md).
 
-`make dev-openai` registers OSII's HTTP-only OpenAI-compatible adapter for
-embeddings, synthesis, and chat. Extraction remains local through
-native Python, Tika, Tesseract, or a domain Processor API service. The
-corresponding Windows command is
-`.\scripts\osii.ps1 dev-openai`. No provider-specific package is installed;
-the adapter calls documented bearer-authenticated OpenAI-compatible endpoints.
+When `OPENAI_BASE_URL` is configured, `make dev` registers OSII's HTTP-only
+OpenAI-compatible adapter for embeddings, synthesis, and chat. Extraction
+remains local through native Python, Tika, Tesseract, or a domain Processor API
+service. No provider-specific package is installed; the adapter calls
+documented bearer-authenticated OpenAI-compatible endpoints.
 
 ## Failure behavior
 
@@ -219,10 +204,9 @@ search carries page/segment provenance into document navigation. See
 
 ## Optional containers
 
-Use `make dev-containers` when editable applications should use containerized
-Tika and Tesseract. Use `make build && make run` to test locally built images;
-corporate pilot hosts set their approved image tag and use `make run` without a
-local build. See [Corporate pilot images and Quay releases](publishing-images.md).
+Use `make build && make run` to test locally built images; corporate pilot hosts
+set their approved image tag and use `make run` without a local build. See
+[Corporate pilot images and Quay releases](publishing-images.md).
 Ollama and the upstream OpenAI-compatible service remain separately managed endpoints.
 OSII images contain only their lightweight HTTP adapters, not private packages
 or model files.
@@ -237,17 +221,15 @@ equivalent two-terminal workflow remains:
 make dev
 
 # Terminal 2
-make dev-tika
+podman-compose --profile ocr up -d tika
 ```
 
-On Windows, the second command is `.\scripts\osii.ps1 dev-tika`. The existing
-`TIKA_URL` configuration lets the running host services detect it on port 9998.
+The existing `TIKA_URL` configuration lets the running host services detect it
+on port 9998.
 
 When a Podman registry must be contacted without verifiable TLS certificates,
-use the explicit opt-in `make dev-containers-insecure`, or on Windows
-`.\scripts\osii.ps1 dev-containers -InsecureRegistries`. This disables registry
-TLS verification for image pulls/builds; it does not disable HTTPS checks for
-OSII model or processor endpoints.
+consult the registry administrator. OSII does not make insecure registry access
+part of its normal launch workflow.
 
 ## Storage and disk diagnostics
 
@@ -256,12 +238,6 @@ membership remain inspectable `.osii` files. `.osii/state/catalog.sqlite3` is a
 derived WAL-mode read catalog and may be deleted and rebuilt. Operational queue
 state remains in `jobs.sqlite3`.
 
-```bash
-make catalog-verify
-make catalog-rebuild
-make doctor
-```
-
-The PowerShell script exposes the same command names. `doctor` reports common
+`make doctor` reports common
 ignored disk consumers—including Python environments, `node_modules`, model
 caches, OSII data, and Podman storage—and never deletes them.

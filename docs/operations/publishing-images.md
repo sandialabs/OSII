@@ -41,7 +41,7 @@ Use a version tag rather than relying only on `latest`:
 
 ```bash
 cd /path/to/osii
-make build-release \
+make build \
   OSII_IMAGE_PREFIX=quay.io/your-organization/osii \
   OSII_IMAGE_TAG=0.1.0
 ```
@@ -57,7 +57,7 @@ quay.io/your-organization/osii-baseline-processors:0.1.0
 On Windows PowerShell:
 
 ```powershell
-.\scripts\osii.ps1 build-release `
+.\scripts\osii.ps1 build `
   -ImagePrefix quay.io/your-organization/osii `
   -ImageTag 0.1.0
 ```

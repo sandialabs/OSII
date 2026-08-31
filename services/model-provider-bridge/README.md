@@ -30,7 +30,7 @@ Then point the OpenAI-compatible profile at it:
 
 ```bash
 OPENAI_BASE_URL=http://127.0.0.1:8096/api/v1 \
-OPENAI_API_KEY=local-emulator-key make dev-openai
+OPENAI_API_KEY=local-emulator-key make dev
 ```
 
 PowerShell users can run the same emulator command on one line, then use a
@@ -41,7 +41,7 @@ uv run --package osii-model-provider-bridge --extra dev uvicorn tests.fake_opena
 
 $env:OPENAI_BASE_URL = "http://127.0.0.1:8096/api/v1"
 $env:OPENAI_API_KEY = "local-emulator-key"
-.\scripts\osii.ps1 dev-openai
+.\scripts\osii.ps1 dev
 ```
 
 Set `OPENAI_EMULATOR_UPSTREAM_BASE_URL`,

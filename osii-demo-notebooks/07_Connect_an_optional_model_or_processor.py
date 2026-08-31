@@ -47,16 +47,11 @@ print(collection_scope)
 # %% [markdown]
 # ## Discover the optional model bridge
 #
-# Start it only when you want this experiment:
+# Configure Ollama or an OpenAI-compatible endpoint in `.env`, then start the
+# normal stack:
 #
 # ```bash
-# make dev-model-bridge
-# ```
-#
-# Windows PowerShell:
-#
-# ```powershell
-# .\scripts\osii.ps1 dev-model-bridge
+# make dev
 # ```
 #
 # Ollama and the selected model must also be installed separately.
