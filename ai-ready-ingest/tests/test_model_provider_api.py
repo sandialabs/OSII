@@ -55,7 +55,7 @@ def test_model_provider_configuration_never_persists_secret(client, temp_osii_ro
     monkeypatch.setenv("MY_CORPORATE_KEY", "super-secret-value")
     response = client.put("/api/admin/model-providers/corporate", json={
         "id": "corporate",
-        "type": "shirty",
+        "type": "openai",
         "base_url": "https://models.example.test/v1",
         "enabled": True,
         "priority": 10,
@@ -70,8 +70,8 @@ def test_model_provider_configuration_never_persists_secret(client, temp_osii_ro
     assert "super-secret-value" not in raw
     assert "MY_CORPORATE_KEY" in raw
     assert '"embedding_model": "embed-v1"' in raw
-    assert selected_processor("embedder", osii_root=temp_osii_root) == "shirty.embedder"
-    assert selected_processor("synthesizer", osii_root=temp_osii_root) == "corporate.shirty-synthesis"
+    assert selected_processor("embedder", osii_root=temp_osii_root) == "openai.embedder"
+    assert selected_processor("synthesizer", osii_root=temp_osii_root) == "openai.synthesizer"
 
 
 def test_local_env_credential_is_write_only_and_used_for_health(client, temp_osii_root, tmp_path, monkeypatch):
@@ -79,28 +79,28 @@ def test_local_env_credential_is_write_only_and_used_for_health(client, temp_osi
     env_file.write_text("UNCHANGED=value\n", encoding="utf-8")
     monkeypatch.setenv("OSII_ENV_FILE", str(env_file))
     monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
-    monkeypatch.delenv("SHIRTY_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    saved = client.put("/api/admin/model-providers/shirty-demo", json={
-        "type": "shirty",
-        "base_url": "https://shirty.example.test/api/v1",
+    saved = client.put("/api/admin/model-providers/openai-demo", json={
+        "type": "openai",
+        "base_url": "https://openai.example.test/api/v1",
         "enabled": True,
         "priority": 10,
         "embedding_model": "embed-v1",
         "synthesis_model": "chat-v1",
         "chat_model": "chat-v1",
-        "credential_env": "SHIRTY_API_KEY",
+        "credential_env": "OPENAI_API_KEY",
     })
     assert saved.status_code == 200
     response = client.put(
-        "/api/admin/model-providers/shirty-demo/credential",
+        "/api/admin/model-providers/openai-demo/credential",
         json={"api_key": "saved-secret"},
     )
     assert response.status_code == 200
     assert "saved-secret" not in response.text
     assert "UNCHANGED=value" in env_file.read_text(encoding="utf-8")
-    assert 'SHIRTY_API_KEY="saved-secret"' in env_file.read_text(encoding="utf-8")
+    assert 'OPENAI_API_KEY="saved-secret"' in env_file.read_text(encoding="utf-8")
     assert "saved-secret" not in (temp_osii_root / "state" / "model_providers.json").read_text()
 
     seen = {}
@@ -110,30 +110,30 @@ def test_local_env_credential_is_write_only_and_used_for_health(client, temp_osi
         return FakeResponse(payload={"data": [{"id": "embed-v1"}, {"id": "chat-v1"}]})
 
     monkeypatch.setattr("osii.api.model_provider_routes.requests.get", fake_get)
-    health = client.post("/api/admin/model-providers/shirty-demo/health")
+    health = client.post("/api/admin/model-providers/openai-demo/health")
     assert health.status_code == 200
     assert health.json()["ok"] is True
     assert seen["Authorization"] == "Bearer saved-secret"
 
-    removed = client.delete("/api/admin/model-providers/shirty-demo/credential")
+    removed = client.delete("/api/admin/model-providers/openai-demo/credential")
     assert removed.status_code == 200
-    assert "SHIRTY_API_KEY" not in env_file.read_text(encoding="utf-8")
+    assert "OPENAI_API_KEY" not in env_file.read_text(encoding="utf-8")
 
 
-def test_corporate_environment_exposes_documented_shirty_defaults(client, monkeypatch):
-    monkeypatch.setenv("OSII_ENVIRONMENT", "corporate")
-    monkeypatch.delenv("SHIRTY_BASE_URL", raising=False)
-    monkeypatch.delenv("SHIRTY_API_KEY", raising=False)
+def test_openai_environment_exposes_generic_runtime_defaults(client, monkeypatch):
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://models.example.test/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "alias-key")
+    monkeypatch.setenv("OPENAI_EMBEDDING_MODEL", "embed-v1")
+    monkeypatch.setenv("OPENAI_CHAT_MODEL", "chat-v1")
 
     payload = client.get("/api/admin/model-providers").json()
-    provider = next(item for item in payload["providers"] if item["id"] == "shirty-corporate")
+    provider = next(item for item in payload["providers"] if item["id"] == "openai-compatible")
 
-    assert provider["base_url"] == "https://shirty.sandia.gov/api/v1"
+    assert provider["base_url"] == "https://models.example.test/v1"
     assert provider["enabled"] is True
     assert provider["priority"] == 10
-    assert provider["embedding_model"] == ""
-    assert provider["chat_model"] == "meta-llama/Llama-3.1-8B-Instruct"
+    assert provider["embedding_model"] == "embed-v1"
+    assert provider["chat_model"] == "chat-v1"
     assert provider["credential_present"] is True
 
 

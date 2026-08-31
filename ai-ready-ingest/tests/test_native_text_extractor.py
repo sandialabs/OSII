@@ -1,5 +1,4 @@
 from pathlib import Path
-
 import fitz
 import pytest
 
@@ -77,25 +76,3 @@ def test_native_text_extractor_rejects_scanned_pdf(tmp_path: Path):
 
     with pytest.raises(RuntimeError, match="requires an OCR extractor"):
         _extract(source, source_root, osii_root)
-
-
-def test_corporate_extractor_unavailability_falls_back_to_native(monkeypatch, tmp_path: Path):
-    source_root = tmp_path / "source"
-    source_root.mkdir()
-    osii_root = tmp_path / ".osii"
-    ensure_osii_store_layout(osii_root)
-    source = source_root / "notes.txt"
-    source.write_text("fallback remains grounded", encoding="utf-8")
-
-    def unavailable(*_args, **_kwargs):
-        raise RuntimeError("corporate endpoint is down")
-
-    monkeypatch.setattr("osii.processors.remote.resolve_remote_processor", unavailable)
-    result = dispatch_extract(
-        extractor_name="corporate.shirty-textract",
-        source_path=source,
-        data_volume_root=source_root,
-        osii_store=osii_root,
-    )
-    text = (osii_root / "objects" / result["file_id"] / "text.txt").read_text(encoding="utf-8")
-    assert text == "fallback remains grounded"

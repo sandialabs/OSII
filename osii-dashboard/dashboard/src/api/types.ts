@@ -686,7 +686,7 @@ export type ProcessorEndpoint = {
 
 export type ModelProvider = {
   id: string;
-  type: "ollama" | "openai" | "shirty";
+  type: "ollama" | "openai";
   base_url: string;
   enabled: boolean;
   priority: number;

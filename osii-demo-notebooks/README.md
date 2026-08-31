@@ -110,7 +110,6 @@ Run the core walkthrough in order. For step 01, choose one extraction path.
 |---|---|
 | `00_Start_here` | What is an OSII store, and which parts are canonical? |
 | `01_Extract_documents_with_Tesseract` | How does local extraction become grounded OSII data? |
-| `01_Extract_documents_with_Shirty` | How can a private extractor use the same public contract? |
 | `02_Create_local_text_previews` | Why is synthesis separate from extraction? |
 | `03_Browse_and_create_a_collection` | How do objects and scopes become agent-ready context? |
 | `04_Build_and_search_a_lexical_index` | How does zero-model retrieval remain grounded? |
@@ -155,16 +154,18 @@ Wait until <http://127.0.0.1:8080/health> returns `{"status":"ok"}`. The
 notebook checks the service and skips extraction with a readable message if it
 is unavailable.
 
-For the corporate Shirty path, set the endpoint and credential, then start the
-bundled HTTP adapter from the repository root in a second terminal:
+For an OpenAI-compatible model endpoint, set the endpoint and credential, then
+start the bundled HTTP adapter from the repository root in a second terminal.
+It provides model-backed synthesis, embeddings, and chat; extraction remains a
+local or Processor API capability:
 
 ```powershell
-$env:SHIRTY_BASE_URL = "https://shirty.sandia.gov/api/v1"
-$env:SHIRTY_API_KEY = "your-api-key-here"
+$env:OPENAI_BASE_URL = "https://models.example.test/v1"
+$env:OPENAI_API_KEY = "your-api-key-here"
 .\scripts\osii.ps1 dev-model-bridge
 ```
 
-Outside the corporate environment, use the deterministic Shirty emulator and
+Outside the corporate environment, use the deterministic OpenAI-compatible emulator and
 point the same adapter at `http://127.0.0.1:8096/api/v1`. Exact macOS and
 PowerShell commands are in
 [`services/model-provider-bridge/README.md`](../services/model-provider-bridge/README.md).

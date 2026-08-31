@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("dev", "dev-host", "dev-core", "dev-ollama", "dev-commercial", "dev-corporate", "dev-extractor", "dev-synthesizer", "dev-embedder", "dev-enricher", "dev-model-bridge", "dev-ocr-host", "dev-tika", "dev-containers", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build", "build-release", "push-release", "doctor", "catalog-rebuild", "catalog-verify", "provider-check")]
+    [ValidateSet("dev", "dev-host", "dev-core", "dev-ollama", "dev-openai", "dev-extractor", "dev-synthesizer", "dev-embedder", "dev-enricher", "dev-model-bridge", "dev-ocr-host", "dev-tika", "dev-containers", "dev-services", "dev-examples", "containers-dev", "run", "dev-all", "down", "logs", "build", "build-release", "push-release", "doctor", "catalog-rebuild", "catalog-verify", "provider-check")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
@@ -93,11 +93,8 @@ try {
         "dev-ollama" {
             Invoke-OsiiDevLauncher @("--provider-profile", "ollama")
         }
-        "dev-commercial" {
-            Invoke-OsiiDevLauncher @("--provider-profile", "commercial")
-        }
-        "dev-corporate" {
-            Invoke-OsiiDevLauncher @("--provider-profile", "corporate")
+        "dev-openai" {
+            Invoke-OsiiDevLauncher @("--provider-profile", "openai")
         }
         "provider-check" {
             & uv run --no-project --python 3.11 python scripts/check_openai_endpoint.py

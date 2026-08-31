@@ -32,7 +32,7 @@ def test_chat_api_falls_back_to_extractive(monkeypatch, client, temp_osii_root):
     assert response.json()["retrieval_mode"] == "lexical"
 
 
-def test_saved_shirty_provider_uses_bundled_model_bridge(monkeypatch, temp_osii_root):
+def test_saved_openai_provider_uses_bundled_model_bridge(monkeypatch, temp_osii_root):
     provider_path = temp_osii_root / "state" / "model_providers.json"
     provider_path.parent.mkdir(parents=True)
     provider_path.write_text(
@@ -40,8 +40,8 @@ def test_saved_shirty_provider_uses_bundled_model_bridge(monkeypatch, temp_osii_
             [
                 {
                     "id": "corporate",
-                    "type": "shirty",
-                    "base_url": "https://shirty.sandia.gov/api/v1",
+                    "type": "openai",
+                    "base_url": "https://models.example.test/v1",
                     "enabled": True,
                     "priority": 10,
                     "chat_model": "meta-llama/Llama-3.1-8B-Instruct",
@@ -54,8 +54,8 @@ def test_saved_shirty_provider_uses_bundled_model_bridge(monkeypatch, temp_osii_
 
     settings = get_chat_settings(temp_osii_root)
 
-    assert settings.chat_provider_chain == ("shirty", "extractive")
-    assert settings.openai_compatible_base_url == "http://127.0.0.1:18095/shirty/v1"
+    assert settings.chat_provider_chain == ("openai", "extractive")
+    assert settings.openai_compatible_base_url == "http://127.0.0.1:18095/openai/v1"
     assert settings.openai_chat_model == "meta-llama/Llama-3.1-8B-Instruct"
     assert settings.openai_compatible_api_key == ""
 

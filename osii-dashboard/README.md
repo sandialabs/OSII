@@ -24,7 +24,7 @@ The dashboard is intentionally modular. It is a standalone frontend that talks t
 - Open root-level derived artifacts only when needed; long lists and wiki content stay within scrollable regions and standard table columns are sortable
 - Rescan the configured source root for moved originals and safely remap exact hash matches without rerunning extraction
 - Select any Ollama model discovered on the configured server independently for embedding, synthesis, and chat
-- Use the concise Setup page to connect Shirty/Ollama/OpenAI-compatible AI, save a local API key, and start optional Tika or Tesseract capabilities
+- Use the concise Setup page to connect an OpenAI-compatible endpoint or Ollama, save a local API key, and start optional Tika or Tesseract capabilities
 - Prepare for future document chat workflows
 
 ---

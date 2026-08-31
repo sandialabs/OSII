@@ -2,13 +2,13 @@
 
 OSII deliberately distinguishes model providers from Processor API services.
 
-- A **model provider** is Ollama, Shirty, or a generic OpenAI-compatible HTTP
-  server. A thin bridge adapts its API.
+- A **model provider** is Ollama or an OpenAI-compatible HTTP server. A thin
+  bridge adapts its API.
 - A **Processor service** is a domain extension implementing OSII Processor API
   v1 directly: extractor, synthesizer, embedder, or enricher.
 - A **guaranteed local capability** needs neither of those.
 
-Do not register Shirty or Ollama as a custom Processor endpoint. Connect them
+Do not register an OpenAI-compatible endpoint or Ollama as a custom Processor endpoint. Connect them
 through **Setup → Connect AI**; the bundled bridge supplies the Processor API
 boundary internally.
 
@@ -50,40 +50,29 @@ commands for environments where browser-initiated downloads are disabled.
 
 Saving every model provider as disabled is an explicit opt-out: OSII uses
 BM25 without embeddings and extractive synthesis/chat. Enabled providers are
-selected by priority and capability, so a reliable OpenAI-compatible or Shirty
+selected by priority and capability, so a reliable OpenAI-compatible
 endpoint can replace Ollama without changing Intake or the dashboard.
 
-## Generic OpenAI-compatible services
+## OpenAI-compatible services
 
 The bridge maps `/embeddings` and `/chat/completions` to Processor API
 embedding/synthesis and the shared chat interface. Configure its `/v1` base
-URL and explicit model names. Set only the *name* of the credential environment
-variable in provider configuration. In local development, Setup can save the
-value in the ignored repository-root `.env`; managed deployments continue to
-inject it through the process environment.
-
-## Shirty
-
-Shirty compatibility is included in OSII's existing HTTP-only provider
-service; the public workspace does not install or import `shirty[client]`.
-Shirty is treated as an OpenAI-compatible model provider:
+URL and explicit model names. The adapter uses:
 
 - `GET /models` for discovery
 - `POST /embeddings` for semantic embeddings
 - `POST /chat/completions` for synthesis and chat
 
-Set `SHIRTY_BASE_URL`, `SHIRTY_API_KEY`, and explicit language and embedding
-models, or enter them together in Setup.
-The documented `OPENAI_BASE_URL` and `OPENAI_API_KEY` aliases are also
-accepted. OSII stores only the configured environment-variable name in
-`.osii`; a locally saved value lives in the repository-root `.env`.
+Set `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_EMBEDDING_MODEL`,
+`OPENAI_SYNTHESIS_MODEL`, and `OPENAI_CHAT_MODEL`, or enter the same values in
+Setup. OSII stores only the configured environment-variable name in `.osii`; a
+locally saved value lives in the repository-root `.env`.
 
-Shirty's nonstandard Textract route is not part of the normal OSII workflow.
 Extraction remains local through the Python extractor, Apache Tika, Tesseract,
-or a custom Processor API extractor. `make dev-corporate` selects the bundled
-Shirty embedding/synthesis/chat adapters and keeps BM25 and extractive
-fallbacks. A test-only OpenAI-compatible emulator lives in
-`services/model-provider-bridge/tests/fake_shirty_server.py`.
+or a custom Processor API extractor. `make dev-openai` selects the bundled
+OpenAI-compatible embedding/synthesis/chat adapters and keeps Ollama, BM25,
+and extractive fallbacks. A test-only OpenAI-compatible emulator lives in
+`services/model-provider-bridge/tests/fake_openai_server.py`.
 
 Intake advertises the independent `local.native-text` and
 `local.extractive-preview` services when they are running. Legacy sanity-check
@@ -123,5 +112,5 @@ requires a new index; BM25 remains available while it is built.
 
 The bridge exposes live docs at <http://localhost:8095/docs>. Provider-specific
 Processor mounts are `/ollama/embedder`, `/ollama/synthesizer`,
-`/openai/embedder`, `/openai/synthesizer`, `/shirty/embedder`, and
-`/shirty/synthesizer`.
+`/openai/embedder`, `/openai/synthesizer`, `/openai/embedder`, and
+`/openai/synthesizer`.

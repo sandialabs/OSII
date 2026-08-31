@@ -27,7 +27,7 @@ The guaranteed `local.extractive-preview` service is a model-free example. It
 selects short source excerpts and formats cited Markdown. It is not OCR, does
 not interpret the corpus, and does not generate new claims.
 
-Ollama, generic OpenAI-compatible services, and Shirty are model providers.
+Ollama and OpenAI-compatible services are model providers.
 Thin bridges adapt them to the same synthesis contract, so Intake and the
 dashboard do not need provider-specific persistence logic.
 

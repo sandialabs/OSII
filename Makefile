@@ -9,7 +9,7 @@ export OSII_IMAGE_PREFIX OSII_IMAGE_TAG
 export OSII_COMPOSE_COMMAND := $(COMPOSE)
 unexport VIRTUAL_ENV
 
-.PHONY: dev dev-host dev-core dev-ollama dev-commercial dev-corporate dev-extractor dev-synthesizer dev-embedder dev-enricher dev-model-bridge dev-ocr-host dev-tika dev-containers dev-containers-insecure dev-services dev-examples containers-dev run dev-all down logs test build build-release push-release docs docs-serve doctor catalog-rebuild catalog-verify provider-check
+.PHONY: dev dev-host dev-core dev-ollama dev-openai dev-extractor dev-synthesizer dev-embedder dev-enricher dev-model-bridge dev-ocr-host dev-tika dev-containers dev-containers-insecure dev-services dev-examples containers-dev run dev-all down logs test build build-release push-release docs docs-serve doctor catalog-rebuild catalog-verify provider-check
 
 # Default development path: API (including chat), worker, MCP, dashboard, and extraction
 # all run from source on the host. Setup can start optional Tika when a container
@@ -25,11 +25,8 @@ dev-core:
 dev-ollama:
 	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py --provider-profile ollama
 
-dev-commercial:
-	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py --provider-profile commercial
-
-dev-corporate:
-	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py --provider-profile corporate
+dev-openai:
+	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py --provider-profile openai
 
 provider-check:
 	$(UV) run --no-project --python 3.11 python scripts/check_openai_endpoint.py

@@ -16,11 +16,11 @@ need to manage these internal process boundaries individually.
 
 Chat is part of the core because it uses the same scoped retrieval and
 provenance model as the API. It has no persistence of its own. Optional model
-providers, including the bundled Shirty HTTP adapter, remain behind the
+providers, including the bundled OpenAI-compatible HTTP adapter, remain behind the
 model-provider bridge in the baseline image.
 
 MCP, Tika, Tesseract OCR, and example processors remain optional. Ollama and
-the upstream Shirty service are separately managed endpoints; OSII publishes no
+the upstream OpenAI-compatible service are separately managed endpoints; OSII publishes no
 model weights or private provider packages.
 
 ## What the platform owner provides
@@ -115,8 +115,8 @@ check `http://localhost:5173/health`. Chat is available at
 `/api/chat` through the dashboard and automatically falls back to a grounded,
 extractive answer if a configured model provider is unavailable.
 
-For a corporate Shirty connection, the administrator provides
-`SHIRTY_BASE_URL` and `SHIRTY_API_KEY` through the approved deployment secret
-mechanism. The bundled model-provider bridge calls the documented Shirty HTTP
-endpoints; it does not install or import proprietary Shirty packages. Ollama
+For a corporate OpenAI-compatible connection, the administrator provides
+`OPENAI_BASE_URL` and `OPENAI_API_KEY` through the approved deployment secret
+mechanism. The bundled model-provider bridge calls the documented OpenAI-compatible HTTP
+endpoints; it does not install or import proprietary OpenAI-compatible packages. Ollama
 continues to provide embedding and can be an optional chat/synthesis fallback.

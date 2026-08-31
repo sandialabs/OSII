@@ -29,7 +29,7 @@ SERVICE_DISPLAY_NAMES = {
     "synthesizer": "cited source-excerpt preview (no AI)",
     "embedder": "lexical hashing vectors (no AI model)",
     "enricher": "document statistics and frequent keywords",
-    "model-bridge": "Ollama/Shirty/OpenAI HTTP adapter (not Ollama itself)",
+    "model-bridge": "Ollama/OpenAI-compatible HTTP adapter (not Ollama itself)",
     "api": "OSII backend API and grounded chat",
     "worker": "sequential intake worker",
     "mcp": "MCP server for agents",
@@ -51,7 +51,7 @@ CAPABILITY_SERVICE_INFO = {
     "synthesizer": ("Source excerpt preview", "Creates a cited preview without an AI model.", "/health"),
     "embedder": ("Lexical hashing compatibility embedder", "Optional lexical vectors; BM25 search works without it.", "/health"),
     "enricher": ("Statistics and keywords enricher", "Creates local document statistics and keyword artifacts.", "/health"),
-    "model-bridge": ("AI provider bridge", "Connects OSII to Shirty, Ollama, or another OpenAI-compatible endpoint.", "/health"),
+    "model-bridge": ("AI provider bridge", "Connects OSII to Ollama or an OpenAI-compatible endpoint.", "/health"),
     "tika": ("Apache Tika", "Adds broad document-format text extraction using Podman or Docker.", "/version"),
     "tesseract": ("Tesseract OCR", "Reads scanned PDFs and returns page-region coordinates.", "/health"),
 }
@@ -155,9 +155,6 @@ def build_environment(
     env["OSII_EXTRACTOR_ROUTES_PATH"] = str(
         (REPOSITORY_ROOT / "ai-ready-ingest" / "config" / "extractor_routes_native.toml").resolve()
     )
-    if provider_profile == "corporate":
-        env["OSII_ENVIRONMENT"] = "corporate"
-        env["OSII_EXTRACTOR_ROUTES_PATH"] = str((REPOSITORY_ROOT / "ai-ready-ingest" / "config" / "extractor_routes_corporate.toml").resolve())
     if not core_only:
         ollama_embedding_model = env.get("OLLAMA_EMBEDDING_MODEL", "").strip() or "all-minilm"
         ollama_chat_model = env.get("OLLAMA_CHAT_MODEL", "").strip() or "llama3.2:1b"
@@ -176,35 +173,26 @@ def build_environment(
             "http://127.0.0.1:8095/ollama/synthesizer",
         ]
         configured = [item for item in env.get("OSII_PROCESSORS", "").split(",") if item]
-        if provider_profile == "commercial":
-            # A personal/commercial OpenAI-compatible provider is deliberately
-            # separate from the corporate profile. It supplies generation; the
-            # local lexical embedder remains the default unless the selected
-            # deployment also implements /embeddings.
-            local_urls.append("http://127.0.0.1:8095/openai/synthesizer")
-        if provider_profile == "corporate":
+        if provider_profile == "openai":
             local_urls.extend([
-                "http://127.0.0.1:8095/shirty/embedder",
-                "http://127.0.0.1:8095/shirty/synthesizer",
+                "http://127.0.0.1:8095/openai/embedder",
+                "http://127.0.0.1:8095/openai/synthesizer",
             ])
         env.update({
             "OSII_PROCESSORS": ",".join(local_urls + configured),
             "OSII_DEFAULT_EXTRACTOR": "local.native-text",
             "OSII_DEFAULT_SYNTHESIZER": (
-                "corporate.shirty-synthesis" if provider_profile == "corporate"
-                else "openai.synthesizer" if provider_profile == "commercial"
+                "openai.synthesizer" if provider_profile == "openai"
                 else "ollama.synthesizer"
             ),
-            "OSII_DEFAULT_EMBEDDER": "shirty.embedder" if provider_profile == "corporate" else ("local.hashing" if provider_profile == "commercial" else "ollama.embedder"),
+            "OSII_DEFAULT_EMBEDDER": "openai.embedder" if provider_profile == "openai" else "ollama.embedder",
             "OSII_DEFAULT_ENRICHER": "local.stats-keywords",
             "EMBEDDING_MODEL": ollama_embedding_model,
         })
         if provider_profile in {"baseline", "ollama"}:
             env.update({"CHAT_PROVIDER": "ollama", "CHAT_PROVIDER_CHAIN": "ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "ollama.synthesizer,local.extractive-preview"})
-        elif provider_profile == "corporate":
-            env.update({"CHAT_PROVIDER": "shirty", "CHAT_PROVIDER_CHAIN": "shirty,ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "corporate.shirty-synthesis,ollama.synthesizer,local.extractive-preview"})
-        elif provider_profile == "commercial":
-            env.update({"CHAT_PROVIDER": "openai", "CHAT_PROVIDER_CHAIN": "openai,extractive", "OSII_SYNTHESIZER_FALLBACKS": "openai.synthesizer,local.extractive-preview"})
+        elif provider_profile == "openai":
+            env.update({"CHAT_PROVIDER": "openai", "CHAT_PROVIDER_CHAIN": "openai,ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "openai.synthesizer,ollama.synthesizer,local.extractive-preview"})
     if examples and not env.get("OSII_PROCESSORS"):
         processor_port = env.get("OSII_EXAMPLE_PROCESSOR_PORT", "8091")
         env["OSII_PROCESSORS"] = f"http://127.0.0.1:{processor_port}"
@@ -674,7 +662,7 @@ def wait_for_http_service(
 ) -> None:
     """Wait for a required service without letting the UI race its startup."""
     deadline = time.monotonic() + timeout_seconds
-    # Local readiness checks must never be routed through a corporate HTTP
+    # Local readiness checks must never be routed through an external HTTP
     # proxy, even when proxy environment variables are present.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     print(f"[dev] Waiting for {service_name}: {url}")
@@ -774,10 +762,8 @@ def run(
         if not core_only:
             print("[dev] Open Dashboard → Setup to connect AI or start optional Tika/Tesseract capabilities.")
             print("[dev] Setup → Advanced & diagnostics contains processor URLs, settings, controls, and logs.")
-            if provider_profile == "corporate":
-                print("[dev] Corporate profile: Shirty chat, synthesis, and embeddings are preferred when configured.")
-            elif provider_profile == "commercial":
-                print("[dev] Commercial profile: the configured OpenAI-compatible endpoint is preferred; local extractive fallbacks remain enabled.")
+            if provider_profile == "openai":
+                print("[dev] OpenAI-compatible profile: the configured endpoint is preferred, with Ollama and extractive fallbacks.")
 
         while True:
             for name, (_, process) in processes.items():
@@ -812,7 +798,7 @@ def main() -> int:
         action="store_true",
         help="Connect the example processor at its localhost port.",
     )
-    parser.add_argument("--provider-profile", choices=("baseline", "ollama", "commercial", "corporate"), default="baseline")
+    parser.add_argument("--provider-profile", choices=("baseline", "ollama", "openai"), default="baseline")
     parser.add_argument("--core-only", action="store_true", help="Start app services without local processors.")
     parser.add_argument(
         "--dry-run",

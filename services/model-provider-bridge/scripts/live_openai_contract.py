@@ -2,13 +2,9 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 from typing import Any
 
 import requests
-
-
-DEFAULT_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
 
 
 def _json(response: requests.Response, operation: str) -> dict[str, Any]:
@@ -21,28 +17,23 @@ def _json(response: requests.Response, operation: str) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Validate the documented Shirty HTTP contract without printing content."
+        description="Validate the documented OpenAI-compatible HTTP contract without printing content."
     )
-    parser.add_argument("document", type=Path, help="Harmless PDF, image, or text fixture.")
-    args = parser.parse_args()
+    parser.parse_args()
 
     base_url = (
-        os.getenv("SHIRTY_BASE_URL", "").strip()
-        or os.getenv("OPENAI_BASE_URL", "").strip()
+        os.getenv("OPENAI_BASE_URL", "").strip()
     ).rstrip("/")
-    api_key = os.getenv("SHIRTY_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
+    api_key = os.getenv("OPENAI_API_KEY", "")
     model = (
-        os.getenv("SHIRTY_CHAT_MODEL", "").strip()
-        or os.getenv("SHIRTY_SYNTHESIS_MODEL", "").strip()
-        or DEFAULT_MODEL
+        os.getenv("OPENAI_CHAT_MODEL", "").strip()
+        or os.getenv("OPENAI_SYNTHESIS_MODEL", "").strip()
+        or "fixture-chat-model"
     )
     if not base_url or not api_key:
         raise SystemExit(
-            "Set SHIRTY_BASE_URL/SHIRTY_API_KEY or their OPENAI_* aliases first."
+            "Set OPENAI_BASE_URL and OPENAI_API_KEY first."
         )
-    if not args.document.is_file():
-        raise SystemExit(f"Fixture does not exist: {args.document}")
-
     headers = {"Authorization": f"Bearer {api_key}"}
     models = _json(
         requests.get(f"{base_url}/models", headers=headers, timeout=(3, 15)),
@@ -69,23 +60,8 @@ def main() -> None:
     if not isinstance(choices, list) or not choices:
         raise RuntimeError("chat completion did not return choices")
 
-    with args.document.open("rb") as handle:
-        extraction = _json(
-            requests.post(
-                f"{base_url}/extract/textract/create",
-                headers=headers,
-                files={"file": (args.document.name, handle)},
-                timeout=(3, 180),
-            ),
-            "Textract",
-        )
-    text = extraction.get("text")
-    if not isinstance(text, str) or not text.strip():
-        raise RuntimeError("Textract did not return non-empty text")
-
     print(f"models: ok ({len(model_rows)} returned)")
     print("chat: ok (choices present)")
-    print(f"textract: ok ({len(text)} characters; content not printed)")
 
 
 if __name__ == "__main__":

@@ -63,11 +63,11 @@ validates the vector response and reports only its dimension.
 Start the commercial profile:
 
 ```bash
-make dev-commercial
+make dev-openai
 ```
 
 ```powershell
-.\scripts\osii.ps1 dev-commercial
+.\scripts\osii.ps1 dev-openai
 ```
 
 Open <http://localhost:5173>. Process a small synthetic corpus first, then

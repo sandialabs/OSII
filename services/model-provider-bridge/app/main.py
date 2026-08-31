@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import json
 import os
 from pathlib import Path
@@ -20,22 +19,14 @@ from osii_processor_sdk import (
     EmbeddingRequest,
     EmbeddingResponse,
     EmbeddingVector,
-    Extractor,
-    ExtractionRequest,
-    ExtractionResponse,
     ProcessorDescriptor,
     ProcessorKind,
     ProvenanceRef,
     SynthesisRequest,
     SynthesisResponse,
     Synthesizer,
-    TextSegment,
     create_processor_app,
 )
-
-
-DEFAULT_SHIRTY_BASE_URL = "https://shirty.sandia.gov/api/v1"
-DEFAULT_SHIRTY_CHAT_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
 
 
 class CircuitBreaker:
@@ -75,25 +66,22 @@ class ProviderHTTP:
             return str(configured["base_url"]).rstrip("/")
         if self.provider == "ollama":
             return os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
-        if self.provider == "shirty":
-            return (
-                os.getenv("SHIRTY_BASE_URL", "").strip()
-                or os.getenv("OPENAI_BASE_URL", "").strip()
-                or DEFAULT_SHIRTY_BASE_URL
-            ).rstrip("/")
-        return os.getenv("OSII_MODEL_BASE_URL", "").rstrip("/")
+        return (
+            os.getenv("OPENAI_BASE_URL", "").strip()
+            or os.getenv("OSII_MODEL_BASE_URL", "").strip()
+        ).rstrip("/")
 
     def headers(self, *, content_type: str | None = "application/json") -> dict[str, str]:
         headers = {"Content-Type": content_type} if content_type else {}
+        if self.provider == "ollama":
+            return headers
         configured = _configured_provider(self.provider) or {}
         configured_env = str(configured.get("credential_env") or "").strip()
-        if self.provider == "shirty":
-            env_names = [configured_env, "SHIRTY_API_KEY", "OPENAI_API_KEY"]
-        else:
-            env_names = [
-                configured_env,
-                os.getenv("OSII_MODEL_API_KEY_ENV", "OSII_MODEL_API_KEY"),
-            ]
+        env_names = [
+            configured_env,
+            "OPENAI_API_KEY",
+            os.getenv("OSII_MODEL_API_KEY_ENV", "OSII_MODEL_API_KEY"),
+        ]
         key = resolve_secret(*env_names)
         if key:
             headers["Authorization"] = f"Bearer {key}"
@@ -131,46 +119,7 @@ class ProviderHTTP:
         self.breaker.success()
         return data
 
-    def upload(
-        self,
-        path: str,
-        *,
-        filename: str,
-        media_type: str,
-        content: bytes,
-        timeout: float = 180,
-    ) -> dict[str, Any]:
-        if not self.base_url:
-            raise ValueError("Provider base URL is not configured.")
-        self.breaker.before()
-        try:
-            response = requests.post(
-                f"{self.base_url}{path}",
-                files={"file": (filename, content, media_type)},
-                headers=self.headers(content_type=None),
-                timeout=(3.0, timeout),
-            )
-            response.raise_for_status()
-            data = response.json()
-        except requests.HTTPError as exc:
-            detail = (exc.response.text or str(exc))[:1000]
-            if 400 <= exc.response.status_code < 500:
-                raise ValueError(
-                    f"{self.provider} rejected the upload: HTTP "
-                    f"{exc.response.status_code} - {detail}"
-                ) from exc
-            self.breaker.failure()
-            raise RuntimeError(
-                f"{self.provider} upload failed: {exc} - {detail}"
-            ) from exc
-        except (requests.RequestException, ValueError) as exc:
-            self.breaker.failure()
-            raise RuntimeError(f"{self.provider} upload failed: {exc}") from exc
-        self.breaker.success()
-        return data
-
-
-CLIENTS = {name: ProviderHTTP(name) for name in ("ollama", "openai", "shirty")}
+CLIENTS = {name: ProviderHTTP(name) for name in ("ollama", "openai")}
 _OLLAMA_MODEL_CACHE: tuple[float, list[dict[str, Any]]] = (0.0, [])
 DEFAULT_SYNTHESIS_INSTRUCTIONS = (
     "Write a concise grounded Markdown synthesis. Cite source file IDs in square "
@@ -203,12 +152,10 @@ def _model(provider: str, capability: str, config: dict[str, Any] | None = None)
     explicit = str((config or {}).get("model") or "").strip()
     configured = _configured_provider(provider) or {}
     selected = str(configured.get(f"{capability}_model") or "").strip()
-    prefix = {"ollama": "OLLAMA", "shirty": "SHIRTY"}.get(provider, "OSII")
+    prefix = {"ollama": "OLLAMA", "openai": "OPENAI"}[provider]
     default = ""
     if provider == "ollama":
         default = "all-minilm" if capability == "embedding" else "llama3.2:1b"
-    elif provider == "shirty" and capability in {"chat", "synthesis"}:
-        default = DEFAULT_SHIRTY_CHAT_MODEL
     value = explicit or selected or os.getenv(f"{prefix}_{capability.upper()}_MODEL", "").strip() or default
     if not value:
         raise ValueError(f"No {capability} model is selected for {provider}.")
@@ -255,83 +202,6 @@ class ProviderEmbedder(Embedder):
         )
 
 
-class ShirtyExtractor(Extractor):
-    descriptor = ProcessorDescriptor(
-        name="corporate.shirty-textract",
-        version="1.0.0",
-        display_name="Shirty Textract",
-        description=(
-            "Built-in HTTP adapter for Shirty's documented multipart Textract "
-            "endpoint. The private Shirty Python package is not required."
-        ),
-        kind=ProcessorKind.EXTRACTOR,
-        capabilities=Capability(
-            media_types=["application/pdf", "image/png", "image/jpeg", "image/tiff"],
-            file_extensions=[".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff"],
-            output_kinds=["text_segment"],
-        ),
-    )
-
-    def extract(self, request: ExtractionRequest) -> ExtractionResponse:
-        encoded = request.document.content_base64
-        if not encoded:
-            raise ValueError("Shirty Textract requires document content_base64.")
-        try:
-            content = base64.b64decode(encoded, validate=True)
-        except ValueError as exc:
-            raise ValueError("document content_base64 is invalid.") from exc
-
-        payload = CLIENTS["shirty"].upload(
-            "/extract/textract/create",
-            filename=request.document.filename,
-            media_type=request.document.media_type,
-            content=content,
-        )
-        text = str(payload.get("text") or "").strip()
-        if not text:
-            raise ValueError("Shirty Textract returned no document text.")
-
-        segments = _shirty_segments(payload, text)
-        return ExtractionResponse(
-            request_id=request.request_id,
-            processor=self.descriptor,
-            segments=segments,
-            document_metadata={
-                "provider": "shirty",
-                "endpoint_type": "shirty-textract-http",
-            },
-        )
-
-
-def _shirty_segments(payload: dict[str, Any], document_text: str) -> list[TextSegment]:
-    pages = payload.get("pages")
-    if isinstance(pages, list):
-        segments = []
-        for index, page in enumerate(pages, 1):
-            if not isinstance(page, dict):
-                continue
-            page_text = str(page.get("text") or page.get("content") or "").strip()
-            if page_text:
-                segments.append(
-                    TextSegment(
-                        id=f"page-{index}",
-                        text=page_text,
-                        segment_type="page",
-                        source_origin={"page": int(page.get("page") or index)},
-                    )
-                )
-        if segments:
-            return segments
-    return [
-        TextSegment(
-            id="segment-1",
-            text=document_text,
-            segment_type="document",
-            source_origin={"source_type": "shirty-textract"},
-        )
-    ]
-
-
 def _scope_prompt(request: SynthesisRequest) -> str:
     sources = []
     for document in request.scope.documents:
@@ -349,13 +219,8 @@ def _scope_prompt(request: SynthesisRequest) -> str:
 class ProviderSynthesizer(Synthesizer):
     def __init__(self, provider: str) -> None:
         self.provider = provider
-        processor_name = (
-            "corporate.shirty-synthesis"
-            if provider == "shirty"
-            else f"{provider}.synthesizer"
-        )
         self.descriptor = ProcessorDescriptor(
-            name=processor_name,
+            name=f"{provider}.synthesizer",
             version="1.0.0",
             display_name=f"{provider.title()} Synthesizer",
             description=f"Processor API adapter for an explicitly selected {provider} chat model.",
@@ -408,11 +273,10 @@ class ChatRequest(BaseModel):
 
 
 app = FastAPI(title="OSII Model Provider Bridge", version="0.1.0")
-for provider in ("ollama", "openai", "shirty"):
+for provider in ("ollama", "openai"):
     app.mount(f"/{provider}/embedder", create_processor_app(ProviderEmbedder(provider)))
-for provider in ("ollama", "openai", "shirty"):
+for provider in ("ollama", "openai"):
     app.mount(f"/{provider}/synthesizer", create_processor_app(ProviderSynthesizer(provider)))
-app.mount("/shirty/extractor", create_processor_app(ShirtyExtractor()))
 
 
 @app.get("/health")

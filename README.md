@@ -98,7 +98,7 @@ with BM25.
 
 Open **Setup** in the dashboard for anything optional. From one screen you can:
 
-- connect Shirty, Ollama, or another OpenAI-compatible endpoint;
+- connect OpenAI-compatible, Ollama, or another OpenAI-compatible endpoint;
 - paste and save an API key in the ignored repository-root `.env`;
 - select separate language and embedding models;
 - start Apache Tika through Podman or Docker;
@@ -234,16 +234,13 @@ containers but select commands from the same compact baseline image. See
   without processors for external-integration testing.
 - `make dev-ollama` / `.\scripts\osii.ps1 dev-ollama`: explicit alias for the
   normal Ollama-first development profile.
-- `make dev-commercial` / `.\scripts\osii.ps1 dev-commercial`: use a personal,
-  OpenAI-compatible endpoint for grounded chat and synthesis, while retaining
-  local extractive and lexical fallback methods. See [commercial vLLM testing](docs/operations/commercial-vllm-testing.md).
-- `make dev-corporate` / `.\scripts\osii.ps1 dev-corporate`: prefer Shirty's
-  OpenAI-compatible chat, synthesis, and embedding APIs while keeping document
-  extraction local and retaining BM25/extractive fallbacks.
+- `make dev-openai` / `.\scripts\osii.ps1 dev-openai`: prefer a configured
+  OpenAI-compatible endpoint for chat, synthesis, and embeddings, while keeping
+  document extraction local and retaining Ollama/BM25/extractive fallbacks.
 - `make dev-extractor`, `dev-synthesizer`, `dev-embedder`, or `dev-enricher`
   (and matching PowerShell commands): run one processor independently.
 - `make dev-model-bridge` / `.\scripts\osii.ps1 dev-model-bridge`: run only the
-  HTTP-only Ollama/Shirty/OpenAI-compatible provider adapter.
+  HTTP-only Ollama/OpenAI-compatible provider adapter.
 - `make dev-ocr-host` / `.\scripts\osii.ps1 dev-ocr-host`: run the optional
   OpenCV/Tesseract OCR service directly on the host, with its tuning UI at
   `http://localhost:8080/demo`.
@@ -322,7 +319,7 @@ At a high level, the system works in three stages:
 Browsing, lexical retrieval, hashing-vector retrieval, extractive grounded
 chat, baseline synthesis, and baseline enrichment run without a model
 connection. Tika and Tesseract remain optional OCR/deployment services. Ollama,
-OpenAI-compatible services, Shirty, and domain processors enhance capabilities
+OpenAI-compatible services, OpenAI-compatible, and domain processors enhance capabilities
 without becoming dependencies of the basic user experience.
 
 Retrieval defaults to sentence-aligned 768-character chunks with roughly 128

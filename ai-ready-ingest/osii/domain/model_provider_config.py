@@ -7,8 +7,6 @@ from typing import Any
 
 DEFAULT_OLLAMA_EMBEDDING_MODEL = "all-minilm"
 DEFAULT_OLLAMA_CHAT_MODEL = "llama3.2:1b"
-DEFAULT_SHIRTY_BASE_URL = "https://shirty.sandia.gov/api/v1"
-DEFAULT_SHIRTY_CHAT_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
 
 _CAPABILITY_FIELDS = {
     "embedder": "embedding_model",
@@ -20,8 +18,6 @@ _PROCESSOR_NAMES = {
     ("ollama", "synthesizer"): "ollama.synthesizer",
     ("openai", "embedder"): "openai.embedder",
     ("openai", "synthesizer"): "openai.synthesizer",
-    ("shirty", "embedder"): "shirty.embedder",
-    ("shirty", "synthesizer"): "corporate.shirty-synthesis",
 }
 
 
@@ -92,6 +88,13 @@ def selected_model(
             if value:
                 return value
         return "osii-local-hashing-v1" if capability == "embedder" else ""
+    if selected_processor(capability, osii_root=osii_root).startswith("openai."):
+        variable = (
+            "OPENAI_EMBEDDING_MODEL"
+            if capability == "embedder"
+            else "OPENAI_SYNTHESIS_MODEL"
+        )
+        return os.getenv(variable, "").strip()
     if capability == "embedder":
         return (
             os.getenv(
@@ -150,12 +153,8 @@ def processor_model(
             ).strip()
             or DEFAULT_OLLAMA_CHAT_MODEL
         )
-    if provider_type == "shirty":
+    if provider_type == "openai":
         if capability == "embedder":
-            return os.getenv("SHIRTY_EMBEDDING_MODEL", "").strip()
-        return (
-            os.getenv("SHIRTY_SYNTHESIS_MODEL", DEFAULT_SHIRTY_CHAT_MODEL).strip()
-            or DEFAULT_SHIRTY_CHAT_MODEL
-        )
-    variable = "EMBEDDING_MODEL" if capability == "embedder" else "SYNTHESIS_MODEL"
-    return os.getenv(variable, "").strip()
+            return os.getenv("OPENAI_EMBEDDING_MODEL", "").strip()
+        return os.getenv("OPENAI_SYNTHESIS_MODEL", "").strip()
+    return ""

@@ -23,9 +23,6 @@ import type {
 
 const DEFAULT_EMBEDDING_MODEL = "all-minilm";
 const DEFAULT_CHAT_MODEL = "llama3.2:1b";
-const DEFAULT_SHIRTY_MODEL = "meta-llama/Llama-3.1-8B-Instruct";
-const DEFAULT_SHIRTY_URL = "https://shirty.sandia.gov/api/v1";
-
 const METHOD_COPY = {
   extractor: ["Extraction", "Reads source files and preserves locations for provenance."],
   synthesizer: ["Synthesis", "Creates cited previews, summaries, and wiki text."],
@@ -34,11 +31,11 @@ const METHOD_COPY = {
 } as const;
 
 function blankProvider(type: ModelProvider["type"]): ModelProvider {
-  if (type === "shirty") {
+  if (type === "openai") {
     return {
-      id: "shirty-corporate", type, base_url: DEFAULT_SHIRTY_URL, enabled: true,
-      priority: 10, embedding_model: "", synthesis_model: DEFAULT_SHIRTY_MODEL,
-      chat_model: DEFAULT_SHIRTY_MODEL, credential_env: "SHIRTY_API_KEY",
+      id: "openai-compatible", type, base_url: "", enabled: true,
+      priority: 10, embedding_model: "", synthesis_model: "",
+      chat_model: "", credential_env: "OPENAI_API_KEY",
     };
   }
   if (type === "ollama") {
@@ -125,7 +122,7 @@ export function ProcessorsPage() {
 
   const [message, setMessage] = useState<string | null>(null);
   const [connectionOpen, setConnectionOpen] = useState(false);
-  const [providerForm, setProviderForm] = useState<ModelProvider>(blankProvider("shirty"));
+  const [providerForm, setProviderForm] = useState<ModelProvider>(blankProvider("openai"));
   const [apiKey, setApiKey] = useState("");
   const [providerHealth, setProviderHealth] = useState<Record<string, ModelProviderHealth>>({});
   const [savingConnection, setSavingConnection] = useState(false);
@@ -304,12 +301,12 @@ export function ProcessorsPage() {
         <Typography variant="h6" fontWeight={700}>2. Connect AI</Typography>
         {primaryProvider && data?.ai_ready ? <>
           <Stack spacing={0.25}>
-            <Typography fontWeight={700}>{primaryProvider.type === "shirty" ? "Shirty" : primaryProvider.type === "ollama" ? "Ollama on this computer" : "OpenAI-compatible endpoint"}</Typography>
+            <Typography fontWeight={700}>{primaryProvider.type === "ollama" ? "Ollama on this computer" : "OpenAI-compatible endpoint"}</Typography>
             <Typography variant="body2" color="text.secondary">{primaryProvider.base_url}</Typography>
             <Typography variant="caption" color="text.secondary">{primaryProvider.credential_required ? (primaryProvider.credential_present ? `API key saved${primaryProvider.credential_source === "environment" ? " by the environment" : " in local .env"}` : "API key needed") : "No API key needed"}</Typography>
           </Stack>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap><Button variant="contained" onClick={() => openExistingConnection(primaryProvider)}>Configure</Button><Button variant="outlined" onClick={() => void checkConnection(primaryProvider)}>Check connection</Button></Stack>
-        </> : <><Typography variant="body2">Add Shirty, Ollama, or another OpenAI-compatible endpoint for generated answers and semantic embeddings.</Typography><Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap><Button variant="contained" onClick={() => openNewConnection("shirty")}>Connect Shirty</Button><Button variant="outlined" onClick={() => openNewConnection("ollama")}>Use Ollama</Button></Stack></>}
+        </> : <><Typography variant="body2">Add an OpenAI-compatible endpoint or Ollama for generated answers and semantic embeddings.</Typography><Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap><Button variant="contained" onClick={() => openNewConnection("openai")}>Add OpenAI-compatible</Button><Button variant="outlined" onClick={() => openNewConnection("ollama")}>Use Ollama</Button></Stack></>}
         <Alert severity="info" icon={false}>AI is optional. Browsing, Intake, and BM25 text search work without it.</Alert>
       </Stack></Paper>
 
@@ -333,7 +330,7 @@ export function ProcessorsPage() {
         </Stack></AccordionDetails></Accordion>
 
         <Accordion variant="outlined" disableGutters><AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>AI connections</Typography></AccordionSummary><AccordionDetails><Stack spacing={1.25}>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}><Button variant="outlined" onClick={() => openNewConnection("shirty")}>Add Shirty</Button><Button variant="outlined" onClick={() => openNewConnection("ollama")}>Add Ollama</Button><Button variant="outlined" onClick={() => openNewConnection("openai")}>Add OpenAI-compatible</Button></Stack>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}><Button variant="outlined" onClick={() => openNewConnection("openai")}>Add OpenAI-compatible</Button><Button variant="outlined" onClick={() => openNewConnection("ollama")}>Add Ollama</Button></Stack>
           {(data?.providers ?? []).map((provider) => <Paper key={provider.id} variant="outlined" sx={{ p: 1.5 }}><Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}><Stack><Typography variant="body2" fontWeight={700}>{provider.id}</Typography><Typography variant="caption" color="text.secondary">{provider.base_url} · priority {provider.priority} · {provider.enabled ? "enabled" : "disabled"}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => openExistingConnection(provider)}>Edit</Button><Button size="small" onClick={() => void checkConnection(provider)}>Test</Button>{provider.credential_present && provider.credential_source === "repo_env" ? <Button size="small" color="error" onClick={() => void forgetCredential(provider)}>Forget key</Button> : null}</Stack></Stack></Paper>)}
         </Stack></AccordionDetails></Accordion>
 
@@ -360,7 +357,7 @@ export function ProcessorsPage() {
 
     <Dialog open={connectionOpen} onClose={() => setConnectionOpen(false)} fullWidth maxWidth="sm"><Box component="form" onSubmit={(event) => void saveConnection(event)}>
       <DialogTitle>Connect AI</DialogTitle><DialogContent><Stack spacing={1.5} sx={{ pt: 0.5 }}>
-        <TextField select label="Connection" value={providerForm.type} onChange={(event) => setProviderForm(blankProvider(event.target.value as ModelProvider["type"]))}><MenuItem value="shirty">Shirty</MenuItem><MenuItem value="ollama">Ollama on this computer</MenuItem><MenuItem value="openai">Other OpenAI-compatible endpoint</MenuItem></TextField>
+        <TextField select label="Connection" value={providerForm.type} onChange={(event) => setProviderForm(blankProvider(event.target.value as ModelProvider["type"]))}><MenuItem value="ollama">Ollama on this computer</MenuItem><MenuItem value="openai">OpenAI-compatible endpoint</MenuItem></TextField>
         <TextField label="Endpoint URL" required value={providerForm.base_url} onChange={(event) => setProviderForm({ ...providerForm, base_url: event.target.value })} helperText={providerForm.type === "ollama" ? "Ollama is installed and started separately. Use its local address here." : "Use the OpenAI-compatible /v1 base address."} />
         {providerForm.type !== "ollama" ? <TextField type="password" label={providerForm.credential_present ? "Replace saved API key (optional)" : "API key"} value={apiKey} onChange={(event) => setApiKey(event.target.value)} helperText={providerForm.credential_source === "environment" ? "Managed by the process environment; it cannot be replaced here." : "Saved as plaintext in the repository-root .env, which Git ignores."} disabled={providerForm.credential_source === "environment"} /> : <Alert severity="info" icon={false}>Install and start Ollama yourself. OSII can inspect installed models and download the approved starters; use the Ollama CLI for other models and advanced options.</Alert>}
         <TextField label="Language model" value={providerForm.chat_model} onChange={(event) => setProviderForm({ ...providerForm, chat_model: event.target.value, synthesis_model: event.target.value })} helperText="Used for chat, summaries, and wiki generation." inputProps={{ list: "osii-model-options" }} />

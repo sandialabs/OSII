@@ -15,8 +15,6 @@ import requests
 from osii.domain.model_provider_config import (
     DEFAULT_OLLAMA_CHAT_MODEL,
     DEFAULT_OLLAMA_EMBEDDING_MODEL,
-    DEFAULT_SHIRTY_BASE_URL,
-    DEFAULT_SHIRTY_CHAT_MODEL,
 )
 from osii.domain.env_credentials import (
     local_config_writable,
@@ -26,7 +24,7 @@ from osii.domain.env_credentials import (
 
 
 router = APIRouter(prefix="/api/admin/model-providers", tags=["model-provider-administration"])
-VALID_TYPES = {"ollama", "openai", "shirty"}
+VALID_TYPES = {"ollama", "openai"}
 RECOMMENDED_OLLAMA_MODELS = [
     {
         "model": DEFAULT_OLLAMA_EMBEDDING_MODEL,
@@ -68,27 +66,18 @@ def _with_runtime_defaults(records: list[dict[str, Any]]) -> list[dict[str, Any]
     known = {item.get("id") for item in result}
     if "ollama-local" not in known:
         result.append({"id": "ollama-local", "type": "ollama", "base_url": os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/"), "enabled": True, "priority": 100, "embedding_model": os.getenv("OLLAMA_EMBEDDING_MODEL", "").strip() or DEFAULT_OLLAMA_EMBEDDING_MODEL, "synthesis_model": os.getenv("OLLAMA_SYNTHESIS_MODEL", "").strip() or DEFAULT_OLLAMA_CHAT_MODEL, "chat_model": os.getenv("OLLAMA_CHAT_MODEL", "").strip() or DEFAULT_OLLAMA_CHAT_MODEL, "credential_env": "", "implicit": True})
-    shirty_configured = (
-        os.getenv("OSII_ENVIRONMENT", "").strip().lower() == "corporate"
-        or bool(os.getenv("SHIRTY_BASE_URL", "").strip())
-        or bool(os.getenv("SHIRTY_API_KEY", "").strip())
-        or "shirty" in os.getenv("OPENAI_BASE_URL", "").lower()
-    )
-    if shirty_configured and "shirty-corporate" not in known:
+    openai_configured = bool(os.getenv("OPENAI_BASE_URL", "").strip())
+    if openai_configured and "openai-compatible" not in known:
         result.append({
-            "id": "shirty-corporate",
-            "type": "shirty",
-            "base_url": (
-                os.getenv("SHIRTY_BASE_URL", "").strip()
-                or os.getenv("OPENAI_BASE_URL", "").strip()
-                or DEFAULT_SHIRTY_BASE_URL
-            ).rstrip("/"),
+            "id": "openai-compatible",
+            "type": "openai",
+            "base_url": os.getenv("OPENAI_BASE_URL", "").strip().rstrip("/"),
             "enabled": True,
             "priority": 10,
-            "embedding_model": os.getenv("SHIRTY_EMBEDDING_MODEL", "").strip(),
-            "synthesis_model": os.getenv("SHIRTY_SYNTHESIS_MODEL", "").strip() or DEFAULT_SHIRTY_CHAT_MODEL,
-            "chat_model": os.getenv("SHIRTY_CHAT_MODEL", "").strip() or DEFAULT_SHIRTY_CHAT_MODEL,
-            "credential_env": "SHIRTY_API_KEY",
+            "embedding_model": os.getenv("OPENAI_EMBEDDING_MODEL", "").strip(),
+            "synthesis_model": os.getenv("OPENAI_SYNTHESIS_MODEL", "").strip(),
+            "chat_model": os.getenv("OPENAI_CHAT_MODEL", "").strip(),
+            "credential_env": "OPENAI_API_KEY",
             "implicit": True,
         })
     return result
@@ -133,9 +122,8 @@ def _validate(payload: dict[str, Any], provider_id: str | None = None) -> dict[s
 
 
 def _public(record: dict[str, Any]) -> dict[str, Any]:
-    credential_env = record.get("credential_env") or ("SHIRTY_API_KEY" if record.get("type") == "shirty" else "OSII_MODEL_API_KEY")
-    aliases = ("OPENAI_API_KEY",) if record.get("type") == "shirty" else ()
-    credential, source = resolve_env_value(str(credential_env), *aliases)
+    credential_env = record.get("credential_env") or ("" if record.get("type") == "ollama" else "OPENAI_API_KEY")
+    credential, source = resolve_env_value(str(credential_env))
     return {
         **record,
         "credential_required": record.get("type") != "ollama",
@@ -147,8 +135,8 @@ def _public(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _saved_credential_name(record: dict[str, Any]) -> str:
-    if record.get("type") == "shirty":
-        return "SHIRTY_API_KEY"
+    if record.get("type") == "openai" and record.get("id") == "openai-compatible":
+        return "OPENAI_API_KEY"
     configured = str(record.get("credential_env") or "").strip()
     if configured and configured != "OSII_MODEL_API_KEY":
         return configured
@@ -274,9 +262,8 @@ def provider_health(request: Request, provider_id: str):
     if not record:
         raise HTTPException(status_code=404, detail="model provider not found")
     path = "/api/tags" if record["type"] == "ollama" else "/models"
-    env_name = record.get("credential_env") or ("SHIRTY_API_KEY" if record["type"] == "shirty" else "OSII_MODEL_API_KEY")
-    aliases = ("OPENAI_API_KEY",) if record["type"] == "shirty" else ()
-    token, _ = resolve_env_value(str(env_name), *aliases)
+    env_name = record.get("credential_env") or ("" if record["type"] == "ollama" else "OPENAI_API_KEY")
+    token, _ = resolve_env_value(str(env_name))
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     try:
         response = requests.get(f"{record['base_url']}{path}", headers=headers, timeout=(3, 8))
@@ -303,8 +290,8 @@ def save_provider_credential(request: Request, provider_id: str, payload: dict):
         raise HTTPException(status_code=404, detail="model provider not found")
     if record.get("type") == "ollama":
         raise HTTPException(status_code=422, detail="Ollama does not use an API key")
-    current_name = str(record.get("credential_env") or ("SHIRTY_API_KEY" if record.get("type") == "shirty" else "OSII_MODEL_API_KEY"))
-    _, current_source = resolve_env_value(current_name, *(('OPENAI_API_KEY',) if record.get('type') == 'shirty' else ()))
+    current_name = str(record.get("credential_env") or "OPENAI_API_KEY")
+    _, current_source = resolve_env_value(current_name)
     if current_source == "environment":
         raise HTTPException(status_code=409, detail="This credential is managed by the process environment")
     name = _saved_credential_name(record)
@@ -328,8 +315,8 @@ def delete_provider_credential(request: Request, provider_id: str):
     record = _provider(request.app.state.osii_root.resolve(), provider_id)
     if record is None:
         raise HTTPException(status_code=404, detail="model provider not found")
-    current_name = str(record.get("credential_env") or ("SHIRTY_API_KEY" if record.get("type") == "shirty" else "OSII_MODEL_API_KEY"))
-    _, current_source = resolve_env_value(current_name, *(('OPENAI_API_KEY',) if record.get('type') == 'shirty' else ()))
+    current_name = str(record.get("credential_env") or "OPENAI_API_KEY")
+    _, current_source = resolve_env_value(current_name)
     if current_source == "environment":
         raise HTTPException(status_code=409, detail="This credential is managed by the process environment")
     name = _saved_credential_name(record)

@@ -79,7 +79,7 @@ def answer_question(osii_root: Path, request: ChatRequest) -> ChatResponse:
         model = settings.chat_model
         if provider == "ollama":
             model = settings.ollama_chat_model
-        elif provider in {"openai", "shirty"}:
+        elif provider == "openai":
             model = settings.openai_chat_model or model
         try:
             answer = run_chat_completion(

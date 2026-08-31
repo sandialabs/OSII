@@ -55,7 +55,7 @@ def run_chat_completion(
         response.raise_for_status()
         return (response.json().get("message", {}).get("content") or "").strip() or "[EMPTY_MODEL_OUTPUT]"
 
-    if provider not in {"openai", "shirty"}:
+    if provider != "openai":
         raise ValueError(f"Unsupported CHAT_PROVIDER: {provider}")
     if not settings.openai_compatible_base_url:
         raise ValueError(f"CHAT_PROVIDER={provider} requires an OpenAI-compatible endpoint.")

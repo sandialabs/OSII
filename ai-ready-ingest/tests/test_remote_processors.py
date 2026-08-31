@@ -40,21 +40,21 @@ def test_configured_processor_urls_includes_enabled_admin_registry(tmp_path, mon
     ]
 
 
-def test_shirty_provider_uses_standard_embedding_and_synthesis_adapters(tmp_path, monkeypatch):
+def test_openai_provider_uses_standard_embedding_and_synthesis_adapters(tmp_path, monkeypatch):
     monkeypatch.setenv("OSII_ROOT", str(tmp_path))
     monkeypatch.setenv("OSII_MODEL_BRIDGE_URL", "http://model-bridge:8095")
     state = tmp_path / "state"
     state.mkdir()
     (state / "model_providers.json").write_text(
-        '[{"id":"shirty-corporate","type":"shirty","base_url":"https://shirty.example/api/v1","enabled":true}]',
+        '[{"id":"openai-corporate","type":"openai","base_url":"https://openai.example/api/v1","enabled":true}]',
         encoding="utf-8",
     )
 
     urls = remote.configured_processor_urls()
 
     assert urls == [
-        "http://model-bridge:8095/shirty/embedder",
-        "http://model-bridge:8095/shirty/synthesizer",
+        "http://model-bridge:8095/openai/embedder",
+        "http://model-bridge:8095/openai/synthesizer",
     ]
     assert not any("extractor" in url for url in urls)
 

@@ -6,8 +6,8 @@ credential, or model cache.
 | Capability | Guaranteed baseline | Optional enhancement |
 |---|---|---|
 | Extraction | native text-layer PDF, Office, RTF, and text/data formats | Tika, Tesseract OCR, domain processor |
-| Synthesis | cited extractive Markdown preview | selected Ollama, OpenAI-compatible, or Shirty chat model |
-| Embedding | none required; lexical hashing remains an advanced compatibility method | selected Shirty, Ollama, or OpenAI-compatible embedding model |
+| Synthesis | cited extractive Markdown preview | selected Ollama, OpenAI-compatible, or OpenAI-compatible chat model |
+| Embedding | none required; lexical hashing remains an advanced compatibility method | selected OpenAI-compatible, Ollama, or OpenAI-compatible embedding model |
 | Search | BM25 | provider/model-specific semantic FAISS index |
 | Enrichment | statistics and keywords table | LLM wiki through the selected model-backed synthesizer; domain Processor API service |
 | Chat | grounded extractive answer | selected model provider |
@@ -83,12 +83,12 @@ ollama pull all-minilm
 `make dev-ollama` and `.\scripts\osii.ps1 dev-ollama` remain explicit aliases
 for this profile. Disable the Ollama provider in Setup to return chat,
 synthesis, and embedding to their guaranteed local baselines. A higher-priority
-enabled OpenAI-compatible or Shirty provider replaces Ollama capability by
+enabled OpenAI-compatible provider replaces Ollama capability by
 capability, without changing the rest of OSII.
 
 On Windows, append `-DryRun` to any host profile command to validate its
 service plan without opening ports, for example
-`.\scripts\osii.ps1 dev-corporate -DryRun`.
+`.\scripts\osii.ps1 dev-openai -DryRun`.
 
 ## Setup and local service control
 
@@ -189,12 +189,12 @@ lemmatized noun/adjective 2-, 3-, and 4-grams and a grounded list of named
 entity candidates. Both use standard Processor API artifact formats; see
 [Example keyword and entity enrichments](../tutorials/example-enrichments.md).
 
-`make dev-corporate` registers OSII's HTTP-only, OpenAI-compatible Shirty
-adapter for embeddings, synthesis, and chat. Extraction remains local through
+`make dev-openai` registers OSII's HTTP-only OpenAI-compatible adapter for
+embeddings, synthesis, and chat. Extraction remains local through
 native Python, Tika, Tesseract, or a domain Processor API service. The
 corresponding Windows command is
-`.\scripts\osii.ps1 dev-corporate`. No private Shirty package is installed;
-the adapter calls the documented bearer-authenticated Shirty endpoints.
+`.\scripts\osii.ps1 dev-openai`. No provider-specific package is installed;
+the adapter calls documented bearer-authenticated OpenAI-compatible endpoints.
 
 ## Failure behavior
 
@@ -223,7 +223,7 @@ Use `make dev-containers` when editable applications should use containerized
 Tika and Tesseract. Use `make build && make run` to test locally built images;
 corporate pilot hosts set their approved image tag and use `make run` without a
 local build. See [Corporate pilot images and Quay releases](publishing-images.md).
-Ollama and the upstream Shirty service remain separately managed endpoints.
+Ollama and the upstream OpenAI-compatible service remain separately managed endpoints.
 OSII images contain only their lightweight HTTP adapters, not private packages
 or model files.
 

@@ -53,9 +53,9 @@ python manage_notebooks.py to-notebooks
 jupyter lab
 ```
 
-Choose the **OSII demo** kernel and run the examples in numerical order. There
-are two alternative step-01 extraction paths; choose local Tesseract or the
-built-in Shirty HTTP adapter used by the corporate profile.
+Choose the **OSII demo** kernel and run the examples in numerical order. The
+step-01 extraction path uses local Tesseract. Configure an OpenAI-compatible
+model endpoint later for model-backed synthesis, embeddings, or chat.
 
 The notebook environment and host application environment have different
 jobs:

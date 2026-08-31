@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from osii.domain.env_credentials import resolve_env_value
-from osii.domain.model_provider_config import DEFAULT_SHIRTY_CHAT_MODEL
 
 
 @dataclass(frozen=True)
@@ -43,16 +41,9 @@ def get_chat_settings(osii_root: Path) -> ChatSettings:
     )
     ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
     ollama_model = os.getenv("OLLAMA_CHAT_MODEL", "llama3.2:1b").strip() or "llama3.2:1b"
-    openai_url = os.getenv("OSII_CHAT_BASE_URL", os.getenv("OSII_MODEL_BASE_URL", "")).rstrip("/")
-    openai_model = os.getenv("OSII_CHAT_MODEL", "").strip()
-    openai_key = resolve_env_value("OSII_MODEL_API_KEY")[0]
-    if primary == "shirty":
-        openai_url = f"{os.getenv('OSII_MODEL_BRIDGE_URL', 'http://127.0.0.1:8095').rstrip('/')}/shirty/v1"
-        openai_model = (
-            os.getenv("SHIRTY_CHAT_MODEL", DEFAULT_SHIRTY_CHAT_MODEL).strip()
-            or DEFAULT_SHIRTY_CHAT_MODEL
-        )
-        openai_key = ""
+    openai_url = f"{os.getenv('OSII_MODEL_BRIDGE_URL', 'http://127.0.0.1:8095').rstrip('/')}/openai/v1"
+    openai_model = os.getenv("OPENAI_CHAT_MODEL", os.getenv("OSII_CHAT_MODEL", "")).strip()
+    openai_key = ""
 
     records = _provider_records(osii_root)
     if records is not None:
@@ -73,23 +64,9 @@ def get_chat_settings(osii_root: Path) -> ChatSettings:
                         str(item.get("chat_model") or ollama_model).strip()
                         or ollama_model
                     )
-                elif kind == "shirty":
-                    configured.append("shirty")
-                    openai_url = (
-                        f"{os.getenv('OSII_MODEL_BRIDGE_URL', 'http://127.0.0.1:8095').rstrip('/')}/shirty/v1"
-                    )
-                    openai_model = (
-                        str(item.get("chat_model") or DEFAULT_SHIRTY_CHAT_MODEL).strip()
-                        or DEFAULT_SHIRTY_CHAT_MODEL
-                    )
-                    # The bundled bridge owns the upstream Shirty credential.
-                    openai_key = ""
                 elif kind in {"openai", "openai_compatible"}:
                     configured.append("openai")
-                    openai_url = str(item.get("base_url") or openai_url).rstrip("/")
                     openai_model = str(item.get("chat_model") or openai_model).strip()
-                    credential_env = str(item.get("credential_env") or "OSII_MODEL_API_KEY")
-                    openai_key = resolve_env_value(credential_env)[0]
             chain = tuple(dict.fromkeys([*configured, "extractive"]))
 
     aliases = {"openai_compatible": "openai"}
