@@ -357,6 +357,29 @@ def test_upload_then_enqueue_returns_durable_run(client, temp_upload_root: Path)
     assert status.json()["queue"][0]["status"] == "queued"
 
 
+def test_run_control_api_pauses_resumes_and_cancels_a_queued_run(
+    client,
+    temp_data_root: Path,
+):
+    source_file = temp_data_root / "priority-control.txt"
+    source_file.write_text("control this run", encoding="utf-8")
+    queued = client.post("/api/runs", json={"queue_paths": [str(source_file)]})
+    run_id = queued.json()["run_id"]
+
+    paused = client.post(f"/api/runs/{run_id}/pause")
+    assert paused.status_code == 200
+    assert paused.json()["status"] == "paused"
+    assert client.get(f"/api/runs/{run_id}").json()["status"] == "paused"
+
+    resumed = client.post(f"/api/runs/{run_id}/resume")
+    assert resumed.status_code == 200
+    assert resumed.json()["status"] == "queued"
+
+    cancelled = client.post(f"/api/runs/{run_id}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+
+
 def test_intake_preserves_expert_context_on_the_run(
     client,
     temp_data_root: Path,

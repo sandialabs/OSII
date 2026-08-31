@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from osii.domain.processing.jobs import (
     append_log,
+    cancel_queue_job,
     claim_next_queue_job,
     complete_queue_job,
     configure_job_store,
     get_run,
+    pause_queue_job,
     save_run,
 )
 
@@ -48,6 +51,10 @@ def execute_job(job: dict) -> None:
         enricher_name=payload.get("enricher_name") or None,
         enricher_config=payload.get("enricher_config") or {},
     )
+
+    run = get_run(job["run_id"])
+    if run and run.get("status") in {"paused", "cancelled"}:
+        return
 
     if payload.get("build_embeddings"):
         from osii.build_vector_index import main as build_vector_index_main
@@ -106,7 +113,27 @@ def main() -> None:
             continue
         try:
             execute_job(job)
-            complete_queue_job(job["id"])
+            run = get_run(job["run_id"])
+            if run and run.get("control_state") == "cancel_requested":
+                run["status"] = "cancelled"
+                run["control_state"] = "cancelled"
+                run["finished_at"] = datetime.now(UTC).isoformat()
+                for item in run.get("items", []):
+                    if item.get("status") in {"pending", "running"}:
+                        item["status"] = "cancelled"
+                save_run(run)
+                cancel_queue_job(job["id"])
+            elif run and run.get("control_state") == "pause_requested":
+                run["status"] = "paused"
+                run["control_state"] = "paused"
+                save_run(run)
+                pause_queue_job(job["id"])
+            elif run and run.get("status") == "paused":
+                pause_queue_job(job["id"])
+            elif run and run.get("status") == "cancelled":
+                cancel_queue_job(job["id"])
+            else:
+                complete_queue_job(job["id"])
         except Exception as exc:
             complete_queue_job(job["id"], error=str(exc))
 

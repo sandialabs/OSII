@@ -23,6 +23,7 @@ The dashboard is intentionally modular. It is a standalone frontend that talks t
 - Expand Library Insights on Home to view root-level standard enrichments without loading them into the normal file grid
 - Open root-level derived artifacts only when needed; long lists and wiki content stay within scrollable regions and standard table columns are sortable
 - Rescan the configured source root for moved originals and safely remap exact hash matches without rerunning extraction
+- Select any Ollama model discovered on the configured server independently for embedding, synthesis, and chat
 - Prepare for future document chat workflows
 
 ---

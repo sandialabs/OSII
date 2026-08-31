@@ -71,6 +71,16 @@ export async function listProcessingRuns(): Promise<{ runs: ProcessingRun[]; que
   return apiJson("/api/runs");
 }
 
+export async function controlProcessingRun(
+  runId: string,
+  action: "pause" | "resume" | "cancel",
+): Promise<{ run_id: string; status: string; queue_status: string }> {
+  return apiJson(`/api/runs/${encodeURIComponent(runId)}/${action}`, {
+    method: "POST",
+    json: {},
+  });
+}
+
 export async function listProcessorEndpoints(): Promise<{ processors: ProcessorEndpoint[] }> {
   return apiJson("/api/admin/processors");
 }

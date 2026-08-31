@@ -103,8 +103,9 @@ reloads backend services when source changes, and keeps generated data under
 Ollama, manage it separately. OSII then
 tries that separately running Ollama service with `all-minilm` for
 semantic embeddings and Meta `llama3.2:1b` for chat and synthesis. Open
-**Tools & services → AI models** to check the connection, see installed models, and explicitly download
-either approved starter model when missing. OSII bundles neither Ollama nor
+**Tools & services → AI models** to check the connection, see installed models,
+select any installed model independently for embedding, synthesis, and chat,
+and explicitly download either approved starter model when missing. OSII bundles neither Ollama nor
 model weights. Use `ollama list` and `ollama pull <model>` for additional model
 choices available in your environment. BM25 and extractive chat remain the automatic model-free
 fallbacks. Lexical hashing is available as an explicit no-model vector option;

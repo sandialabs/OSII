@@ -23,8 +23,11 @@ After extraction succeeds, choose one of these policies:
   primary extraction unchanged. Downstream work is not run against the new
   version until it becomes primary.
 
-The **Extractions** tab on a document shows its versions and allows a preserved
-version to become primary.
+The **Extractions** tab on a document shows its versions, lets the user queue
+that one original through any currently ready extractor, and allows a
+preserved version to become primary. This tab queues extraction only. Summary
+generation belongs to the separate **Syntheses** tab, while embeddings and
+enrichments remain separate downstream operations.
 
 ## Store layout
 
@@ -64,8 +67,15 @@ an explicit future retention operation removes them.
 
 ```http
 GET /api/objects/{file_id}/extractions
+POST /api/objects/{file_id}/extractions
 POST /api/objects/{file_id}/extractions/{extraction_id}/primary
 ```
+
+The document-level `POST` accepts `extractor_name` and an optional
+`extraction_policy` (`make_primary` or `save_variant`). It resolves the
+canonical original by its recorded path and hash, then sends one
+extraction-only operation to the normal durable run queue. If the original was
+moved or changed, rescan source paths before re-extracting it.
 
 `POST /api/resolve` accepts the same operation fields as `POST /api/runs` and
 returns `preview.processing_plan` with eligible, current, and blocked counts.

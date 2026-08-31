@@ -72,6 +72,69 @@ def test_extraction_variant_api_can_promote(client, temp_data_root: Path, temp_o
     assert promoted.json()["primary_id"] == second["variant_id"]
 
 
+def test_document_extraction_api_queues_only_the_selected_extractor(
+    client,
+    temp_data_root: Path,
+    temp_osii_root: Path,
+):
+    source = temp_data_root / "queued.txt"
+    source.write_text("queue this extraction", encoding="utf-8")
+    first = extract_document_variant(
+        extractor_name="native_text",
+        source_path=source,
+        data_volume_root=temp_data_root.parent,
+        osii_root=temp_osii_root,
+        make_primary=True,
+    )
+
+    queued = client.post(
+        f"/api/objects/{first['file_id']}/extractions",
+        json={
+            "extractor_name": "local.native-text",
+            "extraction_policy": "save_variant",
+        },
+    )
+
+    assert queued.status_code == 200
+    payload = queued.json()
+    assert payload["status"] == "queued"
+    run = client.get(f"/api/runs/{payload['run_id']}").json()
+    assert run["operations"] == {
+        "extract": True,
+        "extract_mode": "reprocess",
+        "extraction_policy": "save_variant",
+        "synthesize": None,
+        "embed": False,
+        "chunking": None,
+        "enrich": None,
+    }
+
+
+def test_document_extraction_api_rejects_a_missing_original(
+    client,
+    temp_data_root: Path,
+    temp_osii_root: Path,
+):
+    source = temp_data_root / "moved.txt"
+    source.write_text("move this original", encoding="utf-8")
+    first = extract_document_variant(
+        extractor_name="native_text",
+        source_path=source,
+        data_volume_root=temp_data_root.parent,
+        osii_root=temp_osii_root,
+        make_primary=True,
+    )
+    source.rename(temp_data_root / "new-location.txt")
+
+    response = client.post(
+        f"/api/objects/{first['file_id']}/extractions",
+        json={"extractor_name": "local.native-text"},
+    )
+
+    assert response.status_code == 409
+    assert "rescan source paths" in response.json()["detail"]
+
+
 def test_library_plan_skips_documents_without_extraction(
     client,
     temp_data_root: Path,

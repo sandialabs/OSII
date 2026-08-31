@@ -17,11 +17,13 @@ from osii.domain.processing.intake import (
 )
 from osii.domain.processing.jobs import (
     append_log,
+    control_run,
     create_run_record,
     enqueue_run,
     get_run,
     list_queue_jobs,
     list_runs,
+    queue_status_for_run,
     save_run,
 )
 from osii.domain.processing.manifests import save_manifest
@@ -45,6 +47,42 @@ from osii.synthesis.file.firstn import FirstNSynthesizer
 from osii.synthesis.file.recursive import RecursiveSynthesizer
 
 router = APIRouter(prefix="/api", tags=["runs"])
+
+
+def _finish_item_timing(item: dict, started: datetime) -> None:
+    finished = datetime.now(UTC)
+    item["finished_at"] = finished.isoformat()
+    item["duration_seconds"] = round(max(0.0, (finished - started).total_seconds()), 3)
+
+
+def _honor_run_control(run_id: str) -> bool:
+    """Stop safely between files when the API requested pause or cancellation."""
+    run = get_run(run_id)
+    if run is None:
+        return True
+    queue_status = queue_status_for_run(run_id)
+    control_state = (
+        "pause_requested" if queue_status == "pause_requested"
+        else "cancel_requested" if queue_status == "cancel_requested"
+        else run.get("control_state")
+    )
+    if control_state == "pause_requested":
+        run["status"] = "paused"
+        run["control_state"] = "paused"
+        save_run(run)
+        append_log(run_id, "Run paused after the current file completed.")
+        return True
+    if control_state == "cancel_requested":
+        run["status"] = "cancelled"
+        run["control_state"] = "cancelled"
+        run["finished_at"] = datetime.now(UTC).isoformat()
+        for item in run.get("items", []):
+            if item.get("status") in {"pending", "running"}:
+                item["status"] = "cancelled"
+        save_run(run)
+        append_log(run_id, "Run cancelled after the current file completed.")
+        return True
+    return False
 
 
 def normalize_user_path(raw: str | None) -> Path | None:
@@ -254,9 +292,16 @@ def run_worker(
         run = get_run(run_id)
         if run is None:
             return
+        if _honor_run_control(run_id):
+            return
+        run = get_run(run_id)
+        if run is None:
+            return
 
         run["status"] = "running"
-        run["started_at"] = datetime.now(UTC).isoformat()
+        run["control_state"] = "running"
+        if not run.get("started_at"):
+            run["started_at"] = datetime.now(UTC).isoformat()
         save_run(run)
 
         append_log(run_id, "Run started.")
@@ -297,6 +342,8 @@ def run_worker(
             append_log(run_id, f"Run manifest saved: {manifest_path.name}")
 
         for index, src in enumerate(resolved_files):
+            if _honor_run_control(run_id):
+                return
             run = get_run(run_id)
             if run is None:
                 return
@@ -314,6 +361,10 @@ def run_worker(
             run["items"][index]["extractor"] = extractor_name
             run["items"][index]["synthesizer"] = synthesizer_name
             run["items"][index]["enricher"] = enricher_name
+            item_started = datetime.now(UTC)
+            run["items"][index]["started_at"] = item_started.isoformat()
+            run["items"][index]["finished_at"] = None
+            run["items"][index]["duration_seconds"] = None
             save_run(run)
 
             try:
@@ -408,6 +459,7 @@ def run_worker(
                 run["items"][index]["enrichment"] = enrichment_result.get("result") if enrichment_result else None
                 run["items"][index]["enrichment_error"] = enrichment_error
                 run["items"][index]["error"] = "; ".join(errors) if errors else None
+                _finish_item_timing(run["items"][index], item_started)
                 run["completed"] += 1
                 save_run(run)
 
@@ -425,10 +477,14 @@ def run_worker(
 
                 run["items"][index]["status"] = "error"
                 run["items"][index]["error"] = str(exc)
+                _finish_item_timing(run["items"][index], item_started)
                 run["completed"] += 1
                 save_run(run)
 
                 append_log(run_id, f"Error: {src.name} -> {exc}")
+
+        if _honor_run_control(run_id):
+            return
 
         if workflow == "intake":
             top_level_doc_count, top_level_subfolder_count = build_folder_artifacts(
@@ -450,6 +506,9 @@ def run_worker(
             )
             append_log(run_id, "Collection synthesis updated.")
         rebuild_catalog(osii_store)
+
+        if _honor_run_control(run_id):
+            return
 
         run = get_run(run_id)
         if run is None:
@@ -666,6 +725,10 @@ async def start_run(request: Request, payload: dict):
             "enricher_config": enricher_config,
         },
     )
+    run["status"] = "queued"
+    run["control_state"] = "running"
+    run["queue_job_id"] = queue_job["id"]
+    save_run(run)
 
     return {
         "id": run["id"],
@@ -689,6 +752,16 @@ async def get_run_status(run_id: str):
     if job is None:
         return {"error": f"Run not found: {run_id}"}
     return job
+
+
+@router.post("/runs/{run_id}/{action}")
+async def control_run_status(run_id: str, action: str):
+    try:
+        return control_run(run_id, action)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/runs/{run_id}/logs")

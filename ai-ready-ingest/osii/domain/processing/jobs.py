@@ -202,6 +202,102 @@ def complete_queue_job(job_id: str, *, error: str | None = None) -> None:
         )
 
 
+def pause_queue_job(job_id: str) -> None:
+    with _connection() as conn:
+        conn.execute(
+            "UPDATE queue_jobs SET status = 'paused' WHERE id = ?",
+            (job_id,),
+        )
+
+
+def cancel_queue_job(job_id: str) -> None:
+    with _connection() as conn:
+        conn.execute(
+            "UPDATE queue_jobs SET status = 'cancelled', finished_at = ? WHERE id = ?",
+            (_now(), job_id),
+        )
+
+
+def queue_status_for_run(run_id: str) -> str | None:
+    with _connection() as conn:
+        row = conn.execute(
+            "SELECT status FROM queue_jobs WHERE run_id = ? ORDER BY created_at DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+    return str(row["status"]) if row else None
+
+
+def control_run(run_id: str, action: str) -> dict:
+    """Persist a cooperative pause, resume, or cancel request for one run."""
+    if action not in {"pause", "resume", "cancel"}:
+        raise ValueError("action must be pause, resume, or cancel")
+    run = get_run(run_id)
+    if run is None:
+        raise KeyError("run not found")
+    if run.get("status") in {"done", "error", "cancelled"}:
+        raise ValueError(f"cannot {action} a {run.get('status')} run")
+
+    with _connection() as conn:
+        row = conn.execute(
+            "SELECT id, status FROM queue_jobs WHERE run_id = ? ORDER BY created_at DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("this run is not managed by the durable processing queue")
+
+        queue_status = str(row["status"])
+        if action == "pause":
+            if queue_status == "paused":
+                return {"run_id": run_id, "status": "paused", "queue_status": "paused"}
+            if queue_status == "queued":
+                conn.execute("UPDATE queue_jobs SET status = 'paused' WHERE id = ?", (row["id"],))
+                run["status"] = "paused"
+                run["control_state"] = "paused"
+            elif queue_status == "running":
+                conn.execute("UPDATE queue_jobs SET status = 'pause_requested' WHERE id = ?", (row["id"],))
+                run["status"] = "pausing"
+                run["control_state"] = "pause_requested"
+            else:
+                raise ValueError(f"cannot pause a {queue_status} run")
+        elif action == "resume":
+            if queue_status != "paused":
+                raise ValueError(f"cannot resume a {queue_status} run")
+            conn.execute(
+                "UPDATE queue_jobs SET status = 'queued', finished_at = NULL, error = NULL WHERE id = ?",
+                (row["id"],),
+            )
+            run["status"] = "queued"
+            run["control_state"] = "running"
+            run["finished_at"] = None
+        else:
+            if queue_status in {"done", "error", "cancelled"}:
+                raise ValueError(f"cannot cancel a {queue_status} run")
+            if queue_status in {"running", "pause_requested"}:
+                conn.execute("UPDATE queue_jobs SET status = 'cancel_requested' WHERE id = ?", (row["id"],))
+                run["status"] = "cancelling"
+                run["control_state"] = "cancel_requested"
+            else:
+                conn.execute(
+                    "UPDATE queue_jobs SET status = 'cancelled', finished_at = ? WHERE id = ?",
+                    (_now(), row["id"]),
+                )
+                run["status"] = "cancelled"
+                run["control_state"] = "cancelled"
+                run["finished_at"] = _now()
+                for item in run.get("items", []):
+                    if item.get("status") in {"pending", "running"}:
+                        item["status"] = "cancelled"
+
+    save_run(run)
+    return {
+        "run_id": run_id,
+        "status": run["status"],
+        "queue_status": "queued" if action == "resume" else (
+            "paused" if run["status"] == "paused" else queue_status
+        ),
+    }
+
+
 def list_queue_jobs(*, limit: int = 100) -> list[dict]:
     if _STATE_DB is None:
         return []
@@ -231,7 +327,7 @@ def find_active_jobs_for_paths(paths: list[str]) -> list[dict]:
     matches: list[dict] = []
     with _connection() as conn:
         rows = conn.execute(
-            "SELECT id, run_id, payload_json, status FROM queue_jobs WHERE status IN ('queued', 'running')"
+            "SELECT id, run_id, payload_json, status FROM queue_jobs WHERE status IN ('queued', 'running', 'pause_requested', 'cancel_requested', 'paused')"
         ).fetchall()
     for row in rows:
         try:

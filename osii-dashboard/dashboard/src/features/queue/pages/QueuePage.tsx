@@ -27,8 +27,10 @@ import {
   Typography,
 } from "@mui/material";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
+import CancelOutlinedIcon from "@mui/icons-material/CancelOutlined";
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
 import FolderOutlinedIcon from "@mui/icons-material/FolderOutlined";
+import PauseCircleOutlineOutlinedIcon from "@mui/icons-material/PauseCircleOutlineOutlined";
 import PlayArrowOutlinedIcon from "@mui/icons-material/PlayArrowOutlined";
 import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
@@ -38,6 +40,7 @@ import { useNavigate } from "react-router-dom";
 
 import {
   browseIntake,
+  controlProcessingRun,
   createProcessingRun,
   getIntakeReadiness,
   listProcessingRuns,
@@ -47,6 +50,7 @@ import {
 } from "../../../api/queue";
 import type {
   QueueBrowseEntry,
+  ProcessingRun,
   SourceRescanResponse,
   UploadResponse,
 } from "../../../api/types";
@@ -91,6 +95,33 @@ function formatSize(size: number | null | undefined): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function secondsBetween(start?: string | null, end?: string | null): number | null {
+  if (!start) return null;
+  const startMs = Date.parse(start);
+  const endMs = end ? Date.parse(end) : Date.now();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null;
+  return Math.max(0, (endMs - startMs) / 1000);
+}
+
+function formatDuration(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return "not recorded";
+  if (seconds < 1) return `${Math.round(seconds * 1000)} ms`;
+  if (seconds < 60) return `${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)} s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.round(seconds % 60);
+  if (minutes < 60) return `${minutes}m ${remainder}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
+function completedFileDurations(run: ProcessingRun): number[] {
+  return (run.items ?? []).flatMap((item) => (
+    typeof item.duration_seconds === "number" && Number.isFinite(item.duration_seconds)
+      ? [item.duration_seconds]
+      : []
+  ));
+}
+
 function parentDisplay(display: string): string {
   const normalized = display.replace(/\\/g, "/");
   const parts = normalized.split("/");
@@ -130,6 +161,7 @@ export function QueuePage() {
   const [rescanning, setRescanning] = useState(false);
   const [rescanResult, setRescanResult] = useState<SourceRescanResponse | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [controllingRun, setControllingRun] = useState<string | null>(null);
 
   const selectedFilter = FILE_FILTERS.find(
     (option) => option.value === filterPreset,
@@ -166,7 +198,7 @@ export function QueuePage() {
     queryKey: ["processing-runs"],
     queryFn: listProcessingRuns,
     refetchInterval: (query) => query.state.data?.runs.some(
-      (run) => ["queued", "pending", "running"].includes(run.status),
+      (run) => ["queued", "pending", "running", "pausing", "cancelling"].includes(run.status),
     ) ? 1500 : 5000,
   });
   const readiness = useQuery({
@@ -250,6 +282,32 @@ export function QueuePage() {
     () => runs.data?.runs.slice(0, 10) ?? [],
     [runs.data],
   );
+
+  const controlRun = async (run: ProcessingRun, action: "pause" | "resume" | "cancel") => {
+    setControllingRun(`${run.id}:${action}`);
+    try {
+      const result = await controlProcessingRun(run.id, action);
+      setNotice({
+        severity: "info",
+        text: action === "pause"
+          ? "Pause requested. OSII will finish the current file, then free the worker for another run."
+          : action === "cancel"
+            ? "Cancellation requested. OSII will finish the current file, then stop this run."
+            : "Run resumed. Completed files will not be repeated.",
+      });
+      await queryClient.invalidateQueries({ queryKey: ["processing-runs"] });
+      if (result.status === "paused" || result.status === "cancelled") {
+        await runs.refetch();
+      }
+    } catch (error) {
+      setNotice({
+        severity: "error",
+        text: error instanceof Error ? error.message : `Could not ${action} run.`,
+      });
+    } finally {
+      setControllingRun(null);
+    }
+  };
 
   const addSharedEntry = (entry: QueueBrowseEntry) => {
     setIncludeSharedRoot(false);
@@ -1284,13 +1342,24 @@ export function QueuePage() {
       {section === "activity" ? <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
           <Typography fontWeight={700}>Processing activity</Typography>
-          {recentRuns.some((run) => ["queued", "pending", "running"].includes(run.status)) ? (
-            <Alert severity="success">
-              Intake runs sequentially. Open Files at any time to browse documents that have already completed.
+          {recentRuns.some((run) => ["queued", "pending", "running", "pausing", "cancelling"].includes(run.status)) ? (
+            <Alert severity="info">
+              Runs use one worker and process files sequentially. Pause a long run to let a newly queued priority run go next; pausing or cancelling takes effect safely after the current file finishes.
             </Alert>
           ) : null}
-          {recentRuns.map((run) => (
-            <Paper key={run.id} variant="outlined" sx={{ p: 1.5 }}>
+          {recentRuns.map((run) => {
+            const durations = completedFileDurations(run);
+            const processorSeconds = durations.reduce((total, duration) => total + duration, 0);
+            const averageSeconds = durations.length ? processorSeconds / durations.length : null;
+            const remainingFiles = Math.max(0, (run.total ?? 0) - (run.completed ?? 0));
+            const estimatedRemaining = averageSeconds == null ? null : averageSeconds * remainingFiles;
+            const elapsedSeconds = secondsBetween(run.started_at, run.finished_at);
+            const controllable = Boolean(run.workflow);
+            const canPause = controllable && ["queued", "pending", "running"].includes(run.status);
+            const canResume = controllable && run.status === "paused";
+            const canCancel = controllable && ["queued", "pending", "running", "pausing", "paused"].includes(run.status);
+            return (
+              <Paper key={run.id} variant="outlined" sx={{ p: 1.5 }}>
               <Stack
                 direction={{ xs: "column", sm: "row" }}
                 justifyContent="space-between"
@@ -1326,17 +1395,64 @@ export function QueuePage() {
                     {run.operations?.enrich ? <Chip size="small" label="Enrichment" /> : null}
                   </Stack>
                 </Stack>
-                <Chip
-                  color={
-                    run.status === "done"
-                      ? "success"
-                      : run.status === "error"
-                        ? "error"
-                        : "primary"
-                  }
-                  label={run.status}
-                />
+                <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+                  {canPause ? (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<PauseCircleOutlineOutlinedIcon />}
+                      disabled={controllingRun !== null}
+                      onClick={() => void controlRun(run, "pause")}
+                    >
+                      Pause
+                    </Button>
+                  ) : null}
+                  {canResume ? (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      startIcon={<PlayArrowOutlinedIcon />}
+                      disabled={controllingRun !== null}
+                      onClick={() => void controlRun(run, "resume")}
+                    >
+                      Resume
+                    </Button>
+                  ) : null}
+                  {canCancel ? (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="error"
+                      startIcon={<CancelOutlinedIcon />}
+                      disabled={controllingRun !== null}
+                      onClick={() => void controlRun(run, "cancel")}
+                    >
+                      Cancel
+                    </Button>
+                  ) : null}
+                  <Chip
+                    color={
+                      run.status === "done"
+                        ? "success"
+                        : ["error", "cancelled"].includes(run.status)
+                          ? "error"
+                          : run.status === "paused"
+                            ? "warning"
+                            : "primary"
+                    }
+                    label={run.status}
+                  />
+                </Stack>
               </Stack>
+              {run.started_at ? (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  Elapsed {formatDuration(elapsedSeconds)}
+                  {durations.length ? ` · measured processor time ${formatDuration(processorSeconds)} · average ${formatDuration(averageSeconds)} per completed file` : ""}
+                  {estimatedRemaining != null && remainingFiles > 0 ? ` · estimated remaining ${formatDuration(estimatedRemaining)}` : ""}
+                </Typography>
+              ) : null}
+              {run.status === "pausing" ? <Alert severity="info" sx={{ mt: 1 }}>Finishing the current file before pausing.</Alert> : null}
+              {run.status === "cancelling" ? <Alert severity="info" sx={{ mt: 1 }}>Finishing the current file before cancelling.</Alert> : null}
               {run.error ? <Alert severity="error" sx={{ mt: 1 }}>{run.error}</Alert> : null}
               {run.indexing_error ? <Alert severity="warning" sx={{ mt: 1 }}>{run.indexing_error}</Alert> : null}
               {(run.logs ?? []).slice(-2).map((line) => (
@@ -1349,8 +1465,40 @@ export function QueuePage() {
                   {line}
                 </Typography>
               ))}
-            </Paper>
-          ))}
+              {(run.items ?? []).some((item) => item.started_at || item.duration_seconds != null) ? (
+                <Accordion variant="outlined" disableGutters sx={{ mt: 1 }}>
+                  <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
+                    <Typography variant="body2" fontWeight={600}>File processing times</Typography>
+                  </AccordionSummary>
+                  <AccordionDetails sx={{ maxHeight: 300, overflow: "auto" }}>
+                    <Stack spacing={1}>
+                      {durations.length ? (
+                        <Typography variant="caption" color="text.secondary">
+                          Fastest {formatDuration(Math.min(...durations))} · slowest {formatDuration(Math.max(...durations))} · average {formatDuration(averageSeconds)}
+                        </Typography>
+                      ) : null}
+                      {(run.items ?? []).map((item, index) => (
+                        <Stack
+                          key={`${item.display}-${index}`}
+                          direction={{ xs: "column", sm: "row" }}
+                          justifyContent="space-between"
+                          spacing={0.5}
+                        >
+                          <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>{item.display}</Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
+                            {item.status} · {formatDuration(
+                              item.duration_seconds ?? secondsBetween(item.started_at, item.finished_at),
+                            )}
+                          </Typography>
+                        </Stack>
+                      ))}
+                    </Stack>
+                  </AccordionDetails>
+                </Accordion>
+              ) : null}
+              </Paper>
+            );
+          })}
           {!recentRuns.length ? (
             <Typography color="text.secondary">No intake runs yet.</Typography>
           ) : null}

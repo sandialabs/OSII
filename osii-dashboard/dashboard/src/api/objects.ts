@@ -11,6 +11,7 @@ import type {
   ObjectTextsResponse,
   PreferredTextResponse,
   ExtractionVariantsResponse,
+  ProcessingRun,
 } from "./types";
 
 export async function getObject(fileId: string): Promise<ObjectAggregate> {
@@ -43,6 +44,19 @@ export async function getObjectTexts(fileId: string): Promise<ObjectTextsRespons
 export async function getObjectExtractions(fileId: string): Promise<ExtractionVariantsResponse> {
   return apiJson<ExtractionVariantsResponse>(
     `/api/objects/${encodeURIComponent(fileId)}/extractions`,
+  );
+}
+
+export async function queueObjectExtraction(
+  fileId: string,
+  payload: {
+    extractor_name: string;
+    extraction_policy: "make_primary" | "save_variant";
+  },
+): Promise<ProcessingRun> {
+  return apiJson<ProcessingRun>(
+    `/api/objects/${encodeURIComponent(fileId)}/extractions`,
+    { method: "POST", json: payload },
   );
 }
 

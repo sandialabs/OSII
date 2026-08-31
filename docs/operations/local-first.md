@@ -121,6 +121,24 @@ paths**. OSII hashes current files, previews exact-content matches, and can
 remap moved originals without re-running extraction; changed and new files are
 left for a normal Intake run.
 
+### Pause, resume, cancel, and inspect timing
+
+Open **Intake → Activity** to control durable processing runs. **Pause** takes
+effect after the file currently being processed, leaving completed documents
+intact and freeing the single worker to claim another queued run. This makes it
+safe to queue a small priority selection while a large batch is pausing.
+**Resume** returns the paused run to the queue without repeating completed
+files. **Cancel** is terminal and likewise takes effect after the current file;
+it does not interrupt an extractor while that extractor is writing one
+document.
+
+Activity records start, finish, and processing duration for every attempted
+file. Each run shows wall-clock elapsed time, measured processor time, average
+time per completed file, and a simple remaining-time estimate. Expand **File
+processing times** for fastest, slowest, and individual file durations. The
+estimate is observational rather than a guarantee because file sizes and
+selected processors can vary substantially.
+
 ## Generate an LLM wiki
 
 With a model-backed synthesizer selected in Tools, OSII can compose that

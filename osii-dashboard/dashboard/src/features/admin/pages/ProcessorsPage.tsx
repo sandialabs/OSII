@@ -12,6 +12,8 @@ const DEFAULT_CHAT_MODEL = "llama3.2:1b";
 const DEFAULT_SHIRTY_MODEL = "meta-llama/Llama-3.1-8B-Instruct";
 const DEFAULT_SHIRTY_URL = "https://shirty.sandia.gov/api/v1";
 
+type ProviderModelSelection = Pick<ModelProvider, "embedding_model" | "synthesis_model" | "chat_model">;
+
 function modelMatches(installed: string, requested: string) {
   return installed === requested || installed === `${requested}:latest` || requested === `${installed}:latest`;
 }
@@ -20,6 +22,24 @@ function formatBytes(value?: number | null) {
   if (!value) return "size unavailable";
   if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(1)} GB`;
   return `${Math.round(value / 1024 ** 2)} MB`;
+}
+
+function modelSelection(provider: ModelProvider): ProviderModelSelection {
+  return {
+    embedding_model: provider.embedding_model,
+    synthesis_model: provider.synthesis_model,
+    chat_model: provider.chat_model,
+  };
+}
+
+function selectableModelNames(provider: ModelProvider, health: ModelProviderHealth) {
+  return [...new Set([
+    ...health.models,
+    ...health.model_details.map((model) => model.name),
+    provider.embedding_model,
+    provider.synthesis_model,
+    provider.chat_model,
+  ].filter(Boolean))].sort((left, right) => left.localeCompare(right));
 }
 
 const LOCAL_CAPABILITY_GROUPS = [
@@ -166,7 +186,9 @@ export function ProcessorsPage() {
     priority: 100, embedding_model: DEFAULT_EMBEDDING_MODEL, synthesis_model: DEFAULT_CHAT_MODEL, chat_model: DEFAULT_CHAT_MODEL, credential_env: "",
   });
   const [providerHealth, setProviderHealth] = useState<Record<string, ModelProviderHealth>>({});
+  const [providerModelDrafts, setProviderModelDrafts] = useState<Record<string, ProviderModelSelection>>({});
   const [checkingProviderId, setCheckingProviderId] = useState<string | null>(null);
+  const [savingProviderId, setSavingProviderId] = useState<string | null>(null);
   const [pullJobs, setPullJobs] = useState<Record<string, ModelPullJob>>({});
   const [section, setSection] = useState<"overview" | "models" | "capabilities" | "endpoints">("overview");
   const [showProviderForm, setShowProviderForm] = useState(false);
@@ -291,6 +313,39 @@ export function ProcessorsPage() {
     }
   };
 
+  const updateProviderModel = (provider: ModelProvider, field: keyof ProviderModelSelection, model: string) => {
+    setProviderModelDrafts((current) => ({
+      ...current,
+      [provider.id]: {
+        ...(current[provider.id] ?? modelSelection(provider)),
+        [field]: model,
+      },
+    }));
+  };
+
+  const saveProviderModels = async (provider: ModelProvider) => {
+    const selection = providerModelDrafts[provider.id] ?? modelSelection(provider);
+    setSavingProviderId(provider.id);
+    try {
+      await createModelProvider({ ...provider, ...selection });
+      setMessage(`${provider.id}: model selections saved. New embedding models require a separate compatible index.`);
+      setProviderModelDrafts((current) => {
+        const next = { ...current };
+        delete next[provider.id];
+        return next;
+      });
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["admin", "model-providers"] }),
+        client.invalidateQueries({ queryKey: ["intake", "readiness"] }),
+      ]);
+      await loadProviderModels({ ...provider, ...selection });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save model selections.");
+    } finally {
+      setSavingProviderId(null);
+    }
+  };
+
   const editCapability = (item: CapabilityReadiness) => {
     setEditingCapability(item.id);
     setCapabilityDraft(defaultConfig(item, processorSettings.data?.settings[item.id] ?? {}));
@@ -395,7 +450,55 @@ export function ProcessorsPage() {
                         </Stack>
                       );
                     })}
-                    {!providerHealth[provider.id].model_details.length ? <Typography variant="caption" color="text.secondary">Ollama is connected, but no models are installed.</Typography> : null}
+                    {!providerHealth[provider.id].models.length ? <Typography variant="caption" color="text.secondary">Ollama is connected, but no models are installed.</Typography> : null}
+                    {providerHealth[provider.id].models.length ? (
+                      <Paper variant="outlined" sx={{ p: 1.25, mt: 0.5 }}>
+                        <Stack spacing={1}>
+                          <Stack spacing={0.25}>
+                            <Typography variant="body2" fontWeight={700}>Use installed models in OSII</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Select independently because a chat model may not support embeddings. OSII uses the exact Ollama model name shown here; changing the embedding model requires building a compatible index.
+                            </Typography>
+                          </Stack>
+                          <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
+                            {([
+                              ["embedding_model", "Embedding model"],
+                              ["synthesis_model", "Synthesis model"],
+                              ["chat_model", "Chat model"],
+                            ] as const).map(([field, label]) => {
+                              const selection = providerModelDrafts[provider.id] ?? modelSelection(provider);
+                              const installed = providerHealth[provider.id].models.some((name) => modelMatches(name, selection[field]));
+                              return (
+                                <TextField
+                                  key={field}
+                                  select
+                                  fullWidth
+                                  size="small"
+                                  label={label}
+                                  value={selection[field]}
+                                  onChange={(event) => updateProviderModel(provider, field, event.target.value)}
+                                  helperText={installed ? "Installed" : "Configured model is not installed"}
+                                >
+                                  {selectableModelNames(provider, providerHealth[provider.id]).map((name) => (
+                                    <MenuItem key={name} value={name}>
+                                      {name}{providerHealth[provider.id].models.some((installedName) => modelMatches(installedName, name)) ? "" : " (not installed)"}
+                                    </MenuItem>
+                                  ))}
+                                </TextField>
+                              );
+                            })}
+                          </Stack>
+                          <Button
+                            variant="contained"
+                            disabled={savingProviderId === provider.id || !providerModelDrafts[provider.id]}
+                            onClick={() => void saveProviderModels(provider)}
+                            sx={{ alignSelf: "flex-start" }}
+                          >
+                            {savingProviderId === provider.id ? "Saving…" : "Save model selections"}
+                          </Button>
+                        </Stack>
+                      </Paper>
+                    ) : null}
                   </Stack>
                 ) : null}
                 {provider.type === "ollama" && providerHealth[provider.id] && !providerHealth[provider.id].ok ? <Alert severity="info"><strong>OSII could not reach Ollama at this URL.</strong> Ollama may be stopped, installed at another address, or not installed. Start the application or run <code>ollama serve</code>, verify the URL, and check again.</Alert> : null}

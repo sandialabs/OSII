@@ -29,6 +29,12 @@ bundles no server or weights.
 
 Configure non-secret fields in **Tools & services → AI models**: provider ID, base
 URL, enabled state, priority, and exact embedding/synthesis/chat model names.
+After checking an Ollama connection, use the three selectors under **Use
+installed models in OSII** to choose any model returned by Ollama for embedding,
+synthesis, or chat. The choices are independent because not every generative
+model supports embeddings. OSII saves the exact installed name, including its
+tag. Selecting a different embedding model does not reuse the previous vector
+index; build a compatible index for that model.
 Missing installed models still include copy-paste `ollama pull <model>`
 commands for environments where browser-initiated downloads are disabled.
 
