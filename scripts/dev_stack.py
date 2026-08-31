@@ -15,6 +15,8 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -371,6 +373,44 @@ def stop_service(process: subprocess.Popen[bytes]) -> None:
             process.wait(timeout=5)
 
 
+def wait_for_http_service(
+    *,
+    service_name: str,
+    url: str,
+    processes: dict[str, tuple[Service, subprocess.Popen[bytes]]],
+    timeout_seconds: float = 90.0,
+) -> None:
+    """Wait for a required service without letting the UI race its startup."""
+    deadline = time.monotonic() + timeout_seconds
+    # Local readiness checks must never be routed through a corporate HTTP
+    # proxy, even when proxy environment variables are present.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    print(f"[dev] Waiting for {service_name}: {url}")
+
+    while time.monotonic() < deadline:
+        for name, (_, process) in processes.items():
+            return_code = process.poll()
+            if return_code is not None:
+                raise RuntimeError(
+                    f"{name} exited with code {return_code} while waiting for "
+                    f"{service_name}. Review that service's error above."
+                )
+
+        try:
+            with opener.open(url, timeout=1.0) as response:
+                if 200 <= response.status < 300:
+                    print(f"[dev] {service_name} is ready.")
+                    return
+        except (OSError, urllib.error.URLError):
+            pass
+        time.sleep(0.25)
+
+    raise RuntimeError(
+        f"{service_name} did not become ready within {timeout_seconds:.0f} seconds at {url}. "
+        "Review the API startup output above; the dashboard was not started."
+    )
+
+
 def run(
     examples: bool,
     provider_profile: str,
@@ -396,10 +436,22 @@ def run(
             prepare_dependencies(uv, npm, env)
 
         processes: dict[str, tuple[Service, subprocess.Popen[bytes]]] = {}
+        dashboard_service = next(service for service in services if service.name == "dashboard")
         for service in services:
+            if service.name == "dashboard":
+                continue
             processes[service.name] = (service, start_service(service, env))
         dashboard_port = env.get("OSII_DASHBOARD_PORT", "5173")
         api_port = env.get("OSII_API_PORT", "8511")
+        wait_for_http_service(
+            service_name="OSII backend API",
+            url=f"http://127.0.0.1:{api_port}/health",
+            processes=processes,
+        )
+        processes[dashboard_service.name] = (
+            dashboard_service,
+            start_service(dashboard_service, env),
+        )
         print()
         print(f"[dev] Dashboard: http://localhost:{dashboard_port}")
         print(f"[dev] API health: http://localhost:{api_port}/health")

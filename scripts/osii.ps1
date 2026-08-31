@@ -73,7 +73,7 @@ function Invoke-OsiiDevLauncher {
     }
     & $UvExecutable.Source run --no-project --python 3.11 python scripts/dev_stack.py @LauncherArguments
     if ($LASTEXITCODE -ne 0) {
-        throw "Bare-metal development stack exited with code $LASTEXITCODE."
+        throw "Bare-metal development stack exited with code $LASTEXITCODE. Review the first [dev] service error above for the cause."
     }
 }
 

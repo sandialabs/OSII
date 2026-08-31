@@ -362,6 +362,13 @@ export function ProcessorsPage() {
     }
   };
 
+  const backendConfigurationUnavailable = [
+    processors,
+    providers,
+    readiness,
+    processorSettings,
+  ].some((query) => query.isError);
+
   return (
     <Stack spacing={3}>
       <Stack spacing={0.5}>
@@ -371,6 +378,13 @@ export function ProcessorsPage() {
         </Typography>
       </Stack>
       {message ? <Alert severity={message.includes("failed") || message.includes("Could not") ? "error" : "info"}>{message}</Alert> : null}
+      {backendConfigurationUnavailable ? (
+        <Alert severity="error">
+          <strong>Tools could not load configuration from the OSII backend on port 8511.</strong>{" "}
+          Keep the development launcher running and verify <code>http://127.0.0.1:8511/health</code>.
+          Model providers and starter-model download buttons remain hidden until the backend responds.
+        </Alert>
+      ) : null}
 
       <Paper variant="outlined" sx={{ px: 1 }}>
         <Tabs value={section} onChange={(_, value) => setSection(value)} variant="scrollable" allowScrollButtonsMobile aria-label="Tool sections">

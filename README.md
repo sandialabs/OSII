@@ -124,8 +124,11 @@ cd C:\path\to\osii
 ```
 
 The first development startup may take longer while dependencies are checked.
-Later starts reuse the ignored `osii-env` Python environment. When the terminal
-output settles, open:
+Later starts reuse the ignored `osii-env` Python environment. The launcher
+waits for the backend health check before starting the dashboard, so Windows
+users do not land in a half-started interface filled with proxy errors. If the
+API fails, the dashboard stays stopped and the terminal identifies the service
+that exited or timed out. When the terminal output settles, open:
 
 - **OSII dashboard:** <http://localhost:5173>
 - **Backend status:** <http://localhost:8511/health>

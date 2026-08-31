@@ -34,6 +34,12 @@ generation or embedding request until that capability is used; Tools performs
 only model discovery. Run applications without any processor or bridge using
 `make dev-core`.
 
+The host launcher starts the dashboard only after `http://127.0.0.1:8511/health`
+responds. This is especially important on Windows, where several simultaneous
+`uv run` processes can initialize more slowly. A backend failure therefore
+produces a specific terminal error instead of a dashboard that repeatedly
+reports Vite proxy failures.
+
 Host Python dependencies live in the ignored `osii-env/` directory. OSII uses
 that visible name because current macOS Python releases can skip editable
 package path files beneath a hidden `.venv` directory.
