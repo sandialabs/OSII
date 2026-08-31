@@ -8,6 +8,5 @@ These implementations are intentionally small and readable:
 - `enricher.py`: scope text to a standard entity-list artifact.
 
 They demonstrate contracts, not production algorithms. Copy one into its own
-service directory, add domain dependencies and tests, then containerize it in
-the same pattern as `services/table-pdf-enricher`.
-
+service directory or repository, add domain dependencies and tests, then build
+and deploy it as an independently addressable Processor API service.

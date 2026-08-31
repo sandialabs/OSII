@@ -118,14 +118,6 @@ services:
         condition: service_healthy
     profiles: ["agents"]
 
-  table-pdf-enricher:
-    build:
-      context: .
-      dockerfile: services/table-pdf-enricher/Dockerfile
-    ports:
-      - "${OSII_EXAMPLE_PROCESSOR_PORT:-8091}:8091"
-    profiles: ["examples"]
-
   tesseract:
     build:
       context: ai-ready-tool-shelf/osii-tesseract

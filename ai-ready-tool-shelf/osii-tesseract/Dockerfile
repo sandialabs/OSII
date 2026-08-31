@@ -34,6 +34,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY README.md .
 COPY config ./config
+COPY docs ./docs
 
 EXPOSE 8080
 

@@ -13,6 +13,11 @@ It supports:
 - per-document OCR for PDFs and images
 - a demo UI for tuning OpenCV region-detection parameters before running OCR
 
+This is a standalone specialty OCR API, consumed by OSII through its own
+adapter rather than the generic Processor API v1. The exact OSII boundary is
+bundled in the image at `/app/docs/OSII_INTEGRATION.md`; the endpoint contract
+is at `/app/docs/API.md` and the running OpenAPI schema is at `/docs`.
+
 ## Highlights
 
 - Detect text regions first, then run OCR

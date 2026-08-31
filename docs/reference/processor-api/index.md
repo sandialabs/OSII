@@ -32,9 +32,8 @@ Detailed contracts:
 - [Enrichment API](enrichment.md)
 - [Standard artifact formats](standard-artifacts.md)
 
-Copyable implementations live in
-`packages/osii-processor-sdk/examples` and the containerized table example lives
-in `services/table-pdf-enricher`.
+Copyable implementations live in `packages/osii-processor-sdk/examples`.
+Start there when creating an independently deployable custom processor.
 
 `config_schema` uses the ordinary JSON Schema object/property vocabulary. The
 dashboard currently renders string fields (use `format: "textarea"` for long

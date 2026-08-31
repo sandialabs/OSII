@@ -25,6 +25,7 @@ COPY services/local-embedder /workspace/services/local-embedder
 COPY services/local-enricher /workspace/services/local-enricher
 COPY services/model-provider-bridge /workspace/services/model-provider-bridge
 COPY services/baseline-processors/run.py /workspace/run.py
+COPY services/baseline-processors/PROCESSOR_API.md /workspace/PROCESSOR_API.md
 
 RUN addgroup --system osii && adduser --system --ingroup osii osii
 USER osii

@@ -29,7 +29,7 @@ similarity and verifies the vector-index pipeline, but it is not a semantic
 language model. Every index records provider, model, dimension, and
 normalization metadata. Switching vector spaces requires rebuilding.
 
-Experimental Jina and Model2Vec services live in the separate
+Experimental MiniLM and Model2Vec services live in the separate
 [OSII model tool chest](https://github.com/heidikmkv/osii-model-tool-chest).
 They are not part of the OSII dependency lock, images, profiles, or recommended
 runtime. Review their dependency and remote-code risks independently.

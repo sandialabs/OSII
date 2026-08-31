@@ -43,7 +43,6 @@ COMPONENTS: dict[str, tuple[ExportEntry, ...]] = {
     "tools": (
         ExportEntry("ai-ready-tool-shelf", "tools"),
         ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
-        ExportEntry("services/table-pdf-enricher", "services/table-pdf-enricher"),
         ExportEntry("services/local-extractor", "services/local-extractor"),
         ExportEntry("services/local-synthesizer", "services/local-synthesizer"),
         ExportEntry("services/local-embedder", "services/local-embedder"),
@@ -52,6 +51,9 @@ COMPONENTS: dict[str, tuple[ExportEntry, ...]] = {
         ExportEntry("services/baseline-processors", "services/baseline-processors"),
         ExportEntry("docs/extending", "docs/extending"),
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
+    ),
+    "osii-tesseract": (
+        ExportEntry("ai-ready-tool-shelf/osii-tesseract", "."),
     ),
     "notebooks": (
         ExportEntry("osii-demo-notebooks", "."),
@@ -146,6 +148,7 @@ def write_manifest(output: Path, selected: list[str]) -> None:
             "backend": "Publish the osii Python package to the corporate package registry before exporting MCP consumers.",
             "frontend": "Configure its API endpoint for the deployed OSII backend.",
             "tools": "Processor services use the shared osii-processor-sdk contract package.",
+            "osii-tesseract": "Specialty OCR service with its own OpenCV/Tesseract API and documented OSII adapter contract.",
         },
     }
     (output / "EXPORT_MANIFEST.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

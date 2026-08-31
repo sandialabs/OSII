@@ -1,8 +1,8 @@
-# Tutorial: build a hello table enricher
+# Tutorial: build a hello enricher
 
-This tutorial uses the included table enricher to demonstrate the complete
-extension loop. The processor reads pipe-delimited lines and returns a standard
-table artifact. Replace its small parser with your own domain logic later.
+This tutorial starts with the SDK's small enricher example and demonstrates the
+complete extension loop. Copy it into a new repository, then replace its
+placeholder logic with domain-specific behavior.
 
 ## What you will build
 
@@ -12,15 +12,15 @@ The service exposes:
 - `GET /v1/descriptor`;
 - `POST /v1/enrich`.
 
-Its implementation is
-`services/table-pdf-enricher/app/main.py`. The important shape is:
+Its implementation starts at
+`packages/osii-processor-sdk/examples/enricher.py`. The important shape is:
 
 ```python
-class TablePdfEnricher(Enricher):
+class DomainEnricher(Enricher):
     descriptor = ProcessorDescriptor(
-        name="example.table-pdf",
+        name="example.domain-enricher",
         version="0.1.0",
-        display_name="Example Table PDF Enricher",
+        display_name="Example Domain Enricher",
         kind=ProcessorKind.ENRICHER,
         # capabilities and configuration schema omitted here
     )
@@ -45,7 +45,7 @@ class TablePdfEnricher(Enricher):
         )
 ```
 
-`create_processor_app(TablePdfEnricher())` supplies the FastAPI application and
+`create_processor_app(DomainEnricher())` supplies the FastAPI application and
 all three endpoints.
 
 ## 1. Run the contract tests
@@ -60,7 +60,7 @@ uv run --package osii-processor-sdk pytest packages/osii-processor-sdk/tests
 These tests validate strict model behavior. Add processor-specific tests beside
 your copied service using representative input and expected table rows.
 
-## 2. Start OSII and the example
+## 2. Create and run your service
 
 Put a text file containing pipe-delimited data in `osii-data/source`, for
 example:
@@ -71,42 +71,45 @@ A-101 | 22.4 | 101.2
 A-102 | 24.1 | 100.8
 ```
 
-Start the required services:
+Copy the SDK example into its own service repository, add its package metadata
+and a small FastAPI entry point using `create_processor_app`, then build its
+container. The example is intentionally not an OSII-managed container: it is
+your service, with its own repository and release cycle.
+
+Start OSII separately:
 
 ```bash
-docker compose --profile examples --profile ocr up --build \
-  api worker dashboard tika tesseract table-pdf-enricher
+make run
 ```
-
-Podman users can replace `docker compose` with `podman compose`.
 
 ## 3. Register and test the processor
 
 1. Open <http://localhost:5173/admin/processors>.
-2. Enter ID `example-table-pdf`.
-3. Enter display name `Example Table PDF Enricher`.
+2. Enter an ID such as `my-domain-enricher`.
+3. Enter your service's display name.
 4. Select kind `enricher`.
-5. Enter base URL `http://table-pdf-enricher:8091`.
+5. Enter its reachable base URL.
 6. Select **Add processor**.
 7. Select **Health**, then **Test**. Both should pass.
 
-Use the container-network URL above, not `localhost`: the OSII API calls the
-processor from another container.
+When both OSII and the processor run in containers, use the processor's
+container-network URL rather than `localhost`: the OSII API calls it from a
+different container.
 
 ## 4. Produce and view the artifact
 
 1. Open **Intake**, choose a broad folder or the sample file, and start intake.
 2. Open the resulting file in the dashboard.
-3. In the file action area, choose `example.table-pdf` and run enrichment.
+3. In the file action area, choose your enricher and run enrichment.
 4. Open the **Enrichments** tab.
 
 The table appears without custom frontend code because it uses
 `TableArtifactData`. The same JSON is available to agents through the
 enrichment artifact APIs.
 
-## 5. Turn the example into your processor
+## 5. Finish the processor
 
-Copy `services/table-pdf-enricher` to a new service directory, then:
+In its own repository:
 
 1. rename the package, class, and descriptor;
 2. replace only the parsing logic first;

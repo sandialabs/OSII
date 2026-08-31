@@ -8,7 +8,6 @@ members = [
   "ai-ready-ingest",
   "ai-ready-mcp",
   "packages/osii-processor-sdk",
-  "services/table-pdf-enricher",
   "services/local-extractor",
   "services/local-synthesizer",
   "services/local-embedder",

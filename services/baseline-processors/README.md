@@ -15,3 +15,7 @@ podman run --rm -p 8085:8085 quay.io/your-org/osii-baseline-processors:0.1.0 emb
 The image contains no model weights, Hugging Face client, Ollama runtime, or
 corporate dependency. The model bridge makes HTTP calls only when an optional
 provider capability is selected.
+
+The Processor API v1 contract is included in every image at
+`/workspace/PROCESSOR_API.md`; each running service also exposes its exact
+OpenAPI schema at `/docs`.

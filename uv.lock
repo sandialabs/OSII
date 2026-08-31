@@ -17,7 +17,6 @@ members = [
     "osii-model-provider-bridge",
     "osii-monorepo",
     "osii-processor-sdk",
-    "osii-table-pdf-enricher",
 ]
 
 [[package]]
@@ -1158,21 +1157,6 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
 ]
 provides-extras = ["dev"]
-
-[[package]]
-name = "osii-table-pdf-enricher"
-version = "0.1.0"
-source = { editable = "services/table-pdf-enricher" }
-dependencies = [
-    { name = "osii-processor-sdk" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "osii-processor-sdk", editable = "packages/osii-processor-sdk" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.35,<1" },
-]
 
 [[package]]
 name = "packaging"
