@@ -70,7 +70,7 @@ rather than the incidental layout of a drive.
 ## Copy the extension
 
 The complete processor is
-[`examples/tabular-dataset-processors/dataset_processors.py`](../../examples/tabular-dataset-processors/dataset_processors.py).
+[`examples/tabular-dataset-processors/dataset_processors.py`](https://github.com/sandialabs/OSII/blob/main/examples/tabular-dataset-processors/dataset_processors.py).
 It contains one extractor and one enricher built only against the public
 Processor SDK. A subject-matter expert can copy it into an independent
 repository, replace the CSV parser with a laboratory or domain parser, and
@@ -78,4 +78,4 @@ retain the same descriptors, typed requests, provenance, and standard table
 output.
 
 For direct Python use, continue with
-[`11_Explore_tabular_datasets.py`](../../osii-demo-notebooks/11_Explore_tabular_datasets.py).
+[`11_Explore_tabular_datasets.py`](https://github.com/sandialabs/OSII/blob/main/osii-demo-notebooks/11_Explore_tabular_datasets.py).

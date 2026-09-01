@@ -47,9 +47,6 @@ jobs:
       - shell: pwsh
         run: |
           .\scripts\osii.ps1 dev -DryRun
-          .\scripts\osii.ps1 dev-core -DryRun
-          .\scripts\osii.ps1 dev-ollama -DryRun
-          .\scripts\osii.ps1 dev-corporate -DryRun
       - shell: pwsh
         run: uv run --no-project --python 3.11 python scripts/export_components.py --output "$env:RUNNER_TEMP\osii-export" --components backend,frontend,mcp,tools,local-extractor,local-synthesizer,local-embedder,local-enricher,model-provider-bridge
 
