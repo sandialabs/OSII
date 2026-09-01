@@ -73,6 +73,10 @@ export async function listProcessingRuns(): Promise<{ runs: ProcessingRun[]; que
   return apiJson("/api/runs");
 }
 
+export async function getProcessingRunLogs(runId: string): Promise<{ run_id: string; logs: string[] }> {
+  return apiJson(`/api/runs/${encodeURIComponent(runId)}/logs`);
+}
+
 export async function controlProcessingRun(
   runId: string,
   action: "pause" | "resume" | "cancel",

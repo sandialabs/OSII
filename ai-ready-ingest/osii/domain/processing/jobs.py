@@ -79,7 +79,7 @@ def append_log(run_id: str, message: str) -> None:
             if run is None:
                 return
             RUNS[run_id] = run
-        timestamp = datetime.now().strftime("%H:%M:%S")
+        timestamp = datetime.now(UTC).strftime("%H:%M:%S")
         run["logs"].append(f"[{timestamp}] {message}")
         save_run(run)
 
@@ -134,6 +134,54 @@ def _load_run(run_id: str) -> dict | None:
     return json.loads(row["data_json"]) if row else None
 
 
+def _latest_queue_state(run_id: str) -> dict | None:
+    if _STATE_DB is None:
+        return None
+    with _connection() as conn:
+        row = conn.execute(
+            """
+            SELECT status, finished_at, error
+            FROM queue_jobs
+            WHERE run_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (run_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def _reconcile_terminal_queue_state(run: dict) -> dict:
+    """Keep the user-facing run truthful when the worker fails outside its task."""
+    queue = _latest_queue_state(str(run["id"]))
+    if queue is None:
+        return run
+
+    queue_status = str(queue["status"])
+    current_status = str(run.get("status") or "")
+    changed = False
+    if queue_status == "error" and current_status not in {"done", "error", "cancelled"}:
+        detail = str(queue.get("error") or "The processing worker stopped unexpectedly.")
+        run["status"] = "error"
+        run["control_state"] = "error"
+        run["error"] = detail
+        run["finished_at"] = queue.get("finished_at") or _now()
+        log_line = f"Worker error: {detail}"
+        if not any(log_line in line for line in run.get("logs", [])):
+            timestamp = datetime.now(UTC).strftime("%H:%M:%S")
+            run.setdefault("logs", []).append(f"[{timestamp}] {log_line}")
+        changed = True
+    elif queue_status == "cancelled" and current_status not in {"done", "error", "cancelled"}:
+        run["status"] = "cancelled"
+        run["control_state"] = "cancelled"
+        run["finished_at"] = queue.get("finished_at") or _now()
+        changed = True
+
+    if changed:
+        save_run(run)
+    return run
+
+
 def get_run(run_id: str) -> dict | None:
     with RUNS_LOCK:
         # API and worker are separate host processes. The durable store is the
@@ -141,6 +189,7 @@ def get_run(run_id: str) -> dict | None:
         # showing a run as pending after the worker has already completed it.
         run = _load_run(run_id)
         if run is not None:
+            run = _reconcile_terminal_queue_state(run)
             RUNS[run_id] = run
             return run
         return RUNS.get(run_id)
@@ -153,7 +202,10 @@ def list_runs(*, limit: int = 100) -> list[dict]:
         rows = conn.execute(
             "SELECT data_json FROM runs ORDER BY updated_at DESC LIMIT ?", (max(1, min(limit, 500)),)
         ).fetchall()
-    return [json.loads(row["data_json"]) for row in rows]
+    return [
+        _reconcile_terminal_queue_state(json.loads(row["data_json"]))
+        for row in rows
+    ]
 
 
 def enqueue_run(run_id: str, payload: dict[str, Any]) -> dict:

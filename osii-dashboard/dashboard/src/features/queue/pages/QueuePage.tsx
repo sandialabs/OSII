@@ -1,7 +1,9 @@
 import {
   ChangeEvent,
   useDeferredValue,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -9,6 +11,7 @@ import {
   AccordionDetails,
   AccordionSummary,
   Alert,
+  Box,
   Button,
   Checkbox,
   Chip,
@@ -42,6 +45,7 @@ import {
   browseIntake,
   controlProcessingRun,
   createProcessingRun,
+  getProcessingRunLogs,
   getIntakeReadiness,
   listProcessingRuns,
   rescanSourcePaths,
@@ -165,6 +169,8 @@ export function QueuePage() {
   const [rescanResult, setRescanResult] = useState<SourceRescanResponse | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [controllingRun, setControllingRun] = useState<string | null>(null);
+  const [selectedLogRunId, setSelectedLogRunId] = useState<string | null>(null);
+  const logPanelRef = useRef<HTMLPreElement | null>(null);
 
   const selectedFilter = FILE_FILTERS.find(
     (option) => option.value === filterPreset,
@@ -285,6 +291,30 @@ export function QueuePage() {
     () => runs.data?.runs.slice(0, 10) ?? [],
     [runs.data],
   );
+  const selectedLogRun = recentRuns.find((run) => run.id === selectedLogRunId);
+  const runLogs = useQuery({
+    queryKey: ["processing-runs", selectedLogRunId, "logs"],
+    queryFn: () => getProcessingRunLogs(selectedLogRunId ?? ""),
+    enabled: section === "activity" && Boolean(selectedLogRunId),
+    refetchInterval: selectedLogRun
+      && ["queued", "pending", "running", "pausing", "cancelling"].includes(selectedLogRun.status)
+      ? 1000
+      : 5000,
+  });
+  const displayedLogLines = runLogs.data?.logs ?? selectedLogRun?.logs ?? [];
+
+  useEffect(() => {
+    if (section !== "activity" || selectedLogRunId || !recentRuns.length) return;
+    const visibleRun = recentRuns.find((run) => (
+      ["queued", "pending", "running", "pausing", "cancelling", "error"].includes(run.status)
+    )) ?? recentRuns[0];
+    setSelectedLogRunId(visibleRun.id);
+  }, [recentRuns, section, selectedLogRunId]);
+
+  useEffect(() => {
+    const panel = logPanelRef.current;
+    if (panel) panel.scrollTop = panel.scrollHeight;
+  }, [displayedLogLines.length, selectedLogRunId]);
 
   const controlRun = async (run: ProcessingRun, action: "pause" | "resume" | "cancel") => {
     setControllingRun(`${run.id}:${action}`);
@@ -438,6 +468,7 @@ export function QueuePage() {
       setCollectionName("");
       setCollectionDescription("");
       await queryClient.invalidateQueries({ queryKey: ["processing-runs"] });
+      setSelectedLogRunId(run.id);
       setSection("activity");
     } catch (error) {
       setNotice({
@@ -1415,6 +1446,7 @@ export function QueuePage() {
             const remainingFiles = Math.max(0, (run.total ?? 0) - (run.completed ?? 0));
             const estimatedRemaining = averageSeconds == null ? null : averageSeconds * remainingFiles;
             const elapsedSeconds = secondsBetween(run.started_at, run.finished_at);
+            const itemErrors = (run.items ?? []).filter((item) => item.error);
             const controllable = Boolean(run.workflow);
             const canPause = controllable && ["queued", "pending", "running"].includes(run.status);
             const canResume = controllable && run.status === "paused";
@@ -1457,6 +1489,13 @@ export function QueuePage() {
                   </Stack>
                 </Stack>
                 <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <Button
+                    size="small"
+                    variant={selectedLogRunId === run.id ? "contained" : "text"}
+                    onClick={() => setSelectedLogRunId(run.id)}
+                  >
+                    View log
+                  </Button>
                   {canPause ? (
                     <Button
                       size="small"
@@ -1516,6 +1555,16 @@ export function QueuePage() {
               {run.status === "cancelling" ? <Alert severity="info" sx={{ mt: 1 }}>Finishing the current file before cancelling.</Alert> : null}
               {run.error ? <Alert severity="error" sx={{ mt: 1 }}>{run.error}</Alert> : null}
               {run.indexing_error ? <Alert severity="warning" sx={{ mt: 1 }}>{run.indexing_error}</Alert> : null}
+              {itemErrors.length ? (
+                <Alert severity="error" sx={{ mt: 1 }}>
+                  {itemErrors.slice(0, 3).map((item, index) => (
+                    <Typography key={`${item.display}-${index}`} variant="body2">
+                      {item.display}: {item.error}
+                    </Typography>
+                  ))}
+                  {itemErrors.length > 3 ? `And ${itemErrors.length - 3} more file error(s).` : null}
+                </Alert>
+              ) : null}
               {(run.logs ?? []).slice(-2).map((line) => (
                 <Typography
                   key={line}
@@ -1560,6 +1609,57 @@ export function QueuePage() {
               </Paper>
             );
           })}
+          {selectedLogRunId ? (
+            <Paper
+              variant="outlined"
+              sx={{
+                bgcolor: "#10151d",
+                color: "#d8e2ef",
+                borderColor: "#344155",
+                overflow: "hidden",
+              }}
+            >
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                justifyContent="space-between"
+                alignItems={{ sm: "center" }}
+                spacing={1}
+                sx={{ px: 1.5, py: 1, borderBottom: "1px solid #344155" }}
+              >
+                <Typography variant="body2" fontWeight={700} color="inherit">
+                  Live run log · {selectedLogRunId.slice(0, 8)}
+                  {selectedLogRun ? ` · ${selectedLogRun.status}` : ""}
+                </Typography>
+                <Stack direction="row" spacing={1}>
+                  <Button size="small" color="inherit" onClick={() => void runLogs.refetch()}>
+                    Refresh
+                  </Button>
+                </Stack>
+              </Stack>
+              <Box
+                component="pre"
+                ref={logPanelRef}
+                aria-live="polite"
+                sx={{
+                  m: 0,
+                  p: 1.5,
+                  minHeight: 120,
+                  maxHeight: 300,
+                  overflow: "auto",
+                  whiteSpace: "pre-wrap",
+                  overflowWrap: "anywhere",
+                  fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+                  fontSize: "0.78rem",
+                  lineHeight: 1.55,
+                }}
+              >
+                {runLogs.isError
+                  ? "Could not load this run log. Use Refresh after confirming the backend is available."
+                  : displayedLogLines.join("\n")
+                    || "Waiting for the worker to begin this run…"}
+              </Box>
+            </Paper>
+          ) : null}
           {!recentRuns.length ? (
             <Typography color="text.secondary">No intake runs yet.</Typography>
           ) : null}

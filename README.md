@@ -172,7 +172,10 @@ extraction to existing documents without repeating unrelated work.
 **Activity** keeps run history out of the setup forms. The entire shared volume
 is the default scope; file-type and glob rules narrow it rather than replacing
 it. Files are processed sequentially and appear under **Files** as each
-extraction completes.
+extraction completes. Activity also shows a scrollable live run log at the
+bottom of the page. Worker or processor failures change the run to **error**,
+show the underlying message, and remove pause/cancel buttons that no longer
+apply.
 
 Re-extraction is versioned. A better extractor can be saved beside the current
 result or made primary while preserving the previous version. See

@@ -162,6 +162,12 @@ processing times** for fastest, slowest, and individual file durations. The
 estimate is observational rather than a guarantee because file sizes and
 selected processors can vary substantially.
 
+Select **View log** on a run to show its complete, live-updating log in the
+scrollable terminal panel at the bottom of Activity. A worker failure that
+happens before the first file begins is reconciled from the durable queue into
+an **error** run with the actual exception. Terminal runs no longer offer
+pause, resume, or cancel actions.
+
 ## Generate an LLM wiki
 
 With a model-backed synthesizer selected in Setup, OSII can compose that
