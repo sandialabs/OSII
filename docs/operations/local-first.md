@@ -106,10 +106,11 @@ must not be copied or shared. Only the key's environment-variable name enters
 Process environment values take precedence, and file writes are disabled in
 container or administrator-managed deployments.
 
-The optional OpenCV/Tesseract OCR service can also run without a container.
-The Tesseract executable is a separate manual installation and must already be
-on `PATH`; verify that first with `tesseract --version`, then select **Start**
-beside **Tesseract OCR** in Setup.
+The recommended OpenCV/Tesseract OCR extractor is supplied by the separate
+OSII model tool chest. In a container deployment, OSII starts its published
+image by default and discovers it through Processor API v1. For host
+development, run the tool-chest image separately and add its URL to
+`OSII_PROCESSORS`; it remains swappable with any other Processor API extractor.
 
 The OSII wrapper listens on port 8080 and exposes its region-tuning interface at
 `http://localhost:8080/demo`. OCR extraction stores normalized region boxes, which the Source and Split View

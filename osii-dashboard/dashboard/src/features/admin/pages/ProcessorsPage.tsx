@@ -263,7 +263,6 @@ export function ProcessorsPage() {
   const data = setup.data;
   const primaryProvider = [...(data?.providers ?? [])].filter((item) => item.enabled).sort((a, b) => a.priority - b.priority)[0];
   const tika = data?.services.find((service) => service.id === "tika");
-  const tesseract = data?.services.find((service) => service.id === "tesseract");
   const discoveredModels = providerHealth[providerForm.id]?.models ?? [];
 
   return <Stack spacing={2.5}>
@@ -294,7 +293,6 @@ export function ProcessorsPage() {
         <Chip size="small" color={data?.extraction_ready ? "success" : "error"} label={data?.extraction_ready ? "Basic document reading ready" : "Document reading unavailable"} sx={{ alignSelf: "flex-start" }} />
         <Divider />
         {tika ? <ServiceRow service={tika} busy={serviceBusy === tika.id} onAction={(action) => void runServiceAction(tika, action)} /> : <Typography variant="caption">Apache Tika controls are available when OSII runs through the local launcher.</Typography>}
-        {tesseract ? <ServiceRow service={tesseract} busy={serviceBusy === tesseract.id} onAction={(action) => void runServiceAction(tesseract, action)} /> : null}
       </Stack></Paper>
 
       <Paper variant="outlined" sx={{ p: 2 }}><Stack spacing={1.25}>

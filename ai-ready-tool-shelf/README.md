@@ -6,17 +6,10 @@ its own repository in a corporate environment.
 
 Examples:
 - a standalone embedder or LLM service
-- Tesseract with a custom OpenCV frontend to capture table regions.
+- a domain-specific utility that does not belong in the recommended model tool chest.
 
 This directory keeps tool-specific setup and configuration separate from core
 application code. A generic custom extractor, synthesizer, embedder, or
 enricher should implement OSII Processor API v1 through
 `osii-processor-sdk`; a specialty tool may retain its own API when OSII has a
 documented adapter boundary.
-
-To export the Tesseract service as the starting tree for its own repository:
-
-```bash
-uv run --no-project --python 3.11 python scripts/export_components.py \
-  --output ../osii-component-export --components osii-tesseract
-```

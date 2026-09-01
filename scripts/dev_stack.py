@@ -55,7 +55,6 @@ CAPABILITY_SERVICE_INFO = {
     "enricher": ("Statistics and keywords enricher", "Creates local document statistics and keyword artifacts.", "/health"),
     "model-bridge": ("AI provider bridge", "Connects OSII to Ollama or an OpenAI-compatible endpoint.", "/health"),
     "tika": ("Apache Tika", "Adds broad document-format text extraction using Podman or Docker.", "/version"),
-    "tesseract": ("Tesseract OCR", "Reads scanned PDFs and returns page-region coordinates.", "/health"),
 }
 
 
@@ -112,7 +111,6 @@ def build_environment(
 
     api_port = env.get("OSII_API_PORT", "8511")
     embeddings_port = env.get("OSII_EMBEDDINGS_PORT", "8085")
-    tesseract_port = env.get("OSII_TESSERACT_PORT", "8080")
     tika_port = env.get("OSII_TIKA_PORT", "9998")
     mcp_port = env.get("OSII_MCP_PORT", "8022")
     workspace_python_path = os.pathsep.join(
@@ -144,7 +142,6 @@ def build_environment(
             "OSII_ROOT": str(osii_root),
             "UPLOAD_ORIGINALS_ROOT": str(uploads_root),
             "TIKA_URL": f"http://127.0.0.1:{tika_port}",
-            "OSII_TESSERACT_URL": f"http://127.0.0.1:{tesseract_port}",
             "OSII_BACKEND_BASE_URL": f"http://127.0.0.1:{api_port}",
             "MCP_HOST": "127.0.0.1",
             "MCP_PORT": mcp_port,
@@ -428,19 +425,6 @@ class CapabilitySupervisor:
             for service in services
             if service.name in CAPABILITY_SERVICE_INFO
         }
-        tesseract_port = int(env.get("OSII_TESSERACT_PORT", "8080"))
-        self.services["tesseract"] = Service(
-            "tesseract",
-            (
-                uv, "run", "--no-project", "--python", "3.11",
-                "--with-requirements", "requirements.txt", "python", "-m",
-                "uvicorn", "app.main:app", "--host", "127.0.0.1",
-                "--port", str(tesseract_port),
-            ),
-            REPOSITORY_ROOT / "ai-ready-tool-shelf" / "osii-tesseract",
-            tesseract_port,
-            (("ENABLE_DEMO", "true"),),
-        )
         self.tika_port = int(env.get("OSII_TIKA_PORT", "9998"))
         self.server: ThreadingHTTPServer | None = None
 
@@ -530,8 +514,6 @@ class CapabilitySupervisor:
             prerequisite = None
             if service_id == "tika" and self._compose_command() is None:
                 prerequisite = "Install Podman Compose or Docker Compose to run Apache Tika."
-            elif service_id == "tesseract" and shutil.which("tesseract") is None:
-                prerequisite = "Install the Tesseract executable and make it available on PATH."
             return {
                 "id": service_id,
                 "display_name": title,

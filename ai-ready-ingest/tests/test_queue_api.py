@@ -64,13 +64,13 @@ def test_browse_and_preview_report_processed_files(
         json={
             "queue_paths": [str(temp_data_root)],
             "include_patterns": "*.pdf",
-            "extractor_overrides": {".pdf": "osii_tesseract"},
+            "extractor_overrides": {".pdf": "toolchest.tesseract-opencv"},
         },
     )
     assert overridden.status_code == 200
     assert (
         overridden.json()["preview"]["extractor_plan"][0]["extractor"]
-        == "osii_tesseract"
+        == "toolchest.tesseract-opencv"
     )
 
 

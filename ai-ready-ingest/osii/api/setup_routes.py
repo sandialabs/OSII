@@ -50,7 +50,6 @@ def _health_only_services(readiness: dict[str, Any]) -> list[dict[str, Any]]:
     }
     definitions = (
         ("tika", "Apache Tika", "Adds broad document-format text extraction."),
-        ("osii_tesseract", "Tesseract OCR", "Reads scanned PDFs and returns page-region coordinates."),
         ("local.native-text", "Python document extractor", "Reads text-layer PDFs, Office files, and text formats."),
         ("local.extractive-preview", "Source excerpt preview", "Creates a cited preview without an AI model."),
         ("local.hashing", "Lexical hashing compatibility embedder", "Optional lexical vectors; BM25 works without it."),
@@ -62,7 +61,7 @@ def _health_only_services(readiness: dict[str, Any]) -> list[dict[str, Any]]:
         if item is None:
             continue
         result.append({
-            "id": "tesseract" if capability_id == "osii_tesseract" else capability_id.split(".")[-1],
+            "id": capability_id.split(".")[-1],
             "display_name": title,
             "description": description,
             "status": "external" if item.get("available") else "stopped",

@@ -23,18 +23,12 @@ Export only selected components:
 uv run --no-project --python 3.11 python scripts/export_components.py --output ../osii-component-export --components backend,frontend,mcp
 ```
 
-Export the standalone OpenCV/Tesseract service as its own repository source:
-
-```bash
-uv run --no-project --python 3.11 python scripts/export_components.py --output ../osii-component-export --components osii-tesseract
-```
-
 The output contains `backend`, `frontend`, `mcp`, `tools`, `notebooks`, the
 shared `baseline-processors` image source, the four independently exportable
 local processors, and the HTTP-only `model-provider-bridge` directory, plus
-`EXPORT_MANIFEST.json`. `osii-tesseract` exports its Dockerfile, tuning UI, OCR
-API contract, and OSII adapter contract as a self-contained service. RAG and
-grounded chat are part of the backend export; they are not a separate component. The backend Dockerfile is adapted to use its
+`EXPORT_MANIFEST.json`. The OpenCV/Tesseract extractor is released from the
+separate `osii-model-tool-chest` repository. RAG and grounded chat are part of
+the backend export; they are not a separate component. The backend Dockerfile is adapted to use its
 exported directory as its build context. The MCP export is prepared to install
 `osii` from the receiving environment's package registry. Standalone processor
 exports receive their own small Dockerfile even though the monorepo publishes

@@ -192,12 +192,6 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
     tika_url = os.getenv("TIKA_URL", "http://localhost:9998").rstrip("/")
     tika_available, tika_detail = _service_probe(f"{tika_url}/version")
 
-    tesseract_url = os.getenv(
-        "OSII_TESSERACT_URL",
-        "http://127.0.0.1:8080",
-    ).rstrip("/")
-    tesseract_available, tesseract_detail = _service_probe(f"{tesseract_url}/health")
-
     nemotron_url = os.getenv("NEMOTRON_BASE_URL", "").strip().rstrip("/")
     if nemotron_url:
         nemotron_available, nemotron_detail = _service_probe(
@@ -215,18 +209,6 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
             "description": "General text extraction for PDFs, Office files, and catch-all formats.",
             "available": tika_available,
             "detail": tika_detail,
-            "bundled": True,
-        },
-        {
-            "id": "osii_tesseract",
-            "aliases": ["osii_tesseract"],
-            "display_name": "OSII Tesseract OCR",
-            "description": (
-                "Optional OCR extraction for scanned PDFs. Tesseract reads page images and "
-                "returns grounded text with page-region bounding boxes; start it separately."
-            ),
-            "available": tesseract_available,
-            "detail": tesseract_detail,
             "bundled": True,
         },
         {

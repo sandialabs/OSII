@@ -87,7 +87,10 @@ ownership of the sequence, scope, evidence, and final citations.
   chat, and transitional local processors
 - `osii-dashboard`: browser application
 - `ai-ready-mcp`: agent-facing adapter
-- `ai-ready-tool-shelf`: optional third-party/model runtimes pending migration
+- `osii-model-tool-chest` (separate repository): swappable, recommended model
+  and OCR implementations such as the OpenCV/Tesseract region extractor
+- `ai-ready-tool-shelf`: genuinely one-off utilities that are not recommended
+  OSII deployment components
 
 ## Trust boundary
 

@@ -140,13 +140,12 @@ Put files in `demo-workspace/documents/`, beside the bundled `purcell.pdf`.
 Additional files there are ignored by Git. OSII reads the originals in place
 and writes all derived data under `demo-workspace/.osii/`.
 
-The bundled PDF is scanned. To run the public OCR path, install Tesseract,
-start the normal stack, then select **Start** beside **Tesseract OCR** in
-**Setup**:
+The bundled PDF is scanned. To run the public OCR path, start the
+OpenCV/Tesseract Processor API service from the OSII model tool chest, then
+configure its URL in `OSII_PROCESSORS` before starting OSII:
 
 ```bash
-tesseract --version
-make dev
+podman run --rm -p 8080:8080 osii-tesseract
 ```
 
 Wait until <http://127.0.0.1:8080/health> returns `{"status":"ok"}`. The

@@ -20,7 +20,6 @@ def test_supervisor_http_requires_private_token(tmp_path):
     supervisor = DEV_STACK.CapabilitySupervisor(
         services=[],
         env={
-            "OSII_TESSERACT_PORT": "18080",
             "OSII_TIKA_PORT": "19998",
         },
         uv="uv",
@@ -42,7 +41,7 @@ def test_supervisor_http_requires_private_token(tmp_path):
         )
         with urllib.request.urlopen(request) as response:
             payload = json.load(response)
-        assert {item["id"] for item in payload["services"]} == {"tesseract", "tika"}
+        assert {item["id"] for item in payload["services"]} == {"tika"}
     finally:
         supervisor.close()
 
@@ -50,7 +49,7 @@ def test_supervisor_http_requires_private_token(tmp_path):
 def test_supervisor_rejects_unknown_services_and_actions():
     supervisor = DEV_STACK.CapabilitySupervisor(
         services=[],
-        env={"OSII_TESSERACT_PORT": "18080", "OSII_TIKA_PORT": "19998"},
+        env={"OSII_TIKA_PORT": "19998"},
         uv="uv",
         token="private-token",
     )

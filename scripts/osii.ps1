@@ -103,7 +103,7 @@ try {
             Invoke-OsiiDevLauncher @("--examples")
         }
         "run" {
-            Invoke-OsiiCompose @("up", "--no-build", "--pull", "missing", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "dashboard")
+            Invoke-OsiiCompose @("up", "--no-build", "--pull", "missing", "tesseract", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "dashboard")
         }
         "down" {
             Invoke-OsiiCompose @("down")

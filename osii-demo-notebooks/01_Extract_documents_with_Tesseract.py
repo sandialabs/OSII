@@ -81,10 +81,7 @@ print("OCR status:", ocr_health or "offline")
 # %%
 def extractor_for(source_file):
     if source_file.suffix.lower() == ".pdf":
-        return "osii_tesseract", {
-            "osii_tesseract_base_url": OCR_URL,
-            "language": "en",
-        }
+        return "toolchest.tesseract-opencv", {"language": "en"}
     return "native_text", {"chunk_chars": 4000}
 
 

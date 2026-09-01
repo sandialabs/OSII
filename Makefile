@@ -27,7 +27,7 @@ dev-datasets: demo-data
 
 # Start the normal integrated stack from existing images, without rebuilding.
 run:
-	$(COMPOSE) up --no-build --pull missing local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker dashboard
+	$(COMPOSE) up --no-build --pull missing tesseract local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker dashboard
 
 down:
 	$(COMPOSE) down

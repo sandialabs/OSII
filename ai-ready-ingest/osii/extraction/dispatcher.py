@@ -1,6 +1,5 @@
 from pathlib import Path
 
-from osii.extraction.osii_tesseract_extractor import OsiiTesseractExtractor
 from osii.extraction.banyan_extractor import PdfDefaultExtractor
 from osii.extraction.tika_extractor import TikaCatchallExtractor
 from osii.extraction.native_text_extractor import NativeTextExtractor
@@ -21,8 +20,6 @@ def dispatch_extract(
         extractor = TikaCatchallExtractor()
     elif extractor_name in {"banyan_ingest", "banyan-extract", "banyan", "pdf_default"}:
         extractor = PdfDefaultExtractor()
-    elif extractor_name == "osii_tesseract":
-        extractor = OsiiTesseractExtractor()
     else:
         from osii.processors.remote import RemoteExtractor, resolve_remote_processor
 
