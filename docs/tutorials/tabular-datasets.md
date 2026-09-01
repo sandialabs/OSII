@@ -1,9 +1,31 @@
 # Demonstrate tabular datasets
 
 OSII can ground and display structured data without turning core into a
-dataframe application. The included example treats each CSV partition as a
-source object and a merged dataset table as a derived product over an explicit
-scope.
+dataframe application. A standard table is the portable, inspectable result
+when a file or an explicit OSII scope has meaningful rows and columns. The
+included example treats each CSV partition as a source object and a merged
+dataset table as a derived product over an explicit scope.
+
+## The table extraction pattern
+
+Use a table extractor when one source file already contains a defensible table:
+CSV, a laboratory export, a spreadsheet sheet, or a table recovered from a
+document. The extractor returns typed columns, rows, and row-level provenance
+alongside the normal extracted text. That makes the table visible in the file's
+**Extractions** tab without making it a special dashboard feature.
+
+Use a table enricher when the requested table spans an OSII scope. An object,
+folder, collection, or the root scope can become one table when the operation
+is explicitly about combining, filtering, or joining already-grounded rows.
+The output is a rebuildable derived artifact, preserving a source reference for
+every row. This is the boundary that keeps a table over many files honest and
+repeatable.
+
+Both forms use the same standard table artifact. People can scroll, sort, and
+copy the displayed rows as CSV. The JSON table, typed columns, and provenance
+are intentionally the future agent-facing contract: agents should be able to
+read and act on the same artifact rather than requiring a separate CSV parser
+or UI-specific integration.
 
 ## Start the complete example
 
@@ -48,7 +70,8 @@ table extractor** for `.csv` files. The example extractor:
 
 After processing, open a CSV object's **Extractions** tab and expand
 **Extracted data products**. The dashboard renders the standard table with its
-existing sortable, scrollable viewer. No CSV-specific dashboard component is
+existing sortable, scrollable viewer. Use **Copy CSV** to put the currently
+displayed row order on the clipboard. No CSV-specific dashboard component is
 required.
 
 ## Combine partitions deliberately

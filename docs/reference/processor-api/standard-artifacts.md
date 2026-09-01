@@ -9,8 +9,18 @@ Fields: `title`, optional `description`, `columns`, `rows`, and optional
 `row_provenance`. Column keys address values in every row. Supported data types
 are `string`, `number`, `integer`, `boolean`, `date`, `datetime`, and `json`.
 
-The dashboard renders a scrollable table. Agents can inspect columns, filter
-rows in future tool surfaces, and follow row provenance.
+Use a table when a processor can defend a rectangular view of its source or
+scope. An **extractor** can return a table for one file as part of canonical
+reading; an **enricher** can return one table over an object, folder,
+collection, or root scope when combining, filtering, or joining grounded rows
+is the intended derived product.
+
+The dashboard renders a scrollable, sortable table and offers **Copy CSV**.
+The copied CSV uses the table currently displayed, including its current sort
+order. The artifact remains JSON with typed columns and row provenance, rather
+than becoming a dashboard-only spreadsheet. Future agent tools can consume the
+same stable artifact contract to inspect columns, select rows, and follow the
+grounding without a processor-specific integration.
 
 ## Knowledge graph
 

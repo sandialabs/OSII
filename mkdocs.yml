@@ -37,6 +37,7 @@ nav:
   - Understand OSII:
       - Architecture: concepts/architecture.md
       - Extraction: concepts/extraction.md
+      - Tables and tabular extraction: concepts/tabular-extraction.md
       - Extraction versions: reference/extraction-versions.md
       - Synthesis: concepts/synthesis.md
       - Retrieval chunking: concepts/retrieval-chunking.md

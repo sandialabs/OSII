@@ -1,6 +1,7 @@
 import {
   Alert,
   Box,
+  Button,
   Chip,
   Paper,
   Stack,
@@ -13,6 +14,7 @@ import {
   TableSortLabel,
   Typography,
 } from "@mui/material";
+import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -51,9 +53,23 @@ function compareValues(left: unknown, right: unknown): number {
   });
 }
 
+function csvCell(value: unknown): string {
+  const text = displayValue(value);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function tableCsv(artifact: StandardTableArtifact, rows: Array<Record<string, unknown>>): string {
+  const header = artifact.columns.map((column) => csvCell(column.label)).join(",");
+  const body = rows.map((row) => (
+    artifact.columns.map((column) => csvCell(row[column.key])).join(",")
+  ));
+  return [header, ...body].join("\r\n");
+}
+
 function TableView({ artifact }: { artifact: StandardTableArtifact }) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [copyStatus, setCopyStatus] = useState<string>("");
   const rows = useMemo(() => {
     if (!sortKey) return artifact.rows;
     return [...artifact.rows].sort((left, right) => {
@@ -71,36 +87,60 @@ function TableView({ artifact }: { artifact: StandardTableArtifact }) {
     }
   };
 
+  const copyCsv = async () => {
+    if (!navigator.clipboard) {
+      setCopyStatus("Clipboard access is unavailable in this browser.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(tableCsv(artifact, rows));
+      setCopyStatus("Copied the displayed rows as CSV.");
+    } catch {
+      setCopyStatus("Unable to copy CSV. Check this browser's clipboard permission.");
+    }
+  };
+
   return (
-    <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 360 }}>
-      <Table stickyHeader size="small" aria-label={artifact.title}>
-        <TableHead>
-          <TableRow>
-            {artifact.columns.map((column) => (
-              <TableCell key={column.key} sortDirection={sortKey === column.key ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortKey === column.key}
-                  direction={sortKey === column.key ? sortDirection : "asc"}
-                  onClick={() => chooseSort(column.key)}
-                >
-                  {column.label}
-                  {column.unit ? ` (${column.unit})` : ""}
-                </TableSortLabel>
-              </TableCell>
-            ))}
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {rows.map((row, rowIndex) => (
-            <TableRow key={rowIndex} hover>
+    <Stack spacing={0.75}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+        <Typography variant="caption" color="text.secondary">
+          {rows.length} row{rows.length === 1 ? "" : "s"}. Select a column heading to sort.
+        </Typography>
+        <Button size="small" startIcon={<ContentCopyOutlinedIcon />} onClick={() => void copyCsv()}>
+          Copy CSV
+        </Button>
+      </Stack>
+      {copyStatus ? <Typography variant="caption" color="text.secondary" aria-live="polite">{copyStatus}</Typography> : null}
+      <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 360 }}>
+        <Table stickyHeader size="small" aria-label={artifact.title}>
+          <TableHead>
+            <TableRow>
               {artifact.columns.map((column) => (
-                <TableCell key={column.key}>{displayValue(row[column.key])}</TableCell>
+                <TableCell key={column.key} sortDirection={sortKey === column.key ? sortDirection : false}>
+                  <TableSortLabel
+                    active={sortKey === column.key}
+                    direction={sortKey === column.key ? sortDirection : "asc"}
+                    onClick={() => chooseSort(column.key)}
+                  >
+                    {column.label}
+                    {column.unit ? ` (${column.unit})` : ""}
+                  </TableSortLabel>
+                </TableCell>
               ))}
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
+          </TableHead>
+          <TableBody>
+            {rows.map((row, rowIndex) => (
+              <TableRow key={rowIndex} hover>
+                {artifact.columns.map((column) => (
+                  <TableCell key={column.key}>{displayValue(row[column.key])}</TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Stack>
   );
 }
 
