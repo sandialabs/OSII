@@ -687,6 +687,8 @@ export type ProcessingRun = {
   }>;
   logs?: string[];
   queue_job_id?: string;
+  collection_id?: string | null;
+  collection?: CollectionResource | null;
   error?: string | null;
   resolved_count?: number;
   preview?: IntakePreview;

@@ -16,10 +16,12 @@ collection, or root scope when combining, filtering, or joining grounded rows
 is the intended derived product.
 
 The dashboard renders a scrollable, sortable table and offers **Copy CSV**.
-The copied CSV uses the table currently displayed, including its current sort
-order. The artifact remains JSON with typed columns and row provenance, rather
-than becoming a dashboard-only spreadsheet. Future agent tools can consume the
-same stable artifact contract to inspect columns, select rows, and follow the
+People can choose visible columns with checkboxes; the `source_file` provenance
+column is hidden initially to keep wide tables readable, but remains available
+from **Columns**. Copied CSV uses the visible columns and active sort order.
+The artifact remains JSON with typed columns and row provenance, rather than
+becoming a dashboard-only spreadsheet. Future agent tools can consume the same
+stable artifact contract to inspect columns, select rows, and follow the
 grounding without a processor-specific integration.
 
 ## Knowledge graph

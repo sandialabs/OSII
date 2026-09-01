@@ -4,6 +4,7 @@ from pathlib import Path
 
 from osii.api import runs_routes
 from osii.domain.processing.jobs import create_run_record, get_run, save_run
+from osii.domain.scopes.collections import create_collection, list_collection_documents
 from osii.domain.scopes.membership import list_scope_file_ids
 from osii.domain.storage.ids import compute_file_id
 
@@ -100,6 +101,52 @@ def test_completed_document_is_browsable_while_next_document_runs(
     manifest_path = next((temp_osii_root / "manifests").glob("intake-manifest-*.json"))
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["expert_context"] == expert_context
+
+
+def test_intake_worker_adds_successfully_processed_documents_to_its_collection(
+    temp_data_root: Path,
+    temp_osii_root: Path,
+    temp_upload_root: Path,
+    monkeypatch,
+):
+    source_file = temp_data_root / "collection-member.txt"
+    source_file.write_text("member document", encoding="utf-8")
+    run = create_run_record([source_file], temp_data_root, temp_upload_root, osii_root=temp_osii_root)
+    collection = create_collection(
+        temp_osii_root,
+        name="Intake scope",
+        kind="intake",
+    )
+    original_dispatch = runs_routes.dispatch_extract
+
+    def native_text_dispatch(**kwargs):
+        kwargs["extractor_name"] = "native_text"
+        return original_dispatch(**kwargs)
+
+    monkeypatch.setattr(runs_routes, "dispatch_extract", native_text_dispatch)
+    routes_path = Path(__file__).resolve().parents[1] / "config" / "extractor_routes_native.toml"
+
+    runs_routes.run_worker(
+        run_id=run["id"],
+        resolved_files=[source_file],
+        queue_items=[],
+        include_subfolders=True,
+        include_patterns=[],
+        exclude_patterns=[],
+        context="",
+        intake_name="collection-membership",
+        data_volume_root=temp_data_root.parent,
+        osii_store=temp_osii_root,
+        shared_root=temp_data_root,
+        upload_root=temp_upload_root,
+        parser_routes_path=routes_path,
+        shared_root_host_path=str(temp_data_root),
+        synthesizer_name=None,
+        synthesizer_config={},
+        collection_id=collection["id"],
+    )
+
+    assert list_collection_documents(temp_osii_root, collection["id"]) == [compute_file_id(source_file)]
 
 
 def test_run_pauses_between_files_and_records_file_timings(

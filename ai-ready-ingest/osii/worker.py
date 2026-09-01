@@ -50,6 +50,7 @@ def execute_job(job: dict) -> None:
         extraction_policy=payload.get("extraction_policy") or "make_primary",
         enricher_name=payload.get("enricher_name") or None,
         enricher_config=payload.get("enricher_config") or {},
+        collection_id=payload.get("collection_id") or None,
     )
 
     run = get_run(job["run_id"])

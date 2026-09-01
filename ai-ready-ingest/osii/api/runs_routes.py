@@ -1,11 +1,13 @@
 from datetime import datetime, UTC
 import os
 from pathlib import Path
+import sqlite3
 
 from fastapi import APIRouter, HTTPException, Request
 
 from osii.domain.processing.capability_readiness import embedding_readiness
 from osii.domain.catalog_db import rebuild_catalog, upsert_document
+from osii.domain.scopes.collections import add_documents_to_collection, create_collection
 from osii.domain.artifacts.extraction_variants import extract_document_variant
 from osii.domain.artifacts.text_representations import get_preferred_text_representation
 from osii.domain.processing.intake import (
@@ -284,6 +286,7 @@ def run_worker(
     extraction_policy: str = "make_primary",
     enricher_name: str | None = None,
     enricher_config: dict | None = None,
+    collection_id: str | None = None,
 ) -> None:
     try:
         ensure_osii_store_layout(osii_store)
@@ -462,6 +465,10 @@ def run_worker(
                 _finish_item_timing(run["items"][index], item_started)
                 run["completed"] += 1
                 save_run(run)
+
+                if collection_id:
+                    add_documents_to_collection(osii_store, collection_id, [file_id])
+                    append_log(run_id, f"Added {src.name} to logical collection {collection_id}.")
 
                 append_log(run_id, f"Done: {src.name}")
 
@@ -656,6 +663,21 @@ async def start_run(request: Request, payload: dict):
     if not resolved_files:
         raise HTTPException(status_code=409, detail="No eligible documents matched this processing plan.")
 
+    collection: dict | None = None
+    collection_name: str | None = None
+    collection_description: str | None = None
+    collection_request = payload.get("collection")
+    if collection_request is not None:
+        if workflow != "intake":
+            raise HTTPException(status_code=422, detail="A logical collection can be created only from an Intake run.")
+        if not isinstance(collection_request, dict):
+            raise HTTPException(status_code=422, detail="collection must be an object with a name and optional description")
+        collection_name = collection_request.get("name", "")
+        collection_description = collection_request.get("description")
+        if not isinstance(collection_name, str):
+            raise HTTPException(status_code=422, detail="collection.name must be a string")
+        if collection_description is not None and not isinstance(collection_description, str):
+            raise HTTPException(status_code=422, detail="collection.description must be a string or null")
     if build_embeddings:
         embedding_status = embedding_readiness(osii_store)
         if not embedding_status["available"]:
@@ -667,6 +689,19 @@ async def start_run(request: Request, payload: dict):
                 ),
             )
 
+    if collection_name is not None:
+        try:
+            collection = create_collection(
+                osii_store,
+                name=collection_name,
+                description=collection_description.strip() if collection_description else None,
+                kind="intake",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except sqlite3.IntegrityError as exc:
+            raise HTTPException(status_code=409, detail="A collection with that name already exists.") from exc
+
     run = create_run_record(
         resolved_files,
         shared_root,
@@ -675,6 +710,7 @@ async def start_run(request: Request, payload: dict):
     )
     run["workflow"] = workflow
     run["expert_context"] = context or None
+    run["collection_id"] = collection["id"] if collection else None
     run["operations"] = {
         "extract": run_extraction,
         "extract_mode": extract_mode,
@@ -723,6 +759,7 @@ async def start_run(request: Request, payload: dict):
             "chunk_overlap": chunk_overlap,
             "enricher_name": enricher_name,
             "enricher_config": enricher_config,
+            "collection_id": collection["id"] if collection else None,
         },
     )
     run["status"] = "queued"
@@ -738,6 +775,7 @@ async def start_run(request: Request, payload: dict):
         "created_at": run["created_at"],
         "resolved_count": len(resolved_files),
         "preview": preview,
+        "collection": collection,
     }
 
 

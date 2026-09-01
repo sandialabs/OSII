@@ -23,7 +23,11 @@ OSII renders every standard table in the same small, predictable view:
 
 - scroll rows in place;
 - sort by a column; and
-- use **Copy CSV** to copy the currently displayed row order.
+- choose visible columns with **Columns**; and
+- use **Copy CSV** to copy the currently displayed row order and columns.
+
+`Source File` is hidden at first so wide tables are easier to scan. It remains
+available from **Columns** whenever provenance is needed.
 
 Tables from an extractor appear under a file's **Extractions** tab. Tables from
 an enricher appear under **Derived artifacts** for the selected object, folder,

@@ -152,6 +152,9 @@ export function QueuePage() {
   const [chunkSize, setChunkSize] = useState(768);
   const [chunkOverlap, setChunkOverlap] = useState(128);
   const [enrich, setEnrich] = useState(false);
+  const [createCollection, setCreateCollection] = useState(false);
+  const [collectionName, setCollectionName] = useState("");
+  const [collectionDescription, setCollectionDescription] = useState("");
   const [selectedSynthesizer, setSelectedSynthesizer] = useState("");
   const [selectedEnricher, setSelectedEnricher] = useState("");
   const [extractorOverrides, setExtractorOverrides] = useState<Record<string, string>>({});
@@ -311,6 +314,9 @@ export function QueuePage() {
 
   const addSharedEntry = (entry: QueueBrowseEntry) => {
     setIncludeSharedRoot(false);
+    if (entry.type === "folder" && !collectionName.trim()) {
+      setCollectionName(entry.name);
+    }
     setSelectedSharedItems((items) => (
       items.some((item) => item.path === entry.path)
         ? items
@@ -384,7 +390,7 @@ export function QueuePage() {
   };
 
   const start = async () => {
-    if (!queuePaths.length || !preview.data?.preview.matched_count) return;
+    if (!queuePaths.length || !preview.data?.preview.matched_count || (createCollection && !collectionName.trim())) return;
     setStarting(true);
     setNotice(null);
     try {
@@ -410,15 +416,27 @@ export function QueuePage() {
           ? (selectedEnricher || readiness.data?.defaults.enricher || "local.stats-keywords")
           : null,
         expert_context: expertContext.trim() || null,
+        collection: section === "add" && createCollection
+          ? {
+            name: collectionName.trim(),
+            description: collectionDescription.trim() || null,
+          }
+          : undefined,
       });
+      const collectionMessage = run.collection
+        ? ` A logical collection, “${run.collection.name}”, will include each document that finishes.`
+        : "";
       setNotice({
         severity: "success",
-        text: `${section === "process" ? "Processing" : "Intake"} run ${run.id} is queued for ${run.resolved_count ?? preview.data.preview.matched_count} file(s).`,
+        text: `${section === "process" ? "Processing" : "Intake"} run ${run.id} is queued for ${run.resolved_count ?? preview.data.preview.matched_count} file(s).${collectionMessage}`,
       });
       setUploadedItems([]);
       setSelectedSharedItems([]);
       setIncludeSharedRoot(true);
       setExpertContext("");
+      setCreateCollection(false);
+      setCollectionName("");
+      setCollectionDescription("");
       await queryClient.invalidateQueries({ queryKey: ["processing-runs"] });
       setSection("activity");
     } catch (error) {
@@ -765,6 +783,49 @@ export function QueuePage() {
           </Accordion>
         </Stack>
       </Paper>
+
+      {section === "add" ? <Paper variant="outlined" sx={{ p: 2, bgcolor: "action.hover" }}>
+        <Stack spacing={1.25}>
+          <Stack spacing={0.25}>
+            <Typography fontWeight={700}>Make this Intake a logical collection</Typography>
+            <Typography variant="body2" color="text.secondary">
+              A collection is a reusable OSII scope for enrichments, tables, Search, and Chat. It can begin with a folder, selected files across folders, uploads, or the whole source root; originals are never copied.
+            </Typography>
+          </Stack>
+          <FormControlLabel
+            control={(
+              <Checkbox
+                checked={createCollection}
+                onChange={(event) => setCreateCollection(event.target.checked)}
+              />
+            )}
+            label="Create a logical collection from this Intake"
+          />
+          {createCollection ? (
+            <Stack spacing={1.25}>
+              <TextField
+                required
+                fullWidth
+                size="small"
+                label="Collection name"
+                value={collectionName}
+                onChange={(event) => setCollectionName(event.target.value)}
+                helperText="When you select a folder, OSII suggests its name. You can use any meaningful name."
+              />
+              <TextField
+                fullWidth
+                size="small"
+                label="What is this collection for? (optional)"
+                multiline
+                minRows={2}
+                value={collectionDescription}
+                onChange={(event) => setCollectionDescription(event.target.value)}
+                helperText="Only documents that finish this run are added, so the collection remains an accurate reusable scope."
+              />
+            </Stack>
+          ) : null}
+        </Stack>
+      </Paper> : null}
 
       {section === "add" ? <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
@@ -1325,6 +1386,7 @@ export function QueuePage() {
               || (embed && !embeddingAvailable)
               || (embed && !chunkSettingsValid)
               || (extractionPolicy === "save_variant" && runExtraction && (synthesize || embed || enrich))
+              || (section === "add" && createCollection && !collectionName.trim())
             }
             onClick={() => void start()}
             sx={{ alignSelf: "flex-start" }}

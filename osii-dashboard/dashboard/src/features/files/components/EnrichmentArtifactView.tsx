@@ -2,7 +2,10 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
+  Menu,
+  MenuItem,
   Paper,
   Stack,
   Table,
@@ -15,7 +18,8 @@ import {
   Typography,
 } from "@mui/material";
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
-import { useMemo, useState } from "react";
+import ViewColumnOutlinedIcon from "@mui/icons-material/ViewColumnOutlined";
+import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -58,18 +62,39 @@ function csvCell(value: unknown): string {
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-function tableCsv(artifact: StandardTableArtifact, rows: Array<Record<string, unknown>>): string {
-  const header = artifact.columns.map((column) => csvCell(column.label)).join(",");
+function tableCsv(
+  columns: StandardTableArtifact["columns"],
+  rows: Array<Record<string, unknown>>,
+): string {
+  const header = columns.map((column) => csvCell(column.label)).join(",");
   const body = rows.map((row) => (
-    artifact.columns.map((column) => csvCell(row[column.key])).join(",")
+    columns.map((column) => csvCell(row[column.key])).join(",")
   ));
   return [header, ...body].join("\r\n");
+}
+
+function isSourceFileColumn(column: StandardTableArtifact["columns"][number]): boolean {
+  return column.key === "source_file" || column.label.trim().toLowerCase() === "source file";
+}
+
+function initiallyHiddenColumns(artifact: StandardTableArtifact): string[] {
+  const sourceFileColumns = artifact.columns.filter(isSourceFileColumn).map((column) => column.key);
+  return sourceFileColumns.length < artifact.columns.length ? sourceFileColumns : [];
 }
 
 function TableView({ artifact }: { artifact: StandardTableArtifact }) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [copyStatus, setCopyStatus] = useState<string>("");
+  const [hiddenColumnKeys, setHiddenColumnKeys] = useState<string[]>(() => (
+    initiallyHiddenColumns(artifact)
+  ));
+  const [columnsAnchor, setColumnsAnchor] = useState<HTMLElement | null>(null);
+  const columnSchema = artifact.columns.map((column) => `${column.key}:${column.label}`).join("|");
+  const visibleColumns = artifact.columns.filter((column) => !hiddenColumnKeys.includes(column.key));
+  useEffect(() => {
+    setHiddenColumnKeys(initiallyHiddenColumns(artifact));
+  }, [columnSchema]);
   const rows = useMemo(() => {
     if (!sortKey) return artifact.rows;
     return [...artifact.rows].sort((left, right) => {
@@ -93,29 +118,66 @@ function TableView({ artifact }: { artifact: StandardTableArtifact }) {
       return;
     }
     try {
-      await navigator.clipboard.writeText(tableCsv(artifact, rows));
-      setCopyStatus("Copied the displayed rows as CSV.");
+      await navigator.clipboard.writeText(tableCsv(visibleColumns, rows));
+      setCopyStatus("Copied the displayed rows and columns as CSV.");
     } catch {
       setCopyStatus("Unable to copy CSV. Check this browser's clipboard permission.");
     }
+  };
+
+  const toggleColumn = (key: string) => {
+    const isVisible = !hiddenColumnKeys.includes(key);
+    if (isVisible && visibleColumns.length === 1) return;
+    setHiddenColumnKeys((current) => (
+      isVisible ? [...current, key] : current.filter((item) => item !== key)
+    ));
   };
 
   return (
     <Stack spacing={0.75}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
         <Typography variant="caption" color="text.secondary">
-          {rows.length} row{rows.length === 1 ? "" : "s"}. Select a column heading to sort.
+          {rows.length} row{rows.length === 1 ? "" : "s"} · {visibleColumns.length} of {artifact.columns.length} columns. Select a heading to sort.
         </Typography>
-        <Button size="small" startIcon={<ContentCopyOutlinedIcon />} onClick={() => void copyCsv()}>
-          Copy CSV
-        </Button>
+        <Stack direction="row" spacing={0.5}>
+          <Button
+            size="small"
+            startIcon={<ViewColumnOutlinedIcon />}
+            onClick={(event) => setColumnsAnchor(event.currentTarget)}
+          >
+            Columns
+          </Button>
+          <Button size="small" startIcon={<ContentCopyOutlinedIcon />} onClick={() => void copyCsv()}>
+            Copy CSV
+          </Button>
+        </Stack>
       </Stack>
+      <Menu
+        anchorEl={columnsAnchor}
+        open={Boolean(columnsAnchor)}
+        onClose={() => setColumnsAnchor(null)}
+        MenuListProps={{ "aria-label": "Visible table columns" }}
+      >
+        {artifact.columns.map((column) => {
+          const visible = !hiddenColumnKeys.includes(column.key);
+          return (
+            <MenuItem
+              key={column.key}
+              onClick={() => toggleColumn(column.key)}
+              disabled={visible && visibleColumns.length === 1}
+            >
+              <Checkbox checked={visible} size="small" />
+              {column.label}{column.unit ? ` (${column.unit})` : ""}
+            </MenuItem>
+          );
+        })}
+      </Menu>
       {copyStatus ? <Typography variant="caption" color="text.secondary" aria-live="polite">{copyStatus}</Typography> : null}
       <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 360 }}>
         <Table stickyHeader size="small" aria-label={artifact.title}>
           <TableHead>
             <TableRow>
-              {artifact.columns.map((column) => (
+              {visibleColumns.map((column) => (
                 <TableCell key={column.key} sortDirection={sortKey === column.key ? sortDirection : false}>
                   <TableSortLabel
                     active={sortKey === column.key}
@@ -132,7 +194,7 @@ function TableView({ artifact }: { artifact: StandardTableArtifact }) {
           <TableBody>
             {rows.map((row, rowIndex) => (
               <TableRow key={rowIndex} hover>
-                {artifact.columns.map((column) => (
+                {visibleColumns.map((column) => (
                   <TableCell key={column.key}>{displayValue(row[column.key])}</TableCell>
                 ))}
               </TableRow>

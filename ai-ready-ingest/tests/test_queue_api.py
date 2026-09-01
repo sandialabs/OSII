@@ -357,6 +357,36 @@ def test_upload_then_enqueue_returns_durable_run(client, temp_upload_root: Path)
     assert status.json()["queue"][0]["status"] == "queued"
 
 
+def test_intake_can_create_a_logical_collection_from_its_resolved_scope(
+    client,
+    temp_data_root: Path,
+):
+    source_file = temp_data_root / "project-aurora" / "brief.txt"
+    source_file.parent.mkdir(parents=True)
+    source_file.write_text("intake collection", encoding="utf-8")
+
+    queued = client.post(
+        "/api/runs",
+        json={
+            "queue_paths": [str(source_file.parent)],
+            "collection": {
+                "name": "Project Aurora",
+                "description": "Documents for the renewal review.",
+            },
+        },
+    )
+
+    assert queued.status_code == 200
+    collection = queued.json()["collection"]
+    assert collection["name"] == "Project Aurora"
+    assert collection["description"] == "Documents for the renewal review."
+    assert collection["kind"] == "intake"
+    assert collection["document_count"] == 0
+
+    run = client.get(f"/api/runs/{queued.json()['run_id']}").json()
+    assert run["collection_id"] == collection["id"]
+
+
 def test_run_control_api_pauses_resumes_and_cancels_a_queued_run(
     client,
     temp_data_root: Path,
