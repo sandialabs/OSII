@@ -32,6 +32,7 @@ nav:
       - Single-file walkthrough: tutorials/single-file.md
       - Generate an LLM wiki: tutorials/llm-wiki.md
       - Example enrichments: tutorials/example-enrichments.md
+      - Tabular datasets: tutorials/tabular-datasets.md
       - CLI cheat sheet: reference/cli.md
   - Understand OSII:
       - Architecture: concepts/architecture.md

@@ -1,23 +1,39 @@
 import FormatListNumberedOutlinedIcon from "@mui/icons-material/FormatListNumberedOutlined";
 import HubOutlinedIcon from "@mui/icons-material/HubOutlined";
-import { Alert, Button, Paper, Stack, Typography } from "@mui/material";
+import { Alert, Box, Button, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { getIntakeReadiness } from "../../../api/queue";
 import type { ScopeDescribeRequest } from "../../../api/types";
 import { useEnrichmentJob } from "../../../hooks/useEnrichmentJob";
 
 
 export function ExampleEnrichmentActions({ scope }: { scope: ScopeDescribeRequest }) {
   const enrichmentJob = useEnrichmentJob();
-  const [requested, setRequested] = useState<"keywords" | "entities" | null>(null);
+  const readiness = useQuery({ queryKey: ["intake", "readiness"], queryFn: getIntakeReadiness });
+  const [requested, setRequested] = useState<string | null>(null);
+  const [selectedEnricher, setSelectedEnricher] = useState("");
+  const additionalEnrichers = (readiness.data?.enrichers ?? []).filter(
+    (item, index, items) => item.available
+      && !["noun_adjective_ngrams", "entity_candidates", "llm_wiki"].includes(item.id)
+      && items.findIndex((candidate) => candidate.id === item.id) === index,
+  );
 
   const run = (kind: "keywords" | "entities") => {
-    setRequested(kind);
+    setRequested(kind === "keywords" ? "Keyword snapshot" : "Entity list");
     enrichmentJob.mutate({
       enricher_name: kind === "keywords" ? "noun_adjective_ngrams" : "entity_candidates",
       scope,
       enricher_config: kind === "keywords" ? { top_k: 20 } : { top_k: 50 },
     });
+  };
+
+  const runSelected = () => {
+    const method = additionalEnrichers.find((item) => item.id === selectedEnricher);
+    if (!method) return;
+    setRequested(method.display_name);
+    enrichmentJob.mutate({ enricher_name: method.id, scope });
   };
 
   return (
@@ -47,9 +63,37 @@ export function ExampleEnrichmentActions({ scope }: { scope: ScopeDescribeReques
             Generate Entity List
           </Button>
         </Stack>
+        {additionalEnrichers.length ? (
+          <Box component="details">
+            <Typography component="summary" variant="body2" sx={{ cursor: "pointer" }}>
+              More available enrichment methods
+            </Typography>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mt: 1 }}>
+              <TextField
+                select
+                size="small"
+                label="Enrichment method"
+                value={selectedEnricher}
+                onChange={(event) => setSelectedEnricher(event.target.value)}
+                sx={{ minWidth: 280 }}
+              >
+                {additionalEnrichers.map((item) => (
+                  <MenuItem key={item.id} value={item.id}>{item.display_name}</MenuItem>
+                ))}
+              </TextField>
+              <Button
+                variant="outlined"
+                disabled={!selectedEnricher || enrichmentJob.isPending}
+                onClick={runSelected}
+              >
+                Generate selected artifact
+              </Button>
+            </Stack>
+          </Box>
+        ) : null}
         {enrichmentJob.isSuccess ? (
           <Alert severity="success">
-            {requested === "keywords" ? "Keyword snapshot" : "Entity list"} generation started. This view updates when it finishes.
+            {requested ?? "Enrichment"} generation started. This view updates when it finishes.
           </Alert>
         ) : null}
         {enrichmentJob.isError ? (

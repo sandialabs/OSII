@@ -124,10 +124,15 @@ Then use the extension track as copyable starting points:
 | `08_Write_a_custom_extractor` | Source bytes to grounded text segments |
 | `09_Write_a_custom_synthesizer` | Existing text to cited Markdown |
 | `10_Write_a_custom_enricher` | Existing text to a standard entity-list artifact |
+| `11_Explore_tabular_datasets` | CSV rows to source and collection table artifacts |
 
 Each extension example runs the processor directly in Python before wrapping it
 as an HTTP app. This keeps domain logic easy to test: the network boundary is
 an adapter, not the place where the research algorithm has to live.
+
+The dataset example uses the live copyable processor. From the repository root,
+run `make dev-datasets` or `.\scripts\osii.ps1 dev-datasets`; the command imports
+the public example corpus and starts the two dataset endpoints automatically.
 
 ## Add your own documents
 

@@ -59,6 +59,24 @@ OSII mounts `source` read-only: it can read your originals but cannot modify or
 delete them. The `osii-data` folder is ignored by Git, so your documents will
 not accidentally be included in a commit.
 
+For a ready-made mixed document-and-data demonstration, use:
+
+```bash
+make dev-datasets
+```
+
+or on Windows PowerShell:
+
+```powershell
+.\scripts\osii.ps1 dev-datasets
+```
+
+This imports the bundled Purcell PDF plus the Iris and Wine datasets bundled
+with scikit-learn, then starts a copyable CSV extractor and collection-table
+enricher alongside OSII. Follow the
+[tabular dataset walkthrough](docs/tutorials/tabular-datasets.md) to render one
+source table and a table combined across a collection.
+
 You can instead use an existing folder anywhere on your computer. Open `.env`
 in a text editor and set its absolute path:
 
@@ -230,6 +248,10 @@ containers but select commands from the same compact baseline image. See
 - `make dev` / `.\scripts\osii.ps1 dev`: run the editable stack. A configured
   `OPENAI_BASE_URL` is preferred automatically; otherwise OSII uses Ollama when
   it is available, then its local fallbacks.
+- `make dev-datasets` / `.\scripts\osii.ps1 dev-datasets`: import the public
+  example corpus and run the CSV table processor demonstration.
+- `make demo-data` / `.\scripts\osii.ps1 demo-data`: import that corpus without
+  starting OSII.
 - `make run` / `.\scripts\osii.ps1 run`: pull and start the published images.
 - `make build` / `.\scripts\osii.ps1 build`: build the three release images.
 - `make push-release OSII_IMAGE_PREFIX=quay.io/your-org/osii OSII_IMAGE_TAG=…`:

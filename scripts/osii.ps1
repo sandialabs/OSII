@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("dev", "run", "build", "push-release", "down", "logs", "doctor")]
+    [ValidateSet("dev", "dev-datasets", "demo-data", "run", "build", "push-release", "down", "logs", "doctor")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
@@ -78,11 +78,29 @@ function Invoke-OsiiDevLauncher {
     }
 }
 
+function Import-OsiiExampleData {
+    $UvExecutable = Get-Command "uv" -ErrorAction SilentlyContinue
+    if (-not $UvExecutable) {
+        throw "uv was not found. Importing the example datasets requires uv and Python 3.11."
+    }
+    & $UvExecutable.Source run --no-project --python 3.11 --with "scikit-learn>=1.5,<2" python scripts/import_example_data.py
+    if ($LASTEXITCODE -ne 0) {
+        throw "Example data import exited with code $LASTEXITCODE."
+    }
+}
+
 Push-Location $RepositoryRoot
 try {
     switch ($Command) {
         "dev" {
             Invoke-OsiiDevLauncher
+        }
+        "demo-data" {
+            Import-OsiiExampleData
+        }
+        "dev-datasets" {
+            Import-OsiiExampleData
+            Invoke-OsiiDevLauncher @("--examples")
         }
         "run" {
             Invoke-OsiiCompose @("up", "--no-build", "--pull", "missing", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "dashboard")

@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 import hashlib
 import json
-from pathlib import Path
 import re
 import shutil
 import tempfile
 import tomllib
 import uuid
+from datetime import UTC, datetime
+from pathlib import Path
 
 from osii.domain.artifacts.artifact_staleness import mark_artifacts_stale
 from osii.domain.storage.atomic import atomic_write_text
 from osii.domain.storage.ids import compute_file_id
 from osii.domain.storage.store import object_dir
-
 
 EXTRACTION_FILES = ("text.txt", "manifest.jsonl", "provenance.toml")
 
@@ -141,6 +140,65 @@ def list_extraction_variants(osii_root: Path, file_id: str) -> dict | None:
             "provenance_path": f"objects/{file_id}/extractions/{variant_id}/provenance.toml",
         })
     return {"file_id": file_id, "primary_id": primary_id, "variants": variants}
+
+
+def list_extraction_artifacts(
+    osii_root: Path,
+    file_id: str,
+    variant_id: str,
+    *,
+    maximum_json_bytes: int = 5 * 1024 * 1024,
+) -> list[dict]:
+    """Return safe preview data for non-text products from one extraction."""
+    state = list_extraction_variants(osii_root, file_id)
+    if state is None:
+        raise FileNotFoundError(f"Object not found: {file_id}")
+    if not any(item.get("id") == variant_id for item in state["variants"]):
+        raise FileNotFoundError(f"Extraction variant not found: {variant_id}")
+
+    bundle = (extractions_dir(osii_root, file_id) / variant_id).resolve()
+    try:
+        bundle.relative_to(extractions_dir(osii_root, file_id).resolve())
+    except ValueError as exc:
+        raise FileNotFoundError(f"Extraction variant not found: {variant_id}") from exc
+
+    manifest_path = bundle / "manifest.jsonl"
+    if not manifest_path.is_file():
+        return []
+
+    artifacts: list[dict] = []
+    for line in manifest_path.read_text(encoding="utf-8").splitlines():
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if record.get("kind") == "text" or not record.get("path"):
+            continue
+        artifact_path = (bundle / str(record["path"])).resolve()
+        try:
+            artifact_path.relative_to(bundle)
+        except ValueError:
+            continue
+        item = {
+            "id": str(record.get("id") or artifact_path.name),
+            "kind": str(record.get("kind") or "artifact"),
+            "media_type": str(record.get("type") or "application/octet-stream"),
+            "source_origin": record.get("source_origin") or {},
+            "filename": artifact_path.name,
+            "size_bytes": artifact_path.stat().st_size if artifact_path.is_file() else None,
+            "data": None,
+        }
+        if (
+            artifact_path.is_file()
+            and item["media_type"] == "application/json"
+            and artifact_path.stat().st_size <= maximum_json_bytes
+        ):
+            try:
+                item["data"] = json.loads(artifact_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                pass
+        artifacts.append(item)
+    return artifacts
 
 
 def primary_extraction_dir(osii_root: Path, file_id: str) -> Path | None:

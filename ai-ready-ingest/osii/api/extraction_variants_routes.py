@@ -1,8 +1,8 @@
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
-
 from osii.domain.artifacts.extraction_variants import (
+    list_extraction_artifacts,
     list_extraction_variants,
     promote_extraction_variant,
 )
@@ -10,7 +10,6 @@ from osii.domain.catalog_db import upsert_document
 from osii.domain.processing.pathing import path_within
 from osii.domain.read.docs import get_doc_meta
 from osii.domain.storage.ids import compute_file_id
-
 
 router = APIRouter(prefix="/api/objects", tags=["extraction-variants"])
 
@@ -21,6 +20,19 @@ def get_extractions(request: Request, file_id: str):
     if result is None:
         raise HTTPException(status_code=404, detail="object not found")
     return result
+
+
+@router.get("/{file_id}/extractions/{variant_id}/artifacts")
+def get_extraction_artifacts(request: Request, file_id: str, variant_id: str):
+    try:
+        artifacts = list_extraction_artifacts(
+            request.app.state.osii_root.resolve(),
+            file_id,
+            variant_id,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"file_id": file_id, "variant_id": variant_id, "artifacts": artifacts}
 
 
 def _current_source_path(request: Request, file_id: str) -> Path:

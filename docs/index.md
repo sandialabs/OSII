@@ -10,6 +10,7 @@ matches what you want to do.
 - [Run the corporate pilot bundle](operations/publishing-images.md)
 - [Follow the friendly Python walkthrough](tutorials/python-demonstrations.md)
 - [Process one file through the CLI](tutorials/single-file.md)
+- [Demonstrate tabular datasets](tutorials/tabular-datasets.md)
 
 These three pages are the normal entry points. The remaining documentation is
 reference material: read it when you need to understand, extend, or operate a

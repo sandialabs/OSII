@@ -96,6 +96,7 @@ Collection membership must reference stable object identifiers such as `file_id`
 
 - `GET /api/objects/{file_id}`
 - `GET /api/objects/{file_id}/manifest`
+- `GET /api/objects/{file_id}/extractions/{variant_id}/artifacts`
 - `GET /api/objects/{file_id}/texts`
 - `GET /api/objects/{file_id}/texts/preferred`
 - `GET /api/objects/{file_id}/syntheses`
@@ -103,6 +104,11 @@ Collection membership must reference stable object identifiers such as `file_id`
 - `PUT /api/objects/{file_id}/governance`
 - `POST /api/objects/{file_id}/deletion-preview`
 - `DELETE /api/objects/{file_id}`
+
+The extraction-artifact endpoint lists safe previews of non-text products
+returned by one extractor version. Standard tables are rendered generically by
+the dashboard; large or binary artifacts remain listed without being embedded
+in the JSON response.
 
 ### Text spans
 

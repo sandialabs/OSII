@@ -2,6 +2,7 @@ from pathlib import Path
 
 from osii.domain.artifacts.extraction_variants import (
     extract_document_variant,
+    list_extraction_artifacts,
     list_extraction_variants,
     promote_extraction_variant,
 )
@@ -70,6 +71,53 @@ def test_extraction_variant_api_can_promote(client, temp_data_root: Path, temp_o
     )
     assert promoted.status_code == 200
     assert promoted.json()["primary_id"] == second["variant_id"]
+
+
+def test_extraction_artifact_api_previews_standard_json(
+    client,
+    temp_data_root: Path,
+    temp_osii_root: Path,
+):
+    source = temp_data_root / "measurements.csv"
+    source.write_text("value\n1\n", encoding="utf-8")
+    extraction = extract_document_variant(
+        extractor_name="native_text",
+        source_path=source,
+        data_volume_root=temp_data_root.parent,
+        osii_root=temp_osii_root,
+        make_primary=True,
+    )
+    bundle = (
+        temp_osii_root
+        / "objects"
+        / extraction["file_id"]
+        / "extractions"
+        / extraction["variant_id"]
+    )
+    artifact = bundle / "artifacts" / "artifact-000001.json"
+    artifact.write_text(
+        '{"artifact_type":"table","title":"Measurements","columns":[],"rows":[]}',
+        encoding="utf-8",
+    )
+    with (bundle / "manifest.jsonl").open("a", encoding="utf-8") as manifest:
+        manifest.write(
+            '{"kind":"table","id":"source-table","path":"artifacts/artifact-000001.json",'
+            '"type":"application/json","source_origin":{"row":1}}\n'
+        )
+
+    listed = list_extraction_artifacts(
+        temp_osii_root,
+        extraction["file_id"],
+        extraction["variant_id"],
+    )
+    assert listed[0]["data"]["artifact_type"] == "table"
+
+    response = client.get(
+        f"/api/objects/{extraction['file_id']}/extractions/"
+        f"{extraction['variant_id']}/artifacts"
+    )
+    assert response.status_code == 200
+    assert response.json()["artifacts"][0]["id"] == "source-table"
 
 
 def test_document_extraction_api_queues_only_the_selected_extractor(

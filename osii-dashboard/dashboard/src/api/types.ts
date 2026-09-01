@@ -247,6 +247,22 @@ export type ExtractionVariantsResponse = {
   variants: ExtractionVariant[];
 };
 
+export type ExtractionArtifact = {
+  id: string;
+  kind: string;
+  media_type: string;
+  source_origin: Record<string, unknown>;
+  filename: string;
+  size_bytes: number | null;
+  data: unknown | null;
+};
+
+export type ExtractionArtifactsResponse = {
+  file_id: string;
+  variant_id: string;
+  artifacts: ExtractionArtifact[];
+};
+
 export type ObjectSynthesisArtifact = {
   name: string;
   text_path: string;

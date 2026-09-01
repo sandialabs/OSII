@@ -11,6 +11,7 @@ import type {
   ObjectTextsResponse,
   PreferredTextResponse,
   ExtractionVariantsResponse,
+  ExtractionArtifactsResponse,
   ProcessingRun,
 } from "./types";
 
@@ -44,6 +45,15 @@ export async function getObjectTexts(fileId: string): Promise<ObjectTextsRespons
 export async function getObjectExtractions(fileId: string): Promise<ExtractionVariantsResponse> {
   return apiJson<ExtractionVariantsResponse>(
     `/api/objects/${encodeURIComponent(fileId)}/extractions`,
+  );
+}
+
+export async function getObjectExtractionArtifacts(
+  fileId: string,
+  variantId: string,
+): Promise<ExtractionArtifactsResponse> {
+  return apiJson<ExtractionArtifactsResponse>(
+    `/api/objects/${encodeURIComponent(fileId)}/extractions/${encodeURIComponent(variantId)}/artifacts`,
   );
 }
 

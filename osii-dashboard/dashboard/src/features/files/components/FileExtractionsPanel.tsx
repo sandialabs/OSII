@@ -1,11 +1,44 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Chip, LinearProgress, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, Chip, LinearProgress, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import FindInPageOutlinedIcon from "@mui/icons-material/FindInPageOutlined";
 
-import { getObjectExtractions, makeObjectExtractionPrimary } from "../../../api/objects";
+import { getObjectExtractionArtifacts, getObjectExtractions, makeObjectExtractionPrimary } from "../../../api/objects";
 import { getIntakeReadiness, listProcessingRuns } from "../../../api/queue";
 import { useObjectExtractionJob } from "../../../hooks/useObjectExtractionJob";
+import { EnrichmentArtifactView } from "./EnrichmentArtifactView";
+
+
+function ExtractionArtifacts({ fileId, variantId }: { fileId: string; variantId: string }) {
+  const artifacts = useQuery({
+    queryKey: ["objects", fileId, "extractions", variantId, "artifacts"],
+    queryFn: () => getObjectExtractionArtifacts(fileId, variantId),
+  });
+  if (artifacts.isLoading || artifacts.isError || !artifacts.data?.artifacts.length) return null;
+  return (
+    <Box component="details" sx={{ mt: 1.25 }}>
+      <Typography component="summary" variant="body2" fontWeight={700} sx={{ cursor: "pointer" }}>
+        Extracted data products ({artifacts.data.artifacts.length})
+      </Typography>
+      <Stack spacing={1.5} sx={{ mt: 1.25 }}>
+        {artifacts.data.artifacts.map((artifact) => (
+          <Paper key={artifact.id} variant="outlined" sx={{ p: 1.5 }}>
+            <Stack spacing={1}>
+              <Typography variant="caption" color="text.secondary">
+                {artifact.kind} · {artifact.media_type} · {artifact.filename}
+              </Typography>
+              {artifact.data != null ? (
+                <EnrichmentArtifactView data={artifact.data} />
+              ) : (
+                <Alert severity="info">This extraction artifact has no inline preview.</Alert>
+              )}
+            </Stack>
+          </Paper>
+        ))}
+      </Stack>
+    </Box>
+  );
+}
 
 
 export function FileExtractionsPanel({ fileId }: { fileId: string }) {
@@ -149,6 +182,7 @@ export function FileExtractionsPanel({ fileId }: { fileId: string }) {
               </Button>
             ) : null}
           </Stack>
+          <ExtractionArtifacts fileId={fileId} variantId={variant.id} />
         </Paper>
       ))}
       {!extractions.isLoading && !extractions.isError && !extractions.data?.variants.length ? <Typography color="text.secondary">No extraction is available.</Typography> : null}

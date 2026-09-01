@@ -34,6 +34,8 @@ SERVICE_DISPLAY_NAMES = {
     "worker": "sequential intake worker",
     "mcp": "MCP server for agents",
     "dashboard": "dashboard web interface",
+    "dataset-extractor": "CSV dataset table extractor example",
+    "dataset-enricher": "dataset collection table enricher example",
 }
 
 
@@ -193,9 +195,13 @@ def build_environment(
             env.update({"CHAT_PROVIDER": "ollama", "CHAT_PROVIDER_CHAIN": "ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "ollama.synthesizer,local.extractive-preview"})
         elif provider_profile == "openai":
             env.update({"CHAT_PROVIDER": "openai", "CHAT_PROVIDER_CHAIN": "openai,ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "openai.synthesizer,ollama.synthesizer,local.extractive-preview"})
-    if examples and not env.get("OSII_PROCESSORS"):
-        processor_port = env.get("OSII_EXAMPLE_PROCESSOR_PORT", "8091")
-        env["OSII_PROCESSORS"] = f"http://127.0.0.1:{processor_port}"
+    if examples:
+        configured = [item for item in env.get("OSII_PROCESSORS", "").split(",") if item]
+        configured.extend((
+            f"http://127.0.0.1:{env.get('OSII_DATASET_EXTRACTOR_PORT', '8097')}",
+            f"http://127.0.0.1:{env.get('OSII_DATASET_ENRICHER_PORT', '8098')}",
+        ))
+        env["OSII_PROCESSORS"] = ",".join(dict.fromkeys(configured))
     return env
 
 
@@ -247,6 +253,7 @@ def service_commands(
     npm: str,
     env: dict[str, str],
     core_only: bool,
+    examples: bool = False,
 ) -> list[Service]:
     api_port = env.get("OSII_API_PORT", "8511")
     dashboard_port = env.get("OSII_DASHBOARD_PORT", "5173")
@@ -334,6 +341,30 @@ def service_commands(
             services.insert(0, Service(name, (uv, "run", "--package", package, "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "services" / directory, int(port)))
         bridge_port = env.get("OSII_MODEL_BRIDGE_PORT", "8095")
         services.insert(4, Service("model-bridge", (uv, "run", "--package", "osii-model-provider-bridge", "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", bridge_port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "services" / "model-provider-bridge", int(bridge_port)))
+    if examples:
+        example_directory = REPOSITORY_ROOT / "examples" / "tabular-dataset-processors"
+        dataset_extractor_port = env.get("OSII_DATASET_EXTRACTOR_PORT", "8097")
+        dataset_enricher_port = env.get("OSII_DATASET_ENRICHER_PORT", "8098")
+        services.insert(0, Service(
+            "dataset-extractor",
+            (
+                uv, "run", "--package", "osii-processor-sdk", "python", "-m", "uvicorn",
+                "dataset_processors:extractor_app", "--host", "127.0.0.1", "--port", dataset_extractor_port,
+                "--reload", "--reload-dir", ".",
+            ),
+            example_directory,
+            int(dataset_extractor_port),
+        ))
+        services.insert(1, Service(
+            "dataset-enricher",
+            (
+                uv, "run", "--package", "osii-processor-sdk", "python", "-m", "uvicorn",
+                "dataset_processors:enricher_app", "--host", "127.0.0.1", "--port", dataset_enricher_port,
+                "--reload", "--reload-dir", ".",
+            ),
+            example_directory,
+            int(dataset_enricher_port),
+        ))
     return services
 
 
@@ -702,7 +733,7 @@ def run(
         npm = command_path("npm")
         env = build_environment(examples, core_only)
         provider_profile = "openai" if env.get("OPENAI_BASE_URL", "").strip() else "ollama"
-        services = service_commands(uv, npm, env, core_only)
+        services = service_commands(uv, npm, env, core_only, examples)
 
         supervisor: CapabilitySupervisor | None = None
         if not core_only:
