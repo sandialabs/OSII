@@ -182,6 +182,52 @@ def _model_details(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
+def _probe_openai_embedding(
+    record: dict[str, Any], headers: dict[str, str]
+) -> dict[str, Any]:
+    model = str(record.get("embedding_model") or "").strip()
+    if not model:
+        return {
+            "configured": False,
+            "ok": False,
+            "model": "",
+            "detail": "No embedding model is selected.",
+        }
+    payloads = [
+        {"model": model, "input": ["OSII embedding connection test"], "encoding_format": "float"},
+        {"model": model, "input": ["OSII embedding connection test"]},
+    ]
+    last_error = "The endpoint did not return an embedding vector."
+    for payload in payloads:
+        try:
+            response = requests.post(
+                f"{record['base_url']}/embeddings",
+                headers=headers,
+                json=payload,
+                timeout=(3, 15),
+            )
+            response.raise_for_status()
+            rows = response.json().get("data") or []
+            vector = rows[0].get("embedding") if rows and isinstance(rows[0], dict) else None
+            if isinstance(vector, list) and vector:
+                return {
+                    "configured": True,
+                    "ok": True,
+                    "model": model,
+                    "dimensions": len(vector),
+                    "detail": f"Validated a {len(vector)}-dimensional embedding vector.",
+                }
+            last_error = "The endpoint responded without a usable embedding vector."
+        except (requests.RequestException, ValueError, AttributeError) as exc:
+            last_error = str(exc)
+    return {
+        "configured": True,
+        "ok": False,
+        "model": model,
+        "detail": f"Embedding test failed: {last_error}",
+    }
+
+
 def _run_ollama_pull(job_id: str, base_url: str, model: str) -> None:
     try:
         with requests.post(
@@ -276,7 +322,10 @@ def provider_health(request: Request, provider_id: str):
             model for model in selected
             if not any(name == model or name == f"{model}:latest" or model == f"{name}:latest" for name in names)
         ) if record["type"] == "ollama" else []
-        return {"ok": True, "models": names, "model_details": model_details, "missing_models": missing, "pull_commands": [f"ollama pull {name}" for name in missing], "recommendations": RECOMMENDED_OLLAMA_MODELS if record["type"] == "ollama" else []}
+        capabilities = {}
+        if record["type"] == "openai":
+            capabilities["embedding"] = _probe_openai_embedding(record, headers)
+        return {"ok": True, "models": names, "model_details": model_details, "missing_models": missing, "pull_commands": [f"ollama pull {name}" for name in missing], "recommendations": RECOMMENDED_OLLAMA_MODELS if record["type"] == "ollama" else [], "capabilities": capabilities}
     except (requests.RequestException, ValueError) as exc:
         return {"ok": False, "models": [], "model_details": [], "missing_models": [], "pull_commands": [], "recommendations": RECOMMENDED_OLLAMA_MODELS if record["type"] == "ollama" else [], "detail": str(exc)}
 

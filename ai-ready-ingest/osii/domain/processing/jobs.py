@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -37,12 +38,27 @@ def configure_job_store(osii_root: Path) -> Path:
                 created_at TEXT NOT NULL,
                 started_at TEXT,
                 finished_at TEXT,
-                error TEXT
+                error TEXT,
+                worker_id TEXT,
+                heartbeat_at TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_queue_jobs_status_created
               ON queue_jobs(status, created_at);
+            CREATE TABLE IF NOT EXISTS workers (
+                id TEXT PRIMARY KEY,
+                started_at TEXT NOT NULL,
+                heartbeat_at TEXT NOT NULL
+            );
             """
         )
+        columns = {
+            str(row["name"])
+            for row in conn.execute("PRAGMA table_info(queue_jobs)").fetchall()
+        }
+        if "worker_id" not in columns:
+            conn.execute("ALTER TABLE queue_jobs ADD COLUMN worker_id TEXT")
+        if "heartbeat_at" not in columns:
+            conn.execute("ALTER TABLE queue_jobs ADD COLUMN heartbeat_at TEXT")
     return _STATE_DB
 
 
@@ -220,7 +236,80 @@ def enqueue_run(run_id: str, payload: dict[str, Any]) -> dict:
     return {"id": job_id, "run_id": run_id, "status": "queued", "created_at": now}
 
 
-def claim_next_queue_job() -> dict | None:
+def register_worker(worker_id: str) -> None:
+    now = _now()
+    with _connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO workers(id, started_at, heartbeat_at) VALUES (?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET heartbeat_at=excluded.heartbeat_at
+            """,
+            (worker_id, now, now),
+        )
+
+
+def heartbeat_worker(worker_id: str) -> None:
+    with _connection() as conn:
+        conn.execute(
+            "UPDATE workers SET heartbeat_at = ? WHERE id = ?",
+            (_now(), worker_id),
+        )
+
+
+def unregister_worker(worker_id: str) -> None:
+    with _connection() as conn:
+        conn.execute("DELETE FROM workers WHERE id = ?", (worker_id,))
+
+
+def worker_status(*, stale_after_seconds: float = 15.0) -> dict[str, Any]:
+    if _STATE_DB is None:
+        return {
+            "available": False,
+            "detail": "The processing job store is not configured.",
+            "last_heartbeat": None,
+        }
+    with _connection() as conn:
+        row = conn.execute(
+            "SELECT id, heartbeat_at FROM workers ORDER BY heartbeat_at DESC LIMIT 1"
+        ).fetchone()
+    if row is None:
+        return {
+            "available": False,
+            "detail": "No intake worker has registered.",
+            "last_heartbeat": None,
+        }
+    try:
+        age = max(
+            0.0,
+            datetime.now(UTC).timestamp()
+            - datetime.fromisoformat(str(row["heartbeat_at"])).timestamp(),
+        )
+    except ValueError:
+        age = stale_after_seconds + 1
+    available = age <= stale_after_seconds
+    return {
+        "available": available,
+        "detail": (
+            "The intake worker is responding."
+            if available
+            else f"The intake worker has not responded for {round(age)} seconds."
+        ),
+        "last_heartbeat": row["heartbeat_at"],
+    }
+
+
+def heartbeat_queue_job(job_id: str, worker_id: str) -> None:
+    with _connection() as conn:
+        conn.execute(
+            """
+            UPDATE queue_jobs SET heartbeat_at = ?
+            WHERE id = ? AND worker_id = ? AND status IN ('running', 'pause_requested', 'cancel_requested')
+            """,
+            (_now(), job_id, worker_id),
+        )
+
+
+def claim_next_queue_job(worker_id: str = "legacy-worker") -> dict | None:
     """Claim one queued job atomically; safe when multiple local workers run."""
     with _connection() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -232,8 +321,12 @@ def claim_next_queue_job() -> dict | None:
             return None
         started_at = _now()
         conn.execute(
-            "UPDATE queue_jobs SET status = 'running', started_at = ? WHERE id = ?",
-            (started_at, row["id"]),
+            """
+            UPDATE queue_jobs
+            SET status = 'running', started_at = ?, worker_id = ?, heartbeat_at = ?
+            WHERE id = ?
+            """,
+            (started_at, worker_id, started_at, row["id"]),
         )
         conn.commit()
     return {
@@ -243,13 +336,116 @@ def claim_next_queue_job() -> dict | None:
         "status": "running",
         "created_at": row["created_at"],
         "started_at": started_at,
+        "worker_id": worker_id,
     }
+
+
+def recover_stale_queue_jobs(*, stale_after_seconds: float = 15.0) -> list[str]:
+    """Recover jobs whose owning worker disappeared or stopped heartbeating."""
+    cutoff = time.time() - max(0.0, stale_after_seconds)
+    recovered: list[tuple[str, str, str]] = []
+    with _connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, run_id, status, worker_id, heartbeat_at, started_at
+            FROM queue_jobs
+            WHERE status IN ('running', 'pause_requested', 'cancel_requested')
+            """
+        ).fetchall()
+        worker_rows = conn.execute(
+            "SELECT id, heartbeat_at FROM workers"
+        ).fetchall()
+        active_workers = {}
+        for worker in worker_rows:
+            try:
+                active_workers[str(worker["id"])] = datetime.fromisoformat(
+                    str(worker["heartbeat_at"])
+                ).timestamp()
+            except ValueError:
+                active_workers[str(worker["id"])] = 0.0
+        for row in rows:
+            owner = str(row["worker_id"] or "")
+            heartbeat = str(row["heartbeat_at"] or row["started_at"] or "")
+            try:
+                job_heartbeat = datetime.fromisoformat(heartbeat).timestamp()
+            except ValueError:
+                job_heartbeat = 0.0
+            if owner and active_workers.get(owner, 0.0) > cutoff and job_heartbeat > cutoff:
+                continue
+            status = str(row["status"])
+            if status == "cancel_requested":
+                next_status = "cancelled"
+                conn.execute(
+                    """
+                    UPDATE queue_jobs
+                    SET status = 'cancelled', finished_at = ?, worker_id = NULL, heartbeat_at = NULL
+                    WHERE id = ?
+                    """,
+                    (_now(), row["id"]),
+                )
+            elif status == "pause_requested":
+                next_status = "paused"
+                conn.execute(
+                    """
+                    UPDATE queue_jobs
+                    SET status = 'paused', worker_id = NULL, heartbeat_at = NULL
+                    WHERE id = ?
+                    """,
+                    (row["id"],),
+                )
+            else:
+                next_status = "queued"
+                conn.execute(
+                    """
+                    UPDATE queue_jobs
+                    SET status = 'queued', started_at = NULL, finished_at = NULL,
+                        error = NULL, worker_id = NULL, heartbeat_at = NULL
+                    WHERE id = ?
+                    """,
+                    (row["id"],),
+                )
+            recovered.append((str(row["run_id"]), status, next_status))
+
+    for run_id, _, next_status in recovered:
+        run = get_run(run_id)
+        if run is None:
+            continue
+        if next_status == "cancelled":
+            run["status"] = "cancelled"
+            run["control_state"] = "cancelled"
+            run["finished_at"] = _now()
+            for item in run.get("items", []):
+                if item.get("status") in {"pending", "running"}:
+                    item["status"] = "cancelled"
+        elif next_status == "paused":
+            run["status"] = "paused"
+            run["control_state"] = "paused"
+        else:
+            run["status"] = "queued"
+            run["control_state"] = "running"
+            run["started_at"] = run.get("started_at")
+            for item in run.get("items", []):
+                if item.get("status") == "running":
+                    item["status"] = "pending"
+                    item["started_at"] = None
+                    item["finished_at"] = None
+                    item["duration_seconds"] = None
+            append_log(
+                run_id,
+                "The previous worker stopped unexpectedly. The unfinished run was returned to the queue.",
+            )
+        save_run(run)
+    return [run_id for run_id, _, _ in recovered]
 
 
 def complete_queue_job(job_id: str, *, error: str | None = None) -> None:
     with _connection() as conn:
         conn.execute(
-            "UPDATE queue_jobs SET status = ?, finished_at = ?, error = ? WHERE id = ?",
+            """
+            UPDATE queue_jobs SET status = ?, finished_at = ?, error = ?,
+                worker_id = NULL, heartbeat_at = NULL
+            WHERE id = ?
+            """,
             ("error" if error else "done", _now(), error, job_id),
         )
 
@@ -257,7 +453,7 @@ def complete_queue_job(job_id: str, *, error: str | None = None) -> None:
 def pause_queue_job(job_id: str) -> None:
     with _connection() as conn:
         conn.execute(
-            "UPDATE queue_jobs SET status = 'paused' WHERE id = ?",
+            "UPDATE queue_jobs SET status = 'paused', worker_id = NULL, heartbeat_at = NULL WHERE id = ?",
             (job_id,),
         )
 
@@ -265,7 +461,11 @@ def pause_queue_job(job_id: str) -> None:
 def cancel_queue_job(job_id: str) -> None:
     with _connection() as conn:
         conn.execute(
-            "UPDATE queue_jobs SET status = 'cancelled', finished_at = ? WHERE id = ?",
+            """
+            UPDATE queue_jobs SET status = 'cancelled', finished_at = ?,
+                worker_id = NULL, heartbeat_at = NULL
+            WHERE id = ?
+            """,
             (_now(), job_id),
         )
 
@@ -280,14 +480,16 @@ def queue_status_for_run(run_id: str) -> str | None:
 
 
 def control_run(run_id: str, action: str) -> dict:
-    """Persist a cooperative pause, resume, or cancel request for one run."""
-    if action not in {"pause", "resume", "cancel"}:
-        raise ValueError("action must be pause, resume, or cancel")
+    """Persist a cooperative pause, resume, cancel, or retry request."""
+    if action not in {"pause", "resume", "cancel", "retry"}:
+        raise ValueError("action must be pause, resume, cancel, or retry")
     run = get_run(run_id)
     if run is None:
         raise KeyError("run not found")
-    if run.get("status") in {"done", "error", "cancelled"}:
+    if run.get("status") in {"done", "cancelled"}:
         raise ValueError(f"cannot {action} a {run.get('status')} run")
+    if run.get("status") == "error" and action != "retry":
+        raise ValueError("a failed run can be retried; it does not need cancellation")
 
     with _connection() as conn:
         row = conn.execute(
@@ -298,7 +500,35 @@ def control_run(run_id: str, action: str) -> dict:
             raise ValueError("this run is not managed by the durable processing queue")
 
         queue_status = str(row["status"])
-        if action == "pause":
+        if action == "retry":
+            if queue_status != "error" or run.get("status") != "error":
+                raise ValueError("only a failed run can be retried")
+            conn.execute(
+                """
+                UPDATE queue_jobs
+                SET status = 'queued', started_at = NULL, finished_at = NULL,
+                    error = NULL, worker_id = NULL, heartbeat_at = NULL
+                WHERE id = ?
+                """,
+                (row["id"],),
+            )
+            run["status"] = "queued"
+            run["control_state"] = "running"
+            run["error"] = None
+            run["finished_at"] = None
+            for item in run.get("items", []):
+                if item.get("status") == "error":
+                    item["status"] = "pending"
+                    item["error"] = None
+                    item["started_at"] = None
+                    item["finished_at"] = None
+                    item["duration_seconds"] = None
+            run["completed"] = sum(
+                1
+                for item in run.get("items", [])
+                if item.get("status") in {"done", "partial"}
+            )
+        elif action == "pause":
             if queue_status == "paused":
                 return {"run_id": run_id, "status": "paused", "queue_status": "paused"}
             if queue_status == "queued":
@@ -340,11 +570,13 @@ def control_run(run_id: str, action: str) -> dict:
                     if item.get("status") in {"pending", "running"}:
                         item["status"] = "cancelled"
 
+    if action == "retry":
+        append_log(run_id, "Retry requested. Completed files will not be repeated.")
     save_run(run)
     return {
         "run_id": run_id,
         "status": run["status"],
-        "queue_status": "queued" if action == "resume" else (
+        "queue_status": "queued" if action in {"resume", "retry"} else (
             "paused" if run["status"] == "paused" else queue_status
         ),
     }

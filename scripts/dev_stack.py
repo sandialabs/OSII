@@ -15,6 +15,7 @@ import secrets
 import shlex
 import shutil
 import socket
+from socketserver import TCPServer
 import subprocess
 import sys
 import threading
@@ -34,8 +35,6 @@ SERVICE_DISPLAY_NAMES = {
     "worker": "sequential intake worker",
     "mcp": "MCP server for agents",
     "dashboard": "dashboard web interface",
-    "dataset-extractor": "CSV dataset table extractor example",
-    "dataset-enricher": "dataset collection table enricher example",
 }
 
 
@@ -88,10 +87,7 @@ def command_path(name: str) -> str:
     return resolved
 
 
-def build_environment(
-    examples: bool,
-    core_only: bool,
-) -> dict[str, str]:
+def build_environment(core_only: bool) -> dict[str, str]:
     env = os.environ.copy()
     env.pop("VIRTUAL_ENV", None)
     for key, value in load_dotenv(REPOSITORY_ROOT / ".env").items():
@@ -192,13 +188,6 @@ def build_environment(
             env.update({"CHAT_PROVIDER": "ollama", "CHAT_PROVIDER_CHAIN": "ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "ollama.synthesizer,local.extractive-preview"})
         elif provider_profile == "openai":
             env.update({"CHAT_PROVIDER": "openai", "CHAT_PROVIDER_CHAIN": "openai,ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "openai.synthesizer,ollama.synthesizer,local.extractive-preview"})
-    if examples:
-        configured = [item for item in env.get("OSII_PROCESSORS", "").split(",") if item]
-        configured.extend((
-            f"http://127.0.0.1:{env.get('OSII_DATASET_EXTRACTOR_PORT', '8097')}",
-            f"http://127.0.0.1:{env.get('OSII_DATASET_ENRICHER_PORT', '8098')}",
-        ))
-        env["OSII_PROCESSORS"] = ",".join(dict.fromkeys(configured))
     return env
 
 
@@ -250,7 +239,6 @@ def service_commands(
     npm: str,
     env: dict[str, str],
     core_only: bool,
-    examples: bool = False,
 ) -> list[Service]:
     api_port = env.get("OSII_API_PORT", "8511")
     dashboard_port = env.get("OSII_DASHBOARD_PORT", "5173")
@@ -338,30 +326,6 @@ def service_commands(
             services.insert(0, Service(name, (uv, "run", "--package", package, "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "services" / directory, int(port)))
         bridge_port = env.get("OSII_MODEL_BRIDGE_PORT", "8095")
         services.insert(4, Service("model-bridge", (uv, "run", "--package", "osii-model-provider-bridge", "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", bridge_port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "services" / "model-provider-bridge", int(bridge_port)))
-    if examples:
-        example_directory = REPOSITORY_ROOT / "examples" / "tabular-dataset-processors"
-        dataset_extractor_port = env.get("OSII_DATASET_EXTRACTOR_PORT", "8097")
-        dataset_enricher_port = env.get("OSII_DATASET_ENRICHER_PORT", "8098")
-        services.insert(0, Service(
-            "dataset-extractor",
-            (
-                uv, "run", "--package", "osii-processor-sdk", "python", "-m", "uvicorn",
-                "dataset_processors:extractor_app", "--host", "127.0.0.1", "--port", dataset_extractor_port,
-                "--reload", "--reload-dir", ".",
-            ),
-            example_directory,
-            int(dataset_extractor_port),
-        ))
-        services.insert(1, Service(
-            "dataset-enricher",
-            (
-                uv, "run", "--package", "osii-processor-sdk", "python", "-m", "uvicorn",
-                "dataset_processors:enricher_app", "--host", "127.0.0.1", "--port", dataset_enricher_port,
-                "--reload", "--reload-dir", ".",
-            ),
-            example_directory,
-            int(dataset_enricher_port),
-        ))
     return services
 
 
@@ -573,6 +537,19 @@ class CapabilitySupervisor:
     def start_http(self, port: int) -> None:
         supervisor = self
 
+        class LoopbackThreadingHTTPServer(ThreadingHTTPServer):
+            """Bind locally without a reverse-DNS lookup during startup."""
+
+            def server_bind(self) -> None:
+                # http.server.HTTPServer resolves the bound address through
+                # socket.getfqdn(). That lookup can stall indefinitely on
+                # offline or tightly managed networks even though the server
+                # only listens on loopback.
+                TCPServer.server_bind(self)
+                host, bound_port = self.server_address[:2]
+                self.server_name = host
+                self.server_port = bound_port
+
         class Handler(BaseHTTPRequestHandler):
             def _json(self, status: int, payload: object) -> None:
                 body = json.dumps(payload).encode("utf-8")
@@ -619,7 +596,7 @@ class CapabilitySupervisor:
                 return
 
         try:
-            self.server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+            self.server = LoopbackThreadingHTTPServer(("127.0.0.1", port), Handler)
         except OSError as exc:
             raise RuntimeError(
                 f"Cannot start the local capability supervisor on port {port}: {exc}"
@@ -705,7 +682,6 @@ def wait_for_http_service(
 
 
 def run(
-    examples: bool,
     core_only: bool,
     dry_run: bool,
     skip_setup: bool,
@@ -713,9 +689,9 @@ def run(
     try:
         uv = command_path("uv")
         npm = command_path("npm")
-        env = build_environment(examples, core_only)
+        env = build_environment(core_only)
         provider_profile = "openai" if env.get("OPENAI_BASE_URL", "").strip() else "ollama"
-        services = service_commands(uv, npm, env, core_only, examples)
+        services = service_commands(uv, npm, env, core_only)
 
         supervisor: CapabilitySupervisor | None = None
         if not core_only:
@@ -806,11 +782,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run editable OSII services on the host."
     )
-    parser.add_argument(
-        "--examples",
-        action="store_true",
-        help="Connect the example processor at its localhost port.",
-    )
     parser.add_argument("--core-only", action="store_true", help="Start app services without local processors.")
     parser.add_argument(
         "--dry-run",
@@ -824,7 +795,6 @@ def main() -> int:
     )
     args = parser.parse_args()
     return run(
-        args.examples,
         args.core_only,
         args.dry_run,
         args.skip_setup,

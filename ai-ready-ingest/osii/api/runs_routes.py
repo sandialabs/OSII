@@ -26,7 +26,9 @@ from osii.domain.processing.jobs import (
     list_queue_jobs,
     list_runs,
     queue_status_for_run,
+    recover_stale_queue_jobs,
     save_run,
+    worker_status,
 )
 from osii.domain.processing.manifests import save_manifest
 from osii.domain.storage.root_descriptor import write_collection_synthesis, write_collection_toml
@@ -117,12 +119,18 @@ def load_parser_routes(config_path: Path) -> list[dict]:
 
 
 def choose_parser(path: Path, routes: list[dict]) -> str:
+    return choose_parser_chain(path, routes)[0]
+
+
+def choose_parser_chain(path: Path, routes: list[dict]) -> list[str]:
     suffix = path.suffix.lower()
     for route in routes:
         exts = route.get("extensions", [])
         if "*" in exts or suffix in [e.lower() for e in exts]:
-            return route["extractor"]
-    return "tika"
+            chain = [str(route["extractor"])]
+            chain.extend(str(item) for item in route.get("fallbacks", []) if item)
+            return list(dict.fromkeys(chain))
+    return ["tika"]
 
 
 class FallbackSynthesizer:
@@ -356,10 +364,12 @@ def run_worker(
                 continue
 
             extension = src.suffix.lower() or "(no extension)"
-            extractor_name = (
-                (extractor_overrides or {}).get(extension)
-                or choose_parser(src, parser_routes)
+            extractor_chain = (
+                [(extractor_overrides or {})[extension]]
+                if extension in (extractor_overrides or {})
+                else choose_parser_chain(src, parser_routes)
             )
+            extractor_name = extractor_chain[0]
             run["items"][index]["status"] = "running"
             run["items"][index]["extractor"] = extractor_name
             run["items"][index]["synthesizer"] = synthesizer_name
@@ -376,21 +386,35 @@ def run_worker(
                 should_extract = run_extraction and (extract_mode == "reprocess" or existing_text is None)
                 extract_result = None
                 if should_extract:
-                    append_log(run_id, f"Extracting {src.name} with '{extractor_name}'")
-                    extract_result = extract_document_variant(
-                        extractor_name=extractor_name,
-                        source_path=src,
-                        data_volume_root=data_volume_root,
-                        osii_root=osii_store,
-                        expert_context=context or None,
-                        extractor_config=merged_processor_settings(
-                            osii_store,
-                            extractor_name,
-                            {},
-                        ),
-                        make_primary=extraction_policy == "make_primary",
-                        dispatcher=dispatch_extract,
-                    )
+                    extraction_failures: list[str] = []
+                    for attempt, candidate in enumerate(extractor_chain):
+                        extractor_name = candidate
+                        run["items"][index]["extractor"] = extractor_name
+                        save_run(run)
+                        append_log(run_id, f"Extracting {src.name} with '{extractor_name}'")
+                        try:
+                            extract_result = extract_document_variant(
+                                extractor_name=extractor_name,
+                                source_path=src,
+                                data_volume_root=data_volume_root,
+                                osii_root=osii_store,
+                                expert_context=context or None,
+                                extractor_config=merged_processor_settings(
+                                    osii_store,
+                                    extractor_name,
+                                    {},
+                                ),
+                                make_primary=extraction_policy == "make_primary",
+                                dispatcher=dispatch_extract,
+                            )
+                            break
+                        except Exception as exc:
+                            extraction_failures.append(f"{extractor_name}: {exc}")
+                            append_log(run_id, f"Extractor '{extractor_name}' failed for {src.name}: {exc}")
+                            if attempt + 1 < len(extractor_chain):
+                                append_log(run_id, f"Trying fallback extractor '{extractor_chain[attempt + 1]}'.")
+                    if extract_result is None:
+                        raise RuntimeError("All configured extractors failed: " + "; ".join(extraction_failures))
                     file_id = extract_result["file_id"]
                     upsert_document(osii_store, file_id)
                     append_log(
@@ -781,7 +805,21 @@ async def start_run(request: Request, payload: dict):
 
 @router.get("/runs")
 async def list_run_status(limit: int = 100):
-    return {"runs": list_runs(limit=limit), "queue": list_queue_jobs(limit=limit)}
+    return {
+        "runs": list_runs(limit=limit),
+        "queue": list_queue_jobs(limit=limit),
+        "worker": worker_status(),
+    }
+
+
+@router.post("/runs/recover")
+async def recover_run_queue():
+    recovered = recover_stale_queue_jobs()
+    return {
+        "recovered_run_ids": recovered,
+        "recovered_count": len(recovered),
+        "worker": worker_status(),
+    }
 
 
 @router.get("/runs/{run_id}")

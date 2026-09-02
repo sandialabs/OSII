@@ -9,17 +9,18 @@
 # %% [markdown]
 # ## Start the dataset demonstration
 #
-# From the repository root, this one command imports the public example corpus
-# and starts OSII plus the two example Processor API services:
+# From the OSII Core repository root, import the public example corpus:
 #
 # ```bash
-# make dev-datasets
+# make demo-data
 # ```
 #
-# On Windows PowerShell:
+# Then start the optional `tabular-dataset-processors` image from the OSII Model
+# Tool Chest and configure its two URLs in OSII's `OSII_PROCESSORS` setting.
+# On Windows PowerShell, import the files with:
 #
 # ```powershell
-# .\scripts\osii.ps1 dev-datasets
+# .\scripts\osii.ps1 demo-data
 # ```
 #
 # The Iris and Wine data are bundled with scikit-learn. The import step creates

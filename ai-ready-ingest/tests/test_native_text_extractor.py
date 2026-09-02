@@ -5,9 +5,11 @@ import pytest
 from osii.domain.storage.store import ensure_osii_store_layout
 from osii.domain.processing.extractor_selection import (
     choose_extractor_for_path,
+    extractor_chain_for_path,
     load_extractor_routes,
 )
 from osii.extraction.dispatcher import dispatch_extract
+from osii.api.extractor_routes import validate_routes
 
 
 def _extract(source: Path, source_root: Path, osii_root: Path) -> str:
@@ -60,6 +62,7 @@ def test_native_routes_leave_unsupported_binaries_for_explicit_handling(
     routes = load_extractor_routes()
 
     assert choose_extractor_for_path(Path("report.pdf"), routes) == "local.native-text"
+    assert extractor_chain_for_path(Path("report.pdf"), routes) == ["local.native-text", "tika"]
     assert choose_extractor_for_path(Path("archive.bin"), routes) == "tika"
 
 
@@ -76,3 +79,25 @@ def test_native_text_extractor_rejects_scanned_pdf(tmp_path: Path):
 
     with pytest.raises(RuntimeError, match="requires an OCR extractor"):
         _extract(source, source_root, osii_root)
+
+
+def test_extractor_route_fallbacks_reject_duplicates_and_primary():
+    primary_errors, _ = validate_routes({
+        "routes": [{
+            "name": "pdf",
+            "extractor": "native_text",
+            "fallbacks": ["native_text"],
+            "extensions": [".pdf"],
+        }]
+    })
+    duplicate_errors, _ = validate_routes({
+        "routes": [{
+            "name": "pdf",
+            "extractor": "native_text",
+            "fallbacks": ["tika", "tika"],
+            "extensions": [".pdf"],
+        }]
+    })
+
+    assert any("primary extractor" in error for error in primary_errors)
+    assert any("duplicate fallback" in error for error in duplicate_errors)

@@ -9,7 +9,7 @@ export OSII_IMAGE_PREFIX OSII_IMAGE_TAG
 export OSII_COMPOSE_COMMAND := $(COMPOSE)
 unexport VIRTUAL_ENV
 
-.PHONY: dev dev-datasets demo-data run build push-release down logs test docs doctor
+.PHONY: dev demo-data run build push-release down logs test docs doctor
 
 # Default development path: API (including chat), worker, MCP, dashboard, and extraction
 # all run from source on the host. Setup can start optional Tika when a container
@@ -20,10 +20,6 @@ dev:
 # Install the small public demo corpus without retaining download archives.
 demo-data:
 	$(UV) run --no-project --python 3.11 --with 'scikit-learn>=1.5,<2' python scripts/import_example_data.py
-
-# Run OSII plus the copyable CSV extractor and collection-table enricher.
-dev-datasets: demo-data
-	$(UV) run --no-project --python 3.11 python scripts/dev_stack.py --examples
 
 # Start the normal integrated stack from existing images, without rebuilding.
 run:

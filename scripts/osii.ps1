@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("dev", "dev-datasets", "demo-data", "run", "build", "push-release", "down", "logs", "doctor")]
+    [ValidateSet("dev", "demo-data", "run", "build", "push-release", "down", "logs", "doctor")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
@@ -97,10 +97,6 @@ try {
         }
         "demo-data" {
             Import-OsiiExampleData
-        }
-        "dev-datasets" {
-            Import-OsiiExampleData
-            Invoke-OsiiDevLauncher @("--examples")
         }
         "run" {
             Invoke-OsiiCompose @("up", "--no-build", "--pull", "missing", "tesseract", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "dashboard")

@@ -54,6 +54,7 @@ def test_browse_and_preview_report_processed_files(
         {
             "extension": ".pdf",
             "extractor": "tika",
+            "fallbacks": [],
             "count": 1,
             "sample": ["finished.PDF"],
         }
@@ -355,6 +356,7 @@ def test_upload_then_enqueue_returns_durable_run(client, temp_upload_root: Path)
     assert status.status_code == 200
     assert status.json()["runs"][0]["id"] == payload["id"]
     assert status.json()["queue"][0]["status"] == "queued"
+    assert status.json()["worker"]["available"] is False
 
 
 def test_intake_can_create_a_logical_collection_from_its_resolved_scope(

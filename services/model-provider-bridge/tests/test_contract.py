@@ -186,6 +186,31 @@ def test_openai_http_uses_standard_environment_variables(monkeypatch, tmp_path):
     assert seen["headers"]["Authorization"] == "Bearer alias-key"
 
 
+def test_openai_embedding_retries_without_optional_encoding_format(monkeypatch, tmp_path):
+    monkeypatch.setenv("OSII_ROOT", str(tmp_path))
+    calls = []
+
+    def fake_request(method, path, **kwargs):
+        calls.append(kwargs["payload"])
+        if "encoding_format" in kwargs["payload"]:
+            raise ValueError("optional field is not supported")
+        return {"model": "embed-v1", "data": [{"embedding": [1.0, 0.0]}]}
+
+    monkeypatch.setattr(CLIENTS["openai"], "request", fake_request)
+    response = TestClient(app).post(
+        "/openai/embedder/v1/embed",
+        json={
+            "request_id": "retry",
+            "inputs": [{"id": "doc", "text": "hello"}],
+            "config": {"model": "embed-v1"},
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(calls) == 2
+    assert "encoding_format" not in calls[1]
+
+
 def test_fake_openai_server_enforces_contract():
     client = TestClient(fake_openai_app)
     assert client.get("/api/v1/models").status_code == 401

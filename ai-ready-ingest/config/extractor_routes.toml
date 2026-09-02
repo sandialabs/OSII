@@ -1,14 +1,17 @@
 [[routes]]
 name = "pdf-local-tika"
 extractor = "tika"
+fallbacks = ["local.native-text"]
 extensions = [".pdf"]
 
 [[routes]]
 name = "office-local-tika"
 extractor = "tika"
+fallbacks = ["local.native-text"]
 extensions = [".docx", ".doc"]
 
 [[routes]]
 name = "tika-catchall"
 extractor = "tika"
+fallbacks = ["local.native-text"]
 extensions = ["*"]

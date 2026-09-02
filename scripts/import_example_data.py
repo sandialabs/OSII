@@ -200,7 +200,8 @@ def main() -> int:
     print(f"Installed {len(written)} example file(s) under {destination.resolve()}:")
     for path in written:
         print(f"- {path.relative_to(destination.resolve())}")
-    print("\nStart OSII with `make dev-datasets` and open Intake.")
+    print("\nStart OSII with `make dev` and open Intake.")
+    print("To process CSV tables, configure the optional tabular Processor API service from the OSII Model Tool Chest.")
     return 0
 
 

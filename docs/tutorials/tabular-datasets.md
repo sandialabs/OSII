@@ -27,21 +27,21 @@ are intentionally the future agent-facing contract: agents should be able to
 read and act on the same artifact rather than requiring a separate CSV parser
 or UI-specific integration.
 
-## Start the complete example
+## Install the data and start the optional processors
 
 On macOS or Linux:
 
 ```bash
-make dev-datasets
+make demo-data
 ```
 
 On Windows PowerShell:
 
 ```powershell
-.\scripts\osii.ps1 dev-datasets
+.\scripts\osii.ps1 demo-data
 ```
 
-The command performs two visible steps:
+The command performs these visible data-only steps:
 
 1. It copies the bundled Purcell PDF into `osii-data/source/example-documents`.
 2. It exports the Iris and Wine datasets bundled with scikit-learn into
@@ -55,8 +55,27 @@ No dataset content is fetched from the internet. Installing the scikit-learn
 Python package may still require access to the configured package repository on
 the first run.
 
-To install the files without starting OSII, use `make demo-data` or
-`.\scripts\osii.ps1 demo-data`.
+The CSV extractor and collection enricher are optional Tool Chest services, not
+part of OSII Core's default development stack. Build and run the separate
+`tabular-dataset-processors` component from the OSII Model Tool Chest:
+
+```bash
+# Run from an osii-model-tool-chest checkout.
+podman build --format docker -f tabular-dataset-processors/Dockerfile -t osii-tabular-dataset-processors:0.1.0 .
+podman run -d --name osii-csv-table-extractor -p 8097:8097 osii-tabular-dataset-processors:0.1.0 extractor
+podman run -d --name osii-collection-table-enricher -p 8098:8098 osii-tabular-dataset-processors:0.1.0 enricher
+```
+
+Before starting OSII Core, add the following to its `.env` (use deployment
+network addresses rather than `127.0.0.1` when the services are separate):
+
+```dotenv
+OSII_PROCESSORS=http://127.0.0.1:8097,http://127.0.0.1:8098
+```
+
+Then run the ordinary `make dev` or `.\scripts\osii.ps1 dev`. The dashboard
+discovers the processors through their descriptors; Core remains responsible
+for validation, provenance, and canonical persistence.
 
 ## Process one source table
 
@@ -92,10 +111,11 @@ rather than the incidental layout of a drive.
 
 ## Copy the extension
 
-The complete processor is
-[`examples/tabular-dataset-processors/dataset_processors.py`](https://github.com/sandialabs/OSII/blob/main/examples/tabular-dataset-processors/dataset_processors.py).
-It contains one extractor and one enricher built only against the public
-Processor SDK. A subject-matter expert can copy it into an independent
+The complete, containerized reference implementation is the
+`tabular-dataset-processors/` component in the OSII Model Tool Chest. It
+contains one extractor and one enricher built only against the public Processor
+SDK, with a Dockerfile, direct tests, and an API contract embedded in the
+image. A subject-matter expert can copy that component into an independent
 repository, replace the CSV parser with a laboratory or domain parser, and
 retain the same descriptors, typed requests, provenance, and standard table
 output.

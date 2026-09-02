@@ -56,6 +56,7 @@ def validate_routes(payload: dict) -> tuple[list[str], list[str]]:
 
         name = route.get("name")
         extractor = route.get("extractor")
+        fallbacks = route.get("fallbacks", [])
         extensions = route.get("extensions")
 
         if not name:
@@ -79,6 +80,15 @@ def validate_routes(payload: dict) -> tuple[list[str], list[str]]:
                     f"Route '{name or i + 1}' references extractor '{extractor}', "
                     f"but that extractor is currently disabled."
                 )
+
+        if not isinstance(fallbacks, list) or any(
+            not isinstance(item, str) or not item.strip() for item in fallbacks
+        ):
+            errors.append(f"Route {i + 1} 'fallbacks' must be a list of extractor names.")
+        elif extractor in fallbacks:
+            errors.append(f"Route '{name or i + 1}' cannot use its primary extractor as a fallback.")
+        elif len(fallbacks) != len(set(fallbacks)):
+            errors.append(f"Route '{name or i + 1}' contains a duplicate fallback.")
 
         if not isinstance(extensions, list) or not extensions:
             errors.append(f"Route {i + 1} must have a non-empty 'extensions' list.")

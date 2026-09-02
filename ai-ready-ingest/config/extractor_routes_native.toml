@@ -1,6 +1,7 @@
 [[routes]]
 name = "host-native-development"
 extractor = "local.native-text"
+fallbacks = ["tika"]
 extensions = [
   ".cfg",
   ".conf",
@@ -30,3 +31,9 @@ extensions = [
   ".yaml",
   ".yml",
 ]
+
+[[routes]]
+name = "host-tika-catchall"
+extractor = "tika"
+fallbacks = []
+extensions = ["*"]

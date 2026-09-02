@@ -9,7 +9,7 @@ OSII deliberately distinguishes model providers from Processor API services.
 - A **guaranteed local capability** needs neither of those.
 
 Do not register an OpenAI-compatible endpoint or Ollama as a custom Processor endpoint. Connect them
-through **Setup → Connect AI**; the bundled bridge supplies the Processor API
+through **Setup → Model connections**; the bundled bridge supplies the Processor API
 boundary internally.
 
 ## Ollama
@@ -40,7 +40,7 @@ command for the full native diagnostic. Configure proxy credentials and trust
 for the Ollama application or service; OSII never requests or stores them.
 
 Configure the endpoint and exact language/embedding model names through
-**Setup → Connect AI**. Installed Ollama models are selectable from the same
+**Setup → Model connections**. Installed Ollama models are selectable from the same
 dialog. Language and embedding choices are independent because not every
 generative model supports embeddings. OSII saves the exact installed name,
 including its tag. Selecting a different embedding model does not reuse the
@@ -62,6 +62,13 @@ URL and explicit model names. The adapter uses:
 - `GET /models` for discovery
 - `POST /embeddings` for semantic embeddings
 - `POST /chat/completions` for synthesis and chat
+
+After model discovery, Setup sends one short test input to the selected
+embedding model and reports the returned dimensions. This distinguishes “the
+name appears in `/models`” from “this endpoint can actually embed with that
+model,” which is the readiness condition Intake uses. For compatible servers
+that reject OpenAI's optional `encoding_format` field, the bridge retries using
+only the required `model` and `input` fields.
 
 Set `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_EMBEDDING_MODEL`,
 `OPENAI_SYNTHESIS_MODEL`, and `OPENAI_CHAT_MODEL`, or enter the same values in

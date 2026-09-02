@@ -3,6 +3,7 @@ import type {
   IntakeResolveResponse,
   IntakeReadiness,
   ProcessingRun,
+  ProcessingRunsResponse,
   ProcessorEndpoint,
   ModelProvider,
   ModelProviderHealth,
@@ -10,6 +11,9 @@ import type {
   OllamaRecommendation,
   ManagedCapabilityService,
   SetupSummary,
+  ExtractorRoute,
+  ExtractorRoutesResponse,
+  ExtractorRoutesSaveResponse,
   QueueBrowseResponse,
   SourceRescanResponse,
   UploadResponse,
@@ -69,8 +73,16 @@ export async function saveProcessorSettings(processorName: string, config: Recor
   );
 }
 
-export async function listProcessingRuns(): Promise<{ runs: ProcessingRun[]; queue: Array<Record<string, unknown>> }> {
+export async function listProcessingRuns(): Promise<ProcessingRunsResponse> {
   return apiJson("/api/runs");
+}
+
+export async function recoverProcessingQueue(): Promise<{
+  recovered_run_ids: string[];
+  recovered_count: number;
+  worker: ProcessingRunsResponse["worker"];
+}> {
+  return apiJson("/api/runs/recover", { method: "POST", json: {} });
 }
 
 export async function getProcessingRunLogs(runId: string): Promise<{ run_id: string; logs: string[] }> {
@@ -79,7 +91,7 @@ export async function getProcessingRunLogs(runId: string): Promise<{ run_id: str
 
 export async function controlProcessingRun(
   runId: string,
-  action: "pause" | "resume" | "cancel",
+  action: "pause" | "resume" | "cancel" | "retry",
 ): Promise<{ run_id: string; status: string; queue_status: string }> {
   return apiJson(`/api/runs/${encodeURIComponent(runId)}/${action}`, {
     method: "POST",
@@ -133,6 +145,17 @@ export async function deleteModelProviderCredential(id: string) {
 
 export async function getSetupSummary(): Promise<SetupSummary> {
   return apiJson<SetupSummary>("/api/admin/setup");
+}
+
+export async function getExtractorRoutes(): Promise<ExtractorRoutesResponse> {
+  return apiJson("/api/extractor-routes");
+}
+
+export async function saveExtractorRoutes(routes: ExtractorRoute[]): Promise<ExtractorRoutesSaveResponse> {
+  return apiJson("/api/extractor-routes", {
+    method: "PUT",
+    json: { routes },
+  });
 }
 
 export async function controlCapabilityService(

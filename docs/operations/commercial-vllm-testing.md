@@ -46,7 +46,7 @@ chat completion has content. It prints only model IDs, response shape, token
 usage keys, and response length; it never prints the API key or a response
 body.
 
-Run `make dev`, then use **Setup → Connect AI → Check connection & models**.
+Run `make dev`, then use **Setup → Model connections → Test**.
 It performs the same bounded model-discovery and request validation without
 printing your API key or response body.
 

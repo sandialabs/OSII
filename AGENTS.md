@@ -137,6 +137,37 @@ can inspect and discuss.
   should be available through an appropriate Python/service API so scripts,
   the dashboard, and agents can share it.
 
+## Component placement and development discipline
+
+Classify a capability before creating its first file. Do not use a convenient
+directory as a temporary home for a runnable service; its location is part of
+the architecture and deployment contract.
+
+| Destination | Owns | Must not contain |
+| --- | --- | --- |
+| OSII Core and baseline processor packages | Canonical storage, RAG and chat orchestration, dashboard/API/MCP clients, and the smallest guaranteed local processing path | Model weights, specialized OCR, domain-specific processors, or optional deployment services |
+| OSII Model Tool Chest | Independently deployable, swappable OCR, model, and domain-specific Processor API containers that a deployment may select by default | Core persistence, dashboard logic, or an implicit Core dependency |
+| `examples/` and documentation | Short snippets, fixtures, request/response samples, and non-runnable teaching material | FastAPI/Flask apps, Dockerfiles, processor packages, service launch wiring, or a second application stack |
+| AI-ready tool shelf | Explicitly experimental or one-off utilities that are not a recommended OSII deployment component | A hidden Core default or a substitute for a maintained Tool Chest service |
+
+- A runnable HTTP processor, container image, or separately versioned package
+  belongs in the Model Tool Chest when it is optional or replaceable. It needs
+  a component directory with a package manifest, Dockerfile, focused tests,
+  README, and an OSII Processor API contract available inside the image.
+- A processor runs from an explicit bounded request and returns typed output;
+  Core validates and persists it. It must not browse the user's corpus, write
+  canonical `.osii` files, or reach into dashboard/Core internals.
+- Do not add optional Tool Chest services to Core's default Compose set,
+  baseline image, `make dev`, PowerShell launcher, or `.env` defaults. A human
+  or deployment chooses them through `OSII_PROCESSORS` or deployment-owned
+  wiring.
+- Retain tutorial data importers and fixtures in Core only when they do not
+  implement or start a processor. Documentation must state both the component
+  owner and how a person explicitly configures it.
+- Before changing a boundary, update the owning component's README and the
+  relevant Core deployment/tutorial documentation in the same change. Do not
+  add a second launch path merely to make a demonstration convenient.
+
 ## Documentation and demonstrations
 
 - Teach the OSII philosophy as part of the workflow: untouched originals,

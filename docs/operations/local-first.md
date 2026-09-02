@@ -30,8 +30,10 @@ the lightweight provider bridge from editable source. The four processors are
 the Python text-layer PDF/Office extractor, the no-AI cited source-excerpt
 preview, lexical token/word-pair hashing vectors, and deterministic document
 statistics/frequent keywords. The bridge makes no
-generation or embedding request until that capability is used; Setup performs
-only model discovery.
+generation request until that capability is used. Setup performs model
+discovery and, when an embedding model is selected, validates one real vector
+so a model that merely appears in `/models` is not incorrectly offered to
+Intake.
 
 The host launcher starts the dashboard only after `http://127.0.0.1:8511/health`
 responds. This is especially important on Windows, where several simultaneous
@@ -54,7 +56,7 @@ When `OPENAI_BASE_URL` is set in `.env`, normal `make dev` prefers that
 OpenAI-compatible endpoint. Otherwise it uses an available separately installed
 Ollama service. **OSII does not install or launch Ollama:** manage the separate
 application yourself when you use it, then open it or run `ollama serve`. In
-**Setup → Connect AI**, OSII queries `/api/tags` and shows
+**Setup → Model connections**, OSII queries `/api/tags` and shows
 the installed models beside the endpoint configuration. The two approved US
 starter models are:
 
@@ -86,6 +88,18 @@ replaces Ollama capability by capability, without changing the rest of OSII.
 
 ## Setup and local service control
 
+Setup is organized around **Extractors, Synthesizers, Embedders, and
+Enrichers**. Each section lists the complete discovered inventory, identifies
+the current default, explains the concrete implementation, and exposes any
+descriptor-defined settings. Model connections sit above those sections
+because one OpenAI-compatible or Ollama connection can supply both a
+synthesizer and an embedder.
+
+The **Extraction routing** section assigns extension groups to a primary
+extractor and ordered fallbacks. A worker tries the primary first and records
+its failure before proceeding left-to-right through the fallbacks. Intake shows
+only a compact readiness result and always uses the saved Setup routing.
+
 The host launcher includes a loopback-only capability supervisor. The backend
 uses a per-run private token to ask it for status or to start, stop, and restart
 the extractor, preview synthesizer, compatibility embedder, enricher,
@@ -99,7 +113,7 @@ launcher because stopping the management plane from its own page would make
 recovery confusing. Container deployments report capability health but disable
 local lifecycle controls.
 
-For host development, **Setup → Connect AI** can save an API key in the
+For host development, **Setup → Model connections** can save an API key in the
 repository-root `.env`. The file is plaintext and excluded by `.gitignore`; it
 must not be copied or shared. Only the key's environment-variable name enters
 `.osii`. The backend and model-provider bridge reread the file as needed.
@@ -123,6 +137,8 @@ narrow screens, the panes stack so neither source content nor text is squeezed.
 ## Add and reprocess documents
 
 The Intake page separates **Add files**, **Process library**, and **Activity**.
+File-extension routing is intentionally not edited there; use **Setup →
+Extraction routing** so the same policy applies consistently to every run.
 Use Process library after installing a model to add embeddings or summaries to
 documents that were extracted earlier. Use **Upgrade extraction** when a better
 extractor becomes available; OSII preserves both extraction versions and lets
@@ -167,6 +183,13 @@ scrollable terminal panel at the bottom of Activity. A worker failure that
 happens before the first file begins is reconciled from the durable queue into
 an **error** run with the actual exception. Terminal runs no longer offer
 pause, resume, or cancel actions.
+
+The worker publishes a heartbeat while idle and while processing a long file.
+If Windows terminates it, OSII marks the worker unavailable instead of silently
+waiting. A replacement worker automatically returns interrupted work to the
+queue after the abandoned lease expires; **Recover queue** performs the same
+safe check on demand. A true error run offers **Retry failed run**, which resets
+only failed items and preserves files that already completed.
 
 ## Generate an LLM wiki
 

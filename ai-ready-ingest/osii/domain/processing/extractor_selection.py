@@ -24,11 +24,18 @@ def load_extractor_routes(config_path: Path | None = None) -> list[dict]:
 
 
 def choose_extractor_for_path(path: Path, routes: list[dict]) -> str:
+    return extractor_chain_for_path(path, routes)[0]
+
+
+def extractor_chain_for_path(path: Path, routes: list[dict]) -> list[str]:
+    """Return the configured primary extractor followed by ordered fallbacks."""
     suffix = path.suffix.lower()
 
     for route in routes:
         exts = route.get("extensions", [])
         if "*" in exts or suffix in [e.lower() for e in exts]:
-            return route["extractor"]
+            chain = [str(route["extractor"])]
+            chain.extend(str(item) for item in route.get("fallbacks", []) if item)
+            return list(dict.fromkeys(chain))
 
-    return "tika"
+    return ["tika"]

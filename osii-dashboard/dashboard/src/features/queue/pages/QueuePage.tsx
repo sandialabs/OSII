@@ -48,6 +48,7 @@ import {
   getProcessingRunLogs,
   getIntakeReadiness,
   listProcessingRuns,
+  recoverProcessingQueue,
   rescanSourcePaths,
   resolveIntake,
   uploadQueueFiles,
@@ -161,7 +162,6 @@ export function QueuePage() {
   const [collectionDescription, setCollectionDescription] = useState("");
   const [selectedSynthesizer, setSelectedSynthesizer] = useState("");
   const [selectedEnricher, setSelectedEnricher] = useState("");
-  const [extractorOverrides, setExtractorOverrides] = useState<Record<string, string>>({});
   const [expertContext, setExpertContext] = useState("");
   const [uploading, setUploading] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -169,6 +169,7 @@ export function QueuePage() {
   const [rescanResult, setRescanResult] = useState<SourceRescanResponse | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [controllingRun, setControllingRun] = useState<string | null>(null);
+  const [recoveringQueue, setRecoveringQueue] = useState(false);
   const [selectedLogRunId, setSelectedLogRunId] = useState<string | null>(null);
   const logPanelRef = useRef<HTMLPreElement | null>(null);
 
@@ -250,7 +251,6 @@ export function QueuePage() {
       deferredIncludePatterns,
       deferredExcludePatterns,
       showHidden,
-      extractorOverrides,
       section,
       runExtraction,
       extractMode,
@@ -269,7 +269,6 @@ export function QueuePage() {
       include_patterns: deferredIncludePatterns,
       exclude_patterns: deferredExcludePatterns,
       show_hidden: showHidden,
-      extractor_overrides: extractorOverrides,
       workflow: section === "process" ? "library" : "intake",
       run_extraction: runExtraction,
       extract_mode: extractMode,
@@ -316,7 +315,7 @@ export function QueuePage() {
     if (panel) panel.scrollTop = panel.scrollHeight;
   }, [displayedLogLines.length, selectedLogRunId]);
 
-  const controlRun = async (run: ProcessingRun, action: "pause" | "resume" | "cancel") => {
+  const controlRun = async (run: ProcessingRun, action: "pause" | "resume" | "cancel" | "retry") => {
     setControllingRun(`${run.id}:${action}`);
     try {
       const result = await controlProcessingRun(run.id, action);
@@ -326,6 +325,8 @@ export function QueuePage() {
           ? "Pause requested. OSII will finish the current file, then free the worker for another run."
           : action === "cancel"
             ? "Cancellation requested. OSII will finish the current file, then stop this run."
+            : action === "retry"
+              ? "The failed run is queued again. Files that already completed will not be repeated."
             : "Run resumed. Completed files will not be repeated.",
       });
       await queryClient.invalidateQueries({ queryKey: ["processing-runs"] });
@@ -339,6 +340,27 @@ export function QueuePage() {
       });
     } finally {
       setControllingRun(null);
+    }
+  };
+
+  const recoverQueue = async () => {
+    setRecoveringQueue(true);
+    try {
+      const result = await recoverProcessingQueue();
+      setNotice({
+        severity: "info",
+        text: result.recovered_count
+          ? `${result.recovered_count} interrupted run(s) returned to a safe queue state.`
+          : "No stale run was found. If the worker just stopped, wait 15 seconds and try again.",
+      });
+      await queryClient.invalidateQueries({ queryKey: ["processing-runs"] });
+    } catch (error) {
+      setNotice({
+        severity: "error",
+        text: error instanceof Error ? error.message : "Could not recover the processing queue.",
+      });
+    } finally {
+      setRecoveringQueue(false);
     }
   };
 
@@ -430,7 +452,6 @@ export function QueuePage() {
         include_patterns: includePatterns,
         exclude_patterns: excludePatterns,
         show_hidden: showHidden,
-        extractor_overrides: extractorOverrides,
         workflow: section === "process" ? "library" : "intake",
         run_extraction: runExtraction,
         extract_mode: extractMode,
@@ -518,7 +539,9 @@ export function QueuePage() {
     ),
   );
   const unavailableExtractorPlan = preview.data?.preview.extractor_plan.filter(
-    (plan) => !extractorStatus(plan.extractor)?.available,
+    (plan) => ![plan.extractor, ...(plan.fallbacks ?? [])].some(
+      (name) => extractorStatus(name)?.available,
+    ),
   ) ?? [];
   const extractorPlanReady = (
     Boolean(readiness.data)
@@ -549,6 +572,20 @@ export function QueuePage() {
       </Paper>
 
       {notice ? <Alert severity={notice.severity}>{notice.text}</Alert> : null}
+
+      {runs.data?.worker && !runs.data.worker.available ? (
+        <Alert
+          severity="error"
+          action={(
+            <Stack direction="row" spacing={0.5}>
+              <Button color="inherit" size="small" onClick={() => setSection("activity")}>View activity</Button>
+              <Button color="inherit" size="small" disabled={recoveringQueue} onClick={() => void recoverQueue()}>{recoveringQueue ? "Checking…" : "Recover queue"}</Button>
+            </Stack>
+          )}
+        >
+          <strong>The intake worker is not responding.</strong> {runs.data.worker.detail} New work will remain queued until the worker is running.
+        </Alert>
+      ) : null}
 
       {section !== "activity" ? <>
 
@@ -977,155 +1014,34 @@ export function QueuePage() {
         </Stack>
       </Paper>
 
-      <Paper variant="outlined" sx={{ p: 2 }}>
-        <Stack spacing={2}>
-          <Stack
-            direction={{ xs: "column", md: "row" }}
-            justifyContent="space-between"
-            spacing={1}
-          >
-            <Stack spacing={0.25}>
-              <Typography fontWeight={700}>Extraction for this run</Typography>
-              <Typography variant="body2" color="text.secondary">
-                These choices are calculated from the document scope and file rules above. Completed files remain browsable while processing continues.
-              </Typography>
-            </Stack>
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<RefreshOutlinedIcon />}
-                onClick={() => void queryClient.invalidateQueries({
-                  queryKey: ["intake", "readiness"],
-                })}
-              >
-                Retest tools
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<SettingsOutlinedIcon />}
-                onClick={() => navigate("/admin/processors")}
-              >
-                Open Setup
-              </Button>
-            </Stack>
+      <Paper variant="outlined" sx={{ p: 1.5 }}>
+        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1.25} alignItems={{ md: "center" }}>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Chip
+              color={!runExtraction || extractorPlanReady ? "success" : "error"}
+              variant="outlined"
+              label={runExtraction
+                ? (extractorPlanReady ? "Extraction route ready" : "Extraction route needs setup")
+                : "Using current extraction"}
+            />
+            <Chip
+              color={embeddingAvailable ? "success" : "default"}
+              variant="outlined"
+              label={embeddingAvailable
+                ? `${embeddingStatus?.display_name ?? "Embedding method"} ready`
+                : "BM25 search ready; embeddings unavailable"}
+            />
           </Stack>
-
-          {readiness.isLoading ? <LinearProgress /> : null}
-          {readiness.isError ? (
-            <Alert severity="error">
-              Tool readiness could not be tested. Intake is paused until the tools can be checked.
-            </Alert>
-          ) : null}
-
-          {readiness.data ? (
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              {runExtraction ? (
-                <Chip
-                  color={extractorPlanReady ? "success" : "error"}
-                  variant="outlined"
-                  label={extractorPlanReady
-                    ? "Selected text extractors are running"
-                    : "A selected extractor needs setup"}
-                />
-              ) : (
-                <Chip color="success" variant="outlined" label="Using current extraction" />
-              )}
-              <Chip
-                color={embeddingAvailable ? "success" : "default"}
-                variant="outlined"
-                label={embeddingAvailable
-                  ? `${embeddingStatus?.display_name ?? "Embedding method"} is usable`
-                  : "No embedding model — BM25 keyword search still works"}
-              />
-              <Chip
-                color="success"
-                variant="outlined"
-                label={`${readiness.data.enrichers.filter((item) => item.available).length} enrichment methods available`}
-              />
-            </Stack>
-          ) : null}
-
-          {runExtraction ? (
-            <Stack spacing={1}>
-              <Typography variant="subtitle2">Extractor rules for matched files</Typography>
-              {(preview.data?.preview.extractor_plan ?? []).map((plan) => {
-                const selectedStatus = extractorStatus(plan.extractor);
-                return (
-                  <Paper key={plan.extension} variant="outlined" sx={{ p: 1.5 }}>
-                    <Stack
-                      direction={{ xs: "column", md: "row" }}
-                      alignItems={{ md: "center" }}
-                      justifyContent="space-between"
-                      spacing={1.5}
-                    >
-                      <Stack minWidth={0}>
-                        <Typography fontWeight={600}>
-                          {plan.extension} · {plan.count} file{plan.count === 1 ? "" : "s"}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary" noWrap>
-                          {plan.sample.join(", ")}
-                        </Typography>
-                      </Stack>
-                      <TextField
-                        select
-                        size="small"
-                        label="Extractor"
-                        value={selectedStatus?.id ?? plan.extractor}
-                        onChange={(event) => setExtractorOverrides((current) => ({
-                          ...current,
-                          [plan.extension]: event.target.value,
-                        }))}
-                        sx={{ minWidth: 240 }}
-                      >
-                        {(readiness.data?.extractors ?? []).map((extractor) => (
-                          <MenuItem
-                            key={extractor.id}
-                            value={extractor.id}
-                            disabled={!extractor.available}
-                          >
-                            {extractor.display_name}
-                            {extractor.available ? "" : " — unavailable"}
-                          </MenuItem>
-                        ))}
-                      </TextField>
-                      <Chip
-                        size="small"
-                        color={selectedStatus?.available ? "success" : "error"}
-                        label={selectedStatus?.available ? "Ready" : "Unavailable"}
-                        sx={{ alignSelf: { xs: "flex-start", md: "center" } }}
-                      />
-                    </Stack>
-                  </Paper>
-                );
-              })}
-              {preview.isLoading ? <LinearProgress /> : null}
-              {!preview.isLoading && !(preview.data?.preview.extractor_plan.length) ? (
-                <Typography variant="body2" color="text.secondary">
-                  No files currently match the source scope and rules above.
-                </Typography>
-              ) : null}
-            </Stack>
-          ) : (
-            <Alert severity="success">
-              Extraction will not run. OSII will reuse each document&apos;s current primary extraction.
-            </Alert>
-          )}
-
-          {runExtraction && unavailableExtractorPlan.length ? (
-            <Alert severity="error">
-              Start the required extractor service or choose another ready extractor.
-            </Alert>
-          ) : null}
-          {readiness.data?.external.length ? (
+          <Stack direction="row" spacing={1} alignItems="center">
             <Typography variant="caption" color="text.secondary">
-              {readiness.data.external.filter((item) => item.available).length} of{" "}
-              {readiness.data.external.length} registered external tools responded.
-              Open Setup to run their full contract tests.
+              File-type routes and fallbacks are managed in Setup.
             </Typography>
-          ) : null}
+            <Button size="small" variant="outlined" startIcon={<SettingsOutlinedIcon />} onClick={() => navigate("/admin/processors")}>Open Setup</Button>
+          </Stack>
         </Stack>
+        {readiness.isLoading ? <LinearProgress sx={{ mt: 1 }} /> : null}
+        {readiness.isError ? <Alert severity="error" sx={{ mt: 1 }}>Tool readiness could not be tested. Intake is paused until the tools can be checked.</Alert> : null}
+        {runExtraction && unavailableExtractorPlan.length ? <Alert severity="error" sx={{ mt: 1 }}>No available extractor or fallback is configured for one or more matched file types. Open Setup to fix the route.</Alert> : null}
       </Paper>
 
       <Paper variant="outlined" sx={{ p: 2 }}>
@@ -1412,6 +1328,7 @@ export function QueuePage() {
               || starting
               || preview.isLoading
               || readiness.isLoading
+              || runs.data?.worker?.available === false
               || (runExtraction && !extractorPlanReady)
               || (synthesize && !effectiveSynthesizer)
               || (embed && !embeddingAvailable)
@@ -1433,7 +1350,14 @@ export function QueuePage() {
 
       {section === "activity" ? <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
-          <Typography fontWeight={700}>Processing activity</Typography>
+          <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1} alignItems={{ sm: "center" }}>
+            <Typography fontWeight={700}>Processing activity</Typography>
+            <Chip
+              size="small"
+              color={runs.data?.worker?.available ? "success" : "error"}
+              label={runs.data?.worker?.available ? "Worker responding" : "Worker unavailable"}
+            />
+          </Stack>
           {recentRuns.some((run) => ["queued", "pending", "running", "pausing", "cancelling"].includes(run.status)) ? (
             <Alert severity="info">
               Runs use one worker and process files sequentially. Pause a long run to let a newly queued priority run go next; pausing or cancelling takes effect safely after the current file finishes.
@@ -1451,6 +1375,7 @@ export function QueuePage() {
             const canPause = controllable && ["queued", "pending", "running"].includes(run.status);
             const canResume = controllable && run.status === "paused";
             const canCancel = controllable && ["queued", "pending", "running", "pausing", "paused"].includes(run.status);
+            const canRetry = controllable && run.status === "error";
             return (
               <Paper key={run.id} variant="outlined" sx={{ p: 1.5 }}>
               <Stack
@@ -1528,6 +1453,17 @@ export function QueuePage() {
                       onClick={() => void controlRun(run, "cancel")}
                     >
                       Cancel
+                    </Button>
+                  ) : null}
+                  {canRetry ? (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      startIcon={<RefreshOutlinedIcon />}
+                      disabled={controllingRun !== null || runs.data?.worker?.available === false}
+                      onClick={() => void controlRun(run, "retry")}
+                    >
+                      Retry failed run
                     </Button>
                   ) : null}
                   <Chip

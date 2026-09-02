@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,8 +16,13 @@ from osii.domain.processing.jobs import (
     complete_queue_job,
     configure_job_store,
     get_run,
+    heartbeat_queue_job,
+    heartbeat_worker,
     pause_queue_job,
+    recover_stale_queue_jobs,
+    register_worker,
     save_run,
+    unregister_worker,
 )
 
 
@@ -106,37 +113,59 @@ def execute_job(job: dict) -> None:
 def main() -> None:
     osii_root = Path(os.getenv("OSII_ROOT", "./data_volume/.osii")).resolve()
     configure_job_store(osii_root)
-    idle_seconds = max(0.2, float(os.getenv("OSII_WORKER_POLL_SECONDS", "1")))
-    while True:
-        job = claim_next_queue_job()
-        if job is None:
-            time.sleep(idle_seconds)
-            continue
-        try:
-            execute_job(job)
-            run = get_run(job["run_id"])
-            if run and run.get("control_state") == "cancel_requested":
-                run["status"] = "cancelled"
-                run["control_state"] = "cancelled"
-                run["finished_at"] = datetime.now(UTC).isoformat()
-                for item in run.get("items", []):
-                    if item.get("status") in {"pending", "running"}:
-                        item["status"] = "cancelled"
-                save_run(run)
-                cancel_queue_job(job["id"])
-            elif run and run.get("control_state") == "pause_requested":
-                run["status"] = "paused"
-                run["control_state"] = "paused"
-                save_run(run)
-                pause_queue_job(job["id"])
-            elif run and run.get("status") == "paused":
-                pause_queue_job(job["id"])
-            elif run and run.get("status") == "cancelled":
-                cancel_queue_job(job["id"])
-            else:
-                complete_queue_job(job["id"])
-        except Exception as exc:
-            complete_queue_job(job["id"], error=str(exc))
+    idle_seconds = min(
+        5.0,
+        max(0.2, float(os.getenv("OSII_WORKER_POLL_SECONDS", "1"))),
+    )
+    worker_id = uuid.uuid4().hex
+    register_worker(worker_id)
+    try:
+        while True:
+            heartbeat_worker(worker_id)
+            recover_stale_queue_jobs()
+            job = claim_next_queue_job(worker_id)
+            if job is None:
+                time.sleep(idle_seconds)
+                continue
+            stop_heartbeat = threading.Event()
+
+            def keep_job_alive() -> None:
+                while not stop_heartbeat.wait(3):
+                    heartbeat_worker(worker_id)
+                    heartbeat_queue_job(job["id"], worker_id)
+
+            heartbeat = threading.Thread(target=keep_job_alive, daemon=True)
+            heartbeat.start()
+            try:
+                execute_job(job)
+                run = get_run(job["run_id"])
+                if run and run.get("control_state") == "cancel_requested":
+                    run["status"] = "cancelled"
+                    run["control_state"] = "cancelled"
+                    run["finished_at"] = datetime.now(UTC).isoformat()
+                    for item in run.get("items", []):
+                        if item.get("status") in {"pending", "running"}:
+                            item["status"] = "cancelled"
+                    save_run(run)
+                    cancel_queue_job(job["id"])
+                elif run and run.get("control_state") == "pause_requested":
+                    run["status"] = "paused"
+                    run["control_state"] = "paused"
+                    save_run(run)
+                    pause_queue_job(job["id"])
+                elif run and run.get("status") == "paused":
+                    pause_queue_job(job["id"])
+                elif run and run.get("status") == "cancelled":
+                    cancel_queue_job(job["id"])
+                else:
+                    complete_queue_job(job["id"])
+            except Exception as exc:
+                complete_queue_job(job["id"], error=str(exc))
+            finally:
+                stop_heartbeat.set()
+                heartbeat.join(timeout=4)
+    finally:
+        unregister_worker(worker_id)
 
 
 if __name__ == "__main__":

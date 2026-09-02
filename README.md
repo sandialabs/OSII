@@ -59,23 +59,25 @@ OSII mounts `source` read-only: it can read your originals but cannot modify or
 delete them. The `osii-data` folder is ignored by Git, so your documents will
 not accidentally be included in a commit.
 
-For a ready-made mixed document-and-data demonstration, use:
+For a ready-made mixed document-and-data demonstration, install the public
+example files:
 
 ```bash
-make dev-datasets
+make demo-data
 ```
 
 or on Windows PowerShell:
 
 ```powershell
-.\scripts\osii.ps1 dev-datasets
+.\scripts\osii.ps1 demo-data
 ```
 
 This imports the bundled Purcell PDF plus the Iris and Wine datasets bundled
-with scikit-learn, then starts a copyable CSV extractor and collection-table
-enricher alongside OSII. Follow the
-[tabular dataset walkthrough](docs/tutorials/tabular-datasets.md) to render one
-source table and a table combined across a collection.
+with scikit-learn. To render source and collection tables, run the optional
+`tabular-dataset-processors` container from the OSII Model Tool Chest, then add
+its URLs to `OSII_PROCESSORS`. Follow the [tabular dataset
+walkthrough](docs/tutorials/tabular-datasets.md) for the exact boundary and
+configuration.
 
 You can instead use an existing folder anywhere on your computer. Open `.env`
 in a text editor and set its absolute path:
@@ -210,11 +212,18 @@ products, source file, and indexes before requiring exact confirmation. See
 [Sensitive data, transfer, and deletion](docs/operations/sensitive-data.md).
 
 Open **Setup** when you want to add OCR, broader format support, an AI
-connection, or a custom Processor API service. The normal view answers whether
-OSII can read documents, whether AI is connected, and which extraction,
-synthesis, embedding, and enrichment methods Intake will use. Ports, health
-tests, schemas, custom service registration, and logs are available only under
-**Advanced & diagnostics**.
+connection, or a custom Processor API service. Its normal view is organized by
+OSII's four concepts—**Extractors, Synthesizers, Embedders, and
+Enrichers**—and keeps every available method visible with its status, default,
+plain-language purpose, and configurable settings. **Extraction routing** maps
+file extensions to a primary extractor and ordered fallbacks; Intake applies
+those saved rules without duplicating the editor. Ports, raw endpoints, custom
+service registration, and logs remain under **Advanced & diagnostics**.
+
+**Intake → Activity** shows whether the sequential worker is responding, live
+run logs, and recovery controls. Interrupted Windows work is returned to the
+queue automatically; **Recover queue** checks on demand, while **Retry failed
+run** reruns only failed items after the underlying problem is fixed.
 
 Keep the terminal window open while using OSII. Stop host processes with
 <kbd>Ctrl</kbd>+<kbd>C</kbd>. There are no containers to stop after `make dev`.
@@ -251,10 +260,9 @@ containers but select commands from the same compact baseline image. See
 - `make dev` / `.\scripts\osii.ps1 dev`: run the editable stack. A configured
   `OPENAI_BASE_URL` is preferred automatically; otherwise OSII uses Ollama when
   it is available, then its local fallbacks.
-- `make dev-datasets` / `.\scripts\osii.ps1 dev-datasets`: import the public
-  example corpus and run the CSV table processor demonstration.
 - `make demo-data` / `.\scripts\osii.ps1 demo-data`: import that corpus without
-  starting OSII.
+  starting OSII. Optional processors are configured separately through
+  `OSII_PROCESSORS`.
 - `make run` / `.\scripts\osii.ps1 run`: pull and start the published images.
 - `make build` / `.\scripts\osii.ps1 build`: build the three release images.
 - `make push-release OSII_IMAGE_PREFIX=quay.io/your-org/osii OSII_IMAGE_TAG=…`:
@@ -262,7 +270,7 @@ containers but select commands from the same compact baseline image. See
 - `make logs`, `make down`, `make test`, `make docs`, and `make doctor`: inspect,
   stop, validate, document, or diagnose the project.
 
-Optional services such as Tika, Tesseract, MCP, and example processors are
+Optional services such as Tika, Tesseract, MCP, and Tool Chest processors are
 configured from the dashboard or deployed deliberately with their Compose
 service name; they are not alternate top-level OSII launch modes.
 - [Export components for separate corporate repositories](docs/operations/component-export.md).

@@ -133,8 +133,11 @@ in the JSON response.
 - `GET /api/synthesizers`
 - `GET /api/folder-synthesizers`
 - `POST /api/runs`
+- `GET /api/runs` (run history, durable queue state, and worker heartbeat)
 - `GET /api/runs/{run_id}`
 - `GET /api/runs/{run_id}/logs`
+- `POST /api/runs/{run_id}/{pause|resume|cancel|retry}`
+- `POST /api/runs/recover` safely requeues only work whose worker lease expired
 - `POST /api/embeddings/build`
 - `GET /api/embeddings/build/{job_id}`
 - `GET /api/embeddings/meta`
@@ -920,8 +923,11 @@ These include:
 - `GET /api/synthesizers`
 - `GET /api/folder-synthesizers`
 - `POST /api/runs`
+- `GET /api/runs`
 - `GET /api/runs/{run_id}`
 - `GET /api/runs/{run_id}/logs`
+- `POST /api/runs/{run_id}/{pause|resume|cancel|retry}`
+- `POST /api/runs/recover`
 - `POST /api/embeddings/build`
 - `GET /api/embeddings/build/{job_id}`
 - `GET /api/embeddings/meta`

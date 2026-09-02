@@ -137,6 +137,38 @@ def test_openai_environment_exposes_generic_runtime_defaults(client, monkeypatch
     assert provider["credential_present"] is True
 
 
+def test_openai_health_validates_selected_embedding_model(client, monkeypatch):
+    client.put("/api/admin/model-providers/openai-probe", json={
+        "type": "openai",
+        "base_url": "https://models.example.test/v1",
+        "enabled": True,
+        "priority": 10,
+        "embedding_model": "embed-v1",
+        "synthesis_model": "chat-v1",
+        "chat_model": "chat-v1",
+        "credential_env": "OPENAI_API_KEY",
+    })
+    monkeypatch.setattr(
+        "osii.api.model_provider_routes.requests.get",
+        lambda *_, **__: FakeResponse(payload={"data": [{"id": "embed-v1"}, {"id": "chat-v1"}]}),
+    )
+    monkeypatch.setattr(
+        "osii.api.model_provider_routes.requests.post",
+        lambda *_, **__: FakeResponse(payload={"data": [{"embedding": [0.1, 0.2, 0.3]}]}),
+    )
+
+    health = client.post("/api/admin/model-providers/openai-probe/health").json()
+
+    assert health["ok"] is True
+    assert health["capabilities"]["embedding"] == {
+        "configured": True,
+        "ok": True,
+        "model": "embed-v1",
+        "dimensions": 3,
+        "detail": "Validated a 3-dimensional embedding vector.",
+    }
+
+
 def test_ollama_models_are_discovered_and_allowlisted_pull_runs(client, monkeypatch):
     monkeypatch.setattr(
         "osii.api.model_provider_routes.requests.get",

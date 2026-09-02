@@ -130,9 +130,10 @@ Each extension example runs the processor directly in Python before wrapping it
 as an HTTP app. This keeps domain logic easy to test: the network boundary is
 an adapter, not the place where the research algorithm has to live.
 
-The dataset example uses the live copyable processor. From the repository root,
-run `make dev-datasets` or `.\scripts\osii.ps1 dev-datasets`; the command imports
-the public example corpus and starts the two dataset endpoints automatically.
+The dataset example uses the optional tabular processor from the OSII Model Tool
+Chest. From the Core repository, run `make demo-data` or
+`.\scripts\osii.ps1 demo-data`, then start the Tool Chest container and configure
+its URLs in `OSII_PROCESSORS` before using the live endpoint.
 
 ## Add your own documents
 

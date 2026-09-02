@@ -1,9 +1,16 @@
 [[routes]]
 name = "corporate-native-default"
 extractor = "local.native-text"
+fallbacks = ["tika"]
 extensions = [
   ".cfg", ".conf", ".css", ".csv", ".docx", ".htm", ".html", ".ini",
   ".js", ".json", ".jsonl", ".log", ".md", ".pdf", ".pptx", ".py",
   ".rst", ".rtf", ".sql", ".toml", ".ts", ".tsv", ".txt", ".xlsx",
   ".xml", ".yaml", ".yml",
 ]
+
+[[routes]]
+name = "corporate-tika-catchall"
+extractor = "tika"
+fallbacks = []
+extensions = ["*"]

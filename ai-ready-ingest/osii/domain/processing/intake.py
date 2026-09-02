@@ -8,7 +8,7 @@ from osii.domain.artifacts.artifact_staleness import get_artifact_staleness
 from osii.indexing.common import embeddings_mapping_path
 from osii.domain.read.catalog import load_files_catalog
 
-from .extractor_selection import choose_extractor_for_path, load_extractor_routes
+from .extractor_selection import extractor_chain_for_path, load_extractor_routes
 from .pathing import display_rel, path_within
 
 
@@ -203,13 +203,19 @@ def add_extractor_plan(
 
     for path in resolved_files:
         extension = path.suffix.lower() or "(no extension)"
-        extractor = overrides.get(extension) or choose_extractor_for_path(path, routes)
+        chain = (
+            [overrides[extension]]
+            if extension in overrides
+            else extractor_chain_for_path(path, routes)
+        )
+        extractor = chain[0]
         key = (extension, extractor)
         group = groups.setdefault(
             key,
             {
                 "extension": extension,
                 "extractor": extractor,
+                "fallbacks": chain[1:],
                 "count": 0,
                 "sample": [],
             },

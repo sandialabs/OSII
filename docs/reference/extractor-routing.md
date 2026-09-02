@@ -31,11 +31,13 @@ The file contains ordered routes:
 [[routes]]
 name = "pdf-default"
 extractor = "pdf_default"
+fallbacks = ["tika", "local.native-text"]
 extensions = [".pdf"]
 
 [[routes]]
 name = "default-tika"
 extractor = "tika_catchall"
+fallbacks = ["local.native-text"]
 extensions = ["*"]
 ```
 
@@ -49,7 +51,13 @@ For a given file:
 1. inspect the file suffix in lowercase
 2. test each route in order
 3. the first matching route wins
-4. if no route matches, fallback behavior should be explicit in configuration
+4. OSII tries that route's `extractor`
+5. if extraction fails, OSII tries each name in `fallbacks` from left to right
+6. if no route matches, fallback behavior should be explicit in configuration
+
+The dashboard editor lives under **Setup → Extraction routing**. Intake uses
+the saved policy automatically and does not maintain run-specific extractor
+overrides.
 
 In future grouped-input workflows, routing may evolve to select an extractor for a logical multi-file unit rather than an individual file.
 
@@ -87,11 +95,13 @@ Example:
 [[routes]]
 name = "dense-pdf"
 extractor = "pdf_default"
+fallbacks = ["tika_catchall", "local.native-text"]
 extensions = [".pdf"]
 
 [[routes]]
 name = "default-tika"
 extractor = "tika_catchall"
+fallbacks = ["local.native-text"]
 extensions = ["*"]
 ```
 
@@ -141,6 +151,8 @@ The validator should check:
 - `routes` is a list
 - each route has `name`
 - each route has `extractor`
+- `fallbacks`, when present, is an ordered list without the primary extractor
+  or duplicates
 - each route has a non-empty `extensions` list
 - only one catch-all route is allowed
 - catch-all should be last

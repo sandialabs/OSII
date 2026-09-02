@@ -182,7 +182,13 @@ class ProviderEmbedder(Embedder):
             rows = payload.get("embeddings")
             model_digest = _ollama_model_digest(model)
         else:
-            payload = CLIENTS[self.provider].request("POST", "/embeddings", payload={"model": model, "input": texts, "encoding_format": "float"})
+            try:
+                payload = CLIENTS[self.provider].request("POST", "/embeddings", payload={"model": model, "input": texts, "encoding_format": "float"})
+            except ValueError:
+                # Some otherwise OpenAI-compatible providers reject the optional
+                # encoding_format field. Retry the same vector space request
+                # using only the required model and input fields.
+                payload = CLIENTS[self.provider].request("POST", "/embeddings", payload={"model": model, "input": texts})
             rows = [row.get("embedding") for row in payload.get("data", [])]
             model_digest = None
         if not isinstance(rows, list) or len(rows) != len(texts):

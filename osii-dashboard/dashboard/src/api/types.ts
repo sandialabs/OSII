@@ -549,6 +549,7 @@ export type IntakePreview = {
   extractor_plan: Array<{
     extension: string;
     extractor: string;
+    fallbacks?: string[];
     count: number;
     sample: string[];
   }>;
@@ -694,6 +695,18 @@ export type ProcessingRun = {
   preview?: IntakePreview;
 };
 
+export type ProcessingWorkerStatus = {
+  available: boolean;
+  detail: string;
+  last_heartbeat: string | null;
+};
+
+export type ProcessingRunsResponse = {
+  runs: ProcessingRun[];
+  queue: Array<Record<string, unknown>>;
+  worker: ProcessingWorkerStatus;
+};
+
 export type ProcessorEndpoint = {
   id: string;
   display_name: string;
@@ -780,7 +793,35 @@ export type ModelProviderHealth = {
   missing_models: string[];
   pull_commands: string[];
   recommendations: OllamaRecommendation[];
+  capabilities?: {
+    embedding?: {
+      configured: boolean;
+      ok: boolean;
+      model: string;
+      dimensions?: number;
+      detail: string;
+    };
+  };
   detail?: string;
+};
+
+export type ExtractorRoute = {
+  name: string;
+  extractor: string;
+  fallbacks: string[];
+  extensions: string[];
+};
+
+export type ExtractorRoutesResponse = {
+  routes: ExtractorRoute[];
+};
+
+export type ExtractorRoutesSaveResponse = ExtractorRoutesResponse & {
+  ok: boolean;
+  message?: string;
+  path?: string;
+  errors?: string[];
+  warnings?: string[];
 };
 
 export type ModelPullJob = {

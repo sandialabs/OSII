@@ -24,7 +24,8 @@ The dashboard is intentionally modular. It is a standalone frontend that talks t
 - Open root-level derived artifacts only when needed; long lists and wiki content stay within scrollable regions and standard table columns are sortable
 - Rescan the configured source root for moved originals and safely remap exact hash matches without rerunning extraction
 - Select any Ollama model discovered on the configured server independently for embedding, synthesis, and chat
-- Use the concise Setup page to connect an OpenAI-compatible endpoint or Ollama, save a local API key, and start optional Tika or Tesseract capabilities
+- Use Setup's Extractors, Synthesizers, Embedders, and Enrichers sections to inspect every method, connect an OpenAI-compatible endpoint or Ollama, and configure file-extension extraction routes with ordered fallbacks
+- See worker heartbeat, live logs, safe stale-queue recovery, and failed-run retry controls in Intake Activity
 - Prepare for future document chat workflows
 
 ---

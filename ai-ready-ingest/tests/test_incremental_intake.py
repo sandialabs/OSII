@@ -103,6 +103,65 @@ def test_completed_document_is_browsable_while_next_document_runs(
     assert manifest["expert_context"] == expert_context
 
 
+def test_worker_tries_ordered_extractor_fallback(
+    temp_data_root: Path,
+    temp_osii_root: Path,
+    temp_upload_root: Path,
+    tmp_path: Path,
+    monkeypatch,
+):
+    source = temp_data_root / "fallback.txt"
+    source.write_text("fallback extraction", encoding="utf-8")
+    run = create_run_record(
+        [source], temp_data_root, temp_upload_root, osii_root=temp_osii_root
+    )
+    routes_path = tmp_path / "routes.toml"
+    routes_path.write_text(
+        """
+[[routes]]
+name = "text-with-fallback"
+extractor = "unavailable.primary"
+fallbacks = ["native_text"]
+extensions = [".txt"]
+""".strip(),
+        encoding="utf-8",
+    )
+    original_dispatch = runs_routes.dispatch_extract
+    attempts = []
+
+    def staged_dispatch(**kwargs):
+        attempts.append(kwargs["extractor_name"])
+        if kwargs["extractor_name"] == "unavailable.primary":
+            raise RuntimeError("primary unavailable")
+        return original_dispatch(**kwargs)
+
+    monkeypatch.setattr(runs_routes, "dispatch_extract", staged_dispatch)
+    runs_routes.run_worker(
+        run_id=run["id"],
+        resolved_files=[source],
+        queue_items=[],
+        include_subfolders=True,
+        include_patterns=[],
+        exclude_patterns=[],
+        context="",
+        intake_name="fallback-test",
+        data_volume_root=temp_data_root.parent,
+        osii_store=temp_osii_root,
+        shared_root=temp_data_root,
+        upload_root=temp_upload_root,
+        parser_routes_path=routes_path,
+        shared_root_host_path=str(temp_data_root),
+        synthesizer_name=None,
+        synthesizer_config={},
+    )
+
+    completed = get_run(run["id"])
+    assert attempts == ["unavailable.primary", "native_text"]
+    assert completed["status"] == "done"
+    assert completed["items"][0]["extractor"] == "native_text"
+    assert any("Trying fallback extractor 'native_text'" in line for line in completed["logs"])
+
+
 def test_intake_worker_adds_successfully_processed_documents_to_its_collection(
     temp_data_root: Path,
     temp_osii_root: Path,

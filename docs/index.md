@@ -16,9 +16,10 @@ These three pages are the normal entry points. The remaining documentation is
 reference material: read it when you need to understand, extend, or operate a
 specific boundary rather than from top to bottom.
 
-After starting OSII, the dashboard's **Setup** page is the single place to
-connect AI, start optional Tika or Tesseract capabilities, review processing
-defaults, and reach advanced processor diagnostics.
+After starting OSII, the dashboard's **Setup** page lists every extractor,
+synthesizer, embedder, and enricher; configures extension-based extraction
+routes and fallbacks; connects optional model providers; starts optional Tika
+or Tesseract capabilities; and reaches advanced processor diagnostics.
 
 ## Understand OSII
 
