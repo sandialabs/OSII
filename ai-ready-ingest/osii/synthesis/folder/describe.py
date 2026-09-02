@@ -1,4 +1,5 @@
 from pathlib import Path
+from osii.expert_context import resolve_expert_context
 import tomllib
 
 from osii.model_clients import create_chat_client
@@ -91,6 +92,7 @@ class FolderDescribeSynthesizer(BaseFolderSynthesizer):
         synthesizer_config: dict | None = None,
     ) -> dict:
         synthesizer_config = synthesizer_config or {}
+        expert_context = resolve_expert_context(osii_store, {"scope_type": "folder", "folder_id": folder_id}, expert_context)
         model = synthesizer_config.get("model", MODEL)
 
         state = FolderSynthesisState()

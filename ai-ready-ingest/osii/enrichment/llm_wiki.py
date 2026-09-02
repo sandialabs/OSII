@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from osii.expert_context import resolve_expert_context
 from typing import Any, ClassVar
 import uuid
 
@@ -137,6 +138,7 @@ class LlmWikiEnricher(BaseEnricher):
         enricher_config: dict | None = None,
     ) -> dict:
         config = enricher_config or {}
+        expert_context = resolve_expert_context(osii_store, scope, expert_context)
         state = EnrichmentState()
         try:
             scope_type = normalize_scope_type(scope.get("scope_type") or scope.get("type"))
@@ -270,6 +272,7 @@ class LlmWikiEnricher(BaseEnricher):
                     "expert_context_used": bool(expert_context),
                     "citations": citations,
                     **response.metadata,
+                    "expert_context": expert_context,
                 },
             )
             state.output_files_written = 2

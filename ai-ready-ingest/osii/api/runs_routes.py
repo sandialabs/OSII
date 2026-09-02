@@ -1,6 +1,7 @@
 from datetime import datetime, UTC
 import os
 from pathlib import Path
+from osii.expert_context import resolve_expert_context
 import sqlite3
 
 from fastapi import APIRouter, HTTPException, Request
@@ -317,6 +318,10 @@ def run_worker(
 
         append_log(run_id, "Run started.")
         append_log(run_id, f"Resolved {len(resolved_files)} file(s) for processing.")
+        if collection_id:
+            resolve_expert_context(
+                osii_store, {"scope_type": "collection", "collection_id": collection_id}, context
+            )
 
         root_folder_id = get_or_create_folder_id(osii_store, "")
         collection_name = intake_name or f"collection-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}"
@@ -382,6 +387,9 @@ def run_worker(
 
             try:
                 file_id = compute_file_id(src)
+                document_context = resolve_expert_context(
+                    osii_store, {"scope_type": "object", "file_id": file_id}, context
+                )
                 existing_text = get_preferred_text_representation(osii_store, file_id)
                 should_extract = run_extraction and (extract_mode == "reprocess" or existing_text is None)
                 extract_result = None
@@ -398,7 +406,7 @@ def run_worker(
                                 source_path=src,
                                 data_volume_root=data_volume_root,
                                 osii_root=osii_store,
-                                expert_context=context or None,
+                                expert_context=document_context,
                                 extractor_config=merged_processor_settings(
                                     osii_store,
                                     extractor_name,
@@ -449,7 +457,7 @@ def run_worker(
                         synthesis_result = synthesizer.synthesize(
                             osii_store=osii_store,
                             file_id=file_id,
-                            expert_context=context or None,
+                            expert_context=document_context,
                             synthesizer_config=synthesizer_config or {},
                         )
                         append_log(run_id, f"synthesis complete: {src.name}")
@@ -465,7 +473,7 @@ def run_worker(
                         enrichment_result = resolve_enricher(enricher_name).enrich(
                             osii_store=osii_store,
                             scope={"scope_type": "object", "file_id": file_id},
-                            expert_context=context or None,
+                            expert_context=document_context,
                             enricher_config=enricher_config or {},
                         )
                         append_log(run_id, f"Enrichment complete: {src.name}")

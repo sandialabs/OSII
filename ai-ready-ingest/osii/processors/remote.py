@@ -8,6 +8,7 @@ import uuid
 import base64
 import mimetypes
 from pathlib import Path
+from osii.expert_context import resolve_expert_context
 from typing import Any
 
 from osii_processor_sdk import (
@@ -140,6 +141,15 @@ class RemoteExtractor:
         extractor_config: dict | None = None,
     ) -> dict:
         doc_ctx = init_doc_context(source_path, data_volume_root)
+        expert_context = resolve_expert_context(
+            osii_store, {"scope_type": "object", "file_id": doc_ctx["file_id"]}, expert_context
+        )
+        # Record supplied guidance, not a claim that the remote processor used it.
+        provenance_config = {
+            **(extractor_config or {}),
+            "expert_context_supplied": bool(expert_context),
+            "expert_context": expert_context,
+        }
         state = ExtractionState()
         request_id = str(uuid.uuid4())
         try:
@@ -165,7 +175,7 @@ class RemoteExtractor:
             extractor_version=self.version,
             status="running",
             tools={"processor_url": self.base_url},
-            config=extractor_config or {},
+            config=provenance_config,
             state=state,
         )
         try:
@@ -225,7 +235,7 @@ class RemoteExtractor:
             extractor_version=self.version,
             status=status,
             tools={"processor_url": self.base_url},
-            config=extractor_config or {},
+            config=provenance_config,
             state=state,
         )
         if state.error:
@@ -255,6 +265,9 @@ class RemoteSynthesizer:
         synthesizer_config: dict | None = None,
     ) -> dict:
         preferred = get_preferred_text_representation(osii_store, file_id)
+        expert_context = resolve_expert_context(
+            osii_store, {"scope_type": "object", "file_id": file_id}, expert_context
+        )
         meta = get_doc_meta(osii_store, file_id) or {}
         file_meta = meta.get("file", {})
         if preferred is None:
@@ -287,6 +300,7 @@ class RemoteSynthesizer:
             config={
                 **(synthesizer_config or {}),
                 "processor_url": self.base_url,
+                "expert_context": expert_context,
                 # Processor API citations have optional grounding fields. TOML
                 # cannot encode None, so provenance records only supplied data.
                 "citations": [
@@ -312,6 +326,7 @@ class RemoteSynthesizer:
         synthesizer_config: dict | None = None,
     ) -> dict:
         """Synthesize and commit a folder, collection, or root scope."""
+        expert_context = resolve_expert_context(osii_store, scope, expert_context)
         scope_type = (scope.get("scope_type") or scope.get("type") or "").strip().lower()
         if scope_type not in {"folder", "collection", "root"}:
             raise ValueError("Aggregate synthesis scope must be folder, collection, or root.")
@@ -342,6 +357,8 @@ class RemoteSynthesizer:
             "processor_url": self.base_url,
             "citations": [item.model_dump(mode="json") for item in response.citations],
             **response.metadata,
+            "expert_context_supplied": bool(expert_context),
+            "expert_context": expert_context,
         }
         if scope_type == "folder":
             result = write_folder_synthesis_variant(osii_store, scope_id, method=self.name, text=response.markdown, metadata=metadata)
@@ -412,6 +429,7 @@ class RemoteEnricher:
         enricher_config: dict | None = None,
     ) -> dict:
         texts, _ = collect_scope_texts(osii_store, scope)
+        expert_context = resolve_expert_context(osii_store, scope, expert_context)
         scope_type = (scope.get("scope_type") or scope.get("type") or "").strip().lower()
         scope_id = (
             scope.get("file_id")
@@ -466,6 +484,8 @@ class RemoteEnricher:
             metadata = {
                 **(artifact.get("metadata") or {}),
                 "artifact_id": artifact.get("id"),
+                "expert_context_supplied": bool(expert_context),
+                "expert_context": expert_context,
                 "method": self.name,
                 "version": self.version,
                 "processor_url": self.base_url,

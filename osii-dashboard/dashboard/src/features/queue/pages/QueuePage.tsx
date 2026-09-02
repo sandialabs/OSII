@@ -1049,7 +1049,7 @@ export function QueuePage() {
           <Stack spacing={0.25}>
             <Typography fontWeight={700}>Expert context</Typography>
             <Typography variant="body2" color="text.secondary">
-              Add facts a subject-matter expert knows about the selected documents or folders. OSII saves this context with the intake and supplies it to processors that can use it.
+              Add subject-matter guidance for the matched documents. OSII saves it with each document for later VLM extraction, synthesis, and enrichment. Tesseract OCR does not need or use it.
             </Typography>
           </Stack>
           <TextField
@@ -1061,7 +1061,7 @@ export function QueuePage() {
             value={expertContext}
             onChange={(event) => setExpertContext(event.target.value)}
             inputProps={{ maxLength: 20_000 }}
-            helperText={`${expertContext.length.toLocaleString()} / 20,000 characters · Applies to every matched document in this run.`}
+            helperText={`${expertContext.length.toLocaleString()} / 20,000 characters · New text replaces saved guidance for matched documents. Leave blank to reuse their saved context. Sent to selected processors; do not include credentials.`}
           />
         </Stack>
       </Paper>
@@ -1286,7 +1286,7 @@ export function QueuePage() {
             </Paper>
           ) : (
             <Typography variant="caption" color="text.secondary">
-              No expert context supplied. You can still start this run.
+              No new expert context supplied. Saved document context will be reused where available; Tesseract OCR needs none.
             </Typography>
           )}
 

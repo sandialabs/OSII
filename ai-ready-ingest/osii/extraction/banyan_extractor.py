@@ -3,6 +3,7 @@ import io
 import json
 import os
 from pathlib import Path
+from osii.expert_context import resolve_expert_context
 
 import pymupdf as fitz
 import requests
@@ -213,6 +214,9 @@ class PdfDefaultExtractor(BaseExtractor):
         extractor_config: dict | None = None,
     ) -> dict:
         doc_ctx = init_doc_context(source_path, data_volume_root)
+        expert_context = resolve_expert_context(
+            osii_store, {"scope_type": "object", "file_id": doc_ctx["file_id"]}, expert_context
+        )
         state = ExtractionState()
         extractor_config = extractor_config or {}
 
@@ -227,7 +231,10 @@ class PdfDefaultExtractor(BaseExtractor):
         config = {
             "segmentation": "page",
             "picture_extraction": True,
-            "expert_context_used": bool(expert_context),
+            # This parser does not send guidance to a language/vision model.
+            "expert_context_used": False,
+            "expert_context_supplied": bool(expert_context),
+            "expert_context": expert_context,
             "page_limit": page_limit,
             "segment_storage": "shared_text_file",
         }

@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import zipfile
 from pathlib import Path
+from osii.expert_context import resolve_expert_context
 from xml.etree import ElementTree
 
 import docx2txt
@@ -150,12 +151,18 @@ class NativeTextExtractor(BaseExtractor):
         extractor_config: dict | None = None,
     ) -> dict:
         doc_ctx = init_doc_context(source_path, data_volume_root)
+        expert_context = resolve_expert_context(
+            osii_store, {"scope_type": "object", "file_id": doc_ctx["file_id"]}, expert_context
+        )
         state = ExtractionState()
         config = extractor_config or {}
         chunk_chars = int(config.get("chunk_chars", 4000))
         provenance_config = {
             "chunk_chars": chunk_chars,
-            "expert_context_used": bool(expert_context),
+            # This parser does not send guidance to a language/vision model.
+            "expert_context_used": False,
+            "expert_context_supplied": bool(expert_context),
+            "expert_context": expert_context,
             "segment_storage": "shared_text_file",
             **({"fallback_from": config["fallback_from"]} if config.get("fallback_from") else {}),
         }

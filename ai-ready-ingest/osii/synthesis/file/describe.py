@@ -1,4 +1,5 @@
 from pathlib import Path
+from osii.expert_context import resolve_expert_context
 import tomllib
 
 from osii.model_clients import create_chat_client
@@ -99,6 +100,7 @@ class DescribeSynthesizer(BaseSynthesizer):
         synthesizer_config: dict | None = None,
     ) -> dict:
         synthesizer_config = synthesizer_config or {}
+        expert_context = resolve_expert_context(osii_store, {"scope_type": "object", "file_id": file_id}, expert_context)
         model = synthesizer_config.get("model", MODEL)
         max_chars = int(synthesizer_config.get("max_chars", 12000))
 

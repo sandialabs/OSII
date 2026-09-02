@@ -101,6 +101,9 @@ def test_completed_document_is_browsable_while_next_document_runs(
     manifest_path = next((temp_osii_root / "manifests").glob("intake-manifest-*.json"))
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["expert_context"] == expert_context
+    for source in files:
+        context_path = temp_osii_root / "objects" / compute_file_id(source) / "expert-context.md"
+        assert context_path.read_text(encoding="utf-8").strip() == expert_context
 
 
 def test_worker_tries_ordered_extractor_fallback(

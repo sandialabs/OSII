@@ -14,6 +14,7 @@ from osii.domain.artifacts.artifact_staleness import mark_artifacts_stale
 from osii.domain.storage.atomic import atomic_write_text
 from osii.domain.storage.ids import compute_file_id
 from osii.domain.storage.store import object_dir
+from osii.expert_context import resolve_expert_context, save_expert_context
 
 EXTRACTION_FILES = ("text.txt", "manifest.jsonl", "provenance.toml")
 
@@ -78,7 +79,9 @@ def _provenance_record(bundle: Path) -> tuple[str, str, str]:
 
 def _copy_extraction_bundle(source: Path, destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=False)
-    for name in EXTRACTION_FILES:
+    # Retain the guidance supplied to this extraction, but do not promote an
+    # old snapshot over the document's current expert-context.md later.
+    for name in (*EXTRACTION_FILES, "expert-context.md"):
         candidate = source / name
         if candidate.is_file():
             shutil.copy2(candidate, destination / name)
@@ -267,8 +270,12 @@ def extract_document_variant(
 
     file_id = compute_file_id(source_path)
     _archive_legacy_primary(osii_root, file_id)
+    scope = {"scope_type": "object", "file_id": file_id}
+    expert_context = resolve_expert_context(osii_root, scope, expert_context)
     with tempfile.TemporaryDirectory(prefix="osii-extraction-") as temporary:
         temporary_root = Path(temporary) / ".osii"
+        if expert_context:
+            save_expert_context(temporary_root, scope, expert_context)
         result = dispatcher(
             extractor_name=extractor_name,
             source_path=source_path,

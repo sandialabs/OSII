@@ -5,6 +5,7 @@ import math
 import re
 import time
 from pathlib import Path
+from osii.expert_context import resolve_expert_context
 from typing import List, Tuple
 
 from tqdm import tqdm
@@ -212,6 +213,7 @@ class RecursiveSynthesizer(BaseSynthesizer):
         synthesizer_config: dict | None = None,
     ) -> dict:
         synthesizer_config = synthesizer_config or {}
+        expert_context = resolve_expert_context(osii_store, {"scope_type": "object", "file_id": file_id}, expert_context)
         model = synthesizer_config.get("model", MODEL)
         chunk_char_target = int(synthesizer_config.get("chunk_char_target", CHUNK_CHAR_TARGET))
         chunk_char_hard_max = int(synthesizer_config.get("chunk_char_hard_max", CHUNK_CHAR_HARD_MAX))

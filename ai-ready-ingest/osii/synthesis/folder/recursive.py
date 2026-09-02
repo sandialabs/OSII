@@ -5,6 +5,7 @@ import math
 import time
 import tomllib
 from pathlib import Path
+from osii.expert_context import resolve_expert_context
 from typing import List
 
 from tqdm import tqdm
@@ -126,6 +127,7 @@ class FolderRecursiveSynthesizer(BaseFolderSynthesizer):
         synthesizer_config: dict | None = None,
     ) -> dict:
         synthesizer_config = synthesizer_config or {}
+        expert_context = resolve_expert_context(osii_store, {"scope_type": "folder", "folder_id": folder_id}, expert_context)
         chunk_char_target = int(synthesizer_config.get("chunk_char_target", CHUNK_CHAR_TARGET))
         chunk_char_hard_max = int(synthesizer_config.get("chunk_char_hard_max", CHUNK_CHAR_HARD_MAX))
         combine_group_size = int(synthesizer_config.get("combine_group_size", COMBINE_GROUP_SIZE))

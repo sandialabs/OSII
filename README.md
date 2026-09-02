@@ -183,6 +183,12 @@ Re-extraction is versioned. A better extractor can be saved beside the current
 result or made primary while preserving the previous version. See
 [Extraction versions and downstream lineage](docs/reference/extraction-versions.md).
 
+**Expert context** in Intake is saved as readable `expert-context.md` beside
+each matched document's OSII artifacts, not just in queue history. Leave the
+field blank on later runs to reuse it. Tesseract OCR needs no context; a
+context-aware VLM, synthesizer, or enricher receives the saved guidance.
+See [where context lives and how to use it from Python](docs/reference/osii-store.md#expert-context).
+
 With an Ollama synthesis model selected, open a document's **Wiki** tab or an
 individual collection to generate a grounded LLM wiki as a standard enrichment
 artifact. The model runs outside OSII; the portable Markdown and provenance are

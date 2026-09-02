@@ -1,5 +1,10 @@
 # Enrichment API
 
+Core's remote adapter and LLM Wiki enricher reuse saved
+[expert context](../osii-store.md#expert-context) for the requested scope when
+no new guidance is supplied. Context is passed explicitly to the service;
+domain processors do not read sidecars themselves.
+
 `POST /v1/enrich` produces structured, rebuildable artifacts over an object,
 folder, collection, or root scope.
 

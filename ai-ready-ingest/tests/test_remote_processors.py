@@ -3,13 +3,16 @@ import tomllib
 
 from osii_processor_sdk import (
     Capability,
+    ExtractionResponse,
     ProcessorDescriptor,
     ProcessorKind,
     ProvenanceRef,
     SynthesisResponse,
+    TextSegment,
 )
 
 from osii.processors import remote
+from osii.expert_context import save_expert_context
 
 
 def test_configured_processor_urls(monkeypatch):
@@ -85,9 +88,15 @@ def test_remote_synthesis_omits_absent_citation_fields_from_toml(
     synthesizer = remote.RemoteSynthesizer(
         {**descriptor, "base_url": "http://synthesizer.test"}
     )
+    save_expert_context(
+        temp_osii_root,
+        {"scope_type": "object", "file_id": sample_osii_object["file_id"]},
+        "Temperature readings are in kelvin.",
+    )
 
     class FakeClient:
         def synthesize(self, request):
+            assert request.expert_context == "Temperature readings are in kelvin."
             return SynthesisResponse(
                 request_id=request.request_id,
                 processor=ProcessorDescriptor.model_validate(descriptor),
@@ -113,3 +122,36 @@ def test_remote_synthesis_omits_absent_citation_fields_from_toml(
     assert provenance["synthesis"]["config"]["citations"] == [
         {"file_id": sample_osii_object["file_id"], "source_origin": {}}
     ]
+    assert provenance["synthesis"]["config"]["expert_context"] == "Temperature readings are in kelvin."
+
+
+def test_remote_extractor_receives_saved_context_in_standard_field(tmp_path):
+    from osii.domain.storage.ids import compute_file_id
+
+    source = tmp_path / "image.txt"
+    source.write_text("placeholder for bounded source bytes", encoding="utf-8")
+    store = tmp_path / ".osii"
+    file_id = compute_file_id(source)
+    save_expert_context(store, {"scope_type": "object", "file_id": file_id}, "SEM, microns.")
+    descriptor = ProcessorDescriptor(
+        name="example.vlm", version="1.0.0", display_name="Example VLM",
+        description="Context-aware image description", kind=ProcessorKind.EXTRACTOR,
+        capabilities=Capability(scope_types=["object"]),
+    )
+    extractor = remote.RemoteExtractor({**descriptor.model_dump(mode="json"), "base_url": "http://vlm.test"})
+
+    class FakeClient:
+        def extract(self, request):
+            assert request.expert_context == "SEM, microns."
+            assert request.document.content_base64
+            assert "expert_context" not in request.config
+            return ExtractionResponse(
+                request_id=request.request_id, processor=descriptor,
+                segments=[TextSegment(id="region-1", text="A visible crack.", source_origin={"page": 1})],
+            )
+
+    extractor._client = FakeClient()
+    extractor.extract(source_path=source, data_volume_root=tmp_path, osii_store=store)
+    provenance = tomllib.loads((store / "objects" / file_id / "provenance.toml").read_text(encoding="utf-8"))
+    assert provenance["config"]["expert_context"] == "SEM, microns."
+    assert provenance["config"]["expert_context_supplied"] is True
