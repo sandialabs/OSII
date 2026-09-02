@@ -18,6 +18,7 @@ The OSII store is a file-based database organized around:
 .osii/
 ├── root.toml
 ├── root.synth.txt
+├── expert-context.md             # optional root guidance
 ├── folders/
 │   ├── folder-<folder_id>.toml
 │   ├── folder-<folder_id>.synth.txt
@@ -27,6 +28,7 @@ The OSII store is a file-based database organized around:
 │       ├── meta.toml
 │       ├── manifest.jsonl
 │       ├── text.txt
+│       ├── expert-context.md     # optional document guidance
 │       ├── artifacts/
 │       └── synth.txt
 │       └── synth.toml
@@ -112,88 +114,149 @@ Folder synthesis is especially important for grouped workflows such as experimen
 
 ---
 
-ZZZ## Document object bundles
-ZZZ
-ZZZEach source file or logical extraction unit gets a stable object bundle keyed by `file_id`.
-ZZZ
-ZZZIn current implementations, this is usually one source file, but grouped multi-file units may also be represented as one logical object bundle if the extraction workflow requires it.
-ZZZ
-ZZZExample:
-ZZZ```text
-ZZZobjects/<file_id>/
-ZZZ  meta.toml
-ZZZ  manifest.jsonl
-ZZZ  text.txt
-ZZZ  artifacts/
-ZZZ  synth.toml
-ZZZ  synth.txt
-ZZZ```
-ZZZ
-ZZZ### `text.txt`
-ZZZThe canonical extracted text file for the object.
-ZZZ
-ZZZAll text-bearing segment records in `manifest.jsonl` point into this file using `span.char_start` / `span.char_end`.
-ZZZ
-ZZZThis keeps object bundles compact while preserving precise segment-level provenance.
-ZZZ
-ZZZ### `manifest.jsonl`
-ZZZThe canonical inventory and provenance map for all derived outputs in the bundle.
-ZZZ
-ZZZOne line per derived item.
-ZZZ
-ZZZ#### Text example
-ZZZ```json
-ZZZ{
-ZZZ  "kind": "text",
-ZZZ  "id": "seg-000001",
-ZZZ  "path": "text.txt",
-ZZZ  "type": "page",
-ZZZ  "span": {
-ZZZ    "char_start": 0,
-ZZZ    "char_end": 1842
-ZZZ  },
-ZZZ  "source_origin": {
-ZZZ    "source_type": "pdf",
-ZZZ    "unit_type": "page",
-ZZZ    "page": 1
-ZZZ  },
-ZZZ  "related_ids": ["artifact-000001"]
-ZZZ}
-ZZZ```
-ZZZ
-ZZZ#### Image example
-ZZZ```json
-ZZZ{
-ZZZ  "kind": "image",
-ZZZ  "id": "artifact-000001",
-ZZZ  "path": "artifacts/artifact-000001.png",
-ZZZ  "type": "image",
-ZZZ  "source_origin": {
-ZZZ    "source_type": "pdf",
-ZZZ    "unit_type": "region",
-ZZZ    "page": 1,
-ZZZ    "bbox": {
-ZZZ      "xmin": 0.86,
-ZZZ      "ymin": 0.00,
-ZZZ      "xmax": 0.99,
-ZZZ      "ymax": 0.017
-ZZZ    },
-ZZZ    "label": "Picture"
-ZZZ  },
-ZZZ  "related_ids": ["seg-000001"]
-ZZZ}
-ZZZ```
-ZZZ
-ZZZ### `artifacts/`
-ZZZHolds non-text derived outputs such as:
-ZZZ- cropped images
-ZZZ- extracted figures
-ZZZ
-ZZZ### Object synthesis
-ZZZ- `synth.toml`
-ZZZ- `synth.txt`
-ZZZ
-ZZZThese are the current/default derived synthesis outputs for the object.
+## Expert context
+
+Expert context is **human-supplied guidance, not extracted evidence**. In Intake,
+enter domain facts such as “These are SEM images; scale bars are in microns;
+describe cracks separately from preparation artifacts.” OSII saves the text
+atomically for each matched document, including when extraction is skipped or
+the selected processor fails. New nonblank context replaces the current text;
+leaving the field blank preserves and reuses it on later runs.
+
+| Scope | Canonical context file, relative to `.osii/` |
+| --- | --- |
+| Document | `objects/<file_id>/expert-context.md` |
+| Collection | `collections/<collection_id>/expert-context.md` |
+| Folder | `folders/folder-<folder_id>.expert-context.md` |
+| Root | `expert-context.md` |
+
+An Intake folder selection applies its guidance to each matched document, not
+to unrelated documents in the library. Intake also saves collection context
+when the run targets a logical collection. Other scope context can be saved
+through the Python functions below. There is no implicit root/folder/collection
+inheritance or merging: each method uses guidance for its **exact scope**.
+
+Tesseract OCR, Apache Tika, and native text extraction need no expert context
+and do not use it to alter recognized text. Saving it during OCR is still useful
+for later image description, synthesis, or enrichment. Core sends resolved
+guidance explicitly in the Processor API `expert_context` field; the processor
+decides how to use it. A custom VLM that requires domain guidance should reject
+missing context with an actionable validation message. The legacy Nemotron
+layout parser remains image-only; it is not a context-aware image-description
+processor merely because it uses a vision model.
+
+Remote synthesis/enrichment adapters, the LLM Wiki enricher, and context-aware
+in-process synthesizers reuse saved guidance. A processor receiving context is
+not proof it used it: extraction provenance distinguishes supplied guidance from
+the `expert_context_used = false` of context-free built-in parsers. Extraction
+versions keep their own `expert-context.md` snapshot; promoting an older
+extraction does not overwrite the current guidance. Editing guidance does not
+automatically regenerate existing outputs—queue the affected steps again.
+
+```python
+from pathlib import Path
+from osii.expert_context import load_expert_context, save_expert_context
+
+store = Path("demo-workspace/.osii")
+scope = {"scope_type": "object", "file_id": file_id}  # ID returned by extraction
+save_expert_context(store, scope, "SEM images; scale bars are in microns.")
+print(load_expert_context(store, scope))
+# Later extraction/synthesis can omit expert_context to reuse this text.
+# Explicitly clear current guidance when needed:
+# save_expert_context(store, scope, "")
+```
+
+Context is portable library data, not a secret store: it may contain sensitive
+domain information and is sent to the selected processor. Do not put credentials
+in it. Clearing the current sidecar does not redact historical extraction
+snapshots, intake manifests, or already generated outputs. For sensitive-data
+removal, follow the [deletion workflow](../operations/sensitive-data.md).
+Older intakes retain context in `manifests/intake-manifest-*.json`; they are not
+silently promoted to document guidance. Re-enter the desired context once in
+Intake (or use `save_expert_context`) to enable later reuse for those documents.
+
+## Document object bundles
+
+Each source file or logical extraction unit gets a stable object bundle keyed by `file_id`.
+
+In current implementations, this is usually one source file, but grouped multi-file units may also be represented as one logical object bundle if the extraction workflow requires it.
+
+Example:
+```text
+objects/<file_id>/
+  meta.toml
+  manifest.jsonl
+  text.txt
+  artifacts/
+  synth.toml
+  synth.txt
+```
+
+### `text.txt`
+The canonical extracted text file for the object.
+
+All text-bearing segment records in `manifest.jsonl` point into this file using `span.char_start` / `span.char_end`.
+
+This keeps object bundles compact while preserving precise segment-level provenance.
+
+### `manifest.jsonl`
+The canonical inventory and provenance map for all derived outputs in the bundle.
+
+One line per derived item.
+
+#### Text example
+```json
+{
+  "kind": "text",
+  "id": "seg-000001",
+  "path": "text.txt",
+  "type": "page",
+  "span": {
+    "char_start": 0,
+    "char_end": 1842
+  },
+  "source_origin": {
+    "source_type": "pdf",
+    "unit_type": "page",
+    "page": 1
+  },
+  "related_ids": ["artifact-000001"]
+}
+```
+
+#### Image example
+```json
+{
+  "kind": "image",
+  "id": "artifact-000001",
+  "path": "artifacts/artifact-000001.png",
+  "type": "image",
+  "source_origin": {
+    "source_type": "pdf",
+    "unit_type": "region",
+    "page": 1,
+    "bbox": {
+      "xmin": 0.86,
+      "ymin": 0.00,
+      "xmax": 0.99,
+      "ymax": 0.017
+    },
+    "label": "Picture"
+  },
+  "related_ids": ["seg-000001"]
+}
+```
+
+### `artifacts/`
+Holds non-text derived outputs such as:
+- cropped images
+- extracted figures
+
+### Object synthesis
+- `synth.toml`
+- `synth.txt`
+
+These are the current/default derived synthesis outputs for the object.
 
 ---
 
