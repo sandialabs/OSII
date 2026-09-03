@@ -24,7 +24,8 @@ The dashboard is intentionally modular. It is a standalone frontend that talks t
 - Open root-level derived artifacts only when needed; long lists and wiki content stay within scrollable regions and standard table columns are sortable
 - Rescan the configured source root for moved originals and safely remap exact hash matches without rerunning extraction
 - Select any Ollama model discovered on the configured server independently for embedding, synthesis, and chat
-- Use Setup's Extractors, Synthesizers, Embedders, and Enrichers sections to inspect every method, connect an OpenAI-compatible endpoint or Ollama, and configure file-extension extraction routes with ordered fallbacks
+- Connect AI models in Setup, then open the collapsed Extractors, Synthesizers, Embedders, and Enrichers drawers to inspect methods and settings; file-type routing lives inside Extractors. Bundled model-free methods are labeled as fallbacks.
+- Setup action feedback stays visible in bottom-right notifications; errors stay open until dismissed or replaced by a later result.
 - See worker heartbeat, live logs, safe stale-queue recovery, and failed-run retry controls in Intake Activity
 - Prepare for future document chat workflows
 
@@ -109,7 +110,8 @@ The backend should already expose the dashboard-facing endpoints used by this UI
 
 For the normal repository workflow, run `make dev` on macOS/Linux or
 `.\scripts\osii.ps1 dev` on Windows from the repository root, then open
-<http://localhost:5173>. Use **Setup** for optional services and AI connections.
+<http://localhost:5173>. Use **Setup** to connect AI models and configure processing
+services. Bundled model-free services keep basic work available during outages.
 
 The commands below are only for running this frontend independently against an
 already-running OSII backend.

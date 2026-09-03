@@ -101,7 +101,7 @@ def _selected_method(readiness: dict[str, Any], kind: str) -> dict[str, Any]:
                     "id": "bm25",
                     "display_name": "Off — BM25 search remains available",
                     "available": False,
-                    "description": "Semantic embeddings are optional.",
+                    "description": "Connect an embedding model for semantic search. BM25 remains the keyword-search fallback.",
                     "model": None,
                 }
             return {
@@ -152,7 +152,7 @@ def setup_summary(request: Request):
         headline = "Ready for Intake"
     else:
         overall = "ready_optional"
-        headline = "Ready for Intake — AI is optional"
+        headline = "Connect AI to complete setup"
     return {
         "overall_status": overall,
         "headline": headline,

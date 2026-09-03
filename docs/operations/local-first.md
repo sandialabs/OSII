@@ -89,16 +89,24 @@ replaces Ollama capability by capability, without changing the rest of OSII.
 ## Setup and local service control
 
 Setup is organized around **Extractors, Synthesizers, Embedders, and
-Enrichers**. Each section lists the complete discovered inventory, identifies
-the current default, explains the concrete implementation, and exposes any
-descriptor-defined settings. Model connections sit above those sections
-because one OpenAI-compatible or Ollama connection can supply both a
-synthesizer and an embedder.
+Enrichers**. These drawers start closed; open one at a time to inspect its full
+inventory and descriptor-defined settings. Each closed header keeps the selected
+method and availability count visible. **AI model connections** sit above the
+drawers because one OpenAI-compatible or Ollama connection can supply both a
+synthesizer and an embedder. Connecting AI is the normal setup path; bundled
+model-free services are fallback capabilities when those services are unavailable.
 
-The **Extraction routing** section assigns extension groups to a primary
-extractor and ordered fallbacks. A worker tries the primary first and records
+Inside the **Extractors** drawer, **Extraction routing** assigns extension groups
+to a primary extractor and ordered fallbacks. A worker tries the primary first and records
 its failure before proceeding left-to-right through the fallbacks. Intake shows
 only a compact readiness result and always uses the saved Setup routing.
+
+Connection checks, service controls, route saves, and settings changes report
+their results in a bottom-right notification that remains visible while the page
+is scrolled. Success messages dismiss after eight seconds; errors remain until
+dismissed or replaced by a later result. A notification also remains visible above
+an open connection dialog. Detailed service output is still available through
+**Advanced & diagnostics → Local capability services → Logs**.
 
 The host launcher includes a loopback-only capability supervisor. The backend
 uses a per-run private token to ask it for status or to start, stop, and restart
@@ -113,7 +121,7 @@ launcher because stopping the management plane from its own page would make
 recovery confusing. Container deployments report capability health but disable
 local lifecycle controls.
 
-For host development, **Setup → Model connections** can save an API key in the
+For host development, **Setup → AI model connections** can save an API key in the
 repository-root `.env`. The file is plaintext and excluded by `.gitignore`; it
 must not be copied or shared. Only the key's environment-variable name enters
 `.osii`. The backend and model-provider bridge reread the file as needed.

@@ -39,7 +39,7 @@ def test_setup_summary_treats_offline_baseline_as_ready(client, monkeypatch):
     assert response.status_code == 200
     payload = response.json()
     assert payload["overall_status"] == "ready_optional"
-    assert payload["headline"] == "Ready for Intake — AI is optional"
+    assert payload["headline"] == "Connect AI to complete setup"
     assert payload["extraction_ready"] is True
     assert payload["ai_ready"] is False
     assert payload["methods"]["synthesizer"]["display_name"] == "Source excerpt preview — no AI"
