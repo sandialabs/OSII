@@ -53,6 +53,7 @@ the `.osii` store directly.
 - [Extractor routing](reference/extractor-routing.md)
 - [Export components for separate repositories](operations/component-export.md)
 - [Publish the consolidated images to Quay](operations/publishing-images.md)
+- [Deploy Toolbox OCR, table, and embedding images](../toolbox/README.md)
 - [Sensitive data, OSII package transfer, and deletion](operations/sensitive-data.md)
 
 ## API and file-format reference

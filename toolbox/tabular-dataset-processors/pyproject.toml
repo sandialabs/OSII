@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "osii-tabular-dataset-processors"
+version = "0.1.0"
+description = "OSII Processor API services for grounded CSV table extraction and collection enrichment."
+requires-python = ">=3.11,<3.14"
+dependencies = ["osii-processor-sdk", "uvicorn[standard]>=0.35,<1"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+
+[tool.uv.sources]
+osii-processor-sdk = { path = "../../packages/osii-processor-sdk", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["tabular_processors"]

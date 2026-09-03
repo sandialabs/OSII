@@ -27,7 +27,7 @@ The agent's job is to execute the human's command—nothing more.
   Keep side effects at the edges and make paths, scopes, processors, and
   configuration explicit.
 - The dashboard and MCP server are Core clients. Optional OCR, model-backed,
-  or domain-specific Processor API services belong in the Model Tool Chest and
+  or domain-specific Processor API services belong in `toolbox/` and
   are enabled only through explicit deployment configuration.
 - Treat `osii_processor_sdk` as the public boundary for external processors.
   Preserve standard artifact formats so people, the dashboard, and agents can

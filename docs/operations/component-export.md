@@ -26,8 +26,10 @@ uv run --no-project --python 3.11 python scripts/export_components.py --output .
 The output contains `backend`, `frontend`, `mcp`, `tools`, `notebooks`, the
 shared `baseline-processors` image source, the four independently exportable
 local processors, and the HTTP-only `model-provider-bridge` directory, plus
-`EXPORT_MANIFEST.json`. The OpenCV/Tesseract extractor is released from the
-separate `osii-model-tool-chest` repository. RAG and grounded chat are part of
+`EXPORT_MANIFEST.json`. Optional OCR, dataset, and model services now live in
+[`toolbox/` in this repository](../../toolbox/README.md). Export them with
+`--components toolbox`: the result includes the shared SDK and preserves root
+build contexts, without adding their dependencies to Core. RAG and grounded chat are part of
 the backend export; they are not a separate component. The backend Dockerfile is adapted to use its
 exported directory as its build context. The MCP export is prepared to install
 `osii` from the receiving environment's package registry. Standalone processor

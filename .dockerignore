@@ -1,12 +1,17 @@
 .git
 .github
 .env
+.env.*
 .venv
 osii-env
 osii-data
 site
 
 **/__pycache__
+**/.venv*
+**/venv
+**/.env
+**/.env.*
 **/.pytest_cache
 **/.mypy_cache
 **/.ruff_cache
@@ -16,6 +21,10 @@ site
 **/dist
 **/build
 **/demo-workspace
+**/models
+**/.cache
+**/*.egg-info
+**/data_volume
 
 osii-demo-notebooks
 docs

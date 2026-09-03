@@ -15,8 +15,9 @@
 # make demo-data
 # ```
 #
-# Then start the optional `tabular-dataset-processors` image from the OSII Model
-# Tool Chest and configure its two URLs in OSII's `OSII_PROCESSORS` setting.
+# Then start the optional `toolbox/tabular-dataset-processors` image from this
+# repository (see `toolbox/README.md`) and configure its two URLs in
+# OSII's `OSII_PROCESSORS` setting.
 # On Windows PowerShell, import the files with:
 #
 # ```powershell

@@ -26,6 +26,12 @@ class ExportEntry:
 
 
 COMPONENTS: dict[str, tuple[ExportEntry, ...]] = {
+    "toolbox": (
+        ExportEntry("toolbox", "toolbox"),
+        ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
+        ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
+        ExportEntry(".dockerignore", ".dockerignore"),
+    ),
     "backend": (
         ExportEntry("ai-ready-ingest", "."),
         ExportEntry("docs/reference/api", "docs/reference/api"),
@@ -98,12 +104,20 @@ COMPONENTS: dict[str, tuple[ExportEntry, ...]] = {
 IGNORED_NAMES = {
     ".git", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".venv",
     "__pycache__", "node_modules", "dist", "build", ".vite",
-    "data_volume", "osii-data",
+    "data_volume", "osii-data", "models", ".cache", "osii-env", ".env",
 }
 
 
+def is_generated(name: str) -> bool:
+    return (
+        name in IGNORED_NAMES
+        or name.startswith((".venv", ".env."))
+        or name.endswith((".pyc", ".pyo", ".egg-info"))
+    )
+
+
 def ignore_generated(_: str, names: list[str]) -> set[str]:
-    return {name for name in names if name in IGNORED_NAMES or name.endswith(".pyc")}
+    return {name for name in names if is_generated(name)}
 
 
 def parse_components(raw: str) -> list[str]:
@@ -126,7 +140,7 @@ def copy_entry(component_root: Path, entry: ExportEntry) -> None:
     if entry.destination == ".":
         destination.mkdir(parents=True, exist_ok=True)
         for child in source.iterdir():
-            if child.name in IGNORED_NAMES or child.name.endswith(".pyc"):
+            if is_generated(child.name):
                 continue
             target = destination / child.name
             if child.is_dir():

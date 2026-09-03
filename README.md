@@ -119,6 +119,7 @@ for the cross-platform details and optional capabilities.
 | Build an external processor against the stable public contract | [Processor API v1](docs/reference/processor-api/index.md) |
 | Work with tables and datasets | [Tabular dataset walkthrough](docs/tutorials/tabular-datasets.md) |
 | Run packaged deployment images instead of editable source | [Publish and run images](docs/operations/publishing-images.md) |
+| Deploy or publish optional OCR, dataset, and embedding tools | [Toolbox: deployment and Quay commands](toolbox/README.md) |
 | Find a REST route or schema | [REST API overview](docs/reference/api/index.md) and [OpenAPI schema](ai-ready-ingest/docs/api/openapi.yaml) |
 
 ## How this repository is organized

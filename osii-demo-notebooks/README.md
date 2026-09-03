@@ -130,9 +130,9 @@ Each extension example runs the processor directly in Python before wrapping it
 as an HTTP app. This keeps domain logic easy to test: the network boundary is
 an adapter, not the place where the research algorithm has to live.
 
-The dataset example uses the optional tabular processor from the OSII Model Tool
-Chest. From the Core repository, run `make demo-data` or
-`.\scripts\osii.ps1 demo-data`, then start the Tool Chest container and configure
+The dataset example uses the optional tabular processor in this repository's
+[`toolbox/`](../toolbox/README.md). From the Core repository, run `make demo-data` or
+`.\scripts\osii.ps1 demo-data`, then start the Toolbox container and configure
 its URLs in `OSII_PROCESSORS` before using the live endpoint.
 
 ## Add your own documents
@@ -142,7 +142,8 @@ Additional files there are ignored by Git. OSII reads the originals in place
 and writes all derived data under `demo-workspace/.osii/`.
 
 The bundled PDF is scanned. To run the public OCR path, start the
-OpenCV/Tesseract Processor API service from the OSII model tool chest, then
+OpenCV/Tesseract Processor API service from this repository's
+[Toolbox](../toolbox/README.md), then
 configure its URL in `OSII_PROCESSORS` before starting OSII:
 
 ```bash
