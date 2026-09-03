@@ -40,9 +40,11 @@ export function ExampleEnrichmentActions({ scope }: { scope: ScopeDescribeReques
     <Paper variant="outlined" sx={{ p: 2 }}>
       <Stack spacing={1.5}>
         <Stack spacing={0.25}>
-          <Typography fontWeight={700}>Example enrichments</Typography>
+          <Typography fontWeight={700}>{scope.scope_type === "collection" ? "Generate a collection enrichment" : "Example enrichments"}</Typography>
           <Typography variant="body2" color="text.secondary">
-            Generate standard artifacts locally. These examples require no model or network connection.
+            {scope.scope_type === "collection"
+              ? "Keywords and entities are combined across the collection's extracted documents, not generated separately for each file. These two methods need no model; other methods may use connected services."
+              : "Generate standard artifacts locally. These examples require no model or network connection."}
           </Typography>
         </Stack>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>

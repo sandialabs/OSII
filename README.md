@@ -40,19 +40,6 @@ This is why OSII is deliberately modular:
 - **One shared vocabulary.** People, scripts, the dashboard, REST clients, and
   agents use the same objects, scopes, artifacts, and provenance.
 
-## A look at OSII
-
-> **Screenshot placeholder — browse a grounded library**
->
-> A wide screenshot of the dashboard's Files or document view will live here:
-> source material on one side, extracted or derived material on the other, and
-> visible provenance linking them.
-
-> **Screenshot placeholder — search with evidence**
->
-> A second screenshot will show a scoped search or chat result with its source
-> citations. Until then, the quick start below gets you to the same screen.
-
 ## Quick start: explore OSII with the built-in demo
 
 This is the shortest route for a technically curious person who wants to see
