@@ -1,11 +1,15 @@
 // src/features/browse/pages/BrowsePage.tsx
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   CircularProgress,
   Stack,
   Typography,
 } from "@mui/material";
+import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
@@ -21,9 +25,10 @@ import {
 } from "../components/BrowseDetailsPane";
 import { buildFileRoute } from "../../../utils/routes";
 import { useBrowsingScope } from "../../../app/providers/BrowsingScopeProvider";
+import { immediateFiles, immediateFolders, normalizeFolderPath } from "../contents";
 
 function getRootFolder(scopes: FolderScopeDescriptor[]): FolderScopeDescriptor | null {
-  return scopes.find((scope) => scope.path === "") ?? scopes[0] ?? null;
+  return scopes.find((scope) => normalizeFolderPath(scope.path) === "") ?? null;
 }
 
 function getFolderById(
@@ -33,46 +38,20 @@ function getFolderById(
   return scopes.find((scope) => scope.folder_id === folderId) ?? null;
 }
 
-function getImmediateChildFolders(
-  scopes: FolderScopeDescriptor[],
-  parent: FolderScopeDescriptor,
-): FolderScopeDescriptor[] {
-  const parentPath = parent.path;
-  const parentDepth = parentPath ? parentPath.split("/").length : 0;
-
-  return scopes
-    .filter((scope) => {
-      if (scope.folder_id === parent.folder_id) return false;
-
-      const scopePath = scope.path;
-      const scopeDepth = scopePath ? scopePath.split("/").length : 0;
-
-      if (parentPath === "") {
-        return scopeDepth === 1;
-      }
-
-      return (
-        scopePath.startsWith(`${parentPath}/`) &&
-        scopeDepth === parentDepth + 1
-      );
-    })
-    .sort((a, b) => a.label.localeCompare(b.label));
-}
-
 function getBreadcrumbs(
   scopes: FolderScopeDescriptor[],
   current: FolderScopeDescriptor,
 ): FolderScopeDescriptor[] {
-  if (!current.path) {
+  if (!normalizeFolderPath(current.path)) {
     return [current];
   }
 
   const result: FolderScopeDescriptor[] = [];
-  const parts = current.path.split("/");
+  const parts = normalizeFolderPath(current.path).split("/");
 
   for (let i = 0; i <= parts.length; i += 1) {
     const partialPath = parts.slice(0, i).join("/");
-    const match = scopes.find((scope) => scope.path === partialPath);
+    const match = scopes.find((scope) => normalizeFolderPath(scope.path) === partialPath);
     if (match) {
       result.push(match);
     }
@@ -89,6 +68,8 @@ export function BrowsePage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { setFolderScope } = useBrowsingScope();
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const view = searchParams.get("view") === "icons" ? "icons" : "list";
 
   const folderQuery = useQuery({
     queryKey: ["scopes", "folders"],
@@ -116,7 +97,7 @@ export function BrowsePage() {
 
   const childFolders = useMemo(() => {
     if (!currentFolder) return [];
-    return getImmediateChildFolders(scopes, currentFolder);
+    return immediateFolders(scopes, currentFolder);
   }, [scopes, currentFolder]);
 
   const breadcrumbs = useMemo(() => {
@@ -125,8 +106,8 @@ export function BrowsePage() {
   }, [scopes, currentFolder]);
 
   const fileCards = useMemo(
-    () => (summariesQuery.data?.summaries ?? []).map(toFileCardModel),
-    [summariesQuery.data?.summaries],
+    () => immediateFiles(summariesQuery.data?.summaries ?? [], currentFolder?.path ?? "").map(toFileCardModel),
+    [summariesQuery.data?.summaries, currentFolder?.path],
   );
 
   const selection: BrowseSelection = currentFolder
@@ -135,6 +116,7 @@ export function BrowsePage() {
 
   const handleOpenFolder = (folder: FolderScopeDescriptor) => {
     setFolderScope(folder);
+    setDetailsOpen(false);
 
     const next = new URLSearchParams(searchParams);
     next.set("folder_id", folder.folder_id);
@@ -165,7 +147,7 @@ export function BrowsePage() {
           Browse
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Navigate files in their native folder hierarchy.
+          Open a folder to see its contents. Only files in the current folder appear here.
         </Typography>
       </Stack>
 
@@ -179,12 +161,7 @@ export function BrowsePage() {
         }}
       />
 
-      <Stack
-        direction={{ xs: "column", xl: "row" }}
-        spacing={2}
-        alignItems="flex-start"
-      >
-        <Stack spacing={1.5} sx={{ flex: 1, minWidth: 0 }}>
+        <Stack spacing={1.5} sx={{ minWidth: 0, width: "100%" }}>
           {summariesQuery.isLoading ? (
             <Stack direction="row" spacing={2} alignItems="center">
               <CircularProgress size={24} />
@@ -197,19 +174,27 @@ export function BrowsePage() {
             </Alert>
           ) : (
             <BrowseGrid
+              key={currentFolder.folder_id}
               folders={childFolders}
               files={fileCards}
-              selectedFolderId={currentFolder.folder_id}
+              view={view}
+              onChangeView={(nextView) => {
+                const next = new URLSearchParams(searchParams);
+                next.set("view", nextView);
+                setSearchParams(next, { replace: true });
+              }}
               onOpenFolder={handleOpenFolder}
               onOpenFile={(fileId: string) => navigate(buildFileRoute({ fileId }))}
             />
           )}
         </Stack>
 
-        <Stack sx={{ width: { xs: "100%", xl: 320 }, flexShrink: 0 }}>
-          <BrowseDetailsPane selection={selection} />
-        </Stack>
-      </Stack>
+      <Accordion expanded={detailsOpen} onChange={(_, expanded) => setDetailsOpen(expanded)} variant="outlined" disableGutters slotProps={{ transition: { unmountOnExit: true } }}>
+        <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
+          <Typography variant="body2">Folder details & synthesis</Typography>
+        </AccordionSummary>
+        <AccordionDetails><BrowseDetailsPane selection={selection} /></AccordionDetails>
+      </Accordion>
     </Stack>
   );
 }

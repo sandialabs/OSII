@@ -118,6 +118,8 @@ in the JSON response.
 ### Enrichments
 
 - `POST /api/enrichments/list`
+- `POST /api/enrichments/payload`
+- `DELETE /api/enrichments/payload`
 - `GET /api/enrichments/objects/{file_id}/{filename}`
 
 ### Search
@@ -831,6 +833,15 @@ Example response:
   ]
 }
 ```
+
+### Read or delete a scope enrichment payload
+
+Scope-level JSON artifacts are read with `POST /api/enrichments/payload` and a
+body containing `scope` plus a path-free `filename`. The same payload sent with
+`DELETE` removes that derived JSON artifact and its `.meta.json` sidecar. A
+missing artifact returns `404`; an invalid scope or filename returns `400`.
+This never deletes source files, extracted text, or collection membership. The
+dashboard uses it for the confirmed **Delete saved wiki** action.
 
 ### Read an object enrichment payload
 

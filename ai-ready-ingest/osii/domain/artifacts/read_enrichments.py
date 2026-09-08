@@ -139,3 +139,26 @@ def get_scope_enrichment_payload(osii_root: Path, scope: dict, filename: str) ->
         "relpath": f"{rel_prefix}/{filename}",
         "data": data,
     }
+
+
+def delete_scope_enrichment(osii_root: Path, scope: dict, filename: str) -> dict | None:
+    """Delete one named derived artifact and its sidecar metadata, if present."""
+    if Path(filename).name != filename or not filename.endswith(".json") or filename.endswith(".meta.json"):
+        raise ValueError("filename must name one JSON enrichment artifact")
+    existing = get_scope_enrichment_payload(osii_root, scope, filename)
+    if existing is None:
+        return None
+    data_path = osii_root / existing["relpath"]
+    metadata_path = data_path.with_name(f"{data_path.stem}.meta.json")
+    data_path.unlink()
+    metadata_deleted = False
+    if metadata_path.is_file():
+        metadata_path.unlink()
+        metadata_deleted = True
+    return {
+        "scope_type": existing["scope_type"],
+        "scope_id": existing["scope_id"],
+        "filename": filename,
+        "deleted": True,
+        "metadata_deleted": metadata_deleted,
+    }

@@ -1,6 +1,7 @@
 from osii.domain.scopes.collections import create_collection, add_documents_to_collection
 from osii.domain.scopes.membership import list_scope_file_ids
 from osii.domain.storage.objects import write_meta_toml, write_provenance_toml
+from osii.domain.storage.folders import write_folder_manifest
 
 
 def test_list_scope_file_ids_root(temp_osii_root, sample_osii_object):
@@ -66,3 +67,23 @@ def test_list_scope_file_ids_collection(temp_osii_root, sample_osii_object):
         {"scope_type": "collection", "collection_id": collection["id"]},
     )
     assert result == [file_id]
+
+
+def test_folder_scope_matches_current_and_legacy_source_namespaces(temp_osii_root):
+    write_folder_manifest(
+        temp_osii_root,
+        folder_id="folder-reports",
+        path_hint="reports",
+        docs=[
+            {"source_relpath": "my_data/reports/current.txt", "file_id": "file-current"},
+            {"source_relpath": "source/reports/legacy.txt", "file_id": "file-legacy"},
+            {"source_relpath": "uploaded_data/reports/upload.txt", "file_id": "file-upload"},
+            {"source_relpath": "my_data/reports-other/not-a-match.txt", "file_id": "file-other"},
+        ],
+        subfolders=[],
+    )
+
+    assert list_scope_file_ids(
+        temp_osii_root,
+        {"scope_type": "folder", "folder_id": "folder-reports"},
+    ) == ["file-current", "file-legacy", "file-upload"]

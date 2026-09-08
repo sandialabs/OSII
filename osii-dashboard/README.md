@@ -15,8 +15,9 @@ The dashboard is intentionally modular. It is a standalone frontend that talks t
 - Reuse or delete up to 20 recent browser-local searches and chat prompts; answers and results are never stored
 - Explore root or collection scopes through saved noun/adjective phrase suggestions
 - Open and inspect documents including source PDFs
-- Navigate by folder using a lazy-loaded tree
+- Browse one folder at a time in a compact list or thumbnail/icon grid, with folders first, name filtering, and name/date/size sorting; subfolder files appear only when you open that subfolder
 - Organize documents into collections
+- Open a collection's collapsed **Enrichments** drawer for its wiki and other products; documents remain visible without an inline wiki or example-enrichment panel
 - Add or remove collection members without touching their originals, and export/import manifest-validated collection OSII packages
 - Apply structured sensitivity-awareness labels, handling notes, and reusable plain-text tags
 - Preview and surgically remove one file's OSII data, with a separate option to delete the writable original too
@@ -30,6 +31,31 @@ The dashboard is intentionally modular. It is a standalone frontend that talks t
 - Prepare for future document chat workflows
 
 ---
+
+## Browsing folders and collection products
+
+**Browse** shows only the current folder's contents. Use the breadcrumbs to go
+up, click a folder to go down, and switch **List / Icons** without changing the
+scope. The view choice stays in the URL when navigating folders or reloading.
+Filtering matches names in this folder, not the whole library; use **Search**
+for cross-folder retrieval. Up to 48 items display at first; **Show more** loads
+the next group. Folder synthesis/details are collapsed separately.
+
+Collection pages put documents first. **Enrichments** starts closed even when
+a wiki already exists. Open **Wiki** or **Other enrichments** inside the drawer
+when needed; **Close enrichments** hides them without deleting stored artifacts.
+**Delete saved wiki** provides a separate confirmation and removes only that
+derived wiki and its metadata, never documents or originals.
+Generation uses the collection's extracted documents together to create a
+collection-level result, not a separate result on every member. Adding documents
+does not regenerate an existing product automatically; rerun its generation
+action when you want it updated. Keyword-based suggestions remain available in
+collection-scoped Search and Chat.
+
+Run `npm test` and `npm run build` from `osii-dashboard/dashboard` to check these
+changes. Tests use Node's built-in runner (Node 22.6+); no test dependency is
+installed. With `make dev` / `.\scripts\osii.ps1 dev`, refresh the browser;
+packaged deployments require rebuilding the dashboard image.
 
 ## How it works
 

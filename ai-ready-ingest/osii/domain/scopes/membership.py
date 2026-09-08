@@ -25,7 +25,17 @@ def _folder_scope_match(source_relpath: str, folder_relpath: str) -> bool:
     if folder_relpath == "":
         return True
 
-    return source_relpath == folder_relpath or source_relpath.startswith(folder_relpath + "/")
+    if source_relpath == folder_relpath or source_relpath.startswith(folder_relpath + "/"):
+        return True
+
+    # Source identities include their storage namespace (current host intake
+    # uses ``my_data/``; older libraries commonly use ``source/``), while
+    # folder manifests are rooted inside that namespace. Keep the canonical
+    # identity unchanged and compare the folder-relative portion here.
+    namespace, separator, relative_path = source_relpath.partition("/")
+    if separator and namespace in {"source", "my_data", "uploaded_data"}:
+        return relative_path == folder_relpath or relative_path.startswith(folder_relpath + "/")
+    return False
 
 
 def _resolve_folder_relpath(osii_root: Path, folder_id: str) -> str | None:

@@ -21,6 +21,15 @@ The collection is created when the run is queued. Each document is added as it f
 
 ## Collections make enrichments useful together
 
+On a collection page, open the collapsed **Enrichments** drawer to view its
+**Wiki** or **Other enrichments**. This keeps the document listing clear, even
+when a long wiki exists. Closing the drawer hides products; it does not delete
+them. Generation creates a collection-level product using the members' extracted
+content together, not an enrichment attached separately to each member. Rerun
+generation after changing membership if you want the saved product refreshed.
+**Delete saved wiki** is a confirmed destructive action limited to the derived
+wiki data and metadata; it never removes a collection member or source file.
+
 An enrichment creates a derived artifact from a scope. An object enrichment answers a question about one document; a folder, root, or collection enrichment can answer it across many documents. Tables are especially useful at that broader scope: each row can represent an object, a document section, or another discovered record, while every row can retain its source-file provenance.
 
 Use a collection when the meaningful set of documents is defined by purpose rather than directory layout. For example, create a `Supplier contracts — renewal review` collection from contracts in Legal, invoices in Finance, and uploaded correspondence; then run a collection enrichment to produce a sortable renewal table.
