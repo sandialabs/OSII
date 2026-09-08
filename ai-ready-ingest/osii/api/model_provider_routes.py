@@ -228,6 +228,43 @@ def _probe_openai_embedding(
     }
 
 
+def _probe_ollama_embedding(record: dict[str, Any]) -> dict[str, Any]:
+    model = str(record.get("embedding_model") or "").strip()
+    if not model:
+        return {
+            "configured": False,
+            "ok": False,
+            "model": "",
+            "detail": "No embedding model is selected.",
+        }
+    try:
+        response = requests.post(
+            f"{record['base_url']}/api/embed",
+            json={"model": model, "input": ["OSII embedding connection test"]},
+            timeout=(3, 15),
+        )
+        response.raise_for_status()
+        rows = response.json().get("embeddings") or []
+        vector = rows[0] if rows and isinstance(rows[0], list) else None
+        if vector:
+            return {
+                "configured": True,
+                "ok": True,
+                "model": model,
+                "dimensions": len(vector),
+                "detail": f"Validated a {len(vector)}-dimensional embedding vector.",
+            }
+        detail = "Ollama responded without a usable embedding vector."
+    except (requests.RequestException, ValueError, AttributeError) as exc:
+        detail = str(exc)
+    return {
+        "configured": True,
+        "ok": False,
+        "model": model,
+        "detail": f"Embedding test failed: {detail}",
+    }
+
+
 def _run_ollama_pull(job_id: str, base_url: str, model: str) -> None:
     try:
         with requests.post(
@@ -325,6 +362,8 @@ def provider_health(request: Request, provider_id: str):
         capabilities = {}
         if record["type"] == "openai":
             capabilities["embedding"] = _probe_openai_embedding(record, headers)
+        else:
+            capabilities["embedding"] = _probe_ollama_embedding(record)
         return {"ok": True, "models": names, "model_details": model_details, "missing_models": missing, "pull_commands": [f"ollama pull {name}" for name in missing], "recommendations": RECOMMENDED_OLLAMA_MODELS if record["type"] == "ollama" else [], "capabilities": capabilities}
     except (requests.RequestException, ValueError) as exc:
         return {"ok": False, "models": [], "model_details": [], "missing_models": [], "pull_commands": [], "recommendations": RECOMMENDED_OLLAMA_MODELS if record["type"] == "ollama" else [], "detail": str(exc)}

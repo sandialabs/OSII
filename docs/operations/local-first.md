@@ -64,7 +64,11 @@ starter models are:
 - `llama3.2:1b`, a roughly 1.3 GB Meta chat and synthesis model.
 
 Select **Download** to ask Ollama to pull a missing starter model and show its
-progress. OSII bundles no model weights. Downloads are limited to
+progress. When the pull finishes, the card changes to **Installed**, OSII selects
+and validates that model, and the Download action disappears. Existing documents
+still need an **Additional processing → Build semantic embeddings** run from
+Intake; installing a model does not silently reprocess the library. OSII bundles
+no model weights. Downloads are limited to
 `OSII_OLLAMA_ALLOWED_MODELS`; corporate administrators can extend that list
 with other approved models.
 

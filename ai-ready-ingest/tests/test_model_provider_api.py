@@ -171,12 +171,23 @@ def test_openai_health_validates_selected_embedding_model(client, monkeypatch):
 
 def test_ollama_models_are_discovered_and_allowlisted_pull_runs(client, monkeypatch):
     monkeypatch.setattr(
+        "osii.api.model_provider_routes.requests.post",
+        lambda *_, **__: FakeResponse(payload={"embeddings": [[0.1, 0.2, 0.3]]}),
+    )
+    monkeypatch.setattr(
         "osii.api.model_provider_routes.requests.get",
         lambda *_, **__: FakeResponse(payload={"models": [{"name": "all-minilm:latest", "size": 46_000_000, "digest": "abc", "details": {"family": "bert", "parameter_size": "22M"}}]}),
     )
     health = client.post("/api/admin/model-providers/ollama-local/health").json()
     assert health["ok"] is True
     assert health["model_details"][0]["parameter_size"] == "22M"
+    assert health["capabilities"]["embedding"] == {
+        "configured": True,
+        "ok": True,
+        "model": "all-minilm",
+        "dimensions": 3,
+        "detail": "Validated a 3-dimensional embedding vector.",
+    }
 
     monkeypatch.setattr(
         "osii.api.model_provider_routes.requests.post",

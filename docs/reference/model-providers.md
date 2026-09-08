@@ -41,10 +41,13 @@ for the Ollama application or service; OSII never requests or stores them.
 
 Configure the endpoint and exact language/embedding model names through
 **Setup → Model connections**. Installed Ollama models are selectable from the same
-dialog. Language and embedding choices are independent because not every
+dialog. Starter cards change from **Download** to **Installed** after model
+discovery; a one-click download also selects and validates the model. Language
+and embedding choices are independent because not every
 generative model supports embeddings. OSII saves the exact installed name,
 including its tag. Selecting a different embedding model does not reuse the
-previous vector index; build a compatible index for that model.
+previous vector index. For documents already in OSII, run **Intake → Additional
+processing → Build semantic embeddings** after selecting the model.
 Missing installed models still include copy-paste `ollama pull <model>`
 commands for environments where browser-initiated downloads are disabled.
 

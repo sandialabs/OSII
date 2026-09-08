@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip,
   Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel,
@@ -69,6 +69,12 @@ function statusColor(status: string): "success" | "default" | "error" | "info" {
   if (status === "failed") return "error";
   if (status === "starting") return "info";
   return "default";
+}
+
+function modelNameMatches(installed: string, requested: string): boolean {
+  return installed === requested
+    || installed === `${requested}:latest`
+    || requested === `${installed}:latest`;
 }
 
 function ConfigInput({ name, property, value, onChange }: {
@@ -151,6 +157,19 @@ export function ProcessorsPage() {
   const [processorForm, setProcessorForm] = useState<Omit<ProcessorEndpoint, "id"> & { id: string }>({
     id: "", display_name: "", kind: "extractor", base_url: "http://", enabled: true,
   });
+
+  useEffect(() => {
+    if (!connectionOpen || providerForm.type !== "ollama" || !providerForm.id) return;
+    let cancelled = false;
+    void checkModelProvider(providerForm.id).then((health) => {
+      if (!cancelled) {
+        setProviderHealth((current) => ({ ...current, [providerForm.id]: health }));
+      }
+    }).catch(() => {
+      // The dialog's normal connection check reports details after Save.
+    });
+    return () => { cancelled = true; };
+  }, [connectionOpen, providerForm.id, providerForm.type]);
 
   const refreshSetup = async () => {
     await Promise.all([
@@ -260,10 +279,48 @@ export function ProcessorsPage() {
         setPullJobs((current) => ({ ...current, [key]: job }));
       }
       if (job.status === "error") throw new Error(job.detail || "Ollama could not download the model.");
-      notify(`${recommendation.display_name} is installed.`);
-      await checkConnection(provider);
+      const health = await checkModelProvider(provider.id);
+      const installedName = health.models.find((model) => modelNameMatches(model, recommendation.model))
+        ?? recommendation.model;
+      const updatedProvider = recommendation.capability === "embedding"
+        ? { ...provider, implicit: false, embedding_model: installedName }
+        : { ...provider, implicit: false, chat_model: installedName, synthesis_model: installedName };
+      await createModelProvider(updatedProvider);
+      setProviderForm((current) => current.id === provider.id ? { ...current, ...updatedProvider } : current);
+      const validatedHealth = await checkModelProvider(provider.id);
+      setProviderHealth((current) => ({ ...current, [provider.id]: validatedHealth }));
+      const embeddingTest = validatedHealth.capabilities?.embedding;
+      notify(recommendation.capability === "embedding"
+        ? embeddingTest?.ok
+          ? `${recommendation.display_name} is installed, selected, and ready. Build semantic embeddings in Intake for documents already in OSII.`
+          : `${recommendation.display_name} is installed and selected, but its embedding test failed: ${embeddingTest?.detail ?? "unknown error"}`
+        : `${recommendation.display_name} is installed and selected for chat, synthesis, and wikis.`,
+      recommendation.capability === "embedding" && !embeddingTest?.ok ? "error" : "success");
+      await refreshSetup();
     } catch (error) {
       notify(error instanceof Error ? error.message : "Model download failed.", "error");
+    }
+  };
+
+  const selectInstalledModel = async (
+    provider: ModelProvider,
+    recommendation: OllamaRecommendation,
+    installedName: string,
+  ) => {
+    const updatedProvider = recommendation.capability === "embedding"
+      ? { ...provider, implicit: false, embedding_model: installedName }
+      : { ...provider, implicit: false, chat_model: installedName, synthesis_model: installedName };
+    try {
+      await createModelProvider(updatedProvider);
+      setProviderForm((current) => current.id === provider.id ? { ...current, ...updatedProvider } : current);
+      const health = await checkModelProvider(provider.id);
+      setProviderHealth((current) => ({ ...current, [provider.id]: health }));
+      notify(recommendation.capability === "embedding"
+        ? `${recommendation.display_name} is selected. Build semantic embeddings in Intake for documents already in OSII.`
+        : `${recommendation.display_name} is selected for chat, synthesis, and wikis.`);
+      await refreshSetup();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not select the installed model.", "error");
     }
   };
 
@@ -549,7 +606,17 @@ export function ProcessorsPage() {
           const job = pullJobs[`${providerForm.id}:${recommendation.model}`];
           const active = job?.status === "queued" || job?.status === "running";
           const progress = job?.total ? Math.min(100, job.completed / job.total * 100) : undefined;
-          return <Paper key={recommendation.model} variant="outlined" sx={{ p: 1.25 }}><Stack spacing={0.5}><Stack direction="row" justifyContent="space-between" spacing={1}><Stack><Typography variant="body2" fontWeight={700}>{recommendation.display_name}</Typography><Typography variant="caption" color="text.secondary">{recommendation.model} · {recommendation.size_label} · {recommendation.publisher}</Typography></Stack><Button size="small" variant="outlined" disabled={active} onClick={() => void installModel(providerForm, recommendation)}>{active ? "Downloading…" : "Download"}</Button></Stack>{active ? <LinearProgress variant={progress === undefined ? "indeterminate" : "determinate"} value={progress} /> : null}{job?.status === "error" ? <Typography variant="caption" color="error">{job.detail}</Typography> : null}</Stack></Paper>;
+          const health = providerHealth[providerForm.id];
+          const installedName = health?.models.find((model) => modelNameMatches(model, recommendation.model));
+          const selectedName = recommendation.capability === "embedding"
+            ? providerForm.embedding_model
+            : providerForm.chat_model;
+          const selected = Boolean(
+            installedName
+            && !providerForm.implicit
+            && modelNameMatches(installedName, selectedName),
+          );
+          return <Paper key={recommendation.model} variant="outlined" sx={{ p: 1.25 }}><Stack spacing={0.5}><Stack direction="row" justifyContent="space-between" spacing={1}><Stack><Typography variant="body2" fontWeight={700}>{recommendation.display_name}</Typography><Typography variant="caption" color="text.secondary">{recommendation.model} · {recommendation.size_label} · {recommendation.publisher}</Typography></Stack>{installedName ? <Stack direction="row" spacing={0.75} alignItems="center"><Chip size="small" color="success" label={selected ? "Installed · selected" : "Installed"} />{!selected ? <Button size="small" variant="outlined" onClick={() => void selectInstalledModel(providerForm, recommendation, installedName)}>Use this model</Button> : null}</Stack> : <Button size="small" variant="outlined" disabled={active || !health} onClick={() => void installModel(providerForm, recommendation)}>{active ? "Downloading…" : health ? "Download" : "Checking…"}</Button>}</Stack>{active ? <LinearProgress variant={progress === undefined ? "indeterminate" : "determinate"} value={progress} /> : null}{job?.status === "error" ? <Typography variant="caption" color="error">{job.detail}</Typography> : null}{installedName && recommendation.capability === "embedding" ? <Typography variant="caption" color="text.secondary">The model enables semantic processing. Existing documents still need a semantic-embedding run from Intake.</Typography> : null}</Stack></Paper>;
         })}</Stack> : null}
       </Stack></DialogContent><DialogActions><Button onClick={() => setConnectionOpen(false)}>Close</Button><Button type="submit" variant="contained" disabled={savingConnection}>{savingConnection ? "Saving and checking…" : "Save and check connection"}</Button></DialogActions>
     </Box></Dialog>
