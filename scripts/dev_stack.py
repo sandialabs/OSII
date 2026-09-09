@@ -111,8 +111,8 @@ def build_environment(core_only: bool) -> dict[str, str]:
     mcp_port = env.get("OSII_MCP_PORT", "8022")
     workspace_python_path = os.pathsep.join(
         (
-            str(REPOSITORY_ROOT / "ai-ready-ingest"),
-            str(REPOSITORY_ROOT / "ai-ready-mcp"),
+            str(REPOSITORY_ROOT / "osii-core"),
+            str(REPOSITORY_ROOT / "osii-mcp"),
         )
     )
     if env.get("PYTHONPATH"):
@@ -147,7 +147,7 @@ def build_environment(core_only: bool) -> dict[str, str]:
         }
     )
     env["OSII_EXTRACTOR_ROUTES_PATH"] = str(
-        (REPOSITORY_ROOT / "ai-ready-ingest" / "config" / "extractor_routes_native.toml").resolve()
+        (REPOSITORY_ROOT / "osii-core" / "config" / "extractor_routes_native.toml").resolve()
     )
     provider_profile = "openai" if env.get("OPENAI_BASE_URL", "").strip() else "ollama"
     if not core_only:
@@ -251,6 +251,7 @@ def service_commands(
             (
                 uv,
                 "run",
+                "--no-sync",
                 "--package",
                 "osii",
                 "python",
@@ -265,7 +266,7 @@ def service_commands(
                 "--reload-dir",
                 "osii",
             ),
-            REPOSITORY_ROOT / "ai-ready-ingest",
+            REPOSITORY_ROOT / "osii-core",
             int(api_port),
         ),
         Service(
@@ -273,6 +274,7 @@ def service_commands(
             (
                 uv,
                 "run",
+                "--no-sync",
                 "--package",
                 "osii",
                 "python",
@@ -283,7 +285,7 @@ def service_commands(
                 "python -m osii.worker",
                 "osii",
             ),
-            REPOSITORY_ROOT / "ai-ready-ingest",
+            REPOSITORY_ROOT / "osii-core",
             0,
         ),
         Service(
@@ -291,11 +293,12 @@ def service_commands(
             (
                 uv,
                 "run",
+                "--no-sync",
                 "--package",
                 "osii-mcp",
                 "osii-mcp",
             ),
-            REPOSITORY_ROOT / "ai-ready-mcp",
+            REPOSITORY_ROOT / "osii-mcp",
             int(mcp_port),
         ),
         Service(
@@ -323,9 +326,9 @@ def service_commands(
         )
         for name, package, default_port, env_name, directory in reversed(processors):
             port = env.get(env_name, default_port)
-            services.insert(0, Service(name, (uv, "run", "--package", package, "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "services" / directory, int(port)))
+            services.insert(0, Service(name, (uv, "run", "--no-sync", "--package", package, "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "osii-core" / "services" / directory, int(port)))
         bridge_port = env.get("OSII_MODEL_BRIDGE_PORT", "8095")
-        services.insert(4, Service("model-bridge", (uv, "run", "--package", "osii-model-provider-bridge", "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", bridge_port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "services" / "model-provider-bridge", int(bridge_port)))
+        services.insert(4, Service("model-bridge", (uv, "run", "--no-sync", "--package", "osii-model-provider-bridge", "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", bridge_port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "osii-core" / "services" / "model-provider-bridge", int(bridge_port)))
     return services
 
 

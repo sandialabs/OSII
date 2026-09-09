@@ -4,18 +4,17 @@ version = "0.1.0"
 requires-python = ">=3.11,<3.14"
 
 [tool.uv.workspace]
-exclude = ["toolbox/*"]
+exclude = ["osii-toolbox/*"]
 members = [
-  "ai-ready-ingest",
-  "ai-ready-mcp",
-  "packages/osii-processor-sdk",
-  "services/local-extractor",
-  "services/local-synthesizer",
-  "services/local-embedder",
-  "services/local-enricher",
-  "services/model-provider-bridge",
+  "osii-core",
+  "osii-mcp",
+  "osii-core/services/local-extractor",
+  "osii-core/services/local-synthesizer",
+  "osii-core/services/local-embedder",
+  "osii-core/services/local-enricher",
+  "osii-core/services/model-provider-bridge",
 ]
 
 [tool.uv.sources]
-osii-processor-sdk = { workspace = true }
+osii-processor-sdk = { path = "osii-core/processor-sdk", editable = true }
 osii = { workspace = true }

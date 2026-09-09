@@ -1,7 +1,7 @@
 # Corporate pilot images and Quay releases
 
 Optional OCR, dataset, and model images now have their source in the main
-repository's [Toolbox](../../toolbox/README.md), with separate copy-paste build,
+repository's `osii-toolbox/` directory, whose README has separate copy-paste build,
 run, and Quay push commands. They are not added to the three-image release
 command below. In particular, the current root Compose file also expects the
 Tesseract image; build/publish `-tesseract` with matching prefix/tag before

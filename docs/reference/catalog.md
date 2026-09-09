@@ -51,5 +51,5 @@ alter canonical `.osii` data or require a separate search index.
 Run the synthetic 1,000/10,000-document benchmark with:
 
 ```bash
-uv run --package osii python ai-ready-ingest/tests/benchmark_catalog.py
+uv run --package osii python osii-core/tests/benchmark_catalog.py
 ```

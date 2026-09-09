@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the extraction-layer architecture for `ai-ready-ingest`.
+This document defines the extraction-layer architecture for `osii-core`.
 
 The extraction layer is responsible for:
 - invoking backend extraction tools or model endpoints
@@ -25,7 +25,7 @@ The extraction layer is responsible for:
 ## Package layout
 
 ```text
-ai-ready-ingest/osii/extraction/
+osii-core/osii/extraction/
   __init__.py
   base.py
   common.py

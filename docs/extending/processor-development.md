@@ -1,7 +1,7 @@
 # Develop an OSII processor
 
 Start with the [hello table enricher](hello-enricher.md), then copy the closest
-small implementation from `packages/osii-processor-sdk/examples/`.
+small implementation from `osii-core/processor-sdk/examples/`.
 
 ## Choose the boundary first
 

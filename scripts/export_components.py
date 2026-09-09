@@ -26,76 +26,64 @@ class ExportEntry:
 
 
 COMPONENTS: dict[str, tuple[ExportEntry, ...]] = {
-    "toolbox": (
-        ExportEntry("toolbox", "toolbox"),
-        ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
+    "osii-toolbox": (
+        ExportEntry("osii-toolbox", "osii-toolbox"),
+        ExportEntry("osii-core/processor-sdk", "osii-core/processor-sdk"),
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
         ExportEntry(".dockerignore", ".dockerignore"),
     ),
-    "backend": (
-        ExportEntry("ai-ready-ingest", "."),
+    "osii-core": (
+        ExportEntry("osii-core", "."),
         ExportEntry("docs/reference/api", "docs/reference/api"),
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
-    "frontend": (
+    "osii-dashboard": (
         ExportEntry("osii-dashboard/dashboard", "."),
         ExportEntry("docs/reference/api", "docs/reference/api"),
     ),
-    "mcp": (
-        ExportEntry("ai-ready-mcp", "."),
+    "osii-mcp": (
+        ExportEntry("osii-mcp", "."),
         ExportEntry("docs/reference/api", "docs/reference/api"),
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
-    "tools": (
-        ExportEntry("ai-ready-tool-shelf", "tools"),
-        ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
-        ExportEntry("services/local-extractor", "services/local-extractor"),
-        ExportEntry("services/local-synthesizer", "services/local-synthesizer"),
-        ExportEntry("services/local-embedder", "services/local-embedder"),
-        ExportEntry("services/local-enricher", "services/local-enricher"),
-        ExportEntry("services/model-provider-bridge", "services/model-provider-bridge"),
-        ExportEntry("services/baseline-processors", "services/baseline-processors"),
-        ExportEntry("docs/extending", "docs/extending"),
-        ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
-    ),
-    "notebooks": (
+    "osii-demo-notebooks": (
         ExportEntry("osii-demo-notebooks", "."),
         ExportEntry("docs/tutorials", "docs/tutorials"),
     ),
     "baseline-processors": (
-        ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
-        ExportEntry("services/local-extractor", "services/local-extractor"),
-        ExportEntry("services/local-synthesizer", "services/local-synthesizer"),
-        ExportEntry("services/local-embedder", "services/local-embedder"),
-        ExportEntry("services/local-enricher", "services/local-enricher"),
-        ExportEntry("services/model-provider-bridge", "services/model-provider-bridge"),
-        ExportEntry("services/baseline-processors", "services/baseline-processors"),
+        ExportEntry("osii-core/processor-sdk", "osii-core/processor-sdk"),
+        ExportEntry("osii-core/services/local-extractor", "osii-core/services/local-extractor"),
+        ExportEntry("osii-core/services/local-synthesizer", "osii-core/services/local-synthesizer"),
+        ExportEntry("osii-core/services/local-embedder", "osii-core/services/local-embedder"),
+        ExportEntry("osii-core/services/local-enricher", "osii-core/services/local-enricher"),
+        ExportEntry("osii-core/services/model-provider-bridge", "osii-core/services/model-provider-bridge"),
+        ExportEntry("osii-core/services/baseline-processors", "osii-core/services/baseline-processors"),
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
         ExportEntry("docs/reference/model-providers.md", "docs/model-providers.md"),
     ),
     "local-extractor": (
-        ExportEntry("services/local-extractor", "."),
-        ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
+        ExportEntry("osii-core/services/local-extractor", "."),
+        ExportEntry("osii-core/processor-sdk", "osii-core/processor-sdk"),
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
     "local-synthesizer": (
-        ExportEntry("services/local-synthesizer", "."),
-        ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
+        ExportEntry("osii-core/services/local-synthesizer", "."),
+        ExportEntry("osii-core/processor-sdk", "osii-core/processor-sdk"),
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
     "local-embedder": (
-        ExportEntry("services/local-embedder", "."),
-        ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
+        ExportEntry("osii-core/services/local-embedder", "."),
+        ExportEntry("osii-core/processor-sdk", "osii-core/processor-sdk"),
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
     "local-enricher": (
-        ExportEntry("services/local-enricher", "."),
-        ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
+        ExportEntry("osii-core/services/local-enricher", "."),
+        ExportEntry("osii-core/processor-sdk", "osii-core/processor-sdk"),
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
     "model-provider-bridge": (
-        ExportEntry("services/model-provider-bridge", "."),
-        ExportEntry("packages/osii-processor-sdk", "packages/osii-processor-sdk"),
+        ExportEntry("osii-core/services/model-provider-bridge", "."),
+        ExportEntry("osii-core/processor-sdk", "osii-core/processor-sdk"),
         ExportEntry("docs/reference/model-providers.md", "docs/model-providers.md"),
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
@@ -156,9 +144,9 @@ def write_manifest(output: Path, selected: list[str]) -> None:
         "source_repository": "osii",
         "components": selected,
         "notes": {
-            "backend": "Publish the osii Python package to the corporate package registry before exporting MCP consumers.",
-            "frontend": "Configure its API endpoint for the deployed OSII backend.",
-            "tools": "Processor services use the shared osii-processor-sdk contract package.",
+            "osii-core": "Publish the osii Python package to the corporate package registry before exporting MCP consumers.",
+            "osii-dashboard": "Configure its API endpoint for the deployed OSII backend.",
+            "osii-toolbox": "Processor services use the shared osii-processor-sdk contract package.",
         },
     }
     (output / "EXPORT_MANIFEST.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -167,16 +155,17 @@ def write_manifest(output: Path, selected: list[str]) -> None:
 def adapt_container_files(component: str, component_root: Path) -> None:
     """Make Dockerfiles use the exported directory as their build context."""
     dockerfile = component_root / "Dockerfile"
-    if component == "backend" and dockerfile.exists():
+    if component == "osii-core" and dockerfile.exists():
         content = dockerfile.read_text(encoding="utf-8")
-        content = content.replace("COPY ai-ready-ingest/pyproject.toml ai-ready-ingest/README.md ./", "COPY pyproject.toml README.md ./")
-        content = content.replace("COPY ai-ready-ingest/osii ./osii", "COPY osii ./osii")
-        content = content.replace("COPY ai-ready-ingest/config ./config", "COPY config ./config")
+        content = content.replace("COPY osii-core/processor-sdk /workspace/processor-sdk", "COPY processor-sdk /workspace/processor-sdk")
+        content = content.replace("COPY osii-core/pyproject.toml osii-core/README.md ./", "COPY pyproject.toml README.md ./")
+        content = content.replace("COPY osii-core/osii ./osii", "COPY osii ./osii")
+        content = content.replace("COPY osii-core/config ./config", "COPY config ./config")
         dockerfile.write_text(content, encoding="utf-8")
-    if component == "mcp" and dockerfile.exists():
+    if component == "osii-mcp" and dockerfile.exists():
         dockerfile.write_text(
             dockerfile.read_text(encoding="utf-8").replace(
-                "COPY ai-ready-ingest /workspace/ai-ready-ingest\nCOPY ai-ready-mcp /workspace/ai-ready-mcp\nRUN pip install --no-cache-dir /workspace/ai-ready-ingest /workspace/ai-ready-mcp",
+                "COPY osii-core /workspace/osii-core\nCOPY osii-mcp /workspace/osii-mcp\nRUN pip install --no-cache-dir /workspace/osii-core /workspace/osii-mcp",
                 "COPY . /workspace/osii-mcp\nRUN pip install --no-cache-dir /workspace/osii-mcp",
             ),
             encoding="utf-8",
@@ -185,8 +174,8 @@ def adapt_container_files(component: str, component_root: Path) -> None:
         pyproject = component_root / "pyproject.toml"
         pyproject.write_text(
             pyproject.read_text(encoding="utf-8").replace(
-                "osii-processor-sdk = { workspace = true }",
-                'osii-processor-sdk = { path = "packages/osii-processor-sdk" }',
+                'osii-processor-sdk = { path = "../../processor-sdk", editable = true }',
+                'osii-processor-sdk = { path = "osii-core/processor-sdk", editable = true }',
             ),
             encoding="utf-8",
         )
@@ -201,9 +190,9 @@ def adapt_container_files(component: str, component_root: Path) -> None:
             "FROM python:3.12-slim\n"
             "ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1\n"
             "WORKDIR /workspace\n"
-            "COPY packages/osii-processor-sdk /workspace/packages/osii-processor-sdk\n"
+            "COPY osii-core/processor-sdk /workspace/osii-core/processor-sdk\n"
             "COPY . /workspace/service\n"
-            "RUN pip install --no-cache-dir /workspace/packages/osii-processor-sdk /workspace/service\n"
+            "RUN pip install --no-cache-dir /workspace/osii-core/processor-sdk /workspace/service\n"
             "RUN addgroup --system osii && adduser --system --ingroup osii osii\n"
             "USER osii\n"
             f"EXPOSE {port}\n"

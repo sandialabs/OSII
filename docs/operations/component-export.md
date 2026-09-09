@@ -20,17 +20,19 @@ uv run --no-project --python 3.11 python scripts/export_components.py --output .
 Export only selected components:
 
 ```bash
-uv run --no-project --python 3.11 python scripts/export_components.py --output ../osii-component-export --components backend,frontend,mcp
+uv run --no-project --python 3.11 python scripts/export_components.py --output ../osii-component-export --components osii-core,osii-dashboard,osii-mcp
 ```
 
-The output contains `backend`, `frontend`, `mcp`, `tools`, `notebooks`, the
+The output contains `osii-core`, `osii-dashboard`, `osii-mcp`, `osii-toolbox`,
+`osii-demo-notebooks`, the
 shared `baseline-processors` image source, the four independently exportable
 local processors, and the HTTP-only `model-provider-bridge` directory, plus
 `EXPORT_MANIFEST.json`. Optional OCR, dataset, and model services now live in
-[`toolbox/` in this repository](../../toolbox/README.md). Export them with
-`--components toolbox`: the result includes the shared SDK and preserves root
+`osii-toolbox/` in this repository. See [image publishing](publishing-images.md)
+for its deployment role. Export the source with
+`--components osii-toolbox`: the result includes the shared SDK and preserves root
 build contexts, without adding their dependencies to Core. RAG and grounded chat are part of
-the backend export; they are not a separate component. The backend Dockerfile is adapted to use its
+the Core export; they are not a separate component. The Core Dockerfile is adapted to use its
 exported directory as its build context. The MCP export is prepared to install
 `osii` from the receiving environment's package registry. Standalone processor
 exports receive their own small Dockerfile even though the monorepo publishes

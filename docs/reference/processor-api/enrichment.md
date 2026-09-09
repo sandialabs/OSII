@@ -63,4 +63,4 @@ Every v1 enrichment must use one of the standard artifact formats so it is
 immediately usable in the dashboard and by agents. The dashboard retains a
 generic JSON view only for legacy artifacts created before this contract.
 
-See `packages/osii-processor-sdk/examples/enricher.py`.
+See `osii-core/processor-sdk/examples/enricher.py`.

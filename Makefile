@@ -33,15 +33,14 @@ logs:
 
 test:
 	$(UV) sync --python 3.11 --package osii --extra dev
-	$(UV) run --python 3.11 --package osii --extra dev python -m pytest ai-ready-ingest/tests
-	$(UV) sync --python 3.11 --package osii-processor-sdk --extra dev
-	$(UV) run --python 3.11 --package osii-processor-sdk --extra dev python -m pytest packages/osii-processor-sdk/tests
-	cd services/local-extractor && $(UV) run --python 3.11 --package osii-local-extractor --extra dev python -m pytest tests
-	cd services/local-synthesizer && $(UV) run --python 3.11 --package osii-local-synthesizer --extra dev python -m pytest tests
-	cd services/local-embedder && $(UV) run --python 3.11 --package osii-local-embedder --extra dev python -m pytest tests
-	cd services/local-enricher && $(UV) run --python 3.11 --package osii-local-enricher --extra dev python -m pytest tests
-	cd services/model-provider-bridge && $(UV) run --python 3.11 --package osii-model-provider-bridge --extra dev python -m pytest tests
-	$(UV) run --no-project --python 3.11 --with pytest --with 'uvicorn[standard]' python -m pytest services/baseline-processors/tests
+	$(UV) run --python 3.11 --package osii --extra dev python -m pytest osii-core/tests
+	$(UV) run --no-project --python 3.11 --with-editable osii-core/processor-sdk --with pytest python -m pytest osii-core/processor-sdk/tests
+	$(UV) run --no-project --python 3.11 --with-editable osii-core/processor-sdk --with-editable osii-core/services/local-extractor --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-extractor/tests
+	$(UV) run --no-project --python 3.11 --with-editable osii-core/processor-sdk --with-editable osii-core/services/local-synthesizer --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-synthesizer/tests
+	$(UV) run --no-project --python 3.11 --with-editable osii-core/processor-sdk --with-editable osii-core/services/local-embedder --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-embedder/tests
+	$(UV) run --no-project --python 3.11 --with-editable osii-core/processor-sdk --with-editable osii-core/services/local-enricher --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-enricher/tests
+	$(UV) run --no-project --python 3.11 --with-editable osii-core/processor-sdk --with-editable osii-core/services/model-provider-bridge --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/model-provider-bridge/tests
+	$(UV) run --no-project --python 3.11 --with pytest --with 'uvicorn[standard]' python -m pytest osii-core/services/baseline-processors/tests
 	cd osii-dashboard/dashboard && npm test --if-present && npm run build
 
 # Build the three publishable release images. API and worker share core; the

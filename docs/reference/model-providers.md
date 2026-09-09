@@ -83,7 +83,7 @@ or a custom Processor API extractor. `make dev` automatically selects the
 bundled OpenAI-compatible embedding/synthesis/chat adapters when
 `OPENAI_BASE_URL` is configured, and keeps Ollama, BM25, and extractive
 fallbacks. A test-only OpenAI-compatible emulator lives in
-`services/model-provider-bridge/tests/fake_openai_server.py`.
+`osii-core/services/model-provider-bridge/tests/fake_openai_server.py`.
 
 Intake advertises the independent `local.native-text` and
 `local.extractive-preview` services when they are running. Legacy sanity-check

@@ -29,15 +29,15 @@ similarity and verifies the vector-index pipeline, but it is not a semantic
 language model. Every index records provider, model, dimension, and
 normalization metadata. Switching vector spaces requires rebuilding.
 
-Optional MiniLM and experimental Model2Vec services live in
-[`toolbox/` in this repository](../../toolbox/README.md). Their dependencies and
+Optional MiniLM and experimental Model2Vec services live in `osii-toolbox/` in
+this repository; see [image publishing](publishing-images.md). Their dependencies and
 images remain separate from Core's lockfile, baseline images, and default host
 runtime. The Toolbox guide covers explicit builds and Quay publishing; review
 their dependency and model-provenance risks independently.
 
 ## Moving a processor to its own repository
 
-Each `services/local-*` directory is a self-contained Python package. The
+Each `osii-core/services/local-*` directory is a self-contained Python package. The
 component-export script supplies a standalone Dockerfile when copying one into
 its own repository; the monorepo itself uses the shared baseline image. Publish
 the SDK in the destination environment and replace the workspace dependency

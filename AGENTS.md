@@ -26,9 +26,10 @@ The agent's job is to execute the human's command—nothing more.
 - Keep domain logic independent of transport, UI, launchers, and deployment.
   Keep side effects at the edges and make paths, scopes, processors, and
   configuration explicit.
-- The dashboard and MCP server are Core clients. Optional OCR, model-backed,
-  or domain-specific Processor API services belong in `toolbox/` and
-  are enabled only through explicit deployment configuration.
+- The dashboard and MCP server are Core clients. Guaranteed baseline Processor
+  API hosts live under `osii-core/services/`; optional OCR, model-backed, or
+  domain-specific processors belong in `osii-toolbox/` and are enabled only
+  through explicit deployment configuration.
 - Treat `osii_processor_sdk` as the public boundary for external processors.
   Preserve standard artifact formats so people, the dashboard, and agents can
   inspect the same results.

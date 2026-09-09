@@ -12,11 +12,12 @@ Read:
 
 The main repository boundaries are:
 
-- `ai-ready-ingest/osii`: core domain logic, persistence, REST API, worker, and grounded RAG under `osii/rag`;
-- `packages/osii-processor-sdk`: public processor contracts and service helpers;
-- `services`: independently deployable processor implementations;
+- `osii-core/osii`: core domain logic, persistence, REST API, worker, and grounded RAG under `osii/rag`;
+- `osii-core/processor-sdk`: separately installable public processor contracts and service helpers;
+- `osii-core/services`: guaranteed local, independently addressable processor hosts;
 - `osii-dashboard/dashboard`: React and TypeScript user interface;
-- `ai-ready-mcp`: agent-facing OSII tools.
+- `osii-mcp`: agent-facing OSII tools;
+- `osii-toolbox`: optional processors with independent dependencies and images.
 
 ## Design invariants
 
@@ -34,13 +35,13 @@ The main repository boundaries are:
 ### Core extraction
 
 Read the [extraction architecture](../concepts/extraction.md), then inspect
-`ai-ready-ingest/osii/extraction/`. Preserve canonical text and manifest
+`osii-core/osii/extraction/`. Preserve canonical text and manifest
 semantics, and keep synthesis and embeddings downstream.
 
 ### Core synthesis
 
 Read the [synthesis architecture](../concepts/synthesis.md), then inspect
-`ai-ready-ingest/osii/synthesis/`. Synthesizers consume extracted OSII data and
+`osii-core/osii/synthesis/`. Synthesizers consume extracted OSII data and
 must not reparse source files.
 
 ### External processors

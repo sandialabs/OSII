@@ -5,7 +5,7 @@ services:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-core:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: ai-ready-ingest/Dockerfile
+      dockerfile: osii-core/Dockerfile
       args: {OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"}
     environment:
       OSII_ROOT: /data/.osii
@@ -102,7 +102,7 @@ services:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-mcp:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: ai-ready-mcp/Dockerfile
+      dockerfile: osii-mcp/Dockerfile
     environment:
       OSII_ROOT: /data/.osii
       MCP_HOST: 0.0.0.0
@@ -138,7 +138,7 @@ services:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: services/baseline-processors/Dockerfile
+      dockerfile: osii-core/services/baseline-processors/Dockerfile
       args: &baseline-build-args {OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"}
     command: ["extractor"]
     ports: ["${OSII_LOCAL_EXTRACTOR_PORT:-8092}:8092"]
@@ -153,7 +153,7 @@ services:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: services/baseline-processors/Dockerfile
+      dockerfile: osii-core/services/baseline-processors/Dockerfile
       args: *baseline-build-args
     command: ["synthesizer"]
     ports: ["${OSII_LOCAL_SYNTHESIZER_PORT:-8093}:8093"]
@@ -164,7 +164,7 @@ services:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: services/baseline-processors/Dockerfile
+      dockerfile: osii-core/services/baseline-processors/Dockerfile
       args: *baseline-build-args
     command: ["embedder"]
     ports: ["${OSII_EMBEDDINGS_PORT:-8085}:8085"]
@@ -175,7 +175,7 @@ services:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: services/baseline-processors/Dockerfile
+      dockerfile: osii-core/services/baseline-processors/Dockerfile
       args: *baseline-build-args
     command: ["enricher"]
     ports: ["${OSII_LOCAL_ENRICHER_PORT:-8094}:8094"]
@@ -186,7 +186,7 @@ services:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: services/baseline-processors/Dockerfile
+      dockerfile: osii-core/services/baseline-processors/Dockerfile
       args: *baseline-build-args
     command: ["model-bridge"]
     ports: ["${OSII_MODEL_BRIDGE_PORT:-8095}:8095"]

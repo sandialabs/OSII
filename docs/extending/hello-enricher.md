@@ -13,7 +13,7 @@ The service exposes:
 - `POST /v1/enrich`.
 
 Its implementation starts at
-`packages/osii-processor-sdk/examples/enricher.py`. The important shape is:
+`osii-core/processor-sdk/examples/enricher.py`. The important shape is:
 
 ```python
 class DomainEnricher(Enricher):
@@ -53,8 +53,8 @@ all three endpoints.
 From the repository root:
 
 ```bash
-uv sync --package osii-processor-sdk --extra dev
-uv run --package osii-processor-sdk pytest packages/osii-processor-sdk/tests
+uv run --no-project --python 3.11 --with-editable osii-core/processor-sdk --with pytest \
+  python -m pytest osii-core/processor-sdk/tests
 ```
 
 These tests validate strict model behavior. Add processor-specific tests beside

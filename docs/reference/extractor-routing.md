@@ -117,7 +117,7 @@ Current expected extractor identifiers:
 These names should match the dispatcher implementation in:
 
 ```text
-ai-ready-ingest/osii/extraction/dispatcher.py
+osii-core/osii/extraction/dispatcher.py
 ```
 
 ---

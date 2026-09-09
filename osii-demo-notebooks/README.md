@@ -131,7 +131,7 @@ as an HTTP app. This keeps domain logic easy to test: the network boundary is
 an adapter, not the place where the research algorithm has to live.
 
 The dataset example uses the optional tabular processor in this repository's
-[`toolbox/`](../toolbox/README.md). From the Core repository, run `make demo-data` or
+[`osii-toolbox/`](../osii-toolbox/README.md). From the Core repository, run `make demo-data` or
 `.\scripts\osii.ps1 demo-data`, then start the Toolbox container and configure
 its URLs in `OSII_PROCESSORS` before using the live endpoint.
 
@@ -143,7 +143,7 @@ and writes all derived data under `demo-workspace/.osii/`.
 
 The bundled PDF is scanned. To run the public OCR path, start the
 OpenCV/Tesseract Processor API service from this repository's
-[Toolbox](../toolbox/README.md), then
+[Toolbox](../osii-toolbox/README.md), then
 configure its URL in `OSII_PROCESSORS` before starting OSII:
 
 ```bash
@@ -167,7 +167,7 @@ $env:OPENAI_API_KEY = "your-api-key-here"
 Outside the corporate environment, use the deterministic OpenAI-compatible emulator and
 point the same adapter at `http://127.0.0.1:8096/api/v1`. Exact macOS and
 PowerShell commands are in
-[`services/model-provider-bridge/README.md`](../services/model-provider-bridge/README.md).
+[`osii-core/services/model-provider-bridge/README.md`](../osii-core/services/model-provider-bridge/README.md).
 
 `make dev` or `.\scripts\osii.ps1 dev` starts the complete editable stack.
 

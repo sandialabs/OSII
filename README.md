@@ -106,24 +106,27 @@ for the cross-platform details and optional capabilities.
 | Build an external processor against the stable public contract | [Processor API v1](docs/reference/processor-api/index.md) |
 | Work with tables and datasets | [Tabular dataset walkthrough](docs/tutorials/tabular-datasets.md) |
 | Run packaged deployment images instead of editable source | [Publish and run images](docs/operations/publishing-images.md) |
-| Deploy or publish optional OCR, dataset, and embedding tools | [Toolbox: deployment and Quay commands](toolbox/README.md) |
-| Find a REST route or schema | [REST API overview](docs/reference/api/index.md) and [OpenAPI schema](ai-ready-ingest/docs/api/openapi.yaml) |
+| Deploy or publish optional OCR, dataset, and embedding tools | [Toolbox: deployment and Quay commands](osii-toolbox/README.md) |
+| Find a REST route or schema | [REST API overview](docs/reference/api/index.md) and [OpenAPI schema](osii-core/docs/api/openapi.yaml) |
 
 ## How this repository is organized
 
 You do not need to learn the entire monorepo to use OSII. The broad boundaries
-are intentional:
+are intentional and reflected directly in the root names:
 
-- **OSII Core** owns canonical `.osii` persistence, scopes, retrieval, and
-  grounded chat orchestration.
-- **Dashboard, REST API, and MCP** are different ways to use that same core
-  data rather than competing stores of knowledge.
-- **`osii_processor_sdk`** is the friendly, typed public surface for custom
-  processors.
-- **Processor services** perform bounded compute and return typed results;
-  Core validates provenance and saves canonical outputs.
-- **Documentation and demonstrations** explain the concepts before the
-  machinery, so new contributors can adapt OSII without copying hidden setup.
+- **`osii-core/`** owns canonical `.osii` persistence, scopes, retrieval, the
+  REST API, the worker, and bounded grounded chat.
+- **`osii-core/processor-sdk/`** is a small, separately installable contract
+  package for custom processors. It lives with Core because Core owns that
+  boundary; an external processor does not need to install all of Core.
+- **`osii-core/services/`** contains the guaranteed local processor hosts.
+  They run automatically during local development and remain independently
+  addressable and containerizable.
+- **`osii-dashboard/`** and **`osii-mcp/`** are human and agent clients of Core.
+- **`osii-toolbox/`** contains optional OCR, dataset, and model-backed tools
+  whose heavier dependencies do not belong in Core.
+- **`osii-demo-notebooks/`**, **`docs/`**, and **`scripts/`** provide learning,
+  reference, and cross-platform operating support.
 
 For operational commands, see the [CLI cheat sheet](docs/reference/cli.md).
 For offline behavior, model connections, OCR, and privacy boundaries, see

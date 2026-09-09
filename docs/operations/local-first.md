@@ -132,8 +132,8 @@ must not be copied or shared. Only the key's environment-variable name enters
 Process environment values take precedence, and file writes are disabled in
 container or administrator-managed deployments.
 
-The recommended OpenCV/Tesseract OCR extractor lives in this repository's
-[Toolbox](../../toolbox/README.md). In a container deployment, OSII starts its published
+The recommended OpenCV/Tesseract OCR extractor lives in `osii-toolbox/`; see
+[image publishing](publishing-images.md). In a container deployment, OSII starts its published
 image by default and discovers it through Processor API v1. For host
 development, run the Toolbox image or its isolated host command and add its URL to
 `OSII_PROCESSORS`; it remains swappable with any other Processor API extractor.

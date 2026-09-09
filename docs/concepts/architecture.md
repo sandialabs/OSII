@@ -49,19 +49,15 @@ after real workload measurements.
 
 ## Migration
 
-Current extractors, synthesizers, and enrichers remain in-process while they are
-moved one at a time:
+Core owns the protocol and canonical commit adapters. A processor can run as a
+bundled local host, an independently deployed container, or an SME-owned
+service without changing how Core validates and persists its response:
 
 1. wrap the implementation with `osii-processor-sdk`;
 2. add golden contract tests;
-3. register its service URL;
-4. compare its output with the local implementation;
-5. remove the local implementation after its routes/configuration use the
-   remote processor.
-
-Remote enrichers are supported in the first migration slice. Remote extractors,
-synthesizers, and embedders now have explicit wire contracts but still need
-core-side commit adapters.
+3. contract-test the descriptor and operation;
+4. register its service URL; and
+5. let Core commit the validated response and provenance.
 
 ## RAG ownership
 
@@ -75,23 +71,33 @@ OSII Core owns the complete grounded-answer pipeline under `osii/rag`:
 
 The FastAPI `/api/chat` route is a thin transport adapter over this pipeline.
 The dashboard calls that route; there is no separate RAG service or RAG image.
-Future query planning and iterative retrieval belong in this Core pipeline.
-Model-heavy reranking may be supplied by a stateless processor, but Core keeps
-ownership of the sequence, scope, evidence, and final citations.
+Basic reranking can be a bounded step in this Core pipeline, with a model-heavy
+implementation supplied by a stateless processor. Core keeps ownership of the
+scope, candidate evidence, provenance, and final citations.
+
+Adaptive research is a different responsibility. A future `osii-research`
+component may decompose a question, issue several searches, inspect folder
+summaries, identify evidence gaps, and decide what to do next. It will use
+Core's REST or MCP interfaces and write validated knowledge products through
+Core; it will not bypass Core to browse or mutate `.osii`. This keeps the
+trusted library data plane compact while allowing a richer agentic control
+plane to evolve independently.
 
 ## Repository boundaries
 
-- `packages/osii-processor-sdk`: public contracts and service/client helpers
-- `services`: independently deployable processors
-- `ai-ready-ingest`: core domain, persistence, API, RAG orchestration, grounded
-  chat, and transitional local processors
+- `osii-core`: core domain, persistence, API, worker, bounded RAG orchestration,
+  and grounded chat
+- `osii-core/processor-sdk`: separately installable public contracts and
+  service/client helpers owned by Core
+- `osii-core/services`: guaranteed local Processor API hosts; independently
+  addressable and containerizable despite being grouped with their owner
 - `osii-dashboard`: browser application
-- `ai-ready-mcp`: agent-facing adapter
-- `toolbox` (in this repository): swappable OCR, dataset, and model
+- `osii-mcp`: agent-facing adapter
+- `osii-toolbox`: swappable OCR, dataset, and model
   implementations with independent dependencies and container builds; see
-  [Toolbox deployment](../../toolbox/README.md)
-- `ai-ready-tool-shelf`: genuinely one-off utilities that are not recommended
-  OSII deployment components
+  [Toolbox deployment](../operations/publishing-images.md)
+- `osii-demo-notebooks`: paired Python/Jupytext demonstrations for the public
+  Core and Processor SDK interfaces
 
 ## Trust boundary
 

@@ -22,7 +22,7 @@ turning that recovered text into an experiment-results table is enrichment.
 
 1. Start with the [hello table enricher](hello-enricher.md).
 2. Copy the closest implementation from
-   `packages/osii-processor-sdk/examples/`.
+   `osii-core/processor-sdk/examples/`.
 3. Give the processor a stable descriptor name and semantic version.
 4. Implement the one method for its processor kind.
 5. Test representative, redistributable examples locally.

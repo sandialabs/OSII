@@ -32,7 +32,7 @@ Detailed contracts:
 - [Enrichment API](enrichment.md)
 - [Standard artifact formats](standard-artifacts.md)
 
-Copyable implementations live in `packages/osii-processor-sdk/examples`.
+Copyable implementations live in `osii-core/processor-sdk/examples`.
 Start there when creating an independently deployable custom processor.
 
 `config_schema` uses the ordinary JSON Schema object/property vocabulary. The
