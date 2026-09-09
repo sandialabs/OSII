@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("dev", "demo-data", "run", "build", "push-release", "down", "logs", "doctor")]
+    [ValidateSet("help", "dev", "demo", "demo-data", "run", "build", "push-release", "down", "logs", "doctor")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
@@ -10,6 +10,12 @@ param(
     [string]$ImagePrefix = "",
 
     [string]$ImageTag = "latest",
+
+    [string]$BaseImage = "",
+
+    [string]$TesseractBaseImage = "",
+
+    [string]$PythonVersion = "",
 
     [switch]$InsecureRegistries,
 
@@ -23,8 +29,20 @@ Remove-Item Env:VIRTUAL_ENV -ErrorAction SilentlyContinue
 if (-not $ImagePrefix) {
     $ImagePrefix = if ($env:OSII_IMAGE_PREFIX) { $env:OSII_IMAGE_PREFIX } else { "localhost/osii" }
 }
+if (-not $BaseImage) {
+    $BaseImage = if ($env:OSII_BASE_IMAGE) { $env:OSII_BASE_IMAGE } else { "registry.access.redhat.com/ubi9/ubi:latest" }
+}
+if (-not $TesseractBaseImage) {
+    $TesseractBaseImage = if ($env:OSII_TESSERACT_BASE_IMAGE) { $env:OSII_TESSERACT_BASE_IMAGE } else { "registry.fedoraproject.org/fedora:latest" }
+}
+if (-not $PythonVersion) {
+    $PythonVersion = if ($env:OSII_PYTHON_VERSION) { $env:OSII_PYTHON_VERSION } else { "3.12" }
+}
 $env:OSII_IMAGE_PREFIX = $ImagePrefix
 $env:OSII_IMAGE_TAG = $ImageTag
+$env:OSII_BASE_IMAGE = $BaseImage
+$env:OSII_TESSERACT_BASE_IMAGE = $TesseractBaseImage
+$env:OSII_PYTHON_VERSION = $PythonVersion
 
 if ($Runtime -eq "Docker") {
     $ComposeExecutable = "docker"
@@ -62,17 +80,17 @@ function Invoke-OsiiDevLauncher {
 
     $UvExecutable = Get-Command "uv" -ErrorAction SilentlyContinue
     if (-not $UvExecutable) {
-        throw "uv was not found. The bare-metal developer workflow requires uv and Node.js/npm."
+        throw "uv was not found. Starting OSII from source requires uv and Node.js/npm."
     }
     if (-not (Get-Command "npm" -ErrorAction SilentlyContinue)) {
-        throw "npm was not found. The bare-metal developer workflow requires Node.js/npm."
+        throw "npm was not found. Starting OSII from source requires Node.js/npm."
     }
 
     $LauncherArguments = @($Arguments)
     if ($DryRun) {
         $LauncherArguments += "--dry-run"
     }
-    & $UvExecutable.Source run --no-project --python 3.11 python scripts/dev_stack.py @LauncherArguments
+    & $UvExecutable.Source run --no-project --python $PythonVersion python scripts/dev_stack.py @LauncherArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Bare-metal development stack exited with code $LASTEXITCODE. Review the first [dev] service error above for the cause."
     }
@@ -81,18 +99,37 @@ function Invoke-OsiiDevLauncher {
 function Import-OsiiExampleData {
     $UvExecutable = Get-Command "uv" -ErrorAction SilentlyContinue
     if (-not $UvExecutable) {
-        throw "uv was not found. Importing the example datasets requires uv and Python 3.11."
+        throw "uv was not found. Importing the example datasets requires uv."
     }
-    & $UvExecutable.Source run --no-project --python 3.11 --with "scikit-learn>=1.5,<2" python scripts/import_example_data.py
+    & $UvExecutable.Source run --no-project --python $PythonVersion --with "scikit-learn>=1.5,<2" python scripts/import_example_data.py
     if ($LASTEXITCODE -ne 0) {
         throw "Example data import exited with code $LASTEXITCODE."
     }
 }
 
+function Show-OsiiHelp {
+    Write-Host "OSII startup commands"
+    Write-Host "  .\scripts\osii.ps1 demo       Install the example files and start OSII"
+    Write-Host "  .\scripts\osii.ps1 dev        Start OSII with files already in osii-data\source"
+    Write-Host "  .\scripts\osii.ps1 run        Start previously built container images"
+    Write-Host "  .\scripts\osii.ps1 down       Stop the container deployment"
+    Write-Host "  .\scripts\osii.ps1 doctor     Report disk usage; never deletes files"
+    Write-Host ""
+    Write-Host "Normal use needs only 'demo' or 'dev'. Optional AI and OCR services are"
+    Write-Host "connected or started from the Setup page after launch."
+}
+
 Push-Location $RepositoryRoot
 try {
     switch ($Command) {
+        "help" {
+            Show-OsiiHelp
+        }
         "dev" {
+            Invoke-OsiiDevLauncher
+        }
+        "demo" {
+            Import-OsiiExampleData
             Invoke-OsiiDevLauncher
         }
         "demo-data" {
@@ -117,7 +154,7 @@ try {
             Invoke-OsiiCompose @("push", "api", "dashboard", "local-extractor")
         }
         "doctor" {
-            & uv run --no-project --python 3.11 python scripts/disk_usage.py
+            & uv run --no-project --python $PythonVersion python scripts/disk_usage.py
         }
     }
 }

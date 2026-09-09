@@ -28,7 +28,7 @@ $env:OSII_MODEL2VEC_MODEL = "C:/Models/approved-model"
 Both shells:
 
 ```sh
-uv run --no-project --python 3.11 --with-editable ../../osii-core/processor-sdk --with-editable '.[model2vec]' python -m uvicorn app.main:app --host 127.0.0.1 --port 8087
+uv run --no-project --python 3.12 --with-editable ../../osii-core/processor-sdk --with-editable '.[model2vec]' python -m uvicorn app.main:app --host 127.0.0.1 --port 8087
 ```
 
 Open <http://127.0.0.1:8087/docs> or `/v1/descriptor` and register that base URL
@@ -42,7 +42,7 @@ It is lexical, not semantic, and is **not** the container's default. In a fresh
 terminal without the variables above, run from this folder:
 
 ```sh
-uv run --no-project --python 3.11 --with-editable ../../osii-core/processor-sdk --with-editable '.[dev]' python -m pytest tests -q
+uv run --no-project --python 3.12 --with-editable ../../osii-core/processor-sdk --with-editable '.[dev]' python -m pytest tests -q
 ```
 
 These tests do not validate an actual semantic model. Review Model2Vec and the

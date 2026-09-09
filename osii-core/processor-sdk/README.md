@@ -16,6 +16,6 @@ Core alone writes the canonical `.osii` store.
 From the repository root:
 
 ```bash
-uv run --no-project --python 3.11 --with-editable osii-core/processor-sdk --with pytest \
+uv run --no-project --python 3.12 --with-editable osii-core/processor-sdk --with pytest \
   python -m pytest osii-core/processor-sdk/tests
 ```

@@ -20,6 +20,15 @@ TOOLS = (
     "model2vec-embedder",
 )
 
+PYTHON_DOCKERFILES = (
+    "osii-core/Dockerfile",
+    "osii-core/services/baseline-processors/Dockerfile",
+    "osii-mcp/Dockerfile",
+    "osii-toolbox/minilm-embedding-service/Dockerfile",
+    "osii-toolbox/model2vec-embedder/Dockerfile",
+    "osii-toolbox/tabular-dataset-processors/Dockerfile",
+)
+
 
 @pytest.mark.parametrize("tool", TOOLS)
 def test_container_copy_sources_exist(tool):
@@ -48,6 +57,40 @@ def test_repository_uses_named_component_roots():
         assert not (ROOT / legacy_root).exists()
     for component_root in ("osii-core", "osii-dashboard", "osii-mcp", "osii-toolbox"):
         assert (ROOT / component_root).is_dir()
+
+
+@pytest.mark.parametrize("dockerfile", PYTHON_DOCKERFILES)
+def test_python_images_use_replaceable_ubi_base_and_uv_runtime(dockerfile):
+    recipe = (ROOT / dockerfile).read_text()
+    assert recipe.startswith(
+        "ARG OSII_BASE_IMAGE=registry.access.redhat.com/ubi9/ubi:latest\n"
+        "FROM ${OSII_BASE_IMAGE}"
+    )
+    assert "ARG OSII_PYTHON_VERSION=3.12" in recipe
+    assert 'uv python install "${OSII_PYTHON_VERSION}"' in recipe
+    assert 'uv venv "${VIRTUAL_ENV}" --python "${OSII_PYTHON_VERSION}"' in recipe
+    assert "FROM python:" not in recipe
+    assert "apt-get" not in recipe
+
+
+def test_dashboard_uses_rhel_family_build_and_runtime_stages():
+    recipe = (ROOT / "osii-dashboard/dashboard/Dockerfile").read_text()
+    assert recipe.startswith(
+        "ARG OSII_BASE_IMAGE=registry.access.redhat.com/ubi9/ubi:latest\n"
+        "FROM ${OSII_BASE_IMAGE} AS build"
+    )
+    assert "dnf module enable nodejs:22" in recipe
+    assert "dnf install -y nginx" in recipe
+    assert "FROM node:" not in recipe
+    assert "alpine" not in recipe
+
+
+def test_tesseract_uses_replaceable_rpm_family_base():
+    recipe = (ROOT / "osii-toolbox/osii-tesseract/Dockerfile").read_text()
+    assert "ARG OSII_TESSERACT_BASE_IMAGE=registry.fedoraproject.org/fedora:latest" in recipe
+    assert "FROM ${OSII_TESSERACT_BASE_IMAGE}" in recipe
+    assert "tesseract-langpack-eng" in recipe
+    assert "apt-get" not in recipe
 
 
 def test_model2vec_image_uses_model2vec_not_baseline_hashing():
@@ -93,12 +136,13 @@ def test_core_mcp_and_service_exports_have_standalone_build_paths(tmp_path):
     )
 
     core_recipe = (output / "osii-core" / "Dockerfile").read_text()
-    assert "COPY processor-sdk /workspace/processor-sdk" in core_recipe
+    assert "COPY processor-sdk ./processor-sdk" in core_recipe
     assert "COPY osii-core/" not in core_recipe
 
     mcp_recipe = (output / "osii-mcp" / "Dockerfile").read_text()
     assert "COPY . /workspace/osii-mcp" in mcp_recipe
     assert "COPY osii-core" not in mcp_recipe
+    assert "uv pip install --no-sources" in mcp_recipe
 
     service_manifest = tomllib.loads(
         (output / "local-extractor" / "pyproject.toml").read_text()

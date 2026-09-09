@@ -141,11 +141,11 @@ for long documents instead of retaining every high-resolution page image.
 ## Local development
 
 Install the native Tesseract executable first and confirm `tesseract --version`
-works. From the OSII root, use an isolated Python 3.11 environment on macOS,
-Linux, or Windows (Python 3.12 is also supported):
+works. From the OSII root, use the same Python 3.12 default as the application
+on macOS, Linux, or Windows:
 
 ```sh
-uv run --no-project --python 3.11 --with-editable osii-core/processor-sdk --with-editable osii-toolbox/osii-tesseract python -m uvicorn app.main:app --app-dir osii-toolbox/osii-tesseract --host 127.0.0.1 --port 8080
+uv run --no-project --python 3.12 --with-editable osii-core/processor-sdk --with-editable osii-toolbox/osii-tesseract python -m uvicorn app.main:app --app-dir osii-toolbox/osii-tesseract --host 127.0.0.1 --port 8080
 ```
 
 Build the image from the OSII repository root. It includes Tesseract, so the
@@ -166,7 +166,7 @@ http://127.0.0.1:8080/demo
 Contract tests (mocked OCR; no model downloads) run from this component directory:
 
 ```sh
-uv run --no-project --python 3.11 --with-editable ../../osii-core/processor-sdk --with-editable . --with pytest python -m pytest tests -q
+uv run --no-project --python 3.12 --with-editable ../../osii-core/processor-sdk --with-editable . --with pytest python -m pytest tests -q
 ```
 
 ## Configuration

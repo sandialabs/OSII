@@ -6,7 +6,10 @@ services:
     build:
       context: .
       dockerfile: osii-core/Dockerfile
-      args: {OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"}
+      args:
+        OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"
+        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
+        OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
     environment:
       OSII_ROOT: /data/.osii
       SHARED_VOLUME_ROOT: /data/source
@@ -91,7 +94,9 @@ services:
     build:
       context: osii-dashboard/dashboard
       dockerfile: Dockerfile
-      args: {OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"}
+      args:
+        OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"
+        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
     ports:
       - "${OSII_DASHBOARD_PORT:-5173}:8080"
     depends_on:
@@ -103,6 +108,9 @@ services:
     build:
       context: .
       dockerfile: osii-mcp/Dockerfile
+      args:
+        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
+        OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
     environment:
       OSII_ROOT: /data/.osii
       MCP_HOST: 0.0.0.0
@@ -120,6 +128,12 @@ services:
 
   tesseract:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-tesseract:${OSII_IMAGE_TAG:-latest}"
+    build:
+      context: .
+      dockerfile: osii-toolbox/osii-tesseract/Dockerfile
+      args:
+        OSII_TESSERACT_BASE_IMAGE: "${OSII_TESSERACT_BASE_IMAGE:-registry.fedoraproject.org/fedora:latest}"
+        OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
     ports:
       - "${OSII_TESSERACT_PORT:-8080}:8080"
     healthcheck:
@@ -139,7 +153,10 @@ services:
     build:
       context: .
       dockerfile: osii-core/services/baseline-processors/Dockerfile
-      args: &baseline-build-args {OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"}
+      args: &baseline-build-args
+        OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"
+        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
+        OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
     command: ["extractor"]
     ports: ["${OSII_LOCAL_EXTRACTOR_PORT:-8092}:8092"]
     healthcheck: &processor-health

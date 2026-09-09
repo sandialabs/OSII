@@ -5,6 +5,12 @@ CPU-only embedding service using
 OpenAI-compatible `POST /v1/embeddings` endpoint and returns normalized
 384-dimensional vectors by default.
 
+This service predates OSII's Ollama-first model workflow. It remains available
+only for deployments that specifically want a self-contained image with a
+fixed MiniLM model baked into it. Normal `make demo` and `make dev` startup do
+not build or start it: BM25 supplies model-free search, while Ollama's
+`all-minilm` model is the simpler optional semantic path for most users.
+
 The model is downloaded while the image is built and the runtime is placed in
 offline mode. Starting the finished container therefore does not contact
 Hugging Face or execute remote model code.
@@ -71,5 +77,10 @@ From this folder, validate request/response models without installing PyTorch
 or downloading model weights:
 
 ```sh
-uv run --no-project --python 3.11 --with-requirements requirements-test.txt python -m pytest tests -q
+uv run --no-project --python 3.12 --with-requirements requirements-test.txt python -m pytest tests -q
 ```
+
+The image uses the same Python 3.12 default as the rest of OSII. Its pinned
+runtime dependencies resolve to binary wheels for both x86-64 and ARM64 Linux;
+changing those dependency pins or the baked model still requires an explicit
+security and provenance review.

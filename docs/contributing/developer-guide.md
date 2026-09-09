@@ -60,9 +60,10 @@ shared renderer rather than processor-specific pages.
 
 From the repository root:
 
-OSII development uses Python 3.11 through 3.13. `uv` reads the included
-`.python-version` file and selects Python 3.13 automatically; Python 3.14 is
-not yet supported by the pinned FastAPI/Pydantic dependency set.
+OSII supports Python 3.11 through 3.13. The checked-in `.python-version`, host
+launcher, container builds, and examples use Python 3.12 so local and deployed
+behavior do not drift. Python 3.14 is not yet supported by the pinned
+FastAPI/Pydantic dependency set.
 
 ```bash
 make test

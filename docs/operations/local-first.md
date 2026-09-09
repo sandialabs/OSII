@@ -13,9 +13,21 @@ credential, or model cache.
 | Chat | grounded extractive answer | selected model provider |
 | Browse/API/MCP | local dashboard, backend, and MCP | same contracts |
 
-## Host-native profiles
+## Start OSII without containers
 
-The normal development path is entirely bare metal:
+The normal path runs directly on macOS, Linux, or Windows. It creates and
+updates its own `osii-env` environment; do not activate an environment first.
+For a first look with bundled example files, use one command:
+
+```bash
+make demo
+```
+
+```powershell
+.\scripts\osii.ps1 demo
+```
+
+For your own files already placed in `osii-data/source`, use:
 
 ```bash
 make dev
@@ -35,6 +47,13 @@ discovery and, when an embedding model is selected, validates one real vector
 so a model that merely appears in `/models` is not incorrectly offered to
 Intake.
 
+This is the complete guaranteed baseline. It does not silently install or
+launch optional system software. After the dashboard opens, use **Setup** to
+connect Ollama or another AI endpoint and to start Apache Tika or the OSII
+Tesseract service when their prerequisites are installed. The standalone
+MiniLM image in `osii-toolbox` is an opt-in deployment alternative and is not
+started by `demo` or `dev`.
+
 The host launcher starts the dashboard only after `http://127.0.0.1:8511/health`
 responds. This is especially important on Windows, where several simultaneous
 `uv run` processes can initialize more slowly. A backend failure therefore
@@ -48,7 +67,7 @@ stopped development stack from leaving ports 5173, 8022, 8085, 8092–8095, or
 processes left behind by older checkouts; it excludes Ollama and containerized
 OCR services.
 
-Host Python dependencies live in the ignored `osii-env/` directory. OSII uses
+Host Python 3.12 dependencies live in the ignored `osii-env/` directory. OSII uses
 that visible name because current macOS Python releases can skip editable
 package path files beneath a hidden `.venv` directory.
 

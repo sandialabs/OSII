@@ -8,19 +8,19 @@ change the monorepo, initialize Git repositories, or copy generated data.
 Preview the default export:
 
 ```bash
-uv run --no-project --python 3.11 python scripts/export_components.py --output ../osii-component-export --dry-run
+uv run --no-project --python 3.12 python scripts/export_components.py --output ../osii-component-export --dry-run
 ```
 
 Create all exports:
 
 ```bash
-uv run --no-project --python 3.11 python scripts/export_components.py --output ../osii-component-export
+uv run --no-project --python 3.12 python scripts/export_components.py --output ../osii-component-export
 ```
 
 Export only selected components:
 
 ```bash
-uv run --no-project --python 3.11 python scripts/export_components.py --output ../osii-component-export --components osii-core,osii-dashboard,osii-mcp
+uv run --no-project --python 3.12 python scripts/export_components.py --output ../osii-component-export --components osii-core,osii-dashboard,osii-mcp
 ```
 
 The output contains `osii-core`, `osii-dashboard`, `osii-mcp`, `osii-toolbox`,

@@ -46,18 +46,17 @@ This is the shortest route for a technically curious person who wants to see
 OSII working before configuring models, OCR, containers, or custom services.
 It uses the local, model-free baseline and public demonstration data.
 
-Before starting, install Python 3.11, [uv](https://docs.astral.sh/uv/), and
-Node.js/npm. On macOS or Linux, you also need `make`. No container runtime or
-model download is required for this path.
+Before starting, install [uv](https://docs.astral.sh/uv/) and Node.js/npm. On
+macOS or Linux, you also need `make`. OSII asks uv for its tested Python 3.12
+runtime, so you do not need to create or activate a Python environment. No
+container runtime or model download is required for this path.
 
 ### macOS or Linux
 
 From the repository root:
 
 ```bash
-cp .env.example .env
-make demo-data
-make dev
+make demo
 ```
 
 ### Windows PowerShell
@@ -65,14 +64,14 @@ make dev
 From the repository root:
 
 ```powershell
-Copy-Item .env.example .env
-.\scripts\osii.ps1 demo-data
-.\scripts\osii.ps1 dev
+.\scripts\osii.ps1 demo
 ```
 
-The first command installs a small public example corpus: one PDF and two
-datasets. The second starts OSII from source and manages its application
-environment for you. Keep that terminal open, then visit:
+That one command installs a small public example corpus—one PDF and two
+datasets—then starts the complete model-free OSII baseline. It creates and
+manages the application environment for you. The first run installs Python and
+JavaScript packages and can take a few minutes; later runs reuse them. Keep that
+terminal open, then visit:
 
 - **Dashboard:** <http://localhost:5173>
 - **Backend health:** <http://localhost:8511/health>
@@ -82,18 +81,27 @@ Then explore **Files**, **Search**, and **Collections**. You should be able to
 inspect the extracted content and see what OSII created without needing a
 model connection.
 
+The baseline includes document extraction, source-excerpt previews, BM25
+search, local enrichment, the worker, API, MCP server, and dashboard. Open
+**Setup** afterward to connect Ollama or another AI endpoint, or to start
+optional Apache Tika and Tesseract OCR. Ollama and the native Tesseract program
+are separate installations; the old standalone MiniLM image is not part of
+normal startup.
+
 To stop the local stack, return to the terminal and press <kbd>Ctrl</kbd> +
 <kbd>C</kbd>.
 
 ### Use your own files instead
 
-Put files in `osii-data/source/`, then start OSII using the same `dev` command.
-OSII reads that folder but does not modify or delete its contents. Its derived
-data is stored beside it in `osii-data/.osii/`, which is ignored by Git.
+Put files in `osii-data/source/`, then run `make dev` on macOS/Linux or
+`.\scripts\osii.ps1 dev` on Windows. OSII reads that folder but does not modify
+or delete its contents. Its derived data is stored beside it in
+`osii-data/.osii/`, which is ignored by Git.
 
-To use a source folder elsewhere on your computer, set `OSII_SOURCE_DIR` in
-the repository-root `.env`. See [local-first operation](docs/operations/local-first.md)
-for the cross-platform details and optional capabilities.
+To use a source folder elsewhere on your computer, copy `.env.example` to
+`.env` and set `OSII_SOURCE_DIR`. The `.env` file is optional for the default
+layout. See [local-first operation](docs/operations/local-first.md) for the
+cross-platform details and optional capabilities.
 
 ## Choose your next path
 

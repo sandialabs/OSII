@@ -87,3 +87,14 @@ def test_service_plan_uses_nested_components_without_concurrent_uv_sync():
     for service in services:
         if service.command[0] == "uv":
             assert "--no-sync" in service.command
+
+
+def test_host_environment_uses_shared_python_default(monkeypatch):
+    monkeypatch.setattr(DEV_STACK, "load_dotenv", lambda _path: {})
+    monkeypatch.delenv("OSII_PYTHON_VERSION", raising=False)
+    env = DEV_STACK.build_environment(core_only=True)
+    assert env["UV_PYTHON"] == "3.12"
+
+    monkeypatch.setenv("OSII_PYTHON_VERSION", "3.13")
+    env = DEV_STACK.build_environment(core_only=True)
+    assert env["UV_PYTHON"] == "3.13"

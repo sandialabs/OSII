@@ -157,7 +157,7 @@ def adapt_container_files(component: str, component_root: Path) -> None:
     dockerfile = component_root / "Dockerfile"
     if component == "osii-core" and dockerfile.exists():
         content = dockerfile.read_text(encoding="utf-8")
-        content = content.replace("COPY osii-core/processor-sdk /workspace/processor-sdk", "COPY processor-sdk /workspace/processor-sdk")
+        content = content.replace("COPY osii-core/processor-sdk ./processor-sdk", "COPY processor-sdk ./processor-sdk")
         content = content.replace("COPY osii-core/pyproject.toml osii-core/README.md ./", "COPY pyproject.toml README.md ./")
         content = content.replace("COPY osii-core/osii ./osii", "COPY osii ./osii")
         content = content.replace("COPY osii-core/config ./config", "COPY config ./config")
@@ -165,8 +165,15 @@ def adapt_container_files(component: str, component_root: Path) -> None:
     if component == "osii-mcp" and dockerfile.exists():
         dockerfile.write_text(
             dockerfile.read_text(encoding="utf-8").replace(
-                "COPY osii-core /workspace/osii-core\nCOPY osii-mcp /workspace/osii-mcp\nRUN pip install --no-cache-dir /workspace/osii-core /workspace/osii-mcp",
-                "COPY . /workspace/osii-mcp\nRUN pip install --no-cache-dir /workspace/osii-mcp",
+                "COPY osii-core /workspace/osii-core\n"
+                "COPY osii-mcp /workspace/osii-mcp\n"
+                "RUN uv pip install --no-sources --python \"${VIRTUAL_ENV}/bin/python\" \\\n"
+                "    /workspace/osii-core/processor-sdk \\\n"
+                "    /workspace/osii-core \\\n"
+                "    /workspace/osii-mcp && \\\n",
+                "COPY . /workspace/osii-mcp\n"
+                "RUN uv pip install --no-sources --python \"${VIRTUAL_ENV}/bin/python\" "
+                "/workspace/osii-mcp && \\\n",
             ),
             encoding="utf-8",
         )
@@ -187,13 +194,27 @@ def adapt_container_files(component: str, component_root: Path) -> None:
             "model-provider-bridge": 8095,
         }[component]
         dockerfile.write_text(
-            "FROM python:3.12-slim\n"
-            "ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1\n"
+            "ARG OSII_BASE_IMAGE=registry.access.redhat.com/ubi9/ubi:latest\n"
+            "FROM ${OSII_BASE_IMAGE}\n"
+            "ARG OSII_PYTHON_VERSION=3.12\n"
+            "ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \\\n"
+            "    UV_PYTHON_INSTALL_DIR=/opt/uv/python \\\n"
+            "    UV_PROJECT_ENVIRONMENT=/opt/venv \\\n"
+            "    VIRTUAL_ENV=/opt/venv \\\n"
+            "    PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n"
+            "RUN dnf install -y python3 python3-pip shadow-utils ca-certificates && \\\n"
+            "    dnf clean all && rm -rf /var/cache/dnf && \\\n"
+            "    python3 -m pip install --no-cache-dir uv && \\\n"
+            "    uv python install \"${OSII_PYTHON_VERSION}\" && \\\n"
+            "    uv venv \"${VIRTUAL_ENV}\" --python \"${OSII_PYTHON_VERSION}\"\n"
             "WORKDIR /workspace\n"
             "COPY osii-core/processor-sdk /workspace/osii-core/processor-sdk\n"
             "COPY . /workspace/service\n"
-            "RUN pip install --no-cache-dir /workspace/osii-core/processor-sdk /workspace/service\n"
-            "RUN addgroup --system osii && adduser --system --ingroup osii osii\n"
+            "RUN uv pip install --no-sources --python \"${VIRTUAL_ENV}/bin/python\" "
+            "/workspace/osii-core/processor-sdk /workspace/service && \\\n"
+            "    groupadd --system osii && \\\n"
+            "    useradd --system --gid osii --home-dir /workspace osii && \\\n"
+            "    chown -R osii:osii /workspace\n"
             "USER osii\n"
             f"EXPOSE {port}\n"
             f'CMD ["uvicorn", "app.main:app", "--app-dir", "/workspace/service", "--host", "0.0.0.0", "--port", "{port}"]\n',

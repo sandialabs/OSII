@@ -82,7 +82,7 @@ def command_path(name: str) -> str:
     if resolved is None:
         raise RuntimeError(
             f"Required command '{name}' was not found on PATH. "
-            "The bare-metal developer workflow requires uv and Node.js/npm."
+            "Starting OSII from source requires uv and Node.js/npm."
         )
     return resolved
 
@@ -120,12 +120,13 @@ def build_environment(core_only: bool) -> dict[str, str]:
             (workspace_python_path, env["PYTHONPATH"])
         )
 
+    python_version = env.get("OSII_PYTHON_VERSION", "3.12").strip() or "3.12"
     env.update(
         {
             "PYTHONUNBUFFERED": "1",
             # Pin the host workflow independently of whichever newer Python a
             # developer's package manager currently exposes by default.
-            "UV_PYTHON": "3.11",
+            "UV_PYTHON": python_version,
             # A visible name avoids macOS marking every .pth file beneath a
             # dot-prefixed .venv as hidden and skipping editable packages.
             "UV_PROJECT_ENVIRONMENT": str(REPOSITORY_ROOT / "osii-env"),
@@ -192,7 +193,14 @@ def build_environment(core_only: bool) -> dict[str, str]:
 
 
 def prepare_dependencies(uv: str, npm: str, env: dict[str, str]) -> None:
-    print("[setup] Checking editable Python packages...")
+    print(
+        "[setup] Preparing OSII packages. The first start can take a few minutes; "
+        "later starts reuse this environment."
+    )
+    print(
+        f"[setup] Python {env.get('UV_PYTHON', '3.12')} application environment: "
+        f"{env['UV_PROJECT_ENVIRONMENT']}"
+    )
     sync_command = [
             uv,
             "sync",
@@ -747,10 +755,12 @@ def run(
             start_service(dashboard_service, env),
         )
         print()
-        print(f"[dev] Dashboard: http://localhost:{dashboard_port}")
+        print("[ready] OSII is running.")
+        print(f"[ready] Dashboard: http://localhost:{dashboard_port}")
+        print(f"[ready] Documents folder: {env['SHARED_VOLUME_ROOT']}")
         print(f"[dev] API health: http://localhost:{api_port}/health")
         print(f"[dev] MCP: http://localhost:{env.get('OSII_MCP_PORT', '8022')}/mcp")
-        print("[dev] Press Ctrl+C to stop host processes.")
+        print("[ready] Keep this terminal open. Press Ctrl+C once to stop OSII.")
         if not core_only:
             print("[dev] Open Dashboard → Setup to connect AI or start optional Tika/Tesseract capabilities.")
             print("[dev] Setup → Advanced & diagnostics contains processor URLs, settings, controls, and logs.")

@@ -19,6 +19,15 @@ You need not publish or run all of them. Apache Tika is an upstream image and
 Ollama is a separately managed provider; neither is copied into this Toolbox.
 Core and its normal model connections remain unchanged.
 
+All OSII-authored Toolbox Dockerfiles use RPM-family bases and install their
+fixed application Python with `uv`. Most default to public UBI 9 and accept
+`--build-arg OSII_BASE_IMAGE=registry.example/approved/rhel9/python-latest`.
+Tesseract defaults to Fedora because its public repositories carry the OCR
+language packages; override it with
+`--build-arg OSII_TESSERACT_BASE_IMAGE=registry.example/approved/rhel9/python-latest`
+when the selected RHEL-family base exposes those packages. These switches alter
+packaging only; they do not change Processor API behavior.
+
 ## Build the two starter images
 
 Run from the **OSII repository root**, not this folder. Podman must be running
@@ -207,7 +216,7 @@ Do not install all tools into one environment: their dependencies and Python
 To export source plus the shared SDK without environments, caches, or weights:
 
 ```sh
-uv run --no-project --python 3.11 python scripts/export_components.py --components osii-toolbox --output ../osii-toolbox-export
+uv run --no-project --python 3.12 python scripts/export_components.py --components osii-toolbox --output ../osii-toolbox-export
 ```
 
 Use the new `../osii-toolbox-export/osii-toolbox/` as the receiving repository root;

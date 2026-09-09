@@ -63,13 +63,13 @@ domain logic.
 
 ## Set up the notebook environment once
 
-Use Python 3.11, the OSII host-development baseline. Run these commands from
+Use Python 3.12, the OSII host-development baseline. Run these commands from
 this directory because `requirements.txt` contains paths relative to the
 monorepo:
 
 ```bash
 cd osii-demo-notebooks
-python3.11 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
@@ -81,7 +81,7 @@ On Windows PowerShell:
 
 ```powershell
 cd osii-demo-notebooks
-py -3.11 -m venv .venv
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt

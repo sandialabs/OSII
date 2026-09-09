@@ -24,14 +24,14 @@ intended to be copied into independent domain-processor services.
 
 ## Set up the notebook kernel
 
-Use Python 3.11. Run the installation from the demonstration directory because
+Use Python 3.12. Run the installation from the demonstration directory because
 its requirements contain monorepo-relative package paths.
 
 macOS or Linux:
 
 ```bash
 cd osii-demo-notebooks
-python3.11 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
@@ -44,7 +44,7 @@ Windows PowerShell:
 
 ```powershell
 cd osii-demo-notebooks
-py -3.11 -m venv .venv
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt

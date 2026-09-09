@@ -26,6 +26,42 @@ provenance model as the API. It has no persistence of its own. Optional model
 providers, including the bundled OpenAI-compatible HTTP adapter, remain behind the
 model-provider bridge in the baseline image.
 
+## Portable RHEL-family base images
+
+OSII's public Dockerfiles default to Red Hat's freely redistributable UBI 9
+base. They deliberately install the application interpreter separately with
+`uv`, so the image always runs Python 3.12 even when the bootstrap Python in the
+base image changes. The dashboard installs Node.js 22 only in its build stage
+and serves the compiled files with Nginx from a fresh UBI 9 runtime stage.
+
+Every normal image accepts the same `OSII_BASE_IMAGE` build argument. This lets
+a deployment builder select an approved RHEL 9 image without maintaining a
+fork of OSII's Dockerfiles. The replacement image must provide `dnf`, a
+bootstrap `python3`/`pip`, and configured repositories containing Node.js and
+Nginx. For example, using a placeholder internal registry:
+
+```bash
+make build \
+  OSII_BASE_IMAGE=registry.example/approved/rhel9/python-latest \
+  OSII_IMAGE_TAG=0.1.0
+```
+
+```powershell
+.\scripts\osii.ps1 build `
+  -BaseImage registry.example/approved/rhel9/python-latest `
+  -ImageTag 0.1.0
+```
+
+`OSII_PYTHON_VERSION` is also a build argument and defaults to `3.12`. Change
+it only as an intentional application-runtime upgrade, not to match whatever
+Python happens to be in the base image.
+
+Tesseract is the one exception: public OCR builds default to Fedora because
+public UBI repositories do not include the required Tesseract language RPMs.
+Set `OSII_TESSERACT_BASE_IMAGE` separately when the approved internal
+RHEL-family image exposes those RPMs. Apache Tika remains an upstream optional
+image rather than an OSII-built image.
+
 MCP, Tika, Tesseract OCR, and example processors remain optional. Ollama and
 the upstream OpenAI-compatible service are separately managed endpoints; OSII publishes no
 model weights or private provider packages.

@@ -1,44 +1,57 @@
-FROM python:3.12-slim
+# Fedora is the public RPM-family default because its repositories include
+# Tesseract. Set OSII_TESSERACT_BASE_IMAGE to an approved RHEL-family image in
+# environments whose configured repositories provide these same RPM packages.
+ARG OSII_TESSERACT_BASE_IMAGE=registry.fedoraproject.org/fedora:latest
+FROM ${OSII_TESSERACT_BASE_IMAGE}
 
-ENV DEBIAN_FRONTEND="noninteractive" \
-    PYTHONUNBUFFERED="1" \
-    PIP_NO_CACHE_DIR="1"
+ARG OSII_PYTHON_VERSION=3.12
+ENV PYTHONUNBUFFERED=1 \
+    UV_PYTHON_INSTALL_DIR=/opt/uv/python \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-RUN set -ex && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        apt-transport-https \
+RUN dnf install -y \
+        python3 \
+        python3-pip \
+        shadow-utils \
         ca-certificates \
-        curl \
-        tesseract-ocr \
-        tesseract-ocr-eng \
-        tesseract-ocr-fra \
-        tesseract-ocr-deu \
-        tesseract-ocr-spa \
-        tesseract-ocr-jpn \
-        tesseract-ocr-kor \
-        tesseract-ocr-chi-sim \
-        tesseract-ocr-ara \
-        libglib2.0-0 \
-        libsm6 \
-        libxext6 \
-        libxrender1 \
-        libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
+        tesseract \
+        tesseract-langpack-eng \
+        tesseract-langpack-fra \
+        tesseract-langpack-deu \
+        tesseract-langpack-spa \
+        tesseract-langpack-jpn \
+        tesseract-langpack-kor \
+        tesseract-langpack-chi_sim \
+        tesseract-langpack-ara \
+        glib2 \
+        libSM \
+        libXext \
+        libXrender \
+        libgomp && \
+    dnf clean all && \
+    rm -rf /var/cache/dnf && \
+    python3 -m pip install --no-cache-dir uv && \
+    uv python install "${OSII_PYTHON_VERSION}" && \
+    uv venv "${VIRTUAL_ENV}" --python "${OSII_PYTHON_VERSION}"
 
 WORKDIR /workspace
-
 COPY osii-core/processor-sdk /workspace/osii-core/processor-sdk
 COPY osii-toolbox/osii-tesseract/requirements.txt /workspace/osii-tesseract/requirements.txt
 WORKDIR /workspace/osii-tesseract
-RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install --no-cache-dir /workspace/osii-core/processor-sdk
+RUN uv pip install --python "${VIRTUAL_ENV}/bin/python" \
+    -r requirements.txt \
+    /workspace/osii-core/processor-sdk
 
 COPY osii-toolbox/osii-tesseract/app ./app
 COPY osii-toolbox/osii-tesseract/README.md ./README.md
 COPY osii-toolbox/osii-tesseract/config ./config
 COPY osii-toolbox/osii-tesseract/docs ./docs
+RUN groupadd --system osii && \
+    useradd --system --gid osii --home-dir /workspace/osii-tesseract osii && \
+    chown -R osii:osii /workspace
 
+USER osii
 EXPOSE 8080
-
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
