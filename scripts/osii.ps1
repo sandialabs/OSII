@@ -19,6 +19,8 @@ param(
 
     [switch]$InsecureRegistries,
 
+    [switch]$DisableContainerProxies,
+
     [switch]$DryRun
 )
 
@@ -69,6 +71,31 @@ function Invoke-OsiiCompose {
             "--podman-build-args=--tls-verify=false"
         )
     }
+    $ComposeAction = if ($Arguments.Count -gt 0) { $Arguments[0] } else { "" }
+    if ($DisableContainerProxies -and $ComposeAction -in @("build", "up")) {
+        if ($Runtime -ne "Podman") {
+            throw "-DisableContainerProxies is supported only with Podman; Docker cannot guarantee removal of proxy settings inherited from a custom base image."
+        }
+
+        $ProxyVariables = @(
+            "HTTP_PROXY", "HTTPS_PROXY", "FTP_PROXY", "ALL_PROXY",
+            "http_proxy", "https_proxy", "ftp_proxy", "all_proxy"
+        )
+        if ($ComposeAction -eq "build") {
+            $BuildOptions = @("--http-proxy=false")
+            foreach ($Name in $ProxyVariables) {
+                $BuildOptions += @("--env", "$Name=", "--unsetenv", $Name)
+            }
+            $SecurityArguments += "--podman-build-args=$($BuildOptions -join ' ')"
+        }
+        elseif ($ComposeAction -eq "up") {
+            $RunOptions = @("--http-proxy=false")
+            foreach ($Name in $ProxyVariables) {
+                $RunOptions += @("--env", "$Name=")
+            }
+            $SecurityArguments += "--podman-run-args=$($RunOptions -join ' ')"
+        }
+    }
     & $ComposeExecutable @ComposePrefix @SecurityArguments @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "Compose command failed with exit code $LASTEXITCODE."
@@ -117,6 +144,7 @@ function Show-OsiiHelp {
     Write-Host ""
     Write-Host "Normal use needs only 'demo' or 'dev'. Optional AI and OCR services are"
     Write-Host "connected or started from the Setup page after launch."
+    Write-Host "For direct-network Podman containers, add -DisableContainerProxies."
 }
 
 Push-Location $RepositoryRoot

@@ -7,10 +7,28 @@ OSII_IMAGE_TAG ?= latest
 OSII_BASE_IMAGE ?= registry.access.redhat.com/ubi9/ubi:latest
 OSII_TESSERACT_BASE_IMAGE ?= registry.fedoraproject.org/fedora:latest
 OSII_PYTHON_VERSION ?= 3.12
+DISABLE_CONTAINER_PROXIES ?= false
+PROXY_ENVIRONMENT_VARIABLES := HTTP_PROXY HTTPS_PROXY FTP_PROXY ALL_PROXY http_proxy https_proxy ftp_proxy all_proxy
+
+ifeq ($(DISABLE_CONTAINER_PROXIES),true)
+PODMAN_PROXY_BUILD_ARGUMENTS := --podman-build-args='--http-proxy=false $(foreach variable,$(PROXY_ENVIRONMENT_VARIABLES),--env $(variable)= --unsetenv $(variable))'
+PODMAN_PROXY_RUN_ARGUMENTS := --podman-run-args='--http-proxy=false $(foreach variable,$(PROXY_ENVIRONMENT_VARIABLES),--env $(variable)=)'
+else ifneq ($(DISABLE_CONTAINER_PROXIES),false)
+$(error DISABLE_CONTAINER_PROXIES must be true or false)
+endif
 export UV_PROJECT_ENVIRONMENT := $(CURDIR)/osii-env
 export OSII_IMAGE_PREFIX OSII_IMAGE_TAG OSII_BASE_IMAGE OSII_TESSERACT_BASE_IMAGE OSII_PYTHON_VERSION
 export OSII_COMPOSE_COMMAND := $(COMPOSE)
 unexport VIRTUAL_ENV
+
+define require_podman_proxy_control
+	@if [ "$(DISABLE_CONTAINER_PROXIES)" = "true" ]; then \
+		case "$(COMPOSE)" in \
+			*podman-compose*) ;; \
+			*) echo "DISABLE_CONTAINER_PROXIES=true requires podman-compose; Docker cannot guarantee removal of proxy settings inherited from a custom base image."; exit 2 ;; \
+		esac; \
+	fi
+endef
 
 .PHONY: help dev demo demo-data run build push-release down logs test docs doctor
 
@@ -24,6 +42,7 @@ help:
 	@echo ""
 	@echo "Normal use needs only 'make demo' or 'make dev'. Optional AI and OCR"
 	@echo "services are connected or started from the Setup page after launch."
+	@echo "For direct-network Podman containers, append DISABLE_CONTAINER_PROXIES=true."
 
 # Default development path: API (including chat), worker, MCP, dashboard, and extraction
 # all run from source on the host. Setup can start optional Tika when a container
@@ -42,7 +61,8 @@ demo-data:
 
 # Start the normal integrated stack from existing images, without rebuilding.
 run:
-	$(COMPOSE) up --no-build --pull missing tesseract local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker dashboard
+	$(require_podman_proxy_control)
+	$(COMPOSE) $(PODMAN_PROXY_RUN_ARGUMENTS) up --no-build --pull missing tesseract local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker dashboard
 
 down:
 	$(COMPOSE) down
@@ -65,7 +85,8 @@ test:
 # Build the three publishable release images. API and worker share core; the
 # baseline processor services share one selectable-command image.
 build:
-	$(COMPOSE) build api dashboard local-extractor
+	$(require_podman_proxy_control)
+	$(COMPOSE) $(PODMAN_PROXY_BUILD_ARGUMENTS) build api dashboard local-extractor
 
 push-release:
 	@if echo "$(OSII_IMAGE_PREFIX)" | grep -q '^localhost/'; then echo "Set OSII_IMAGE_PREFIX to a registry path such as quay.io/your-org/osii."; exit 2; fi

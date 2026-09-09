@@ -56,6 +56,50 @@ make build \
 it only as an intentional application-runtime upgrade, not to match whatever
 Python happens to be in the base image.
 
+### Keep corporate certificates but disable inherited proxies
+
+Podman normally passes host proxy variables into builds and containers. When a
+direct connection or an endpoint-specific network client should bypass those
+proxies, add OSII's opt-in proxy switch:
+
+```bash
+make build \
+  OSII_BASE_IMAGE=registry.example/approved/rhel9/python-latest \
+  DISABLE_CONTAINER_PROXIES=true
+
+make run DISABLE_CONTAINER_PROXIES=true
+```
+
+Windows PowerShell uses the equivalent switch:
+
+```powershell
+.\scripts\osii.ps1 build `
+  -BaseImage registry.example/approved/rhel9/python-latest `
+  -DisableContainerProxies
+
+.\scripts\osii.ps1 run -DisableContainerProxies
+```
+
+The default is unchanged: omit the switch to let Podman inherit the host proxy
+configuration. In direct mode, the launchers tell Podman not to inject proxies,
+set uppercase and lowercase HTTP, HTTPS, FTP, and ALL proxy variables to empty,
+and remove those variables from newly built images. They do **not** remove
+`NO_PROXY`, certificate environment variables, certificate files, or the RHEL
+trust store. Proxy addresses and credentials do not enter OSII configuration or
+logs.
+
+The local baseline makes no public package or model downloads at runtime.
+Runtime routing matters when OSII calls Shirty or another OpenAI-compatible
+provider, a remote processor, or host Ollama. It also keeps internal OSII
+service traffic from being routed through an inherited proxy. Choose inherited
+or direct mode according to the endpoints needed by that deployment.
+
+This strict proxy-removal switch is supported for Podman. Docker builds that
+start from a custom image with proxy variables baked into it cannot receive the
+same guarantee without Dockerfile changes. Registry authentication, TLS, and
+image pulls are still handled by the selected container engine; this switch
+does not disable certificate verification or alter registry trust.
+
 Tesseract is the one exception: public OCR builds default to Fedora because
 public UBI repositories do not include the required Tesseract language RPMs.
 Set `OSII_TESSERACT_BASE_IMAGE` separately when the approved internal

@@ -54,6 +54,13 @@ Tesseract service when their prerequisites are installed. The standalone
 MiniLM image in `osii-toolbox` is an opt-in deployment alternative and is not
 started by `demo` or `dev`.
 
+For the packaged Podman stack, `make run DISABLE_CONTAINER_PROXIES=true` or
+`.\scripts\osii.ps1 run -DisableContainerProxies` starts in direct-network mode
+while retaining the image's corporate certificate trust. The normal commands
+inherit host proxy behavior. See [Corporate pilot images and Quay
+releases](publishing-images.md#keep-corporate-certificates-but-disable-inherited-proxies)
+for build commands and exact scope.
+
 The host launcher starts the dashboard only after `http://127.0.0.1:8511/health`
 responds. This is especially important on Windows, where several simultaneous
 `uv run` processes can initialize more slowly. A backend failure therefore
