@@ -119,22 +119,20 @@ export function EntityPageBrowser({
 
   return (
     <Stack spacing={1.5}>
-      <Stack direction="row" justifyContent="flex-end">
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={<AddOutlinedIcon />}
-          disabled={draft !== null}
-          onClick={startCreating}
-        >
-          Add entity
-        </Button>
-      </Stack>
-
       {sections.length === 0 && draft === null ? (
-        <Alert severity="info">
-          No entities were extracted for this document. Use Add entity to create one.
-        </Alert>
+        <Stack spacing={1.5} alignItems="flex-start">
+          <Alert severity="info">
+            No entities were extracted for this document. Use Add entity to create one.
+          </Alert>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<AddOutlinedIcon />}
+            onClick={startCreating}
+          >
+            Add entity
+          </Button>
+        </Stack>
       ) : null}
 
       <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems="flex-start">
@@ -233,6 +231,14 @@ export function EntityPageBrowser({
                 {save.isSuccess ? (
                   <Typography variant="caption" color="success.main">Saved</Typography>
                 ) : null}
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<AddOutlinedIcon />}
+                  onClick={startCreating}
+                >
+                  Add entity
+                </Button>
                 <Button
                   size="small"
                   variant="outlined"

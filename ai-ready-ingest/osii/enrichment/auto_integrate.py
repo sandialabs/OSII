@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from string import Template
@@ -17,7 +19,7 @@ from osii.model_clients import (
     create_ollama_chat_client,
     default_ollama_chat_model,
 )
-from osii.enrichment.candidates import candidate_block
+from osii.enrichment.candidates import RARE_QUOTA_FRACTION, candidate_block
 from osii.enrichment.llm_wiki import (
     LlmWiki,
     has_manual_edit,
@@ -26,6 +28,45 @@ from osii.enrichment.llm_wiki import (
     utc_today,
     yaml_string,
 )
+
+
+# Bumped when a code change should make every document look out of date, even
+# though neither its text nor its settings moved.
+INTEGRATION_FINGERPRINT_VERSION = "v1"
+
+
+def integration_fingerprint(
+    *,
+    full_text: str | None,
+    integrator_config: dict | None,
+) -> str:
+    """
+    What this document's integration depended on.
+
+    Deliberately covers only the extracted document text and the settings.
+    The wiki source page is excluded because integration rewrites it: folding
+    it in would make every document differ from itself on the next run, and
+    nothing would ever be skipped.
+
+    Returns "" when there is no extracted text, which disables skipping. In
+    that case the model reads the source page itself, and that page is exactly
+    the thing this process mutates, so there is no stable input to compare.
+    """
+    if not (full_text or "").strip():
+        return ""
+
+    config = integrator_config or {}
+
+    payload = json.dumps(
+        {
+            "version": INTEGRATION_FINGERPRINT_VERSION,
+            "full_text": hashlib.sha256(full_text.encode("utf-8")).hexdigest(),
+            "config": {str(k): str(v) for k, v in sorted(config.items())},
+        },
+        sort_keys=True,
+    )
+
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
 
 
 def default_model() -> str:
@@ -465,7 +506,49 @@ def _sanitize_aliases(value: Any, *, canonical_name: str = "") -> list[str]:
     return aliases
 
 
-def sanitize_entity_record(entity: dict[str, Any]) -> dict[str, Any] | None:
+EVIDENCE_OVERLAP_THRESHOLD = 0.6
+EVIDENCE_MIN_TOKENS = 3
+
+EVIDENCE_GROUNDING_MODES = ("drop", "flag", "off")
+DEFAULT_EVIDENCE_GROUNDING = "drop"
+
+
+def _grounding_tokens(text: Any) -> list[str]:
+    return re.findall(r"[a-z0-9]+", _clean_string(text).lower())
+
+
+def evidence_is_grounded(evidence: Any, source_tokens: set[str]) -> bool:
+    """
+    Whether an evidence phrase has a lexical connection to the source document.
+
+    The prompt asks for a verbatim quote, but a small model paraphrases and
+    truncates, so an exact-substring test would reject good extractions along
+    with invented ones. Token overlap tolerates paraphrase while rejecting
+    evidence that shares almost nothing with the document it claims to quote.
+
+    An empty ``source_tokens`` means the caller supplied no document to check
+    against, and nothing is rejected.
+    """
+    if not source_tokens:
+        return True
+
+    tokens = _grounding_tokens(evidence)
+
+    if not tokens:
+        return False
+
+    present = sum(1 for token in tokens if token in source_tokens)
+
+    if len(tokens) < EVIDENCE_MIN_TOKENS:
+        return present == len(tokens)
+
+    return (present / len(tokens)) >= EVIDENCE_OVERLAP_THRESHOLD
+
+
+def sanitize_entity_record(
+    entity: dict[str, Any],
+    source_tokens: set[str] | None = None,
+) -> dict[str, Any] | None:
     """
     Validate, normalize, truncate, and Markdown-sanitize a model entity record.
     """
@@ -478,6 +561,12 @@ def sanitize_entity_record(entity: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
     entity_type = normalize_entity_type(entity.get("entity_type"))
+
+    # An entity already needs evidence to survive filter_specific_entities.
+    # Evidence with no lexical connection to the document is not evidence, so
+    # it is dropped on the same rule.
+    if source_tokens and not evidence_is_grounded(entity.get("evidence"), source_tokens):
+        return None
 
     return {
         "name": name,
@@ -558,13 +647,24 @@ def sanitize_text_list(
     return result
 
 
+_DELIMITER_SPOOF_RE = re.compile(
+    r"(BEGIN|END)[\s_-]*UNTRUSTED[\s_-]*SOURCE[\s_-]*CONTENT",
+    re.IGNORECASE,
+)
+
+
 def _prompt_data_block(text: str) -> str:
     """
     Prevent source content from spoofing prompt delimiters.
+
+    Matched case-insensitively and across separator variants. An exact
+    case-sensitive replacement leaves "end untrusted source content" and
+    "END  UNTRUSTED SOURCE CONTENT" untouched, either of which a model may
+    read as the real closing delimiter.
     """
-    return (text or "").replace(
-        "END UNTRUSTED SOURCE CONTENT",
-        "END-UNTRUSTED-SOURCE-CONTENT",
+    return _DELIMITER_SPOOF_RE.sub(
+        lambda m: m.group(0).replace(" ", "-").upper(),
+        text or "",
     )
 
 def normalize_entity_type(value: Any) -> str:
@@ -1190,10 +1290,15 @@ def ensure_source_grounding_bullet(
     if bullet in page_text or source_link in page_text:
         return page_text
 
-    if "## Source grounding" not in page_text:
-        return page_text.rstrip() + f"\n\n## Source grounding\n\n{bullet}\n"
-
     pattern = r"(^## Source grounding\s*\n)(.*?)(?=^## |\Z)"
+
+    # The section test uses the same anchored pattern as the substitution
+    # below. An unanchored substring test would accept a mid-line occurrence
+    # that the substitution cannot match, and the bullet would be dropped
+    # without a trace - which is exactly the provenance suppression that
+    # model-supplied text should never be able to cause.
+    if not re.search(pattern, page_text, flags=re.MULTILINE | re.DOTALL):
+        return page_text.rstrip() + f"\n\n## Source grounding\n\n{bullet}\n"
 
     def repl(match: re.Match) -> str:
         header = match.group(1)
@@ -1233,6 +1338,79 @@ class AutoWikiIntegrator:
 
     def __init__(self, *, wiki: LlmWiki):
         self.wiki = wiki
+
+        # Set to a list while bookkeeping is deferred. Manifest updates queue
+        # here instead of rewriting the manifest once per document.
+        self._deferred: list[dict[str, Any]] | None = None
+
+        # Namespace -> fingerprint, read from the manifest once per run.
+        self._fingerprints: dict[str, str] | None = None
+
+    @contextmanager
+    def deferred_bookkeeping(self):
+        """
+        Batch the whole-wiki writes for the documents processed inside.
+
+        ``update_manifest`` and ``rebuild_index`` both rewrite files that list
+        every page in the wiki, and both used to run once per document. Over a
+        corpus that is quadratic: the thousandth document rewrites a manifest
+        holding the other nine hundred and ninety-nine. Nothing about them
+        depends on running between documents, so they run once at the end.
+
+        The flush happens even when a document raises, so a run that fails
+        part-way still leaves the manifest describing what it did write.
+        """
+        if self._deferred is not None:
+            # Already batching, so an inner block is a no-op rather than an
+            # early flush of the outer one.
+            yield self
+            return
+
+        self._deferred = []
+
+        try:
+            yield self
+        finally:
+            pending, self._deferred = self._deferred, None
+
+            if pending:
+                self._apply_manifest_records(pending)
+
+            self.wiki.rebuild_index()
+
+    def manifest_fingerprints(self) -> dict[str, str]:
+        """Namespace to fingerprint for what the wiki already holds."""
+        if self._fingerprints is None:
+            manifest = self._load_manifest()
+
+            self._fingerprints = {
+                str(item.get("source_namespace")): str(item.get("fingerprint") or "")
+                for item in manifest.get("sources") or []
+                if item.get("source_namespace")
+            }
+
+        return self._fingerprints
+
+    def is_current(self, source_namespace: str, fingerprint: str) -> bool:
+        """Whether this document was already integrated from the same inputs."""
+        if not fingerprint:
+            return False
+
+        return self.manifest_fingerprints().get(source_namespace) == fingerprint
+
+    def _manifest_path(self) -> Path:
+        return self.wiki.wiki_root / "manifest.json"
+
+    def _load_manifest(self) -> dict[str, Any]:
+        path = self._manifest_path()
+
+        if path.exists():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                return {}
+
+        return {}
 
     def _call_model(
         self,
@@ -1437,6 +1615,7 @@ class AutoWikiIntegrator:
         full_text: str | None = None,
         document_frequency: dict[str, int] | None = None,
         corpus_size: int = 0,
+        force: bool = False,
     ) -> dict:
         integrator_config = integrator_config or {}
 
@@ -1466,6 +1645,24 @@ class AutoWikiIntegrator:
         source_link = f"[[{source_rel}]]"
 
         source_namespace = source_namespace_from_page(source_page)
+
+        # Checked before the candidate scan and the model call, which are the
+        # only expensive things this method does.
+        fingerprint = integration_fingerprint(
+            full_text=full_text,
+            integrator_config=integrator_config,
+        )
+
+        if not force and self.is_current(source_namespace, fingerprint):
+            return {
+                "source_page": str(source_page),
+                "source_namespace": source_namespace,
+                "skipped": True,
+                "reason": "unchanged since the last integration",
+                "fingerprint": fingerprint,
+                "error": None,
+            }
+
         if full_text and full_text.strip():
             # Deliberately smaller than max_source_chars. A shortlist works only
             # if the model can still hold the output schema in view; a small
@@ -1476,12 +1673,29 @@ class AutoWikiIntegrator:
                 max_chars=candidate_max_chars,
                 document_frequency=document_frequency,
                 corpus_size=corpus_size,
+                min_count=int(integrator_config.get("candidate_min_count", 2)),
+                concept_min_count=int(
+                    integrator_config.get("candidate_concept_min_count", 3)
+                ),
+                rare_quota=float(
+                    integrator_config.get("candidate_rare_quota", RARE_QUOTA_FRACTION)
+                ),
+                salience=str(
+                    integrator_config.get("candidate_salience", "true")
+                ).lower() not in ("false", "0", "no", "off"),
             )
         else:
             evidence_block, candidates = "", []
 
        
         source_excerpt = _prompt_data_block(evidence_block or source_text[:max_source_chars])
+
+        # Evidence is checked against everything the model was given plus the
+        # complete document, so a faithful quote from outside the excerpt is
+        # still recognized as grounded.
+        source_evidence_text = "\n".join(
+            part for part in (full_text or "", source_text, source_excerpt) if part
+        )
 
         candidate_instructions = (
             """
@@ -1658,9 +1872,19 @@ How to use CANDIDATES:
             source_link=source_link,
             source_namespace=source_namespace,
             data=data,
+            source_evidence_text=source_evidence_text,
+            evidence_grounding=integrator_config.get(
+                "evidence_grounding",
+                DEFAULT_EVIDENCE_GROUNDING,
+            ),
+            fingerprint=fingerprint,
         )
 
-        self.wiki.rebuild_index()
+        # Rebuilt once for the whole batch when bookkeeping is deferred.
+        if self._deferred is None:
+            self.wiki.rebuild_index()
+
+        validation = result.get("validation", {})
 
         self.wiki.append_log(
             action="auto-integrate",
@@ -1672,6 +1896,8 @@ How to use CANDIDATES:
                 f"Concepts page: `{result.get('concepts_page')}`",
                 f"Entities extracted: {result.get('entity_count', 0)}",
                 f"Concepts extracted: {result.get('concept_count', 0)}",
+                f"Entities rejected by validation: {validation.get('entities_rejected', 0)}",
+                f"Entities with ungrounded evidence: {validation.get('entities_rejected_ungrounded', 0)}",
                 f"Notes page: `{result.get('notes_page')}`",
                 f"Manifest: `{result.get('manifest')}`",
                 f"Concept manifest: `{result.get('concept_manifest')}`",
@@ -2256,8 +2482,11 @@ Write source-specific notes here.
         source_link: str,
         source_namespace: str,
         data: dict[str, Any],
+        source_evidence_text: str = "",
+        evidence_grounding: str = DEFAULT_EVIDENCE_GROUNDING,
+        fingerprint: str = "",
     ) -> dict:
-        source_summary = safe_markdown_block(data.get("Source Summary"),limit=MAX_SOURCE_SUMMARY_CHARS)
+        source_summary = safe_markdown_block(data.get("source_summary"), limit=MAX_SOURCE_SUMMARY_CHARS)
         key_claims = sanitize_text_list(data.get("key_claims"),max_items=MAX_KEY_CLAIMS,item_limit=MAX_SUMMARY_CHARS)
         caveats = sanitize_text_list(data.get("caveats"),max_items=MAX_CAVEATS,item_limit=MAX_SUMMARY_CHARS)
 
@@ -2266,9 +2495,33 @@ Write source-specific notes here.
             if isinstance(x,dict) and _clean_string(x.get("name"))
         ]
 
+        mode = _clean_string(evidence_grounding).lower() or DEFAULT_EVIDENCE_GROUNDING
+
+        if mode not in EVIDENCE_GROUNDING_MODES:
+            mode = DEFAULT_EVIDENCE_GROUNDING
+
+        source_tokens = (
+            set(_grounding_tokens(source_evidence_text)) if mode != "off" else set()
+        )
+
         entities = []
+        ungrounded = 0
+
         for idx in raw_entities:
+            grounded = not source_tokens or evidence_is_grounded(
+                idx.get("evidence"), source_tokens
+            )
+
+            if not grounded:
+                ungrounded += 1
+
+                # "flag" counts without dropping, so an operator can measure
+                # the effect on a real corpus before enforcing it.
+                if mode != "flag":
+                    continue
+
             sanitized = sanitize_entity_record(idx)
+
             if sanitized is not None:
                 entities.append(sanitized)
         entities = normalize_and_deduplicate_entities(entities)
@@ -2337,6 +2590,7 @@ Write source-specific notes here.
             )
 
         self.update_manifest(
+            fingerprint=fingerprint,
             source_namespace=source_namespace,
             source_page=source_page,
             source_link=source_link,
@@ -2490,8 +2744,13 @@ Write source-specific notes here.
 
             "entity_count": len(entities),
             "concept_count": len(concepts),
+            "entities_received": len(raw_entities),
+            "entities_rejected_ungrounded": ungrounded,
+            "evidence_grounding": mode,
             "key_claim_count": len(key_claims),
             "caveat_count": len(caveats),
+            "fingerprint": fingerprint,
+            "skipped": False,
             "error": None,
         }
 
@@ -2507,61 +2766,70 @@ Write source-specific notes here.
         entities: list[dict[str, Any]],
         concepts: list[dict[str, Any]],
         entity_page_by_uid: dict[str, Path] | None = None,
+        fingerprint: str = "",
     ) -> None:
         """
-        Update wiki/manifest.json and wiki/concept_manifest.md.
+        Record one document in wiki/manifest.json and wiki/concept_manifest.md.
 
         The manifest lets you search by concept/entity and find which source
         document it came from.
-        """
-        manifest_path = self.wiki.wiki_root / "manifest.json"
-        concept_manifest_path = self.wiki.wiki_root / "concept_manifest.md"
 
+        Inside ``deferred_bookkeeping`` the records are queued and written with
+        every other document's in a single pass, rather than reading and
+        rewriting the whole manifest here.
+        """
+        records = self._manifest_records(
+            source_namespace=source_namespace,
+            source_page=source_page,
+            source_link=source_link,
+            entities_page=entities_page,
+            concepts_page=concepts_page,
+            notes_page=notes_page,
+            entities=entities,
+            concepts=concepts,
+            entity_page_by_uid=entity_page_by_uid,
+            fingerprint=fingerprint,
+        )
+
+        if self._deferred is not None:
+            self._deferred.append(records)
+            return
+
+        self._apply_manifest_records([records])
+
+    def _manifest_records(
+        self,
+        *,
+        source_namespace: str,
+        source_page: Path,
+        source_link: str,
+        entities_page: Path,
+        concepts_page: Path,
+        notes_page: Path,
+        entities: list[dict[str, Any]],
+        concepts: list[dict[str, Any]],
+        entity_page_by_uid: dict[str, Path] | None = None,
+        fingerprint: str = "",
+    ) -> dict[str, Any]:
+        """One document's manifest records, built without touching the file."""
         source_rel = source_page.relative_to(self.wiki.wiki_root).as_posix()
         entities_rel = entities_page.relative_to(self.wiki.wiki_root).as_posix()
         concepts_rel = concepts_page.relative_to(self.wiki.wiki_root).as_posix()
         notes_rel = notes_page.relative_to(self.wiki.wiki_root).as_posix()
         entity_page_by_uid = entity_page_by_uid or {}
 
-        if manifest_path.exists():
-            try:
-                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            except Exception:
-                manifest = {}
-        else:
-            manifest = {}
+        source_record = {
+            "uid": page_uid(kind="source", source_namespace=source_namespace),
+            "source_namespace": source_namespace,
+            "source_page": source_rel,
+            "source_link": source_link,
+            "entities_page": entities_rel,
+            "concepts_page": concepts_rel,
+            "notes_page": notes_rel,
+            "fingerprint": fingerprint,
+        }
 
-        manifest.setdefault("sources", [])
-        manifest.setdefault("entities", [])
-        manifest.setdefault("concepts", [])
-
-        # Remove old records for this source namespace so reruns refresh cleanly.
-        manifest["sources"] = [
-            item for item in manifest["sources"]
-            if item.get("source_namespace") != source_namespace
-        ]
-
-        manifest["entities"] = [
-            item for item in manifest["entities"]
-            if item.get("source_namespace") != source_namespace
-        ]
-
-        manifest["concepts"] = [
-            item for item in manifest["concepts"]
-            if item.get("source_namespace") != source_namespace
-        ]
-
-        manifest["sources"].append(
-            {
-                "uid": page_uid(kind="source", source_namespace=source_namespace),
-                "source_namespace": source_namespace,
-                "source_page": source_rel,
-                "source_link": source_link,
-                "entities_page": entities_rel,
-                "concepts_page": concepts_rel,
-                "notes_page": notes_rel,
-            }
-        )
+        entity_records: list[dict[str, Any]] = []
 
         for entity in entities:
             name = _clean_string(entity.get("name"))
@@ -2570,8 +2838,6 @@ Write source-specific notes here.
                 continue
 
             entity_type = normalize_entity_type(entity.get("entity_type"))
-            evidence = _clean_string(entity.get("evidence"))
-            summary = _clean_string(entity.get("summary"))
 
             uid = entity_uid(
                 source_namespace=source_namespace,
@@ -2586,13 +2852,13 @@ Write source-specific notes here.
                 else ""
             )
 
-            manifest["entities"].append(
+            entity_records.append(
                 {
                     "uid": uid,
                     "name": name,
                     "entity_type": entity_type,
-                    "summary": summary,
-                    "evidence": evidence,
+                    "summary": _clean_string(entity.get("summary")),
+                    "evidence": _clean_string(entity.get("evidence")),
                     "source_namespace": source_namespace,
                     "source_page": source_rel,
                     "entities_page": entities_rel,
@@ -2610,39 +2876,89 @@ Write source-specific notes here.
                 }
             )
 
+        concept_records: list[dict[str, Any]] = []
+
         for concept in concepts:
             name = _clean_string(concept.get("name"))
 
             if not name:
                 continue
 
-            evidence = _clean_string(concept.get("evidence"))
-            summary = _clean_string(concept.get("summary"))
-
-            manifest["concepts"].append(
+            concept_records.append(
                 {
                     "uid": concept_uid(
                         source_namespace=source_namespace,
                         name=name,
                     ),
                     "name": name,
-                    "summary": summary,
-                    "evidence": evidence,
+                    "summary": _clean_string(concept.get("summary")),
+                    "evidence": _clean_string(concept.get("evidence")),
                     "source_namespace": source_namespace,
                     "source_page": source_rel,
                     "concepts_page": concepts_rel,
                 }
             )
 
-        manifest_path.write_text(
+        return {
+            "source": source_record,
+            "entities": entity_records,
+            "concepts": concept_records,
+        }
+
+    def _apply_manifest_records(self, batches: list[dict[str, Any]]) -> None:
+        """
+        Write any number of documents' records in one read-modify-write.
+
+        Reruns refresh cleanly: every namespace in the batch has its old
+        records removed before the new ones go in.
+        """
+        if not batches:
+            return
+
+        manifest = self._load_manifest()
+
+        manifest.setdefault("sources", [])
+        manifest.setdefault("entities", [])
+        manifest.setdefault("concepts", [])
+
+        namespaces = {
+            batch["source"]["source_namespace"]
+            for batch in batches
+            if batch.get("source")
+        }
+
+        for key in ("sources", "entities", "concepts"):
+            manifest[key] = [
+                item for item in manifest[key]
+                if item.get("source_namespace") not in namespaces
+            ]
+
+        for batch in batches:
+            if batch.get("source"):
+                manifest["sources"].append(batch["source"])
+
+            manifest["entities"].extend(batch.get("entities") or [])
+            manifest["concepts"].extend(batch.get("concepts") or [])
+
+        self._manifest_path().write_text(
             json.dumps(manifest, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
 
         self.write_concept_manifest_md(
-            concept_manifest_path=concept_manifest_path,
+            concept_manifest_path=self.wiki.wiki_root / "concept_manifest.md",
             manifest=manifest,
-    )
+        )
+
+        # Keep the in-memory view of what the wiki holds consistent with what
+        # was just written, so a skip check later in the same run is correct.
+        if self._fingerprints is not None:
+            for batch in batches:
+                source = batch.get("source") or {}
+                namespace = source.get("source_namespace")
+
+                if namespace:
+                    self._fingerprints[namespace] = str(source.get("fingerprint") or "")
 
     def write_concept_manifest_md(
         self,

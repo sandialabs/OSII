@@ -179,13 +179,25 @@ def process_one_object(
     auto_integrate: bool,
     expert_context: str | None,
     integrator_config: dict,
+    integrator=None,
+    document_frequency: dict[str, int] | None = None,
+    corpus_size: int | None = None,
+    force: bool = False,
 ) -> dict:
+    """
+    Build or refresh the wiki pages for one OSII object.
+
+    ``integrator``, ``document_frequency``, and ``corpus_size`` may be supplied
+    by a caller processing many objects. Each is derived from the corpus rather
+    than from this document, so building them here would repeat corpus-wide
+    work once per document.
+    """
     file_id = validate_file_id(file_id)
 
     objects_root = (osii_root / "objects").resolve()
     object_dir = ensure_path_within(objects_root, objects_root / file_id)
     if object_dir.exists():
-        reject_symlinks_under(object_dir)    
+        reject_symlinks_under(object_dir)
 
     if not object_dir.exists() or not object_dir.is_dir():
         raise RuntimeError(f"OSII object directory does not exist: {object_dir}")
@@ -248,18 +260,14 @@ def process_one_object(
     integration_result = None
 
     if auto_integrate:
-        corpus_ids = [
-            path.name
-            for path in (osii_root / "objects").iterdir()
-            if path.is_dir()
-        ] if (osii_root / "objects").is_dir() else []
-        corpus_document_frequency, corpus_size = load_or_build_document_frequency(
-            osii_root, corpus_ids
-        )
+        if document_frequency is None or corpus_size is None:
+            document_frequency, corpus_size = load_corpus_document_frequency(osii_root)
 
-        from osii.enrichment.auto_integrate import AutoWikiIntegrator
+        if integrator is None:
+            from osii.enrichment.auto_integrate import AutoWikiIntegrator
 
-        integrator = AutoWikiIntegrator(wiki=wiki)
+            integrator = AutoWikiIntegrator(wiki=wiki)
+
         # Candidates are drawn from the extracted document, not the source
         # page, which is mostly generated metadata around a short synthesis.
         integration_result = integrator.integrate_source_page(
@@ -267,8 +275,9 @@ def process_one_object(
             expert_context=expert_context,
             integrator_config=integrator_config,
             full_text=read_text_if_exists(record.extracted_text_path),
-            document_frequency=corpus_document_frequency,
+            document_frequency=document_frequency,
             corpus_size=corpus_size,
+            force=force,
         )
 
     return {
@@ -279,6 +288,101 @@ def process_one_object(
         "wiki_source_page": str(source_page),
         "integration_result": integration_result,
     }
+
+
+def _process_many(
+    *,
+    file_ids: list[str],
+    osii_root: Path,
+    wiki_root: Path,
+    source_file: Path | None,
+    data_root: Path | None,
+    source_relpath: str | None,
+    auto_integrate: bool,
+    expert_context: str | None,
+    integrator_config: dict,
+    force: bool = False,
+    progress: bool = False,
+) -> tuple[list[dict], list[dict]]:
+    """
+    Run many objects through the wiki with corpus-wide work done once.
+
+    Three things are hoisted out of the per-document path: the integrator, the
+    corpus term frequencies, and the whole-wiki bookkeeping. A document that
+    raises is recorded and the run continues, because a corpus run that dies on
+    its eight-hundredth document should not discard the seven hundred and
+    ninety-nine it already wrote.
+    """
+    from osii.enrichment.auto_integrate import AutoWikiIntegrator
+
+    integrator = None
+    document_frequency: dict[str, int] = {}
+    corpus_size = 0
+
+    if auto_integrate:
+        wiki = LlmWiki(wiki_root=wiki_root)
+        wiki.initialize()
+        integrator = AutoWikiIntegrator(wiki=wiki)
+        document_frequency, corpus_size = load_corpus_document_frequency(osii_root)
+
+    results: list[dict] = []
+    failures: list[dict] = []
+
+    def run_all() -> None:
+        total = len(file_ids)
+
+        for index, file_id in enumerate(file_ids, start=1):
+            if progress:
+                print(f"[{index}/{total}] Updating wiki from OSII object: {file_id}")
+
+            try:
+                results.append(
+                    process_one_object(
+                        file_id=file_id,
+                        osii_root=osii_root,
+                        wiki_root=wiki_root,
+                        source_file=source_file,
+                        data_root=data_root,
+                        source_relpath=source_relpath,
+                        auto_integrate=auto_integrate,
+                        expert_context=expert_context,
+                        integrator_config=integrator_config,
+                        integrator=integrator,
+                        document_frequency=document_frequency if auto_integrate else None,
+                        corpus_size=corpus_size if auto_integrate else None,
+                        force=force,
+                    )
+                )
+            except Exception as exc:
+                failures.append(
+                    {
+                        "file_id": file_id,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
+                print(
+                    f"ERROR: {file_id} failed and was skipped: {exc}",
+                    file=sys.stderr,
+                )
+
+    if integrator is not None:
+        with integrator.deferred_bookkeeping():
+            run_all()
+    else:
+        run_all()
+
+    return results, failures
+
+
+def load_corpus_document_frequency(osii_root: Path) -> tuple[dict[str, int], int]:
+    """Corpus-wide term frequencies, loaded once for a whole run."""
+    objects_dir = osii_root / "objects"
+
+    corpus_ids = [
+        path.name for path in objects_dir.iterdir() if path.is_dir()
+    ] if objects_dir.is_dir() else []
+
+    return load_or_build_document_frequency(osii_root, corpus_ids)
 
 
 def process_selected_osii_objects(
@@ -318,22 +422,17 @@ def process_selected_osii_objects(
     if not selected_file_ids:
         raise ValueError("No OSII file IDs were selected.")
 
-    results = []
-
-    for file_id in selected_file_ids:
-        result = process_one_object(
-            file_id=file_id,
-            osii_root=osii_root,
-            wiki_root=wiki_root,
-            source_file=None,
-            data_root=data_root,
-            source_relpath=None,
-            auto_integrate=auto_integrate,
-            expert_context=expert_context,
-            integrator_config=integrator_config,
-        )
-
-        results.append(result)
+    results, _ = _process_many(
+        file_ids=selected_file_ids,
+        osii_root=osii_root,
+        wiki_root=wiki_root,
+        source_file=None,
+        data_root=data_root,
+        source_relpath=None,
+        auto_integrate=auto_integrate,
+        expert_context=expert_context,
+        integrator_config=integrator_config,
+    )
 
     return results
 
@@ -437,6 +536,16 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Reintegrate every selected object even when its text and settings "
+            "are unchanged. Without this, objects already recorded in the "
+            "manifest with the same fingerprint are skipped."
+        ),
+    )
+
+    parser.add_argument(
         "--integrator-option",
         action="append",
         default=[],
@@ -520,28 +629,30 @@ def main() -> int:
         else:
             file_ids = selected_file_ids
 
-        results = []
-
-        for file_id in file_ids:
-            print(f"Updating wiki from existing OSII object: {file_id}")
-
-            result = process_one_object(
-                file_id=file_id,
-                osii_root=osii_root,
-                wiki_root=wiki_root,
-                source_file=source_file,
-                data_root=data_root,
-                source_relpath=args.source_relpath,
-                auto_integrate=args.auto_integrate,
-                expert_context=args.expert_context,
-                integrator_config=integrator_config,
-            )
-
-            results.append(result)
+        results, failures = _process_many(
+            file_ids=file_ids,
+            osii_root=osii_root,
+            wiki_root=wiki_root,
+            source_file=source_file,
+            data_root=data_root,
+            source_relpath=args.source_relpath,
+            auto_integrate=args.auto_integrate,
+            expert_context=args.expert_context,
+            integrator_config=integrator_config,
+            force=args.force,
+            progress=True,
+        )
 
     except Exception as exc:
+        # Only setup can reach here now; a failing document is recorded and the
+        # run continues.
         print(f"ERROR: OSII-to-wiki update failed: {exc}", file=sys.stderr)
         return 1
+
+    skipped = [
+        result for result in results
+        if (result.get("integration_result") or {}).get("skipped")
+    ]
 
     print(
         json.dumps(
@@ -549,12 +660,23 @@ def main() -> int:
                 "osii_root": str(osii_root),
                 "wiki_root": str(wiki_root),
                 "processed_count": len(results),
+                "skipped_count": len(skipped),
+                "failed_count": len(failures),
                 "processed_file_ids": file_ids,
+                "failures": failures,
                 "results": results,
             },
             indent=2,
         )
     )
+
+    if failures:
+        print(
+            f"\n{len(failures)} of {len(file_ids)} objects failed; "
+            f"{len(results) - len(skipped)} integrated, {len(skipped)} skipped as unchanged.",
+            file=sys.stderr,
+        )
+        return 1
 
     return 0
 
