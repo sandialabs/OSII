@@ -6,6 +6,8 @@ from osii.domain.scopes.membership import list_scope_file_ids
 from osii.domain.artifacts.text_representations import get_preferred_text_representation
 
 
+# Just adding a test comment
+
 def collect_scope_texts(osii_root: Path, scope: dict) -> tuple[list[dict], int]:
     file_ids = list_scope_file_ids(osii_root, scope)
     items = []
