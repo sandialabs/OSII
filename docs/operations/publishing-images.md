@@ -1,25 +1,25 @@
 # Corporate pilot images and Quay releases
 
-Optional OCR, dataset, and model images now have their source in the main
-repository's `osii-toolbox/` directory, whose README has separate copy-paste build,
-run, and Quay push commands. They are not added to the three-image release
-command below. In particular, the current root Compose file also expects the
-Tesseract image; build/publish `-tesseract` with matching prefix/tag before
-running that bundle. MiniLM and Model2Vec remain explicit opt-in builds.
+The main repository's `osii-toolbox/` directory owns specialized images.
+Tesseract is the one bundled, default-swappable Toolbox service, so the normal
+release build and push commands include it. Dataset and model tools remain
+explicit opt-in images with their own build, run, and Quay commands.
 
-OSII has one user-facing product launch and three image artifacts:
+OSII has one user-facing product launch and four image artifacts:
 
 | Image suffix | Runs |
 |---|---|
 | `-core` | API, worker, and grounded chat |
 | `-dashboard` | Static dashboard and API proxy |
 | `-baseline-processors` | Extractor, synthesizer, embedder, enricher, or model bridge |
+| `-tesseract` | Bundled OpenCV/Tesseract OCR extractor, replaceable through Processor API configuration |
 
-The deployment starts eight containers: the core image runs API and worker;
+The deployment starts nine containers: the core image runs API and worker;
 the baseline image runs five independently addressable processor/adapter
-commands; and the dashboard serves the browser experience. Image count and
-container count intentionally differ. Users run one Compose command and do not
-need to manage these internal process boundaries individually.
+commands; Tesseract runs as a distinct OCR process; and the dashboard serves
+the browser experience. Image count and container count intentionally differ.
+Users run one Compose command and do not need to manage these internal process
+boundaries individually.
 
 Chat is part of the core because it uses the same scoped retrieval and
 provenance model as the API. It has no persistence of its own. Optional model
@@ -145,7 +145,7 @@ Set `OSII_TESSERACT_BASE_IMAGE` separately when the approved internal
 RHEL-family image exposes those RPMs. Apache Tika remains an upstream optional
 image rather than an OSII-built image.
 
-MCP, Tika, Tesseract OCR, and example processors remain optional. Ollama and
+MCP, Tika, and non-bundled Toolbox processors remain optional. Ollama and
 the upstream OpenAI-compatible service are separately managed endpoints; OSII publishes no
 model weights or private provider packages.
 
@@ -157,11 +157,11 @@ runner/network policy, and required scanning/signing/retention policy. Keep
 registry credentials in the approved CI secret or identity mechanism, never in
 this repository or `.env`.
 
-CI validates the three release images and starts the complete packaged stack on
+CI validates the four release images and starts the complete packaged stack on
 every change. Publishing remains an approved, version-tagged release action
 until the corporate registry team supplies those details.
 
-## Build the three release images
+## Build the four release images
 
 Use a version tag rather than relying only on `latest`:
 
@@ -178,6 +178,7 @@ This produces:
 quay.io/your-organization/osii-core:0.1.0
 quay.io/your-organization/osii-dashboard:0.1.0
 quay.io/your-organization/osii-baseline-processors:0.1.0
+quay.io/your-organization/osii-tesseract:0.1.0
 ```
 
 On Windows PowerShell:
@@ -190,7 +191,7 @@ On Windows PowerShell:
 
 ## Push after review
 
-Authenticate, inspect the three local tags, and push intentionally:
+Authenticate, inspect the four local tags, and push intentionally:
 
 ```bash
 podman login quay.io
@@ -210,7 +211,7 @@ podman login quay.io
 
 `push-release` refuses the default `localhost/` prefix. It does not create Quay
 permissions or repositories; the authenticated account or robot token must be
-authorized for all three target names.
+authorized for all four target names.
 
 ## Run a corporate pilot
 

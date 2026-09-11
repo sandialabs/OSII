@@ -1,18 +1,19 @@
 # OSII Toolbox: deploy and publish
 
-Optional tools now live here, **inside the main OSII repository**. You need only
-one checkout. They still run independently: moving their source here does not
-install their dependencies, start them with `make dev`, or change your selected
-processors. The shared Processor SDK stays in `osii-core/processor-sdk/`.
+Specialized tools live here, **inside the main OSII repository**. You need only
+one checkout. Tesseract is bundled in the packaged release as a
+default-swappable OCR extractor; the remaining tools are optional and run only
+when a deployment selects them. None are installed or started by `make dev`.
+The shared Processor SDK stays in `osii-core/processor-sdk/`.
 
 ## Pick the capability you need
 
-| Folder / image suffix | What it does | API | Host port in this guide |
-|---|---|---|---|
-| [osii-tesseract](osii-tesseract/README.md) / `-tesseract` | OpenCV region detection + Tesseract OCR; text and page bounding boxes | Processor API extractor | 8080 |
-| [tabular-dataset-processors](tabular-dataset-processors/README.md) / `-tabular-dataset-processors` | CSV rows as standard tables; collection tables retaining row provenance | Processor API extractor and enricher; **one image, two processes** | 8097 / 8098 |
-| [minilm-embedding-service](minilm-embedding-service/README.md) / `-minilm-embedding` | CPU MiniLM semantic embeddings, 384 dimensions | OpenAI-compatible `/v1/embeddings`, **not** Processor API | 8086 |
-| [model2vec-embedder](model2vec-embedder/README.md) / `-model2vec-embedder` | Experimental semantic embeddings from an explicitly staged model | Processor API embedder | 8087 |
+| Folder / image suffix | Release policy | What it does | API | Host port in this guide |
+|---|---|---|---|---|
+| [osii-tesseract](osii-tesseract/README.md) / `-tesseract` | Bundled, default-swappable | OpenCV region detection + Tesseract OCR; text and page bounding boxes | Processor API extractor | 8080 |
+| [tabular-dataset-processors](tabular-dataset-processors/README.md) / `-tabular-dataset-processors` | Explicit opt-in | CSV rows as standard tables; collection tables retaining row provenance | Processor API extractor and enricher; **one image, two processes** | 8097 / 8098 |
+| [minilm-embedding-service](minilm-embedding-service/README.md) / `-minilm-embedding` | Explicit opt-in | CPU MiniLM semantic embeddings, 384 dimensions | OpenAI-compatible `/v1/embeddings`, **not** Processor API | 8086 |
+| [model2vec-embedder](model2vec-embedder/README.md) / `-model2vec-embedder` | Explicit opt-in | Experimental semantic embeddings from an explicitly staged model | Processor API embedder | 8087 |
 
 That is **four possible images, five containers if you run every capability**.
 You need not publish or run all of them. Apache Tika is an upstream image and
@@ -35,7 +36,7 @@ CA files remain outside Git and are installed into private images only. See
 for validation, trust, and rotation behavior before adapting the root build
 flags to a standalone Toolbox build.
 
-## Build the two starter images
+## Build an optional Tool Chest image
 
 Run from the **OSII repository root**, not this folder. Podman must be running
 (on macOS/Windows, start its machine first if needed). Docker is also supported:
@@ -61,36 +62,34 @@ $TOOLBOX_TAG = "0.1.0"
 All the following one-line commands work in **both shells**:
 
 ```sh
-podman build --format docker --platform linux/amd64 -f osii-toolbox/osii-tesseract/Dockerfile -t "${TOOLBOX_PREFIX}-tesseract:${TOOLBOX_TAG}" .
 podman build --format docker --platform linux/amd64 -f osii-toolbox/tabular-dataset-processors/Dockerfile -t "${TOOLBOX_PREFIX}-tabular-dataset-processors:${TOOLBOX_TAG}" .
 ```
+
+`make build` builds the bundled `-tesseract` image with the same root release
+prefix and tag. Build it directly only for isolated Toolbox development.
 
 These commands target typical x86-64 Windows/Linux deployment machines. An
 Apple Silicon Mac needs working x86 emulation and builds may be slow; use a
 Linux x86-64 builder if necessary. For an ARM-only local test, omit `--platform`
 and use a different tag. A single-platform image is not a multi-architecture
 release. Builds install dependencies and require package-registry access;
-running these two finished images requires no model download.
+running the finished image requires no model download.
 
 ## Run and check before pushing
 
-These launch only the chosen tools, not OSII itself. Leave `make dev` or
-`.\scripts\osii.ps1 dev` running in its own terminal. If port 8080 already hosts
-Tesseract, reuse that service or stop it through its owner before starting another.
+These launch only the selected optional tools, not OSII itself. Leave `make dev`
+or `.\scripts\osii.ps1 dev` running in its own terminal.
 
 ```sh
-podman run -d --name osii-tesseract -p 127.0.0.1:8080:8080 -e ENABLE_DEMO=false "${TOOLBOX_PREFIX}-tesseract:${TOOLBOX_TAG}"
 podman run -d --name osii-csv-table-extractor -p 127.0.0.1:8097:8097 "${TOOLBOX_PREFIX}-tabular-dataset-processors:${TOOLBOX_TAG}" extractor
 podman run -d --name osii-collection-table-enricher -p 127.0.0.1:8098:8098 "${TOOLBOX_PREFIX}-tabular-dataset-processors:${TOOLBOX_TAG}" enricher
 podman ps
-podman logs --tail 50 osii-tesseract
 ```
 
 Open each service's `/health`, `/v1/descriptor`, and `/docs`, for example
-<http://127.0.0.1:8080/docs> and <http://127.0.0.1:8097/docs>. Health confirms
-the HTTP process is up, not OCR accuracy; exercise one document in `/docs` or
-Intake before publishing. Set `ENABLE_DEMO=true` when starting Tesseract if you
-want its interactive region-tuning page at `/demo`.
+<http://127.0.0.1:8097/docs>. Health confirms the HTTP process is up, not
+extraction accuracy; exercise one document in `/docs` or Intake before
+publishing.
 
 In **Setup**, register these as custom **Processor API** endpoints, test them,
 then select the extractor/routing or enrichment you want. Alternatively append
@@ -98,7 +97,7 @@ the URLs to `OSII_PROCESSORS` in the ignored root `.env` and restart OSII:
 
 ```dotenv
 # Preserve any existing URLs too; this is an example, not an append operation.
-OSII_PROCESSORS=http://127.0.0.1:8080,http://127.0.0.1:8097,http://127.0.0.1:8098
+OSII_PROCESSORS=http://127.0.0.1:8097,http://127.0.0.1:8098
 ```
 
 Do not mount `.osii` or your document directories into these containers. Core
@@ -109,20 +108,19 @@ above are for host development; a remote deployment needs its own private
 network, access control, and TLS gateway.
 
 Inspect a failure with `podman logs --tail 100 CONTAINER_NAME`. Stop the examples
-with `podman stop osii-tesseract osii-csv-table-extractor osii-collection-table-enricher`;
+with `podman stop osii-csv-table-extractor osii-collection-table-enricher`;
 `podman start CONTAINER_NAME` reuses them. To adopt a rebuilt image, stop and
 remove only the named tool container, then repeat its `podman run` command.
 
 ## Push the starter images to Quay
 
-Create the two Quay repositories in your namespace (choose private/public
-deliberately), or confirm your account has permission to create them on push.
+Create the Quay repository in your namespace (choose private/public
+deliberately), or confirm your account has permission to create it on push.
 Login prompts for registry credentials; never put them in these commands or Git.
 Run each push only after its build and smoke test succeed:
 
 ```sh
 podman login quay.io
-podman push "${TOOLBOX_PREFIX}-tesseract:${TOOLBOX_TAG}"
 podman push "${TOOLBOX_PREFIX}-tabular-dataset-processors:${TOOLBOX_TAG}"
 ```
 
@@ -130,14 +128,13 @@ On another machine, set the same two variables, run `podman login quay.io` for
 private images, then:
 
 ```sh
-podman pull "${TOOLBOX_PREFIX}-tesseract:${TOOLBOX_TAG}"
 podman pull "${TOOLBOX_PREFIX}-tabular-dataset-processors:${TOOLBOX_TAG}"
 ```
 
 Use the same `podman run` commands above. The root Compose deployment already
 references `osii-tesseract` via `OSII_IMAGE_PREFIX` / `OSII_IMAGE_TAG`; use matching
-values for that deployment. The Toolbox builds/pushes are explicit and separate
-from Core's existing three-image `make build` / `push-release` workflow.
+values for that deployment. Root `make build` / `push-release` includes that
+bundled image; Toolbox builds and pushes remain explicit for optional tools.
 
 Before a real release, review licenses, scan images/dependencies, and record
 image digests. Existing dependency pins are carried over from the Tool Chest,

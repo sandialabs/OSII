@@ -246,8 +246,8 @@ function Show-OsiiHelp {
     Write-Host "  .\scripts\osii.ps1 down       Stop the container deployment"
     Write-Host "  .\scripts\osii.ps1 doctor     Report disk usage; never deletes files"
     Write-Host ""
-    Write-Host "Normal use needs only 'demo' or 'dev'. Optional AI and OCR services are"
-    Write-Host "connected or started from the Setup page after launch."
+    Write-Host "Normal source development needs only 'demo' or 'dev'. Optional AI, Tika,"
+    Write-Host "and non-bundled Toolbox services are connected from the Setup page."
     Write-Host "For direct-network Podman containers, add -DisableContainerProxies."
     Write-Host "To add local corporate trust during a build, add -CaBundle C:\path\to\roots.pem."
 }
@@ -297,13 +297,13 @@ try {
             Invoke-OsiiCompose @("logs", "-f")
         }
         "build" {
-            Invoke-OsiiCompose @("build", "api", "dashboard", "local-extractor")
+            Invoke-OsiiCompose @("build", "api", "dashboard", "local-extractor", "tesseract")
         }
         "push-release" {
             if ($ImagePrefix.StartsWith("localhost/")) {
                 throw "Set -ImagePrefix to a registry path such as quay.io/your-org/osii."
             }
-            Invoke-OsiiCompose @("push", "api", "dashboard", "local-extractor")
+            Invoke-OsiiCompose @("push", "api", "dashboard", "local-extractor", "tesseract")
         }
         "doctor" {
             & uv run --no-project --python $PythonVersion python scripts/disk_usage.py

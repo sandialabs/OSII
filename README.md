@@ -142,7 +142,7 @@ security details.
 ## Build deployment images with an approved base image
 
 Most people should begin with `make demo` or `make dev` above. Use this section
-when you are ready to build the three packaged OSII images for Podman. These
+when you are ready to build the four packaged OSII images for Podman. These
 commands choose the base image for this build only; they do not permanently
 change your shell or repository configuration.
 
@@ -231,11 +231,11 @@ Otherwise, start them normally:
 The base image must provide `dnf` and access to the required RHEL packages;
 each OSII image then installs its tested Python 3.12 runtime with uv. Tesseract
 OCR has a separate base-image setting because it needs native OCR packages and
-is not one of the three normal release images. Docker Compose remains available
+is the fourth bundled release image. Docker Compose remains available
 with `COMPOSE='docker compose'`, but strict removal of proxy settings inherited
 from a custom base image is guaranteed only on the supported Podman path. See
 [publishing and running images](docs/operations/publishing-images.md) for image
-names, tags, registries, and the Tesseract exception.
+names, tags, registries, and the dedicated Tesseract base-image setting.
 
 `OSII_CA_BUNDLE`/`-CaBundle` is explicit and build-only. OSII validates that the
 file contains PEM certificates and no private key, prints its SHA-256
@@ -256,7 +256,7 @@ keep the PEM under the repository root, use the ignored `.osii-certs/` folder.
 | Build an external processor against the stable public contract | [Processor API v1](docs/reference/processor-api/index.md) |
 | Work with tables and datasets | [Tabular dataset walkthrough](docs/tutorials/tabular-datasets.md) |
 | Run packaged deployment images instead of editable source | [Publish and run images](docs/operations/publishing-images.md) |
-| Deploy or publish optional OCR, dataset, and embedding tools | [Toolbox: deployment and Quay commands](osii-toolbox/README.md) |
+| Deploy or publish optional dataset and embedding tools, or inspect bundled OCR | [Toolbox: deployment and Quay commands](osii-toolbox/README.md) |
 | Find a REST route or schema | [REST API overview](docs/reference/api/index.md) and [OpenAPI schema](osii-core/docs/api/openapi.yaml) |
 
 ## How this repository is organized
@@ -273,8 +273,9 @@ are intentional and reflected directly in the root names:
   They run automatically during local development and remain independently
   addressable and containerizable.
 - **`osii-dashboard/`** and **`osii-mcp/`** are human and agent clients of Core.
-- **`osii-toolbox/`** contains optional OCR, dataset, and model-backed tools
-  whose heavier dependencies do not belong in Core.
+- **`osii-toolbox/`** contains the bundled, default-swappable Tesseract OCR
+  image plus optional dataset and model-backed tools whose dependencies do not
+  belong in Core.
 - **`osii-demo-notebooks/`**, **`docs/`**, and **`scripts/`** provide learning,
   reference, and cross-platform operating support.
 

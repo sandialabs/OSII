@@ -66,8 +66,8 @@ help:
 	@echo "  make down       Stop the container deployment"
 	@echo "  make doctor     Report disk usage; never deletes files"
 	@echo ""
-	@echo "Normal use needs only 'make demo' or 'make dev'. Optional AI and OCR"
-	@echo "services are connected or started from the Setup page after launch."
+	@echo "Normal source development needs only 'make demo' or 'make dev'. Optional AI,"
+	@echo "Tika, and non-bundled Toolbox services are connected from the Setup page."
 	@echo "For direct-network Podman containers, append DISABLE_CONTAINER_PROXIES=true."
 	@echo "To add local corporate trust, append OSII_CA_BUNDLE=/path/to/roots.pem."
 
@@ -120,16 +120,17 @@ test:
 	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with pytest --with 'uvicorn[standard]' python -m pytest osii-core/services/baseline-processors/tests
 	cd osii-dashboard/dashboard && npm test --if-present && npm run build
 
-# Build the three publishable release images. API and worker share core; the
-# baseline processor services share one selectable-command image.
+# Build the four publishable release images. API and worker share core; the
+# baseline processor services share one selectable-command image; the bundled,
+# default-swappable Tesseract OCR extractor keeps its independent image.
 build:
 	$(require_podman_proxy_control)
 	$(validate_ca_bundle)
-	$(COMPOSE) $(PODMAN_CA_BUILD_ARGUMENTS) $(PODMAN_PROXY_BUILD_ARGUMENTS) build api dashboard local-extractor
+	$(COMPOSE) $(PODMAN_CA_BUILD_ARGUMENTS) $(PODMAN_PROXY_BUILD_ARGUMENTS) build api dashboard local-extractor tesseract
 
 push-release:
 	@if echo "$(OSII_IMAGE_PREFIX)" | grep -q '^localhost/'; then echo "Set OSII_IMAGE_PREFIX to a registry path such as quay.io/your-org/osii."; exit 2; fi
-	$(COMPOSE) push api dashboard local-extractor
+	$(COMPOSE) push api dashboard local-extractor tesseract
 
 docs:
 	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) python scripts/check_docs_links.py
