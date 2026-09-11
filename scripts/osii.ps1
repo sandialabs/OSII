@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("help", "dev", "demo", "demo-data", "run", "build", "push-release", "down", "logs", "doctor")]
+    [ValidateSet("help", "dev", "dev-shared", "demo", "demo-data", "run", "run-shared", "build", "push-release", "down", "logs", "doctor")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
@@ -16,6 +16,12 @@ param(
     [string]$TesseractBaseImage = "",
 
     [string]$PythonVersion = "",
+
+    [string]$CaBundle = "",
+
+    [string]$SourceDir = "",
+
+    [string]$RuntimeDir = "",
 
     [switch]$InsecureRegistries,
 
@@ -40,6 +46,15 @@ if (-not $TesseractBaseImage) {
 if (-not $PythonVersion) {
     $PythonVersion = if ($env:OSII_PYTHON_VERSION) { $env:OSII_PYTHON_VERSION } else { "3.12" }
 }
+if (-not $CaBundle -and $env:OSII_CA_BUNDLE) {
+    $CaBundle = $env:OSII_CA_BUNDLE
+}
+if ($SourceDir) {
+    $env:OSII_SOURCE_DIR = $SourceDir
+}
+if ($RuntimeDir) {
+    $env:OSII_RUNTIME_DIR = $RuntimeDir
+}
 $env:OSII_IMAGE_PREFIX = $ImagePrefix
 $env:OSII_IMAGE_TAG = $ImageTag
 $env:OSII_BASE_IMAGE = $BaseImage
@@ -55,6 +70,71 @@ else {
     $ComposePrefix = @()
 }
 $env:OSII_COMPOSE_COMMAND = if ($Runtime -eq "Docker") { "docker compose" } else { "podman-compose" }
+
+function Test-OsiiCaBundle {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "CA bundle is not a readable file: $Path"
+    }
+    $ResolvedPath = (Resolve-Path -LiteralPath $Path).Path
+    $Bytes = [System.IO.File]::ReadAllBytes($ResolvedPath)
+    if ($Bytes.Length -eq 0) {
+        throw "CA bundle is empty."
+    }
+    if ($Bytes.Length -gt 10MB) {
+        throw "CA bundle is larger than 10 MiB."
+    }
+
+    $Contents = [System.Text.Encoding]::ASCII.GetString($Bytes)
+    if ($Contents -match "-----BEGIN [^-\r\n]*PRIVATE KEY-----") {
+        throw "CA bundle contains a private key; provide public certificates only."
+    }
+    $Certificates = [regex]::Matches(
+        $Contents,
+        "-----BEGIN CERTIFICATE-----\s*(.*?)\s*-----END CERTIFICATE-----",
+        [System.Text.RegularExpressions.RegexOptions]::Singleline
+    )
+    if ($Certificates.Count -eq 0) {
+        throw "CA bundle does not contain a PEM CERTIFICATE block."
+    }
+    if (([regex]::Matches($Contents, "-----BEGIN CERTIFICATE-----")).Count -ne $Certificates.Count) {
+        throw "CA bundle contains an incomplete CERTIFICATE block."
+    }
+
+    foreach ($CertificateMatch in $Certificates) {
+        try {
+            $Encoded = [regex]::Replace($CertificateMatch.Groups[1].Value, "\s+", "")
+            $CertificateBytes = [Convert]::FromBase64String($Encoded)
+            $Certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($CertificateBytes)
+            if ($Certificate.HasPrivateKey) {
+                throw "Certificate unexpectedly contains a private key."
+            }
+            $Certificate.Dispose()
+        }
+        catch {
+            throw "CA bundle contains invalid PEM-encoded X.509 data: $($_.Exception.Message)"
+        }
+    }
+
+    $Digest = (Get-FileHash -LiteralPath $ResolvedPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    Write-Host "Validated $($Certificates.Count) public certificate(s). Bundle SHA-256: $Digest"
+    return @{ Path = $ResolvedPath; Digest = $Digest }
+}
+
+function Assert-OsiiSharedDrive {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+        throw "Shared drive is unavailable or is not a folder: $Path. Connect it in Windows, then try again."
+    }
+    try {
+        Get-ChildItem -LiteralPath $Path -Force -ErrorAction Stop | Select-Object -First 1 | Out-Null
+    }
+    catch {
+        throw "Shared drive cannot be read: $Path. $($_.Exception.Message)"
+    }
+}
 
 function Invoke-OsiiCompose {
     param([string[]]$Arguments)
@@ -95,6 +175,28 @@ function Invoke-OsiiCompose {
             }
             $SecurityArguments += "--podman-run-args=$($RunOptions -join ' ')"
         }
+    }
+    if ($CaBundle -and $ComposeAction -eq "build") {
+        if ($Runtime -ne "Podman") {
+            throw "-CaBundle requires Podman so the certificate file can be passed as a build secret."
+        }
+        $ValidatedBundle = Test-OsiiCaBundle -Path $CaBundle
+        if ($ValidatedBundle.Path.Contains('"')) {
+            throw "The CA bundle path cannot contain a double-quote character."
+        }
+        $CaBuildOptions = @(
+            "--secret=id=osii_ca_bundle,src=`"$($ValidatedBundle.Path)`"",
+            "--mount=type=secret,id=osii_ca_bundle",
+            "--build-arg",
+            "OSII_CA_BUNDLE_SHA256=$($ValidatedBundle.Digest)",
+            "--env", "SSL_CERT_FILE=/etc/pki/tls/certs/ca-bundle.crt",
+            "--env", "REQUESTS_CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt",
+            "--env", "CURL_CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt",
+            "--env", "PIP_CERT=/etc/pki/tls/certs/ca-bundle.crt",
+            "--env", "UV_NATIVE_TLS=true",
+            "--env", "NODE_EXTRA_CA_CERTS=/etc/pki/ca-trust/source/anchors/osii-local-ca-bundle.pem"
+        )
+        $SecurityArguments += "--podman-build-args=$($CaBuildOptions -join ' ')"
     }
     & $ComposeExecutable @ComposePrefix @SecurityArguments @Arguments
     if ($LASTEXITCODE -ne 0) {
@@ -138,13 +240,16 @@ function Show-OsiiHelp {
     Write-Host "OSII startup commands"
     Write-Host "  .\scripts\osii.ps1 demo       Install the example files and start OSII"
     Write-Host "  .\scripts\osii.ps1 dev        Start OSII with files already in osii-data\source"
+    Write-Host "  .\scripts\osii.ps1 dev-shared Start OSII against an already connected shared drive"
     Write-Host "  .\scripts\osii.ps1 run        Start previously built container images"
+    Write-Host "  .\scripts\osii.ps1 run-shared Start images with an already connected shared drive"
     Write-Host "  .\scripts\osii.ps1 down       Stop the container deployment"
     Write-Host "  .\scripts\osii.ps1 doctor     Report disk usage; never deletes files"
     Write-Host ""
     Write-Host "Normal use needs only 'demo' or 'dev'. Optional AI and OCR services are"
     Write-Host "connected or started from the Setup page after launch."
     Write-Host "For direct-network Podman containers, add -DisableContainerProxies."
+    Write-Host "To add local corporate trust during a build, add -CaBundle C:\path\to\roots.pem."
 }
 
 Push-Location $RepositoryRoot
@@ -156,6 +261,16 @@ try {
         "dev" {
             Invoke-OsiiDevLauncher
         }
+        "dev-shared" {
+            if (-not $SourceDir) {
+                throw "dev-shared requires -SourceDir with a mapped drive or UNC folder that Windows can already read."
+            }
+            Assert-OsiiSharedDrive -Path $SourceDir
+            $env:OSII_SOURCE_DIR = $SourceDir
+            $env:OSII_RUNTIME_DIR = if ($RuntimeDir) { $RuntimeDir } else { ".\osii-data\shared-drive" }
+            $env:OSII_SOURCE_KIND = "shared"
+            Invoke-OsiiDevLauncher
+        }
         "demo" {
             Import-OsiiExampleData
             Invoke-OsiiDevLauncher
@@ -164,6 +279,15 @@ try {
             Import-OsiiExampleData
         }
         "run" {
+            Invoke-OsiiCompose @("up", "--no-build", "--pull", "missing", "tesseract", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "dashboard")
+        }
+        "run-shared" {
+            if (-not $SourceDir) {
+                throw "run-shared requires -SourceDir with a mapped drive or UNC folder that Windows and Podman can already read."
+            }
+            Assert-OsiiSharedDrive -Path $SourceDir
+            $env:OSII_SOURCE_DIR = $SourceDir
+            $env:OSII_SOURCE_KIND = "shared"
             Invoke-OsiiCompose @("up", "--no-build", "--pull", "missing", "tesseract", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "dashboard")
         }
         "down" {

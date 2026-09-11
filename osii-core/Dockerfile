@@ -3,6 +3,7 @@ FROM ${OSII_BASE_IMAGE}
 
 ARG OSII_VERSION=development
 ARG OSII_PYTHON_VERSION=3.12
+ARG OSII_CA_BUNDLE_SHA256=none
 LABEL org.opencontainers.image.title="OSII Core" \
       org.opencontainers.image.description="API, worker, and grounded chat runtime for the On-Store Intelligence Index" \
       org.opencontainers.image.source="https://github.com/heidikmkv/osii" \
@@ -14,6 +15,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
     VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# When the launcher supplies osii_ca_bundle as a Podman build secret, install
+# its public certificates without adding the source file to the build context.
+RUN echo "OSII CA bundle SHA-256: ${OSII_CA_BUNDLE_SHA256}" && \
+    if [ -f /run/secrets/osii_ca_bundle ]; then \
+        mkdir -p /etc/pki/ca-trust/source/anchors && \
+        cp /run/secrets/osii_ca_bundle /etc/pki/ca-trust/source/anchors/osii-local-ca-bundle.pem && \
+        chmod 0644 /etc/pki/ca-trust/source/anchors/osii-local-ca-bundle.pem && \
+        update-ca-trust; \
+    fi
 
 # The base image supplies only the bootstrap Python. uv installs the application
 # interpreter so changing to an approved RHEL-family base does not change OSII's

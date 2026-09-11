@@ -28,6 +28,13 @@ language packages; override it with
 when the selected RHEL-family base exposes those packages. These switches alter
 packaging only; they do not change Processor API behavior.
 
+Every OSII-authored Toolbox Dockerfile also accepts the optional
+`osii_ca_bundle` Podman build secret used by the root build workflow. Corporate
+CA files remain outside Git and are installed into private images only. See
+[Inject local corporate certificate authorities](../docs/operations/publishing-images.md#inject-local-corporate-certificate-authorities)
+for validation, trust, and rotation behavior before adapting the root build
+flags to a standalone Toolbox build.
+
 ## Build the two starter images
 
 Run from the **OSII repository root**, not this folder. Podman must be running

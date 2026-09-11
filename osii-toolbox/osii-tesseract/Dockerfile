@@ -5,11 +5,20 @@ ARG OSII_TESSERACT_BASE_IMAGE=registry.fedoraproject.org/fedora:latest
 FROM ${OSII_TESSERACT_BASE_IMAGE}
 
 ARG OSII_PYTHON_VERSION=3.12
+ARG OSII_CA_BUNDLE_SHA256=none
 ENV PYTHONUNBUFFERED=1 \
     UV_PYTHON_INSTALL_DIR=/opt/uv/python \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
     VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+RUN echo "OSII CA bundle SHA-256: ${OSII_CA_BUNDLE_SHA256}" && \
+    if [ -f /run/secrets/osii_ca_bundle ]; then \
+        mkdir -p /etc/pki/ca-trust/source/anchors && \
+        cp /run/secrets/osii_ca_bundle /etc/pki/ca-trust/source/anchors/osii-local-ca-bundle.pem && \
+        chmod 0644 /etc/pki/ca-trust/source/anchors/osii-local-ca-bundle.pem && \
+        update-ca-trust; \
+    fi
 
 RUN dnf install -y \
         python3 \

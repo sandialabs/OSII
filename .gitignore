@@ -1,5 +1,6 @@
 # Environment and credentials
 .env
+.osii-certs/
 .env.*
 !.env.example
 !.env.commercial.example

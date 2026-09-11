@@ -40,6 +40,7 @@ def temp_upload_root(tmp_path: Path) -> Path:
 def test_app(temp_data_root: Path, temp_osii_root: Path, temp_upload_root: Path):
     app.state.shared_volume_root = temp_data_root
     app.state.shared_volume_host_path = str(temp_data_root)
+    app.state.source_kind = "local"
     app.state.osii_root = temp_osii_root
     app.state.upload_originals_root = temp_upload_root
     return app

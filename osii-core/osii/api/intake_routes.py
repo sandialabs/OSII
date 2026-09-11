@@ -19,6 +19,7 @@ from osii.domain.processing.capability_readiness import intake_capability_readin
 from osii.domain.processing.reconcile import reconcile_osii_with_source
 from osii.domain.processing.reconcile_apply import apply_source_path_reconciliation
 from osii.domain.processing.pathing import display_rel, path_within
+from osii.domain.processing.source_access import source_access_summary
 from osii.domain.catalog_db import rebuild_catalog
 
 router = APIRouter(prefix="/api", tags=["intake"])
@@ -51,7 +52,14 @@ def safe_resolve_user_path(raw: str | None, fallback: Path) -> Path:
 
 @router.get("/intake/readiness")
 async def intake_readiness(request: Request):
-    return intake_capability_readiness(request.app.state.osii_root.resolve())
+    osii_root = request.app.state.osii_root.resolve()
+    payload = intake_capability_readiness(osii_root)
+    payload["source"] = source_access_summary(
+        request.app.state.shared_volume_root,
+        osii_root,
+        configured_kind=getattr(request.app.state, "source_kind", "auto"),
+    )
+    return payload
 
 
 @router.post("/intake/rescan-sources")

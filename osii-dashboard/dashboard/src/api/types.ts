@@ -624,6 +624,17 @@ export type IntakeReadiness = {
   embedders: CapabilityReadiness[];
   enrichers: CapabilityReadiness[];
   external: CapabilityReadiness[];
+  source?: {
+    kind: "local" | "shared";
+    source_root: string;
+    osii_root: string;
+    available: boolean;
+    readable: boolean;
+    source_mode: "read_write" | "read_only" | "unavailable";
+    osii_writable: boolean;
+    ready_for_intake: boolean;
+    detail?: string | null;
+  };
   semantic_indexes?: Array<{
     index_id: string;
     provider_id: string;

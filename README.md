@@ -2,20 +2,22 @@
 
 > **Keep the evidence. Grow the intelligence.**
 
-OSII (the On-Store Intelligence Index) turns a folder of files into a local,
-inspectable intelligence layer. It lets people browse, search, and build on
-their own material without handing the original corpus to a single model,
-database, or application.
+OSII (the On-Store Intelligence Index) turns a folder of documents and datasets
+into a library you can browse, search, enrich, and ask questions about. It runs
+locally, works without an AI model, and can use approved AI services when they
+are available.
 
-The central promise is simple: OSII leaves source files alone and records its
-work in a portable sidecar beside them. Every extracted passage, table,
-summary, and answer can retain a path back to the material it came from.
+The central promise is simple: **your original files stay where they are and
+OSII does not alter them.** OSII records extracted text, tables, summaries,
+search indexes, and provenance in a neighboring `.osii` folder. That portable
+folder is the *sidecar*: it can be inspected, rebuilt, transferred, or removed
+without changing the source material.
 
 [Start the documentation](docs/index.md) ·
 [Learn through Python examples](osii-demo-notebooks/README.md) ·
 [Understand the architecture](docs/concepts/architecture.md)
 
-## The idea at a glance
+## What happens when you use OSII
 
 ```text
 Your files                         OSII's portable sidecar
@@ -29,7 +31,12 @@ reports, PDFs, CSVs, notes  --->   extracted text and source locations
                                               REST, MCP, and custom processors
 ```
 
-This is why OSII is deliberately modular:
+You interact with the result through the dashboard, Python, REST, or MCP. A
+normal first run needs no containers and no model download. Later, you can add
+Ollama, an OpenAI-compatible endpoint, OCR, or a domain-specific processor
+without replacing the library you already built.
+
+Four ideas guide the project:
 
 - **Grounding before generation.** A model may help interpret material, but it
   is not the source of truth.
@@ -40,11 +47,11 @@ This is why OSII is deliberately modular:
 - **One shared vocabulary.** People, scripts, the dashboard, REST clients, and
   agents use the same objects, scopes, artifacts, and provenance.
 
-## Quick start: explore OSII with the built-in demo
+## Start here: explore the built-in demo
 
-This is the shortest route for a technically curious person who wants to see
-OSII working before configuring models, OCR, containers, or custom services.
-It uses the local, model-free baseline and public demonstration data.
+This is the shortest route to seeing OSII work. It uses public demonstration
+data and the built-in model-free baseline, so you can postpone decisions about
+AI providers, OCR, and containers.
 
 Before starting, install [uv](https://docs.astral.sh/uv/) and Node.js/npm. On
 macOS or Linux, you also need `make`. OSII asks uv for its tested Python 3.12
@@ -102,6 +109,141 @@ To use a source folder elsewhere on your computer, copy `.env.example` to
 `.env` and set `OSII_SOURCE_DIR`. The `.env` file is optional for the default
 layout. See [local-first operation](docs/operations/local-first.md) for the
 cross-platform details and optional capabilities.
+
+### Use a shared drive or Samba share
+
+First connect the share through Windows, Finder, or your Linux desktop so it
+appears as an ordinary folder. OSII never asks for or stores the share password.
+It reads originals in place—even when they are read-only—and keeps the writable
+`.osii` artifacts locally.
+
+macOS or Linux, after mounting the share:
+
+```bash
+make dev-shared SHARED_DRIVE_PATH="/Volumes/Team Documents"
+```
+
+Windows PowerShell accepts either a mapped drive or a UNC path:
+
+```powershell
+.\scripts\osii.ps1 dev-shared `
+  -SourceDir '\\server\share\Team Documents'
+```
+
+By default, this shared-drive profile stores artifacts under
+`osii-data/shared-drive/`. Use `SHARED_DRIVE_DATA=/local/path` on macOS/Linux or
+`-RuntimeDir "D:\OSII\team-share"` on Windows to choose another local location.
+If the share is disconnected or unreadable, startup explains that directly
+instead of creating an empty folder with the same name. Intake shows both the
+documents location and the separate artifact location. See [Shared drives and
+Samba](docs/operations/shared-drives.md) for packaged-container behavior and
+security details.
+
+## Build deployment images with an approved base image
+
+Most people should begin with `make demo` or `make dev` above. Use this section
+when you are ready to build the three packaged OSII images for Podman. These
+commands choose the base image for this build only; they do not permanently
+change your shell or repository configuration.
+
+If the registry requires authentication, run `podman login quay.asdf.xyz`
+first. Then copy and paste the command for your operating system from the
+repository root.
+
+### macOS or Linux
+
+Normal inherited proxy behavior:
+
+```bash
+make build OSII_BASE_IMAGE=quay.asdf.xyz/dice/rhel9
+```
+
+If HTTPS inspection requires local corporate certificates, export only the
+public CA certificates to one PEM bundle outside the repository, then run:
+
+```bash
+make build \
+  OSII_BASE_IMAGE=quay.asdf.xyz/dice/rhel9 \
+  OSII_CA_BUNDLE=/absolute/path/to/corporate-roots.pem
+```
+
+When the image should retain its corporate certificates but must not inherit
+HTTP, HTTPS, FTP, or ALL proxy settings:
+
+```bash
+make build \
+  OSII_BASE_IMAGE=quay.asdf.xyz/dice/rhel9 \
+  OSII_CA_BUNDLE=/absolute/path/to/corporate-roots.pem \
+  DISABLE_CONTAINER_PROXIES=true
+```
+
+Start images built in direct-network mode with the matching runtime setting:
+
+```bash
+make run DISABLE_CONTAINER_PROXIES=true
+```
+
+Otherwise, start them normally:
+
+```bash
+make run
+```
+
+### Windows PowerShell
+
+Normal inherited proxy behavior:
+
+```powershell
+.\scripts\osii.ps1 build `
+  -BaseImage "quay.asdf.xyz/dice/rhel9"
+```
+
+If HTTPS inspection requires local corporate certificates, export only the
+public CA certificates to one PEM bundle outside the repository, then run:
+
+```powershell
+.\scripts\osii.ps1 build `
+  -BaseImage "quay.asdf.xyz/dice/rhel9" `
+  -CaBundle "C:\secure\corporate-roots.pem"
+```
+
+Keep corporate certificates but disable inherited container proxies:
+
+```powershell
+.\scripts\osii.ps1 build `
+  -BaseImage "quay.asdf.xyz/dice/rhel9" `
+  -CaBundle "C:\secure\corporate-roots.pem" `
+  -DisableContainerProxies
+```
+
+Start images built in direct-network mode with the matching runtime setting:
+
+```powershell
+.\scripts\osii.ps1 run -DisableContainerProxies
+```
+
+Otherwise, start them normally:
+
+```powershell
+.\scripts\osii.ps1 run
+```
+
+The base image must provide `dnf` and access to the required RHEL packages;
+each OSII image then installs its tested Python 3.12 runtime with uv. Tesseract
+OCR has a separate base-image setting because it needs native OCR packages and
+is not one of the three normal release images. Docker Compose remains available
+with `COMPOSE='docker compose'`, but strict removal of proxy settings inherited
+from a custom base image is guaranteed only on the supported Podman path. See
+[publishing and running images](docs/operations/publishing-images.md) for image
+names, tags, registries, and the Tesseract exception.
+
+`OSII_CA_BUNDLE`/`-CaBundle` is explicit and build-only. OSII validates that the
+file contains PEM certificates and no private key, prints its SHA-256
+fingerprint, and passes it to Podman as a build secret. The certificate bundle
+is installed into the resulting private images so HTTPS works at runtime, but
+the source path and file never enter the Git build context. Never supply a
+`.pfx`, `.p12`, client certificate, or private key. If you must temporarily
+keep the PEM under the repository root, use the ignored `.osii-certs/` folder.
 
 ## Choose your next path
 

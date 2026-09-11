@@ -48,6 +48,7 @@ app.state.shared_volume_root = Path(
     os.getenv("SHARED_VOLUME_ROOT", "./data_volume/my_data")
 ).resolve()
 app.state.shared_volume_host_path = os.getenv("SHARED_VOLUME_HOST_PATH", "").strip()
+app.state.source_kind = os.getenv("OSII_SOURCE_KIND", "auto").strip().lower() or "auto"
 
 app.state.osii_root = Path(
     os.getenv("OSII_ROOT", "./data_volume/.osii")

@@ -8,11 +8,12 @@ matches what you want to do.
 
 - Read the repository README included with your checkout for the first-run path.
 - [Run the corporate pilot bundle](operations/publishing-images.md)
+- [Use a shared drive or Samba share](operations/shared-drives.md)
 - [Follow the friendly Python walkthrough](tutorials/python-demonstrations.md)
 - [Process one file through the CLI](tutorials/single-file.md)
 - [Demonstrate tabular datasets](tutorials/tabular-datasets.md)
 
-These three pages are the normal entry points. The remaining documentation is
+These pages are the normal entry points. The remaining documentation is
 reference material: read it when you need to understand, extend, or operate a
 specific boundary rather than from top to bottom.
 
@@ -49,6 +50,7 @@ the `.osii` store directly.
 ## Operate offline
 
 - [Local and intermittently connected operation](operations/local-first.md)
+- [Shared drives and Samba](operations/shared-drives.md)
 - [Guaranteed container-free processor services](operations/local-processors.md)
 - [Extractor routing](reference/extractor-routing.md)
 - [Export components for separate repositories](operations/component-export.md)

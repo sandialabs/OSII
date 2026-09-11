@@ -216,6 +216,7 @@ export function QueuePage() {
     queryFn: getIntakeReadiness,
     staleTime: 30_000,
   });
+  const sourceStatus = readiness.data?.source;
   const availableSynthesizers = readiness.data?.synthesizers.filter(
     (item) => item.available,
   ) ?? [];
@@ -634,6 +635,43 @@ export function QueuePage() {
       >
         <strong>Basic document reading is included.</strong> Open Setup only when you need OCR, Apache Tika, semantic embeddings, or generated summaries.
       </Alert>
+
+      {sourceStatus ? (
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Stack spacing={1}>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              justifyContent="space-between"
+              alignItems={{ sm: "center" }}
+              spacing={1}
+            >
+              <Stack spacing={0.25}>
+                <Typography fontWeight={700}>
+                  {sourceStatus.kind === "shared" ? "Shared drive documents" : "Local documents"}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
+                  Reading originals from <code>{sourceStatus.source_root}</code>
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
+                  Writing OSII artifacts to <code>{sourceStatus.osii_root}</code>
+                </Typography>
+              </Stack>
+              <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                <Chip
+                  color={sourceStatus.ready_for_intake ? "success" : "error"}
+                  label={sourceStatus.ready_for_intake ? "Connected and ready" : "Source needs attention"}
+                />
+                {sourceStatus.source_mode === "read_only" ? <Chip variant="outlined" label="Originals read-only" /> : null}
+              </Stack>
+            </Stack>
+            {sourceStatus.detail ? (
+              <Alert severity={sourceStatus.ready_for_intake ? "info" : "error"} sx={{ py: 0.25 }}>
+                {sourceStatus.detail}
+              </Alert>
+            ) : null}
+          </Stack>
+        </Paper>
+      ) : null}
 
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={2}>
@@ -1328,6 +1366,7 @@ export function QueuePage() {
               || starting
               || preview.isLoading
               || readiness.isLoading
+              || sourceStatus?.ready_for_intake === false
               || runs.data?.worker?.available === false
               || (runExtraction && !extractorPlanReady)
               || (synthesize && !effectiveSynthesizer)

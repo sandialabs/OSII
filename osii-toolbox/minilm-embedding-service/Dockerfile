@@ -2,6 +2,7 @@ ARG OSII_BASE_IMAGE=registry.access.redhat.com/ubi9/ubi:latest
 FROM ${OSII_BASE_IMAGE}
 
 ARG OSII_PYTHON_VERSION=3.12
+ARG OSII_CA_BUNDLE_SHA256=none
 ENV PYTHONUNBUFFERED=1 \
     HF_HOME=/models/.cache/huggingface \
     SENTENCE_TRANSFORMERS_HOME=/models/.cache/sentence_transformers \
@@ -11,6 +12,14 @@ ENV PYTHONUNBUFFERED=1 \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
     VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+RUN echo "OSII CA bundle SHA-256: ${OSII_CA_BUNDLE_SHA256}" && \
+    if [ -f /run/secrets/osii_ca_bundle ]; then \
+        mkdir -p /etc/pki/ca-trust/source/anchors && \
+        cp /run/secrets/osii_ca_bundle /etc/pki/ca-trust/source/anchors/osii-local-ca-bundle.pem && \
+        chmod 0644 /etc/pki/ca-trust/source/anchors/osii-local-ca-bundle.pem && \
+        update-ca-trust; \
+    fi
 
 RUN dnf install -y python3 python3-pip shadow-utils ca-certificates && \
     dnf clean all && \

@@ -13,6 +13,7 @@ services:
     environment:
       OSII_ROOT: /data/.osii
       SHARED_VOLUME_ROOT: /data/source
+      OSII_SOURCE_KIND: ${OSII_SOURCE_KIND:-auto}
       UPLOAD_ORIGINALS_ROOT: /data/uploads
       OSII_PROCESSORS: ${OSII_PROCESSORS:-http://local-extractor:8092,http://tesseract:8080,http://local-synthesizer:8093,http://local-embedder:8085,http://local-enricher:8094,http://model-provider-bridge:8095/ollama/embedder,http://model-provider-bridge:8095/ollama/synthesizer,http://model-provider-bridge:8095/openai/synthesizer}
       OSII_DEFAULT_SYNTHESIZER: ${OSII_DEFAULT_SYNTHESIZER:-ollama.synthesizer}
@@ -63,6 +64,7 @@ services:
     environment:
       OSII_ROOT: /data/.osii
       SHARED_VOLUME_ROOT: /data/source
+      OSII_SOURCE_KIND: ${OSII_SOURCE_KIND:-auto}
       UPLOAD_ORIGINALS_ROOT: /data/uploads
       TIKA_URL: http://tika:9998
       OSII_PROCESSORS: ${OSII_PROCESSORS:-http://local-extractor:8092,http://tesseract:8080,http://local-synthesizer:8093,http://local-embedder:8085,http://local-enricher:8094,http://model-provider-bridge:8095/ollama/embedder,http://model-provider-bridge:8095/ollama/synthesizer,http://model-provider-bridge:8095/openai/synthesizer}

@@ -93,16 +93,42 @@ def build_environment(core_only: bool) -> dict[str, str]:
     for key, value in load_dotenv(REPOSITORY_ROOT / ".env").items():
         env.setdefault(key, value)
 
-    runtime_root = REPOSITORY_ROOT / "osii-data"
+    runtime_value = env.get("OSII_RUNTIME_DIR", "./osii-data")
+    runtime_root = Path(runtime_value).expanduser()
+    if not runtime_root.is_absolute():
+        runtime_root = REPOSITORY_ROOT / runtime_root
+    runtime_root = runtime_root.resolve()
+
     source_value = env.get("OSII_SOURCE_DIR", "./osii-data/source")
-    source_root = Path(source_value)
+    source_root = Path(source_value).expanduser()
     if not source_root.is_absolute():
         source_root = REPOSITORY_ROOT / source_root
     source_root = source_root.resolve()
+    if not source_root.exists():
+        raise RuntimeError(
+            f"Documents folder is unavailable: {source_root}. "
+            "Connect or mount the shared drive, then start OSII again."
+        )
+    if not source_root.is_dir():
+        raise RuntimeError(f"Documents path is not a folder: {source_root}")
+    try:
+        with os.scandir(source_root) as entries:
+            next(entries, None)
+    except OSError as exc:
+        raise RuntimeError(f"Documents folder cannot be read: {source_root}: {exc}") from exc
 
-    osii_root = runtime_root / ".osii"
-    uploads_root = runtime_root / "uploads"
-    for path in (source_root, osii_root, uploads_root):
+    osii_value = env.get("OSII_ROOT", "").strip()
+    osii_root = Path(osii_value).expanduser() if osii_value else runtime_root / ".osii"
+    if not osii_root.is_absolute():
+        osii_root = REPOSITORY_ROOT / osii_root
+    osii_root = osii_root.resolve()
+
+    uploads_value = env.get("UPLOAD_ORIGINALS_ROOT", "").strip()
+    uploads_root = Path(uploads_value).expanduser() if uploads_value else runtime_root / "uploads"
+    if not uploads_root.is_absolute():
+        uploads_root = REPOSITORY_ROOT / uploads_root
+    uploads_root = uploads_root.resolve()
+    for path in (osii_root, uploads_root):
         path.mkdir(parents=True, exist_ok=True)
 
     api_port = env.get("OSII_API_PORT", "8511")
@@ -136,6 +162,8 @@ def build_environment(core_only: bool) -> dict[str, str]:
             "PYTHONPATH": workspace_python_path,
             "SHARED_VOLUME_ROOT": str(source_root),
             "SHARED_VOLUME_HOST_PATH": str(source_root),
+            "OSII_SOURCE_KIND": env.get("OSII_SOURCE_KIND", "auto").strip().lower() or "auto",
+            "OSII_RUNTIME_DIR": str(runtime_root),
             "OSII_ROOT": str(osii_root),
             "UPLOAD_ORIGINALS_ROOT": str(uploads_root),
             "TIKA_URL": f"http://127.0.0.1:{tika_port}",
@@ -758,6 +786,9 @@ def run(
         print("[ready] OSII is running.")
         print(f"[ready] Dashboard: http://localhost:{dashboard_port}")
         print(f"[ready] Documents folder: {env['SHARED_VOLUME_ROOT']}")
+        print(f"[ready] OSII artifacts: {env['OSII_ROOT']}")
+        if env.get("OSII_SOURCE_KIND") == "shared":
+            print("[ready] Shared-drive mode: originals are read in place; artifacts remain in the local OSII data folder.")
         print(f"[dev] API health: http://localhost:{api_port}/health")
         print(f"[dev] MCP: http://localhost:{env.get('OSII_MCP_PORT', '8022')}/mcp")
         print("[ready] Keep this terminal open. Press Ctrl+C once to stop OSII.")

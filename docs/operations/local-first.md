@@ -193,7 +193,10 @@ extractors, synthesizers, and enrichers that support it.
 Intake browses only within `OSII_SOURCE_DIR`. This boundary prevents a browser
 session from walking the entire host filesystem. A mounted shared/network drive
 works when `OSII_SOURCE_DIR` points to that mount and the OSII process can read
-it. If folders are reorganized afterward, use **Document scope → Rescan source
+it. For a clearer read-only-source/local-artifact workflow, use `make
+dev-shared SHARED_DRIVE_PATH="/mounted/share"` or `.\scripts\osii.ps1
+dev-shared -SourceDir '\\server\share'`; see [Shared drives and
+Samba](shared-drives.md). If folders are reorganized afterward, use **Document scope → Rescan source
 paths**. OSII hashes current files, previews exact-content matches, and can
 remap moved originals without re-running extraction; changed and new files are
 left for a normal Intake run.

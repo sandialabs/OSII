@@ -56,6 +56,43 @@ make build \
 it only as an intentional application-runtime upgrade, not to match whatever
 Python happens to be in the base image.
 
+### Inject local corporate certificate authorities
+
+Do not commit corporate certificates to OSII. Export the required **public CA
+certificates only** as one PEM bundle and keep it in an approved location
+outside the repository. Pass its path explicitly when building:
+
+```bash
+make build \
+  OSII_BASE_IMAGE=registry.example/approved/rhel9/python-latest \
+  OSII_CA_BUNDLE=/absolute/path/to/corporate-roots.pem
+```
+
+```powershell
+.\scripts\osii.ps1 build `
+  -BaseImage registry.example/approved/rhel9/python-latest `
+  -CaBundle "C:\secure\corporate-roots.pem"
+```
+
+The launcher rejects an unreadable, empty, malformed, or oversized bundle and
+any PEM containing a private key. It reports the bundle fingerprint and passes
+the file through Podman's build-secret mechanism; the source file is not copied
+into the build context or exposed as a build argument. Each OSII Dockerfile
+installs the public certificates into the RHEL/Fedora trust store. Consequently,
+the resulting private image trusts them at runtime and must be rebuilt when the
+bundle changes. The bundle fingerprint participates in the build cache key, so
+certificate rotation refreshes the trust layer without requiring `--no-cache`.
+
+The certificates become part of the finished image's trust store. Publish that
+image only to an approved private registry. Never use a private key, `.pfx`,
+`.p12`, client-identity certificate, or credential bundle. `.osii-certs/` is
+ignored as an emergency local staging directory, but a protected location
+outside the checkout is preferable.
+
+This is intentionally separate from proxy routing. One image can trust both
+the corporate interception CA and an off-site network CA; use the proxy switch
+below independently according to the current workstation network.
+
 ### Keep corporate certificates but disable inherited proxies
 
 Podman normally passes host proxy variables into builds and containers. When a
@@ -65,6 +102,7 @@ proxies, add OSII's opt-in proxy switch:
 ```bash
 make build \
   OSII_BASE_IMAGE=registry.example/approved/rhel9/python-latest \
+  OSII_CA_BUNDLE=/absolute/path/to/corporate-roots.pem \
   DISABLE_CONTAINER_PROXIES=true
 
 make run DISABLE_CONTAINER_PROXIES=true
@@ -75,6 +113,7 @@ Windows PowerShell uses the equivalent switch:
 ```powershell
 .\scripts\osii.ps1 build `
   -BaseImage registry.example/approved/rhel9/python-latest `
+  -CaBundle "C:\secure\corporate-roots.pem" `
   -DisableContainerProxies
 
 .\scripts\osii.ps1 run -DisableContainerProxies
