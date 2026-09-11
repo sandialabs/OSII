@@ -26,6 +26,7 @@ PYTHON_DOCKERFILES = (
     "osii-mcp/Dockerfile",
     "osii-toolbox/minilm-embedding-service/Dockerfile",
     "osii-toolbox/model2vec-embedder/Dockerfile",
+    "osii-toolbox/osii-tesseract/Dockerfile",
     "osii-toolbox/tabular-dataset-processors/Dockerfile",
 )
 
@@ -36,7 +37,10 @@ def test_container_copy_sources_exist(tool):
     context = directory if tool == "minilm-embedding-service" else ROOT
     for line in (directory / "Dockerfile").read_text().splitlines():
         if line.startswith("COPY "):
-            for source in shlex.split(line)[1:-1]:
+            sources = shlex.split(line)[1:-1]
+            if any(source.startswith("--from=") for source in sources):
+                continue
+            for source in sources:
                 assert (context / source).exists(), (tool, source)
 
 
@@ -85,12 +89,63 @@ def test_dashboard_uses_rhel_family_build_and_runtime_stages():
     assert "alpine" not in recipe
 
 
-def test_tesseract_uses_replaceable_rpm_family_base():
+def test_all_osii_dockerfile_stages_derive_from_shared_ubi_base():
+    for dockerfile in ROOT.rglob("Dockerfile"):
+        recipe = dockerfile.read_text()
+        assert recipe.startswith("ARG OSII_BASE_IMAGE=registry.access.redhat.com/ubi9/ubi:latest\n")
+        stages: set[str] = set()
+        for line in recipe.splitlines():
+            parts = line.split()
+            if not parts or parts[0].upper() != "FROM":
+                continue
+            assert parts[1] == "${OSII_BASE_IMAGE}" or parts[1] in stages, dockerfile
+            if len(parts) >= 4 and parts[-2].upper() == "AS":
+                stages.add(parts[-1])
+        lowered = recipe.lower()
+        for forbidden in ("fedora", "debian", "ubuntu", "alpine", "from python:", "from node:"):
+            assert forbidden not in lowered, (dockerfile, forbidden)
+
+
+def test_tesseract_builds_pinned_native_sources_on_ubi():
     recipe = (ROOT / "osii-toolbox/osii-tesseract/Dockerfile").read_text()
-    assert "ARG OSII_TESSERACT_BASE_IMAGE=registry.fedoraproject.org/fedora:latest" in recipe
-    assert "FROM ${OSII_TESSERACT_BASE_IMAGE}" in recipe
-    assert "tesseract-langpack-eng" in recipe
+    assert "FROM ${OSII_BASE_IMAGE} AS trust-base" in recipe
+    assert "FROM trust-base AS native-builder" in recipe
+    assert "FROM trust-base AS runtime" in recipe
+    assert "tesseract/tar.gz/refs/tags/5.5.3" in recipe
+    assert 'org.osii.tesseract.version="5.5.3"' in recipe
+    assert "leptonica-1.87.0" in recipe
+    assert "tessdata_fast/4.1.0" in recipe
+    assert "sha256sum --check --strict" in recipe
+    assert "BUILD_TRAINING_TOOLS=OFF" in recipe
+    assert "rm -rf /opt/tesseract/include /opt/tesseract/lib64" in recipe
+    assert "tesseract-langpack" not in recipe
     assert "apt-get" not in recipe
+
+
+def test_tesseract_uses_shared_base_configuration_everywhere():
+    paths = (
+        ".env.example",
+        "Makefile",
+        "compose.yaml",
+        "scripts/osii.ps1",
+        "docs/operations/publishing-images.md",
+        "osii-toolbox/README.md",
+        "osii-toolbox/osii-tesseract/README.md",
+    )
+    for relative_path in paths:
+        configuration = (ROOT / relative_path).read_text()
+        service_specific_base_arguments = {
+            token
+            for token in configuration.replace(":", " ").replace("=", " ").split()
+            if token.startswith("OSII_") and token.endswith("_BASE_IMAGE")
+        }
+        assert service_specific_base_arguments <= {"OSII_BASE_IMAGE"}
+
+    compose = (ROOT / "compose.yaml").read_text()
+    assert 'OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"' in compose
+    assert "OSII_TESSERACT_SOURCE_URL" in compose
+    assert "OSII_LEPTONICA_SOURCE_URL" in compose
+    assert "OSII_TESSDATA_BASE_URL" in compose
 
 
 def test_model2vec_image_uses_model2vec_not_baseline_hashing():

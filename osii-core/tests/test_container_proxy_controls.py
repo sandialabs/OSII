@@ -106,7 +106,7 @@ def test_make_passes_ca_bundle_as_cache_safe_build_secret(tmp_path: Path) -> Non
     assert f'--secret=id=osii_ca_bundle,src="{bundle}"' in result.stdout
     assert "--mount=type=secret,id=osii_ca_bundle" in result.stdout
     assert "--build-arg OSII_CA_BUNDLE_SHA256=" in result.stdout
-    assert "--env REQUESTS_CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt" in result.stdout
+    assert "--env REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem" in result.stdout
     assert "--env UV_NATIVE_TLS=true" in result.stdout
     assert "--env NODE_EXTRA_CA_CERTS=" in result.stdout
     assert "COPY" not in result.stdout
@@ -147,6 +147,16 @@ def test_powershell_launcher_has_matching_ca_secret_support() -> None:
     assert "--secret=id=osii_ca_bundle" in launcher
     assert "--mount=type=secret,id=osii_ca_bundle" in launcher
     assert "OSII_CA_BUNDLE_SHA256=" in launcher
+    assert "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem" in launcher
+
+
+def test_build_launchers_clean_podman_secret_artifacts() -> None:
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    launcher = (REPOSITORY_ROOT / "scripts" / "osii.ps1").read_text(encoding="utf-8")
+
+    assert 'find "$(CURDIR)" -type f -name "podman-build-secret-*" -delete' in makefile
+    assert 'Get-ChildItem -LiteralPath $RepositoryRoot -Filter "podman-build-secret-*"' in launcher
+    assert "Remove-Item -Force" in launcher
 
 
 def test_make_and_powershell_offer_mounted_shared_drive_launchers() -> None:
@@ -161,3 +171,11 @@ def test_make_and_powershell_offer_mounted_shared_drive_launchers() -> None:
     assert '"run-shared"' in launcher
     assert "[string]$SourceDir" in launcher
     assert '$env:OSII_SOURCE_KIND = "shared"' in launcher
+
+
+def test_make_and_powershell_start_container_stacks_detached() -> None:
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    launcher = (REPOSITORY_ROOT / "scripts" / "osii.ps1").read_text(encoding="utf-8")
+
+    assert makefile.count("up -d --no-build --pull missing") == 2
+    assert launcher.count('Invoke-OsiiCompose @("up", "-d", "--no-build"') == 2

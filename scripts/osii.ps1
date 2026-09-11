@@ -13,8 +13,6 @@ param(
 
     [string]$BaseImage = "",
 
-    [string]$TesseractBaseImage = "",
-
     [string]$PythonVersion = "",
 
     [string]$CaBundle = "",
@@ -40,9 +38,6 @@ if (-not $ImagePrefix) {
 if (-not $BaseImage) {
     $BaseImage = if ($env:OSII_BASE_IMAGE) { $env:OSII_BASE_IMAGE } else { "registry.access.redhat.com/ubi9/ubi:latest" }
 }
-if (-not $TesseractBaseImage) {
-    $TesseractBaseImage = if ($env:OSII_TESSERACT_BASE_IMAGE) { $env:OSII_TESSERACT_BASE_IMAGE } else { "registry.fedoraproject.org/fedora:latest" }
-}
 if (-not $PythonVersion) {
     $PythonVersion = if ($env:OSII_PYTHON_VERSION) { $env:OSII_PYTHON_VERSION } else { "3.12" }
 }
@@ -58,7 +53,6 @@ if ($RuntimeDir) {
 $env:OSII_IMAGE_PREFIX = $ImagePrefix
 $env:OSII_IMAGE_TAG = $ImageTag
 $env:OSII_BASE_IMAGE = $BaseImage
-$env:OSII_TESSERACT_BASE_IMAGE = $TesseractBaseImage
 $env:OSII_PYTHON_VERSION = $PythonVersion
 
 if ($Runtime -eq "Docker") {
@@ -189,18 +183,26 @@ function Invoke-OsiiCompose {
             "--mount=type=secret,id=osii_ca_bundle",
             "--build-arg",
             "OSII_CA_BUNDLE_SHA256=$($ValidatedBundle.Digest)",
-            "--env", "SSL_CERT_FILE=/etc/pki/tls/certs/ca-bundle.crt",
-            "--env", "REQUESTS_CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt",
-            "--env", "CURL_CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt",
-            "--env", "PIP_CERT=/etc/pki/tls/certs/ca-bundle.crt",
+            "--env", "SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+            "--env", "REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+            "--env", "CURL_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+            "--env", "PIP_CERT=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
             "--env", "UV_NATIVE_TLS=true",
             "--env", "NODE_EXTRA_CA_CERTS=/etc/pki/ca-trust/source/anchors/osii-local-ca-bundle.pem"
         )
         $SecurityArguments += "--podman-build-args=$($CaBuildOptions -join ' ')"
     }
-    & $ComposeExecutable @ComposePrefix @SecurityArguments @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "Compose command failed with exit code $LASTEXITCODE."
+    try {
+        & $ComposeExecutable @ComposePrefix @SecurityArguments @Arguments
+        if ($LASTEXITCODE -ne 0) {
+            throw "Compose command failed with exit code $LASTEXITCODE."
+        }
+    }
+    finally {
+        if ($ComposeAction -eq "build") {
+            Get-ChildItem -LiteralPath $RepositoryRoot -Filter "podman-build-secret-*" -Recurse -File -ErrorAction SilentlyContinue |
+                Remove-Item -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
@@ -279,7 +281,7 @@ try {
             Import-OsiiExampleData
         }
         "run" {
-            Invoke-OsiiCompose @("up", "--no-build", "--pull", "missing", "tesseract", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "dashboard")
+            Invoke-OsiiCompose @("up", "-d", "--no-build", "--pull", "missing", "tesseract", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "dashboard")
         }
         "run-shared" {
             if (-not $SourceDir) {
@@ -288,7 +290,7 @@ try {
             Assert-OsiiSharedDrive -Path $SourceDir
             $env:OSII_SOURCE_DIR = $SourceDir
             $env:OSII_SOURCE_KIND = "shared"
-            Invoke-OsiiCompose @("up", "--no-build", "--pull", "missing", "tesseract", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "dashboard")
+            Invoke-OsiiCompose @("up", "-d", "--no-build", "--pull", "missing", "tesseract", "local-extractor", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge", "api", "worker", "dashboard")
         }
         "down" {
             Invoke-OsiiCompose @("down")

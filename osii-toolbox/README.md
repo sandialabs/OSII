@@ -20,14 +20,15 @@ You need not publish or run all of them. Apache Tika is an upstream image and
 Ollama is a separately managed provider; neither is copied into this Toolbox.
 Core and its normal model connections remain unchanged.
 
-All OSII-authored Toolbox Dockerfiles use RPM-family bases and install their
-fixed application Python with `uv`. Most default to public UBI 9 and accept
-`--build-arg OSII_BASE_IMAGE=registry.example/approved/rhel9/python-latest`.
-Tesseract defaults to Fedora because its public repositories carry the OCR
-language packages; override it with
-`--build-arg OSII_TESSERACT_BASE_IMAGE=registry.example/approved/rhel9/python-latest`
-when the selected RHEL-family base exposes those packages. These switches alter
-packaging only; they do not change Processor API behavior.
+All OSII-authored Toolbox Dockerfiles use the same RHEL/UBI base and install
+their fixed application Python with `uv`. They default to public UBI 9 and
+accept `--build-arg OSII_BASE_IMAGE=registry.example/approved/rhel9/python-latest`.
+Tesseract builds
+its pinned native dependencies in a UBI builder stage because public UBI
+repositories do not carry Tesseract RPMs. An approved corporate artifact
+mirror can replace the three source locations documented in
+[Corporate pilot images and Quay releases](../docs/operations/publishing-images.md#portable-rhel-family-base-images).
+These switches alter packaging only; they do not change Processor API behavior.
 
 Every OSII-authored Toolbox Dockerfile also accepts the optional
 `osii_ca_bundle` Podman build secret used by the root build workflow. Corporate
@@ -73,7 +74,8 @@ Apple Silicon Mac needs working x86 emulation and builds may be slow; use a
 Linux x86-64 builder if necessary. For an ARM-only local test, omit `--platform`
 and use a different tag. A single-platform image is not a multi-architecture
 release. Builds install dependencies and require package-registry access;
-running the finished image requires no model download.
+Tesseract also downloads checksum-verified source and language artifacts.
+Running the finished images requires no model download.
 
 ## Run and check before pushing
 
@@ -226,5 +228,5 @@ uv run --no-project --python 3.12 python scripts/export_components.py --componen
 Use the new `../osii-toolbox-export/osii-toolbox/` as the receiving repository root;
 it contains `osii-toolbox/` and `osii-core/processor-sdk/` so the root-context build commands above
 still work. The original sibling checkout's Git history and local environments
-were not imported. Its moved source is now maintained here; no private Shirty
-package or separate Shirty bridge is included.
+were not imported. Its moved source is now maintained here; no private provider
+package or separate proprietary bridge is included.

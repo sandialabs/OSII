@@ -34,11 +34,14 @@ base. They deliberately install the application interpreter separately with
 base image changes. The dashboard installs Node.js 22 only in its build stage
 and serves the compiled files with Nginx from a fresh UBI 9 runtime stage.
 
-Every normal image accepts the same `OSII_BASE_IMAGE` build argument. This lets
-a deployment builder select an approved RHEL 9 image without maintaining a
-fork of OSII's Dockerfiles. The replacement image must provide `dnf`, a
+Every OSII-authored image accepts the same `OSII_BASE_IMAGE` build argument.
+This lets a deployment builder select an approved RHEL 9 image without
+maintaining a fork of OSII's Dockerfiles. The replacement image must provide `dnf`, a
 bootstrap `python3`/`pip`, and configured repositories containing Node.js and
-Nginx. For example, using a placeholder internal registry:
+Nginx plus ordinary C/C++ build dependencies. Tesseract also uses this shared
+base: it compiles pinned native sources in a disposable UBI builder stage and
+copies only runtime files into a clean UBI stage. For example, using a
+placeholder internal registry:
 
 ```bash
 make build \
@@ -78,7 +81,7 @@ The launcher rejects an unreadable, empty, malformed, or oversized bundle and
 any PEM containing a private key. It reports the bundle fingerprint and passes
 the file through Podman's build-secret mechanism; the source file is not copied
 into the build context or exposed as a build argument. Each OSII Dockerfile
-installs the public certificates into the RHEL/Fedora trust store. Consequently,
+installs the public certificates into the RHEL trust store. Consequently,
 the resulting private image trusts them at runtime and must be rebuilt when the
 bundle changes. The bundle fingerprint participates in the build cache key, so
 certificate rotation refreshes the trust layer without requiring `--no-cache`.
@@ -128,7 +131,7 @@ trust store. Proxy addresses and credentials do not enter OSII configuration or
 logs.
 
 The local baseline makes no public package or model downloads at runtime.
-Runtime routing matters when OSII calls Shirty or another OpenAI-compatible
+Runtime routing matters when OSII calls a corporate OpenAI-compatible
 provider, a remote processor, or host Ollama. It also keeps internal OSII
 service traffic from being routed through an inherited proxy. Choose inherited
 or direct mode according to the endpoints needed by that deployment.
@@ -139,11 +142,24 @@ same guarantee without Dockerfile changes. Registry authentication, TLS, and
 image pulls are still handled by the selected container engine; this switch
 does not disable certificate verification or alter registry trust.
 
-Tesseract is the one exception: public OCR builds default to Fedora because
-public UBI repositories do not include the required Tesseract language RPMs.
-Set `OSII_TESSERACT_BASE_IMAGE` separately when the approved internal
-RHEL-family image exposes those RPMs. Apache Tika remains an upstream optional
-image rather than an OSII-built image.
+Public UBI repositories do not include Tesseract, so the OCR image builds
+Tesseract 5.5.3 and Leptonica 1.87.0 from checksum-verified sources. Its eight
+language files come from the pinned `tessdata_fast` 4.1.0 release, matching the
+former packaged behavior. Corporate builds can place byte-identical artifacts
+in an approved mirror and set the following values in the ignored `.env` file:
+
+```dotenv
+OSII_TESSERACT_SOURCE_URL=https://artifact.example/tesseract-5.5.3.tar.gz
+OSII_LEPTONICA_SOURCE_URL=https://artifact.example/leptonica-1.87.0.tar.gz
+OSII_TESSDATA_BASE_URL=https://artifact.example/tessdata_fast/4.1.0
+```
+
+The mirror must retain the upstream bytes because versions and SHA-256
+checksums are fixed in the Dockerfile. `OSII_TESSDATA_BASE_URL` must contain
+`eng`, `fra`, `deu`, `spa`, `jpn`, `kor`, `chi_sim`, and `ara` `.traineddata`
+files. No additional Make target is needed: after configuring `.env`, run
+`make build` normally. Apache Tika remains an upstream optional image rather
+than an OSII-built image.
 
 MCP, Tika, and non-bundled Toolbox processors remain optional. Ollama and
 the upstream OpenAI-compatible service are separately managed endpoints; OSII publishes no

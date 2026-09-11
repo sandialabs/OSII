@@ -49,6 +49,24 @@ The agent's job is to execute the human's command—nothing more.
   changes. Keep examples and demonstrations small and inspectable; do not
   create new example material unless explicitly requested.
 
+## Container policy
+
+- Every OSII-authored builder and runtime stage must derive from the approved
+  RHEL/UBI image supplied through the shared `OSII_BASE_IMAGE`. Do not introduce
+  Fedora, Debian, Ubuntu, Alpine, or a service-specific base-image argument.
+- A missing RPM is not justification for changing distributions. Build missing
+  software from pinned, checksum-verified source artifacts on RHEL/UBI. If the
+  approved repositories and artifact sources cannot satisfy the build, stop
+  and report the dependency instead of silently choosing another base.
+- Corporate source downloads must work through the configured artifact mirror
+  and `OSII_CA_BUNDLE`. Install corporate trust before any package, source,
+  Python, Node, or model download.
+- Keep final runtime stages minimal and non-root. Published builds must use an
+  approved immutable RHEL/UBI base reference; the public development default
+  may use the designated UBI 9 tag.
+- Preserve the simple `make build` and `make run` interface. Keep Make and
+  PowerShell container workflows equivalent when container policy changes.
+
 ## Validation and handoff
 
 - Run focused tests and the relevant frontend build when available and

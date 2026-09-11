@@ -5,7 +5,6 @@ UV ?= uv
 OSII_IMAGE_PREFIX ?= localhost/osii
 OSII_IMAGE_TAG ?= latest
 OSII_BASE_IMAGE ?= registry.access.redhat.com/ubi9/ubi:latest
-OSII_TESSERACT_BASE_IMAGE ?= registry.fedoraproject.org/fedora:latest
 OSII_PYTHON_VERSION ?= 3.12
 OSII_CA_BUNDLE ?=
 SHARED_DRIVE_PATH ?=
@@ -22,10 +21,10 @@ endif
 
 ifneq ($(strip $(OSII_CA_BUNDLE)),)
 OSII_CA_BUNDLE_SHA256 := $(shell if command -v sha256sum >/dev/null 2>&1; then sha256sum "$(OSII_CA_BUNDLE)"; else shasum -a 256 "$(OSII_CA_BUNDLE)"; fi 2>/dev/null | awk '{print $$1}')
-PODMAN_CA_BUILD_ARGUMENTS := --podman-build-args='--secret=id=osii_ca_bundle,src="$(OSII_CA_BUNDLE)" --mount=type=secret,id=osii_ca_bundle --build-arg OSII_CA_BUNDLE_SHA256=$(OSII_CA_BUNDLE_SHA256) --env SSL_CERT_FILE=/etc/pki/tls/certs/ca-bundle.crt --env REQUESTS_CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt --env CURL_CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt --env PIP_CERT=/etc/pki/tls/certs/ca-bundle.crt --env UV_NATIVE_TLS=true --env NODE_EXTRA_CA_CERTS=/etc/pki/ca-trust/source/anchors/osii-local-ca-bundle.pem'
+PODMAN_CA_BUILD_ARGUMENTS := --podman-build-args='--secret=id=osii_ca_bundle,src="$(OSII_CA_BUNDLE)" --mount=type=secret,id=osii_ca_bundle --build-arg OSII_CA_BUNDLE_SHA256=$(OSII_CA_BUNDLE_SHA256) --env SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem --env REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem --env CURL_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem --env PIP_CERT=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem --env UV_NATIVE_TLS=true --env NODE_EXTRA_CA_CERTS=/etc/pki/ca-trust/source/anchors/osii-local-ca-bundle.pem'
 endif
 export UV_PROJECT_ENVIRONMENT := $(CURDIR)/osii-env
-export OSII_IMAGE_PREFIX OSII_IMAGE_TAG OSII_BASE_IMAGE OSII_TESSERACT_BASE_IMAGE OSII_PYTHON_VERSION
+export OSII_IMAGE_PREFIX OSII_IMAGE_TAG OSII_BASE_IMAGE OSII_PYTHON_VERSION
 export OSII_COMPOSE_COMMAND := $(COMPOSE)
 unexport VIRTUAL_ENV
 
@@ -95,12 +94,12 @@ demo-data:
 # Start the normal integrated stack from existing images, without rebuilding.
 run:
 	$(require_podman_proxy_control)
-	$(COMPOSE) $(PODMAN_PROXY_RUN_ARGUMENTS) up --no-build --pull missing tesseract local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker dashboard
+	$(COMPOSE) $(PODMAN_PROXY_RUN_ARGUMENTS) up -d --no-build --pull missing tesseract local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker dashboard
 
 run-shared:
 	$(validate_shared_drive)
 	$(require_podman_proxy_control)
-	OSII_SOURCE_DIR="$(SHARED_DRIVE_PATH)" OSII_SOURCE_KIND=shared $(COMPOSE) $(PODMAN_PROXY_RUN_ARGUMENTS) up --no-build --pull missing tesseract local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker dashboard
+	OSII_SOURCE_DIR="$(SHARED_DRIVE_PATH)" OSII_SOURCE_KIND=shared $(COMPOSE) $(PODMAN_PROXY_RUN_ARGUMENTS) up -d --no-build --pull missing tesseract local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker dashboard
 
 down:
 	$(COMPOSE) down
@@ -126,7 +125,8 @@ test:
 build:
 	$(require_podman_proxy_control)
 	$(validate_ca_bundle)
-	$(COMPOSE) $(PODMAN_CA_BUILD_ARGUMENTS) $(PODMAN_PROXY_BUILD_ARGUMENTS) build api dashboard local-extractor tesseract
+	@trap 'find "$(CURDIR)" -type f -name "podman-build-secret-*" -delete' EXIT HUP INT TERM; \
+		$(COMPOSE) $(PODMAN_CA_BUILD_ARGUMENTS) $(PODMAN_PROXY_BUILD_ARGUMENTS) build api dashboard local-extractor tesseract
 
 push-release:
 	@if echo "$(OSII_IMAGE_PREFIX)" | grep -q '^localhost/'; then echo "Set OSII_IMAGE_PREFIX to a registry path such as quay.io/your-org/osii."; exit 2; fi

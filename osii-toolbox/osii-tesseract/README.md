@@ -149,12 +149,21 @@ uv run --no-project --python 3.12 --with-editable osii-core/processor-sdk --with
 ```
 
 Build the image from the OSII repository root. It includes Tesseract, so the
-container path does not need a host installation. See [Quay publishing](../README.md).
+container path does not need a host installation. Both build and runtime stages
+use the shared RHEL/UBI base. Tesseract 5.5.3, Leptonica 1.87.0, and eight
+`tessdata_fast` 4.1.0 languages are downloaded as pinned, checksum-verified
+build artifacts. See [Quay publishing](../README.md).
 
 ```bash
 podman build --format docker -f osii-toolbox/osii-tesseract/Dockerfile -t osii-tesseract .
 podman run --rm -p 8080:8080 osii-tesseract
 ```
+
+Corporate builds can set `OSII_TESSERACT_SOURCE_URL`,
+`OSII_LEPTONICA_SOURCE_URL`, and `OSII_TESSDATA_BASE_URL` in the root `.env` to
+use byte-identical copies from an approved artifact mirror. The normal bundled
+workflow remains `make build`; do not change the checksums to accommodate a
+repacked or unreviewed artifact.
 
 Open:
 

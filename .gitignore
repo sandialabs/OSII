@@ -9,6 +9,7 @@
 certs/
 **/certs/
 tls-ca-bundle.pem
+podman-build-secret-*
 
 # Python
 __pycache__/

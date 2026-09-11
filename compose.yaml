@@ -134,8 +134,12 @@ services:
       context: .
       dockerfile: osii-toolbox/osii-tesseract/Dockerfile
       args:
-        OSII_TESSERACT_BASE_IMAGE: "${OSII_TESSERACT_BASE_IMAGE:-registry.fedoraproject.org/fedora:latest}"
+        OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"
+        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
         OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
+        OSII_TESSERACT_SOURCE_URL: "${OSII_TESSERACT_SOURCE_URL:-https://codeload.github.com/tesseract-ocr/tesseract/tar.gz/refs/tags/5.5.3}"
+        OSII_LEPTONICA_SOURCE_URL: "${OSII_LEPTONICA_SOURCE_URL:-https://github.com/DanBloomberg/leptonica/releases/download/1.87.0/leptonica-1.87.0.tar.gz}"
+        OSII_TESSDATA_BASE_URL: "${OSII_TESSDATA_BASE_URL:-https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/4.1.0}"
     ports:
       - "${OSII_TESSERACT_PORT:-8080}:8080"
     healthcheck:
