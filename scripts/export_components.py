@@ -167,12 +167,12 @@ def adapt_container_files(component: str, component_root: Path) -> None:
             dockerfile.read_text(encoding="utf-8").replace(
                 "COPY osii-core /workspace/osii-core\n"
                 "COPY osii-mcp /workspace/osii-mcp\n"
-                "RUN uv pip install --no-sources --python \"${VIRTUAL_ENV}/bin/python\" \\\n"
+                "RUN \"${VIRTUAL_ENV}/bin/python\" -m pip install --no-cache-dir \\\n"
                 "    /workspace/osii-core/processor-sdk \\\n"
                 "    /workspace/osii-core \\\n"
                 "    /workspace/osii-mcp && \\\n",
                 "COPY . /workspace/osii-mcp\n"
-                "RUN uv pip install --no-sources --python \"${VIRTUAL_ENV}/bin/python\" "
+                "RUN \"${VIRTUAL_ENV}/bin/python\" -m pip install --no-cache-dir "
                 "/workspace/osii-mcp && \\\n",
             ),
             encoding="utf-8",
@@ -198,19 +198,16 @@ def adapt_container_files(component: str, component_root: Path) -> None:
             "FROM ${OSII_BASE_IMAGE}\n"
             "ARG OSII_PYTHON_VERSION=3.12\n"
             "ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \\\n"
-            "    UV_PYTHON_INSTALL_DIR=/opt/uv/python \\\n"
-            "    UV_PROJECT_ENVIRONMENT=/opt/venv \\\n"
             "    VIRTUAL_ENV=/opt/venv \\\n"
             "    PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n"
-            "RUN dnf install -y python3 python3-pip shadow-utils ca-certificates && \\\n"
+            "RUN dnf install -y \"python${OSII_PYTHON_VERSION}\" \"python${OSII_PYTHON_VERSION}-pip\" shadow-utils ca-certificates && \\\n"
             "    dnf clean all && rm -rf /var/cache/dnf && \\\n"
-            "    python3 -m pip install --no-cache-dir uv && \\\n"
-            "    uv python install \"${OSII_PYTHON_VERSION}\" && \\\n"
-            "    uv venv \"${VIRTUAL_ENV}\" --python \"${OSII_PYTHON_VERSION}\"\n"
+            "    \"python${OSII_PYTHON_VERSION}\" -m venv \"${VIRTUAL_ENV}\" && \\\n"
+            "    \"${VIRTUAL_ENV}/bin/python\" -m pip install --no-cache-dir --upgrade pip\n"
             "WORKDIR /workspace\n"
             "COPY osii-core/processor-sdk /workspace/osii-core/processor-sdk\n"
             "COPY . /workspace/service\n"
-            "RUN uv pip install --no-sources --python \"${VIRTUAL_ENV}/bin/python\" "
+            "RUN \"${VIRTUAL_ENV}/bin/python\" -m pip install --no-cache-dir "
             "/workspace/osii-core/processor-sdk /workspace/service && \\\n"
             "    groupadd --system osii && \\\n"
             "    useradd --system --gid osii --home-dir /workspace osii && \\\n"

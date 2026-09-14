@@ -8,8 +8,6 @@ ENV PYTHONUNBUFFERED=1 \
     SENTENCE_TRANSFORMERS_HOME=/models/.cache/sentence_transformers \
     HOST=0.0.0.0 \
     PORT=8085 \
-    UV_PYTHON_INSTALL_DIR=/opt/uv/python \
-    UV_PROJECT_ENVIRONMENT=/opt/venv \
     VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -21,16 +19,15 @@ RUN echo "OSII CA bundle SHA-256: ${OSII_CA_BUNDLE_SHA256}" && \
         update-ca-trust; \
     fi
 
-RUN dnf install -y python3 python3-pip shadow-utils ca-certificates && \
+RUN dnf install -y "python${OSII_PYTHON_VERSION}" "python${OSII_PYTHON_VERSION}-pip" shadow-utils ca-certificates && \
     dnf clean all && \
     rm -rf /var/cache/dnf && \
-    python3 -m pip install --no-cache-dir uv && \
-    uv python install "${OSII_PYTHON_VERSION}" && \
-    uv venv "${VIRTUAL_ENV}" --python "${OSII_PYTHON_VERSION}"
+    "python${OSII_PYTHON_VERSION}" -m venv "${VIRTUAL_ENV}" && \
+    "${VIRTUAL_ENV}/bin/python" -m pip install --no-cache-dir --upgrade pip
 
 WORKDIR /app
 COPY requirements.txt .
-RUN uv pip install --python "${VIRTUAL_ENV}/bin/python" -r requirements.txt
+RUN "${VIRTUAL_ENV}/bin/python" -m pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 
 ARG MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2

@@ -29,16 +29,20 @@ model-provider bridge in the baseline image.
 ## Portable RHEL-family base images
 
 OSII's public Dockerfiles default to Red Hat's freely redistributable UBI 9
-base. They deliberately install the application interpreter separately with
-`uv`, so the image always runs Python 3.12 even when the bootstrap Python in the
-base image changes. The dashboard installs Node.js 22 only in its build stage
-and serves the compiled files with Nginx from a fresh UBI 9 runtime stage.
+base. They install the explicitly versioned RHEL `python3.12` and
+`python3.12-pip` packages and create an isolated virtual environment, so the
+image does not inherit whichever unversioned Python happens to be in the base.
+Using architecture-native RHEL packages also avoids executing uv-managed
+Python distributions through QEMU during cross-architecture builds. The
+dashboard installs Node.js 22 only in its build stage and serves the compiled
+files with Nginx from a fresh UBI 9 runtime stage.
 
 Every OSII-authored image accepts the same `OSII_BASE_IMAGE` build argument.
 This lets a deployment builder select an approved RHEL 9 image without
-maintaining a fork of OSII's Dockerfiles. The replacement image must provide `dnf`, a
-bootstrap `python3`/`pip`, and configured repositories containing Node.js and
-Nginx plus ordinary C/C++ build dependencies. Tesseract also uses this shared
+maintaining a fork of OSII's Dockerfiles. The replacement image must provide
+`dnf` and configured repositories containing the selected versioned Python and
+pip packages, Node.js, Nginx, and ordinary C/C++ build dependencies. Python
+3.12 requires RHEL 9.4 or newer AppStream content. Tesseract also uses this shared
 base: it compiles pinned native sources in a disposable UBI builder stage and
 copies only runtime files into a clean UBI stage. For example, using a
 placeholder internal registry:
@@ -283,6 +287,14 @@ architectures and Podman's Linux VM has working AMD64 emulation. A native
 dependency build—especially Tesseract—will be noticeably slower under
 emulation. A failure in one architecture stops publication before its final
 manifest tag is replaced.
+
+If an older checkout fails with `qemu: uncaught target signal 11` during
+`uv python install` or `uv venv`, update before retrying. Current Dockerfiles
+use the architecture-native RHEL Python packages and do not run that managed
+interpreter bootstrap. If `dnf` instead reports that `python3.12` is missing,
+the selected corporate base does not expose sufficiently recent RHEL 9
+AppStream repositories; select an approved RHEL 9.4+ base or have the image
+owner expose those packages.
 
 ### Higher-assurance method: native builders
 

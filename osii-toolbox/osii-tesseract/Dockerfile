@@ -102,8 +102,6 @@ LABEL org.opencontainers.image.title="OSII Tesseract" \
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    UV_PYTHON_INSTALL_DIR=/opt/uv/python \
-    UV_PROJECT_ENVIRONMENT=/opt/venv \
     VIRTUAL_ENV=/opt/venv \
     TESSDATA_PREFIX=/opt/tesseract/share/tessdata \
     PATH=/opt/venv/bin:/opt/tesseract/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -118,15 +116,14 @@ RUN dnf install -y \
         libtiff \
         libXext \
         libXrender \
-        python3 \
-        python3-pip \
+        "python${OSII_PYTHON_VERSION}" \
+        "python${OSII_PYTHON_VERSION}-pip" \
         shadow-utils \
         zlib && \
     dnf clean all && \
     rm -rf /var/cache/dnf && \
-    python3 -m pip install --no-cache-dir uv && \
-    uv python install "${OSII_PYTHON_VERSION}" && \
-    uv venv "${VIRTUAL_ENV}" --python "${OSII_PYTHON_VERSION}"
+    "python${OSII_PYTHON_VERSION}" -m venv "${VIRTUAL_ENV}" && \
+    "${VIRTUAL_ENV}/bin/python" -m pip install --no-cache-dir --upgrade pip
 
 COPY --from=native-builder /opt/tesseract /opt/tesseract
 
@@ -134,7 +131,7 @@ WORKDIR /workspace
 COPY osii-core/processor-sdk /workspace/osii-core/processor-sdk
 COPY osii-toolbox/osii-tesseract/requirements.txt /workspace/osii-tesseract/requirements.txt
 WORKDIR /workspace/osii-tesseract
-RUN uv pip install --python "${VIRTUAL_ENV}/bin/python" \
+RUN "${VIRTUAL_ENV}/bin/python" -m pip install --no-cache-dir \
     -r requirements.txt \
     /workspace/osii-core/processor-sdk
 

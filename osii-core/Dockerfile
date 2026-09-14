@@ -11,8 +11,6 @@ LABEL org.opencontainers.image.title="OSII Core" \
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    UV_PYTHON_INSTALL_DIR=/opt/uv/python \
-    UV_PROJECT_ENVIRONMENT=/opt/venv \
     VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -26,25 +24,23 @@ RUN echo "OSII CA bundle SHA-256: ${OSII_CA_BUNDLE_SHA256}" && \
         update-ca-trust; \
     fi
 
-# The base image supplies only the bootstrap Python. uv installs the application
-# interpreter so changing to an approved RHEL-family base does not change OSII's
-# Python version.
-RUN dnf install -y python3 python3-pip shadow-utils ca-certificates && \
+# Use RHEL's architecture-native Python package. Downloaded uv-managed Python
+# can segfault while executing under QEMU during an AMD64 build on ARM64.
+RUN dnf install -y "python${OSII_PYTHON_VERSION}" "python${OSII_PYTHON_VERSION}-pip" shadow-utils ca-certificates && \
     dnf clean all && \
     rm -rf /var/cache/dnf && \
-    python3 -m pip install --no-cache-dir uv && \
-    uv python install "${OSII_PYTHON_VERSION}" && \
-    uv venv "${VIRTUAL_ENV}" --python "${OSII_PYTHON_VERSION}"
+    "python${OSII_PYTHON_VERSION}" -m venv "${VIRTUAL_ENV}" && \
+    "${VIRTUAL_ENV}/bin/python" -m pip install --no-cache-dir --upgrade pip
 
 RUN groupadd --system osii && useradd --system --gid osii --home-dir /app osii
 WORKDIR /app
 
 COPY osii-core/processor-sdk ./processor-sdk
-RUN uv pip install --python "${VIRTUAL_ENV}/bin/python" ./processor-sdk
+RUN "${VIRTUAL_ENV}/bin/python" -m pip install --no-cache-dir ./processor-sdk
 COPY osii-core/pyproject.toml osii-core/README.md ./
 COPY osii-core/osii ./osii
 COPY osii-core/config ./config
-RUN uv pip install --python "${VIRTUAL_ENV}/bin/python" .
+RUN "${VIRTUAL_ENV}/bin/python" -m pip install --no-cache-dir .
 
 RUN mkdir -p /data/.osii /data/source /data/uploads && \
     chown -R osii:osii /app /data

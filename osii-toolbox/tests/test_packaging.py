@@ -64,15 +64,16 @@ def test_repository_uses_named_component_roots():
 
 
 @pytest.mark.parametrize("dockerfile", PYTHON_DOCKERFILES)
-def test_python_images_use_replaceable_ubi_base_and_uv_runtime(dockerfile):
+def test_python_images_use_replaceable_ubi_base_and_native_rhel_python(dockerfile):
     recipe = (ROOT / dockerfile).read_text()
     assert recipe.startswith(
         "ARG OSII_BASE_IMAGE=registry.access.redhat.com/ubi9/ubi:latest\n"
         "FROM ${OSII_BASE_IMAGE}"
     )
     assert "ARG OSII_PYTHON_VERSION=3.12" in recipe
-    assert 'uv python install "${OSII_PYTHON_VERSION}"' in recipe
-    assert 'uv venv "${VIRTUAL_ENV}" --python "${OSII_PYTHON_VERSION}"' in recipe
+    assert '"python${OSII_PYTHON_VERSION}-pip"' in recipe
+    assert '"python${OSII_PYTHON_VERSION}" -m venv "${VIRTUAL_ENV}"' in recipe
+    assert 'uv python install "${OSII_PYTHON_VERSION}"' not in recipe
     assert "FROM python:" not in recipe
     assert "apt-get" not in recipe
 
@@ -197,7 +198,7 @@ def test_core_mcp_and_service_exports_have_standalone_build_paths(tmp_path):
     mcp_recipe = (output / "osii-mcp" / "Dockerfile").read_text()
     assert "COPY . /workspace/osii-mcp" in mcp_recipe
     assert "COPY osii-core" not in mcp_recipe
-    assert "uv pip install --no-sources" in mcp_recipe
+    assert '"${VIRTUAL_ENV}/bin/python" -m pip install --no-cache-dir' in mcp_recipe
 
     service_manifest = tomllib.loads(
         (output / "local-extractor" / "pyproject.toml").read_text()
