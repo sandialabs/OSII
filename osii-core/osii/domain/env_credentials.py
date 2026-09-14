@@ -10,6 +10,7 @@ import json
 
 
 ENV_NAME = re.compile(r"[A-Z_][A-Z0-9_]*")
+MAX_SECRET_FILE_BYTES = 64 * 1024
 
 
 def configured_env_file() -> Path | None:
@@ -56,6 +57,20 @@ def read_env_value(name: str) -> str:
     return result
 
 
+def read_secret_file_value(name: str) -> str:
+    """Read the conventional ``<NAME>_FILE`` secret without exposing its path."""
+    configured = os.getenv(f"{name}_FILE", "").strip()
+    if not configured:
+        return ""
+    path = Path(configured)
+    try:
+        if path.stat().st_size > MAX_SECRET_FILE_BYTES:
+            return ""
+        return path.read_text(encoding="utf-8").rstrip("\r\n")
+    except OSError:
+        return ""
+
+
 def resolve_env_value(name: str, *aliases: str) -> tuple[str, str | None]:
     """Return ``(value, source)`` with process environment taking precedence."""
     names = tuple(item for item in (name, *aliases) if item)
@@ -63,6 +78,10 @@ def resolve_env_value(name: str, *aliases: str) -> tuple[str, str | None]:
         value = os.getenv(candidate, "")
         if value:
             return value, "environment"
+    for candidate in names:
+        value = read_secret_file_value(candidate)
+        if value:
+            return value, "secret_file"
     for candidate in names:
         value = read_env_value(candidate)
         if value:

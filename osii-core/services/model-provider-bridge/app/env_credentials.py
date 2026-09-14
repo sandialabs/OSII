@@ -7,6 +7,9 @@ from pathlib import Path
 import json
 
 
+MAX_SECRET_FILE_BYTES = 64 * 1024
+
+
 def _file_value(name: str) -> str:
     configured = os.getenv("OSII_ENV_FILE", "").strip()
     if not configured:
@@ -35,10 +38,27 @@ def _file_value(name: str) -> str:
     return result
 
 
+def _secret_file_value(name: str) -> str:
+    configured = os.getenv(f"{name}_FILE", "").strip()
+    if not configured:
+        return ""
+    path = Path(configured)
+    try:
+        if path.stat().st_size > MAX_SECRET_FILE_BYTES:
+            return ""
+        return path.read_text(encoding="utf-8").rstrip("\r\n")
+    except OSError:
+        return ""
+
+
 def resolve_secret(*names: str) -> str:
     for name in names:
         if name and os.getenv(name, ""):
             return os.environ[name]
+    for name in names:
+        value = _secret_file_value(name) if name else ""
+        if value:
+            return value
     for name in names:
         value = _file_value(name) if name else ""
         if value:

@@ -186,6 +186,37 @@ def test_openai_http_uses_standard_environment_variables(monkeypatch, tmp_path):
     assert seen["headers"]["Authorization"] == "Bearer alias-key"
 
 
+def test_openai_http_reads_api_key_from_container_secret(monkeypatch, tmp_path):
+    monkeypatch.setenv("OSII_ROOT", str(tmp_path))
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://openai.example.test/api/v1")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    secret = tmp_path / "openai_api_key"
+    secret.write_text("secret-file-key\n", encoding="utf-8")
+    monkeypatch.setenv("OPENAI_API_KEY_FILE", str(secret))
+    seen = {}
+
+    class Response:
+        text = ""
+        status_code = 200
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return {"data": []}
+
+    def fake_request(method, url, **kwargs):
+        seen.update(kwargs)
+        return Response()
+
+    monkeypatch.setattr(requests, "request", fake_request)
+    CLIENTS["openai"].request("GET", "/models")
+
+    assert seen["headers"]["Authorization"] == "Bearer secret-file-key"
+
+
 def test_openai_embedding_retries_without_optional_encoding_format(monkeypatch, tmp_path):
     monkeypatch.setenv("OSII_ROOT", str(tmp_path))
     calls = []

@@ -20,14 +20,16 @@ uv run --no-project --python 3.12 python scripts/export_components.py --output .
 Export only selected components:
 
 ```bash
-uv run --no-project --python 3.12 python scripts/export_components.py --output ../osii-component-export --components osii-core,osii-dashboard,osii-mcp
+uv run --no-project --python 3.12 python scripts/export_components.py --output ../osii-component-export --components osii-core,osii-dashboard,osii-launcher,osii-mcp
 ```
 
-The output contains `osii-core`, `osii-dashboard`, `osii-mcp`, `osii-toolbox`,
-`osii-demo-notebooks`, the
+The output contains `osii-core`, `osii-dashboard`, `osii-launcher`, `osii-mcp`,
+`osii-toolbox`, `osii-demo-notebooks`, the
 shared `baseline-processors` image source (including full-page Tesseract OCR),
 the four independently exportable model-free local processors, and the
 HTTP-only `model-provider-bridge` directory, plus `EXPORT_MANIFEST.json`. The
+launcher exports as a standalone desktop-deployment repository without Core or
+dashboard source. The
 experimental OpenCV region OCR, dataset, and model services live in
 `osii-toolbox/` in this repository. See [image publishing](publishing-images.md)
 for its deployment role. Export the source with

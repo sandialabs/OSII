@@ -1,0 +1,1060 @@
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::env;
+use std::fs;
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpStream};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
+use tauri::menu::{Menu, MenuItem};
+use tauri::path::BaseDirectory;
+use tauri::tray::TrayIconBuilder;
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+
+const BASELINE_SERVICES: &[&str] = &[
+    "tesseract",
+    "local-extractor",
+    "local-synthesizer",
+    "local-embedder",
+    "local-enricher",
+    "model-provider-bridge",
+    "api",
+    "worker",
+    "dashboard",
+];
+const OPENAI_KEYRING_SERVICE: &str = "org.osii.launcher.openai";
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PodmanStatus {
+    installed: bool,
+    version: Option<String>,
+    major_version: Option<u32>,
+    engine_ready: bool,
+    compose_ready: bool,
+    compose_provider: Option<String>,
+    message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RegistryStatus {
+    registry: String,
+    logged_in: bool,
+    username: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileDraft {
+    name: String,
+    source_dir: String,
+    image_prefix: String,
+    image_tag: String,
+    openai_base_url: String,
+    openai_embedding_model: String,
+    openai_chat_model: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Profile {
+    id: String,
+    name: String,
+    source_dir: String,
+    image_prefix: String,
+    image_tag: String,
+    openai_base_url: String,
+    openai_embedding_model: String,
+    openai_chat_model: String,
+    api_key_present: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SourceCheck {
+    ok: bool,
+    canonical_path: String,
+    container_visible: bool,
+    message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeploymentStatus {
+    profile_id: Option<String>,
+    state: String,
+    dashboard_ready: bool,
+    api_ready: bool,
+    message: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ComposeProvider {
+    PodmanCompose,
+    PodmanPlugin,
+}
+
+fn output_text(output: &Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if stderr.is_empty() {
+        stdout
+    } else {
+        stderr
+    }
+}
+
+fn program_path(program: &str) -> PathBuf {
+    if program.contains('/') || program.contains('\\') {
+        return PathBuf::from(program);
+    }
+    if let Some(path) = env::var_os("PATH") {
+        for directory in env::split_paths(&path) {
+            let candidate = directory.join(program);
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    for directory in ["/opt/homebrew/bin", "/usr/local/bin", "/opt/podman/bin"] {
+        let candidate = Path::new(directory).join(program);
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+    #[cfg(target_os = "windows")]
+    for directory in [
+        env::var_os("ProgramFiles").map(|value| PathBuf::from(value).join("RedHat/Podman")),
+        env::var_os("LOCALAPPDATA").map(|value| PathBuf::from(value).join("Programs/Podman")),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let candidate = directory.join(program);
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+    PathBuf::from(program)
+}
+
+fn run_output(program: &str, args: &[&str]) -> Result<Output, String> {
+    Command::new(program_path(program))
+        .args(args)
+        .output()
+        .map_err(|error| format!("Could not run {program}: {error}"))
+}
+
+fn run_checked(program: &str, args: &[&str]) -> Result<String, String> {
+    let output = run_output(program, args)?;
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        Err(format!("{program} failed: {}", output_text(&output)))
+    }
+}
+
+fn run_with_stdin(program: &str, args: &[&str], value: &str) -> Result<(), String> {
+    let mut child = Command::new(program_path(program))
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Could not run {program}: {error}"))?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| format!("Could not open {program} input"))?
+        .write_all(value.as_bytes())
+        .map_err(|error| format!("Could not provide credential to {program}: {error}"))?;
+    let output = child
+        .wait_with_output()
+        .map_err(|error| format!("Could not wait for {program}: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!("{program} failed: {}", output_text(&output)))
+    }
+}
+
+fn compose_provider() -> Option<ComposeProvider> {
+    if run_output("podman-compose", &["--version"]).is_ok_and(|output| output.status.success()) {
+        return Some(ComposeProvider::PodmanCompose);
+    }
+    if run_output("podman", &["compose", "version"]).is_ok_and(|output| output.status.success()) {
+        return Some(ComposeProvider::PodmanPlugin);
+    }
+    None
+}
+
+fn podman_status() -> PodmanStatus {
+    let version_output = match run_output("podman", &["--version"]) {
+        Ok(output) if output.status.success() => output,
+        Ok(output) => {
+            return PodmanStatus {
+                installed: false,
+                version: None,
+                major_version: None,
+                engine_ready: false,
+                compose_ready: false,
+                compose_provider: None,
+                message: output_text(&output),
+            }
+        }
+        Err(error) => {
+            return PodmanStatus {
+                installed: false,
+                version: None,
+                major_version: None,
+                engine_ready: false,
+                compose_ready: false,
+                compose_provider: None,
+                message: error,
+            }
+        }
+    };
+    let version = String::from_utf8_lossy(&version_output.stdout)
+        .trim()
+        .to_string();
+    let major_version = version
+        .split_whitespace()
+        .find_map(|part| part.split('.').next()?.parse::<u32>().ok());
+    let raw_engine_ready = run_output("podman", &["info", "--format", "json"])
+        .is_ok_and(|output| output.status.success());
+    let provider = compose_provider();
+    let version_supported = major_version.is_some_and(|major| major >= 5);
+    let message = if !version_supported {
+        "OSII requires Podman 5 or newer.".to_string()
+    } else if !raw_engine_ready {
+        "Podman is installed, but its container engine is not running.".to_string()
+    } else if provider.is_none() {
+        "Podman is ready, but no Compose provider was found.".to_string()
+    } else {
+        "Podman and Compose are ready.".to_string()
+    };
+    PodmanStatus {
+        installed: true,
+        version: Some(version),
+        major_version,
+        engine_ready: raw_engine_ready && version_supported,
+        compose_ready: provider.is_some(),
+        compose_provider: provider.map(|item| match item {
+            ComposeProvider::PodmanCompose => "podman-compose".to_string(),
+            ComposeProvider::PodmanPlugin => "podman compose".to_string(),
+        }),
+        message,
+    }
+}
+
+#[tauri::command]
+fn check_podman() -> PodmanStatus {
+    podman_status()
+}
+
+#[tauri::command]
+fn prepare_podman_machine() -> Result<PodmanStatus, String> {
+    let current = podman_status();
+    if !current.installed {
+        return Err("Install Podman Desktop or Podman 5 before continuing.".to_string());
+    }
+    if current.major_version.is_none_or(|major| major < 5) {
+        return Err("Upgrade to Podman 5 or newer before continuing.".to_string());
+    }
+    if current.engine_ready {
+        return Ok(current);
+    }
+    if cfg!(target_os = "linux") {
+        return Err(
+            "Start the Podman service for your Linux account, then check again.".to_string(),
+        );
+    }
+
+    let machines = run_checked("podman", &["machine", "list", "--format", "json"])?;
+    let rows: Value = serde_json::from_str(&machines)
+        .map_err(|error| format!("Podman returned an invalid machine list: {error}"))?;
+    if rows.as_array().is_none_or(|items| items.is_empty()) {
+        run_checked("podman", &["machine", "init"])?;
+    }
+    let started = run_output("podman", &["machine", "start"])?;
+    if !started.status.success() {
+        let message = output_text(&started).to_lowercase();
+        if !message.contains("already running") {
+            return Err(format!(
+                "Could not start the Podman machine: {}",
+                output_text(&started)
+            ));
+        }
+    }
+    let status = podman_status();
+    if status.engine_ready {
+        Ok(status)
+    } else {
+        Err("Podman reported that the machine started, but the engine is not ready yet. Wait a moment and check again.".to_string())
+    }
+}
+
+fn validate_registry(registry: &str) -> Result<String, String> {
+    let value = registry.trim().to_lowercase();
+    if value.is_empty()
+        || value.contains('/')
+        || !value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || ".:-".contains(character))
+    {
+        return Err("Enter a registry hostname such as quay.corp.example.".to_string());
+    }
+    Ok(value)
+}
+
+#[tauri::command]
+fn registry_status(registry: String) -> Result<RegistryStatus, String> {
+    let registry = validate_registry(&registry)?;
+    let output = run_output("podman", &["login", "--get-login", &registry])?;
+    let username = output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string());
+    Ok(RegistryStatus {
+        registry,
+        logged_in: username.as_ref().is_some_and(|value| !value.is_empty()),
+        username: username.filter(|value| !value.is_empty()),
+    })
+}
+
+#[tauri::command]
+fn login_registry(
+    registry: String,
+    username: String,
+    password: String,
+) -> Result<RegistryStatus, String> {
+    let registry = validate_registry(&registry)?;
+    let username = username.trim();
+    if username.is_empty() || username.contains(['\n', '\r']) {
+        return Err("Enter the Quay username or robot-account name.".to_string());
+    }
+    if password.is_empty() || password.contains(['\n', '\r']) {
+        return Err("Enter the Quay password or robot token.".to_string());
+    }
+    run_with_stdin(
+        "podman",
+        &[
+            "login",
+            &registry,
+            "--username",
+            username,
+            "--password-stdin",
+        ],
+        &password,
+    )?;
+    registry_status(registry)
+}
+
+fn launcher_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let path = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Could not locate launcher data: {error}"))?;
+    fs::create_dir_all(&path)
+        .map_err(|error| format!("Could not create launcher data directory: {error}"))?;
+    Ok(path)
+}
+
+fn profiles_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(launcher_data_dir(app)?.join("profiles.json"))
+}
+
+fn read_profiles(app: &AppHandle) -> Result<Vec<Profile>, String> {
+    let path = profiles_path(app)?;
+    match fs::read_to_string(path) {
+        Ok(content) => serde_json::from_str(&content)
+            .map_err(|error| format!("Could not read saved library profiles: {error}")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(error) => Err(format!("Could not read saved library profiles: {error}")),
+    }
+}
+
+fn write_profiles(app: &AppHandle, profiles: &[Profile]) -> Result<(), String> {
+    let path = profiles_path(app)?;
+    let temporary = path.with_extension("json.tmp");
+    let content = serde_json::to_string_pretty(profiles)
+        .map_err(|error| format!("Could not serialize library profiles: {error}"))?;
+    fs::write(&temporary, format!("{content}\n"))
+        .map_err(|error| format!("Could not save library profiles: {error}"))?;
+    if cfg!(target_os = "windows") && path.exists() {
+        fs::remove_file(&path)
+            .map_err(|error| format!("Could not replace library profiles: {error}"))?;
+    }
+    fs::rename(&temporary, &path)
+        .map_err(|error| format!("Could not finish saving library profiles: {error}"))
+}
+
+fn validate_image_part(value: &str, label: &str, allow_slash: bool) -> Result<String, String> {
+    let value = value.trim();
+    let allowed = value.chars().all(|character| {
+        character.is_ascii_alphanumeric()
+            || "._:@-".contains(character)
+            || (allow_slash && character == '/')
+    });
+    if value.is_empty() || !allowed {
+        Err(format!("The {label} contains unsupported characters."))
+    } else {
+        Ok(value.to_string())
+    }
+}
+
+fn canonical_source(source_dir: &str) -> Result<PathBuf, String> {
+    let source = Path::new(source_dir.trim());
+    let canonical = source
+        .canonicalize()
+        .map_err(|error| format!("The selected source folder is not accessible: {error}"))?;
+    if !canonical.is_dir() {
+        return Err("The selected source path is not a folder.".to_string());
+    }
+    fs::read_dir(&canonical)
+        .map_err(|error| format!("The selected source folder cannot be read: {error}"))?;
+    Ok(canonical)
+}
+
+fn keyring_entry(profile_id: &str) -> Result<keyring::Entry, String> {
+    validate_profile_id(profile_id)?;
+    keyring::Entry::new(OPENAI_KEYRING_SERVICE, profile_id)
+        .map_err(|error| format!("Could not access the operating-system credential store: {error}"))
+}
+
+fn key_is_present(profile_id: &str) -> bool {
+    keyring_entry(profile_id)
+        .and_then(|entry| entry.get_password().map_err(|error| error.to_string()))
+        .is_ok_and(|value| !value.is_empty())
+}
+
+#[tauri::command]
+fn list_profiles(app: AppHandle) -> Result<Vec<Profile>, String> {
+    let mut profiles = read_profiles(&app)?;
+    for profile in &mut profiles {
+        profile.api_key_present = key_is_present(&profile.id);
+    }
+    Ok(profiles)
+}
+
+#[tauri::command]
+fn save_profile(
+    app: AppHandle,
+    draft: ProfileDraft,
+    profile_id: Option<String>,
+) -> Result<Profile, String> {
+    let name = draft.name.trim();
+    if name.is_empty() {
+        return Err("Give this library a name.".to_string());
+    }
+    let source = canonical_source(&draft.source_dir)?;
+    let image_prefix = validate_image_part(&draft.image_prefix, "image prefix", true)?;
+    let image_tag = validate_image_part(&draft.image_tag, "image tag", false)?;
+    let id = profile_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    validate_profile_id(&id)?;
+    let profile = Profile {
+        id: id.clone(),
+        name: name.to_string(),
+        source_dir: source.to_string_lossy().to_string(),
+        image_prefix,
+        image_tag,
+        openai_base_url: draft
+            .openai_base_url
+            .trim()
+            .trim_end_matches('/')
+            .to_string(),
+        openai_embedding_model: draft.openai_embedding_model.trim().to_string(),
+        openai_chat_model: draft.openai_chat_model.trim().to_string(),
+        api_key_present: key_is_present(&id),
+    };
+    let mut profiles = read_profiles(&app)?;
+    profiles.retain(|item| item.id != id);
+    profiles.insert(0, profile.clone());
+    write_profiles(&app, &profiles)?;
+    fs::create_dir_all(profile_data_dir(&app, &id)?)
+        .map_err(|error| format!("Could not create the library state directory: {error}"))?;
+    Ok(profile)
+}
+
+#[tauri::command]
+fn store_api_key(profile_id: String, api_key: String) -> Result<(), String> {
+    if api_key.is_empty() || api_key.contains(['\n', '\r']) {
+        return Err("The API key is empty or contains a line break.".to_string());
+    }
+    keyring_entry(&profile_id)?
+        .set_password(&api_key)
+        .map_err(|error| format!("Could not store the API key securely: {error}"))
+}
+
+#[tauri::command]
+fn forget_api_key(profile_id: String) -> Result<(), String> {
+    match keyring_entry(&profile_id)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(error) => Err(format!("Could not remove the stored API key: {error}")),
+    }
+}
+
+#[tauri::command]
+fn validate_source(source_dir: String, probe_image: String) -> Result<SourceCheck, String> {
+    let source = canonical_source(&source_dir)?;
+    let image = validate_image_part(&probe_image, "probe image", true)?;
+    let mount = format!("{}:/source:ro", source.to_string_lossy());
+    let output = run_output(
+        "podman",
+        &[
+            "run",
+            "--rm",
+            "--pull=never",
+            "--volume",
+            &mount,
+            &image,
+            "/bin/sh",
+            "-c",
+            "test -r /source && find /source -mindepth 1 -maxdepth 1 -print -quit >/dev/null",
+        ],
+    )?;
+    let visible = output.status.success();
+    Ok(SourceCheck {
+        ok: visible,
+        canonical_path: source.to_string_lossy().to_string(),
+        container_visible: visible,
+        message: if visible {
+            "The folder is readable from an OSII container.".to_string()
+        } else {
+            format!(
+                "Podman could not read this folder with {}: {}",
+                image,
+                output_text(&output)
+            )
+        },
+    })
+}
+
+fn validate_profile_id(profile_id: &str) -> Result<(), String> {
+    if profile_id.is_empty()
+        || profile_id.len() > 64
+        || !profile_id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+    {
+        Err("Invalid library profile identifier.".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+fn profile_data_dir(app: &AppHandle, profile_id: &str) -> Result<PathBuf, String> {
+    validate_profile_id(profile_id)?;
+    Ok(launcher_data_dir(app)?
+        .join("profiles")
+        .join(profile_id)
+        .join("data"))
+}
+
+fn profile_config_dir(app: &AppHandle, profile_id: &str) -> Result<PathBuf, String> {
+    validate_profile_id(profile_id)?;
+    Ok(launcher_data_dir(app)?
+        .join("profiles")
+        .join(profile_id)
+        .join("deployment"))
+}
+
+fn active_profile_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(launcher_data_dir(app)?.join("active-profile"))
+}
+
+fn active_profile(app: &AppHandle) -> Result<Option<String>, String> {
+    match fs::read_to_string(active_profile_path(app)?) {
+        Ok(value) => {
+            let value = value.trim().to_string();
+            validate_profile_id(&value)?;
+            Ok(Some(value))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!(
+            "Could not read the active library profile: {error}"
+        )),
+    }
+}
+
+fn set_active_profile(app: &AppHandle, profile_id: Option<&str>) -> Result<(), String> {
+    let path = active_profile_path(app)?;
+    if let Some(value) = profile_id {
+        validate_profile_id(value)?;
+        fs::write(path, format!("{value}\n"))
+            .map_err(|error| format!("Could not record the active library profile: {error}"))
+    } else {
+        match fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!(
+                "Could not clear the active library profile: {error}"
+            )),
+        }
+    }
+}
+
+fn find_profile(app: &AppHandle, profile_id: &str) -> Result<Profile, String> {
+    validate_profile_id(profile_id)?;
+    read_profiles(app)?
+        .into_iter()
+        .find(|profile| profile.id == profile_id)
+        .ok_or_else(|| "The selected library profile no longer exists.".to_string())
+}
+
+fn compose_file(app: &AppHandle) -> Result<PathBuf, String> {
+    let development = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compose.yaml");
+    if development.is_file() {
+        return development
+            .canonicalize()
+            .map_err(|error| format!("Could not locate the development Compose file: {error}"));
+    }
+    app.path()
+        .resolve("deployment/compose.yaml", BaseDirectory::Resource)
+        .map_err(|error| format!("Could not locate the packaged Compose file: {error}"))
+}
+
+fn project_name(profile_id: &str) -> Result<String, String> {
+    validate_profile_id(profile_id)?;
+    Ok(format!(
+        "osii-{}",
+        profile_id.replace('-', "").to_lowercase()
+    ))
+}
+
+fn secret_name(profile_id: &str) -> Result<String, String> {
+    validate_profile_id(profile_id)?;
+    Ok(format!(
+        "osii_openai_{}",
+        profile_id.replace('-', "").to_lowercase()
+    ))
+}
+
+fn compose_command(
+    provider: ComposeProvider,
+    compose: &Path,
+    override_file: &Path,
+    project: &str,
+    profile: &Profile,
+    args: &[&str],
+) -> Result<Output, String> {
+    let compose = compose.to_string_lossy().to_string();
+    let override_file = override_file.to_string_lossy().to_string();
+    let mut command = match provider {
+        ComposeProvider::PodmanCompose => Command::new(program_path("podman-compose")),
+        ComposeProvider::PodmanPlugin => {
+            let mut command = Command::new(program_path("podman"));
+            command.arg("compose");
+            command
+        }
+    };
+    command
+        .args(["-f", &compose, "-f", &override_file, "-p", project])
+        .env("OSII_SOURCE_DIR", &profile.source_dir)
+        .env("OSII_IMAGE_PREFIX", &profile.image_prefix)
+        .env("OSII_IMAGE_TAG", &profile.image_tag)
+        .args(args)
+        .output()
+        .map_err(|error| format!("Could not run the Compose provider: {error}"))
+}
+
+fn compose_checked(
+    provider: ComposeProvider,
+    compose: &Path,
+    override_file: &Path,
+    project: &str,
+    profile: &Profile,
+    args: &[&str],
+) -> Result<String, String> {
+    let output = compose_command(provider, compose, override_file, project, profile, args)?;
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        Err(format!("Compose failed: {}", output_text(&output)))
+    }
+}
+
+fn profile_override(app: &AppHandle, profile: &Profile, has_key: bool) -> Result<PathBuf, String> {
+    let config_dir = profile_config_dir(app, &profile.id)?;
+    let data_dir = profile_data_dir(app, &profile.id)?;
+    fs::create_dir_all(&config_dir)
+        .map_err(|error| format!("Could not create deployment configuration: {error}"))?;
+    fs::create_dir_all(&data_dir)
+        .map_err(|error| format!("Could not create library state: {error}"))?;
+    let data_mount = format!("{}:/data", data_dir.to_string_lossy());
+    let data_mount_read_only = format!("{}:/data:ro", data_dir.to_string_lossy());
+
+    let mut shared_environment = serde_json::Map::new();
+    if !profile.openai_base_url.is_empty() {
+        shared_environment.insert("OPENAI_BASE_URL".into(), json!(profile.openai_base_url));
+        shared_environment.insert("CHAT_PROVIDER".into(), json!("openai"));
+        shared_environment.insert(
+            "CHAT_PROVIDER_CHAIN".into(),
+            json!("openai,ollama,extractive"),
+        );
+        shared_environment.insert(
+            "OSII_DEFAULT_SYNTHESIZER".into(),
+            json!("openai.synthesizer"),
+        );
+        shared_environment.insert("OSII_DEFAULT_EMBEDDER".into(), json!("openai.embedder"));
+        shared_environment.insert(
+            "OSII_PROCESSORS".into(),
+            json!("http://local-extractor:8092,http://tesseract:8080,http://local-synthesizer:8093,http://local-embedder:8085,http://local-enricher:8094,http://model-provider-bridge:8095/openai/embedder,http://model-provider-bridge:8095/openai/synthesizer,http://model-provider-bridge:8095/ollama/embedder,http://model-provider-bridge:8095/ollama/synthesizer"),
+        );
+    }
+    if !profile.openai_embedding_model.is_empty() {
+        shared_environment.insert(
+            "OPENAI_EMBEDDING_MODEL".into(),
+            json!(profile.openai_embedding_model),
+        );
+    }
+    if !profile.openai_chat_model.is_empty() {
+        shared_environment.insert("OPENAI_CHAT_MODEL".into(), json!(profile.openai_chat_model));
+        shared_environment.insert(
+            "OPENAI_SYNTHESIS_MODEL".into(),
+            json!(profile.openai_chat_model),
+        );
+    }
+    if has_key {
+        shared_environment.insert(
+            "OPENAI_API_KEY_FILE".into(),
+            json!("/run/secrets/openai_api_key"),
+        );
+    }
+
+    let mut services = serde_json::Map::new();
+    for (name, mount) in [
+        ("api", data_mount.as_str()),
+        ("worker", data_mount.as_str()),
+        ("model-provider-bridge", data_mount_read_only.as_str()),
+    ] {
+        let mut service = serde_json::Map::new();
+        service.insert("volumes".into(), json!([mount]));
+        service.insert(
+            "environment".into(),
+            Value::Object(shared_environment.clone()),
+        );
+        if has_key {
+            service.insert("secrets".into(), json!(["openai_api_key"]));
+        }
+        services.insert(name.into(), Value::Object(service));
+    }
+
+    let mut root = serde_json::Map::new();
+    root.insert("services".into(), Value::Object(services));
+    if has_key {
+        root.insert(
+            "secrets".into(),
+            json!({
+                "openai_api_key": {
+                    "external": true,
+                    "name": secret_name(&profile.id)?
+                }
+            }),
+        );
+    }
+    let path = config_dir.join("compose.override.json");
+    let content = serde_json::to_string_pretty(&Value::Object(root))
+        .map_err(|error| format!("Could not generate deployment configuration: {error}"))?;
+    fs::write(&path, format!("{content}\n"))
+        .map_err(|error| format!("Could not save deployment configuration: {error}"))?;
+    Ok(path)
+}
+
+fn profile_images(profile: &Profile) -> [String; 3] {
+    [
+        format!("{}-core:{}", profile.image_prefix, profile.image_tag),
+        format!("{}-dashboard:{}", profile.image_prefix, profile.image_tag),
+        format!(
+            "{}-baseline-processors:{}",
+            profile.image_prefix, profile.image_tag
+        ),
+    ]
+}
+
+fn create_runtime_secret(profile: &Profile) -> Result<bool, String> {
+    let key = match keyring_entry(&profile.id)?.get_password() {
+        Ok(value) if !value.is_empty() => value,
+        Ok(_) | Err(keyring::Error::NoEntry) => return Ok(false),
+        Err(error) => return Err(format!("Could not read the stored API key: {error}")),
+    };
+    let name = secret_name(&profile.id)?;
+    run_with_stdin(
+        "podman",
+        &["secret", "create", "--replace", &name, "-"],
+        &key,
+    )?;
+    Ok(true)
+}
+
+fn remove_runtime_secret(profile_id: &str) {
+    if let Ok(name) = secret_name(profile_id) {
+        let _ = run_output("podman", &["secret", "rm", &name]);
+    }
+}
+
+fn http_ready(port: u16, path: &str) -> bool {
+    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(450)) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(650)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(650)));
+    let request = format!("GET {path} HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n");
+    if stream.write_all(request.as_bytes()).is_err() {
+        return false;
+    }
+    let mut response = [0_u8; 64];
+    let Ok(count) = stream.read(&mut response) else {
+        return false;
+    };
+    let status = String::from_utf8_lossy(&response[..count]);
+    status.starts_with("HTTP/1.0 2") || status.starts_with("HTTP/1.1 2")
+}
+
+fn deployment_status_inner(app: &AppHandle) -> Result<DeploymentStatus, String> {
+    let Some(profile_id) = active_profile(app)? else {
+        return Ok(DeploymentStatus {
+            profile_id: None,
+            state: "stopped".to_string(),
+            dashboard_ready: false,
+            api_ready: false,
+            message: "OSII is not running.".to_string(),
+        });
+    };
+    let api_ready = http_ready(8511, "/health");
+    let dashboard_ready = http_ready(5173, "/");
+    let state = if api_ready && dashboard_ready {
+        "running"
+    } else {
+        "degraded"
+    };
+    Ok(DeploymentStatus {
+        profile_id: Some(profile_id),
+        state: state.to_string(),
+        api_ready,
+        dashboard_ready,
+        message: if state == "running" {
+            "Core and the dashboard are healthy.".to_string()
+        } else {
+            "OSII is running, but one or more health checks are not ready.".to_string()
+        },
+    })
+}
+
+#[tauri::command]
+fn deployment_status(app: AppHandle) -> Result<DeploymentStatus, String> {
+    deployment_status_inner(&app)
+}
+
+fn stop_profile_inner(app: &AppHandle, profile_id: &str) -> Result<DeploymentStatus, String> {
+    let profile = find_profile(app, profile_id)?;
+    let provider =
+        compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
+    let compose = compose_file(app)?;
+    let override_file = profile_override(app, &profile, key_is_present(profile_id))?;
+    compose_checked(
+        provider,
+        &compose,
+        &override_file,
+        &project_name(profile_id)?,
+        &profile,
+        &["down", "--remove-orphans"],
+    )?;
+    remove_runtime_secret(profile_id);
+    if active_profile(app)?.as_deref() == Some(profile_id) {
+        set_active_profile(app, None)?;
+    }
+    Ok(DeploymentStatus {
+        profile_id: None,
+        state: "stopped".to_string(),
+        dashboard_ready: false,
+        api_ready: false,
+        message: "OSII stopped. Library data remains on this workstation.".to_string(),
+    })
+}
+
+#[tauri::command]
+fn stop_profile(app: AppHandle, profile_id: String) -> Result<DeploymentStatus, String> {
+    stop_profile_inner(&app, &profile_id)
+}
+
+#[tauri::command]
+fn start_profile(app: AppHandle, profile_id: String) -> Result<DeploymentStatus, String> {
+    let status = podman_status();
+    if !status.engine_ready || !status.compose_ready {
+        return Err(status.message);
+    }
+    let profile = find_profile(&app, &profile_id)?;
+    canonical_source(&profile.source_dir)?;
+
+    if let Some(current) = active_profile(&app)? {
+        if current != profile_id {
+            stop_profile_inner(&app, &current)?;
+        }
+    }
+
+    for image in profile_images(&profile) {
+        run_checked("podman", &["pull", &image])?;
+    }
+    let has_key = create_runtime_secret(&profile)?;
+    let override_file = profile_override(&app, &profile, has_key)?;
+    let compose = compose_file(&app)?;
+    let provider =
+        compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
+    let mut args = vec!["up", "-d", "--no-build"];
+    args.extend(BASELINE_SERVICES.iter().copied());
+    if let Err(error) = compose_checked(
+        provider,
+        &compose,
+        &override_file,
+        &project_name(&profile_id)?,
+        &profile,
+        &args,
+    ) {
+        remove_runtime_secret(&profile_id);
+        return Err(error);
+    }
+    set_active_profile(&app, Some(&profile_id))?;
+
+    let deadline = Instant::now() + Duration::from_secs(90);
+    while Instant::now() < deadline {
+        let status = deployment_status_inner(&app)?;
+        if status.api_ready && status.dashboard_ready {
+            return Ok(status);
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    deployment_status_inner(&app)
+}
+
+#[tauri::command]
+fn profile_logs(app: AppHandle, profile_id: String) -> Result<String, String> {
+    let profile = find_profile(&app, &profile_id)?;
+    let compose = compose_file(&app)?;
+    let override_file = profile_override(&app, &profile, key_is_present(&profile_id))?;
+    let provider =
+        compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
+    let output = compose_checked(
+        provider,
+        &compose,
+        &override_file,
+        &project_name(&profile_id)?,
+        &profile,
+        &["logs", "--no-color", "--tail", "250"],
+    )?;
+    let mut start = output.len().saturating_sub(65_536);
+    while !output.is_char_boundary(start) {
+        start += 1;
+    }
+    Ok(output[start..].to_string())
+}
+
+#[tauri::command]
+fn open_dashboard(app: AppHandle) -> Result<(), String> {
+    if !http_ready(5173, "/") {
+        return Err("The dashboard is not ready yet.".to_string());
+    }
+    if let Some(window) = app.get_webview_window("dashboard") {
+        window
+            .show()
+            .and_then(|_| window.set_focus())
+            .map_err(|error| format!("Could not show the dashboard: {error}"))?;
+        return Ok(());
+    }
+    let url = "http://127.0.0.1:5173"
+        .parse()
+        .map_err(|error| format!("Could not prepare the dashboard URL: {error}"))?;
+    WebviewWindowBuilder::new(&app, "dashboard", WebviewUrl::External(url))
+        .title("OSII")
+        .inner_size(1280.0, 820.0)
+        .min_inner_size(900.0, 640.0)
+        .build()
+        .map_err(|error| format!("Could not open the dashboard: {error}"))?;
+    Ok(())
+}
+
+fn install_tray(app: &AppHandle) -> tauri::Result<()> {
+    let open = MenuItem::with_id(app, "open", "Open OSII Launcher", true, None::<&str>)?;
+    let dashboard = MenuItem::with_id(app, "dashboard", "Open Dashboard", true, None::<&str>)?;
+    let stop = MenuItem::with_id(app, "stop", "Stop OSII", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&open, &dashboard, &stop, &quit])?;
+    TrayIconBuilder::new()
+        .menu(&menu)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "open" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            "dashboard" => {
+                let _ = open_dashboard(app.clone());
+            }
+            "stop" => {
+                if let Ok(Some(profile_id)) = active_profile(app) {
+                    let _ = stop_profile_inner(app, &profile_id);
+                }
+            }
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .build(app)?;
+    Ok(())
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            install_tray(app.handle())?;
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            check_podman,
+            prepare_podman_machine,
+            registry_status,
+            login_registry,
+            validate_source,
+            list_profiles,
+            save_profile,
+            store_api_key,
+            forget_api_key,
+            start_profile,
+            stop_profile,
+            deployment_status,
+            profile_logs,
+            open_dashboard,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running OSII Launcher");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registry_validation_rejects_paths_and_flags() {
+        assert!(validate_registry("quay.example.test").is_ok());
+        assert!(validate_registry("quay.example.test/team").is_err());
+        assert!(validate_registry("--tls-verify=false").is_err());
+    }
+
+    #[test]
+    fn image_validation_allows_registry_paths_but_not_shell_syntax() {
+        assert!(validate_image_part("quay.example.test/team/osii-core:tag", "image", true).is_ok());
+        assert!(validate_image_part("image;whoami", "image", true).is_err());
+    }
+
+    #[test]
+    fn profile_ids_are_safe_for_paths_and_project_names() {
+        assert!(validate_profile_id("9a35f814-402d-4d33-8ded-19b12ffccb21").is_ok());
+        assert!(validate_profile_id("../../outside").is_err());
+    }
+}

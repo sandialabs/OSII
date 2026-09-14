@@ -137,6 +137,20 @@ def test_openai_environment_exposes_generic_runtime_defaults(client, monkeypatch
     assert provider["credential_present"] is True
 
 
+def test_openai_environment_accepts_container_secret_file(client, monkeypatch, tmp_path):
+    secret = tmp_path / "openai_api_key"
+    secret.write_text("mounted-secret\n", encoding="utf-8")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY_FILE", str(secret))
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://models.example.test/v1")
+
+    payload = client.get("/api/admin/model-providers").json()
+    provider = next(item for item in payload["providers"] if item["id"] == "openai-compatible")
+
+    assert provider["credential_present"] is True
+    assert "mounted-secret" not in str(payload)
+
+
 def test_openai_health_validates_selected_embedding_model(client, monkeypatch):
     client.put("/api/admin/model-providers/openai-probe", json={
         "type": "openai",

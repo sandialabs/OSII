@@ -41,6 +41,10 @@ COMPONENTS: dict[str, tuple[ExportEntry, ...]] = {
         ExportEntry("osii-dashboard/dashboard", "."),
         ExportEntry("docs/reference/api", "docs/reference/api"),
     ),
+    "osii-launcher": (
+        ExportEntry("osii-launcher", "."),
+        ExportEntry("compose.yaml", "compose.yaml"),
+    ),
     "osii-mcp": (
         ExportEntry("osii-mcp", "."),
         ExportEntry("docs/reference/api", "docs/reference/api"),
@@ -93,7 +97,7 @@ COMPONENTS: dict[str, tuple[ExportEntry, ...]] = {
 IGNORED_NAMES = {
     ".git", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".venv",
     "__pycache__", "node_modules", "dist", "build", ".vite",
-    "data_volume", "osii-data", "models", ".cache", "osii-env", ".env",
+    "gen", "target", "data_volume", "osii-data", "models", ".cache", "osii-env", ".env",
 }
 
 
@@ -147,6 +151,7 @@ def write_manifest(output: Path, selected: list[str]) -> None:
         "notes": {
             "osii-core": "Publish the osii Python package to the corporate package registry before exporting MCP consumers.",
             "osii-dashboard": "Configure its API endpoint for the deployed OSII backend.",
+            "osii-launcher": "Build and sign desktop installers separately from the container images.",
             "osii-toolbox": "Processor services use the shared osii-processor-sdk contract package.",
         },
     }
@@ -154,8 +159,15 @@ def write_manifest(output: Path, selected: list[str]) -> None:
 
 
 def adapt_container_files(component: str, component_root: Path) -> None:
-    """Make Dockerfiles use the exported directory as their build context."""
+    """Adapt repository-relative files to an exported component root."""
     dockerfile = component_root / "Dockerfile"
+    if component == "osii-launcher":
+        config = component_root / "src-tauri" / "tauri.conf.json"
+        content = config.read_text(encoding="utf-8")
+        config.write_text(
+            content.replace('"../../compose.yaml": "deployment/compose.yaml"', '"../compose.yaml": "deployment/compose.yaml"'),
+            encoding="utf-8",
+        )
     if component == "osii-core" and dockerfile.exists():
         content = dockerfile.read_text(encoding="utf-8")
         content = content.replace("COPY osii-core/processor-sdk ./processor-sdk", "COPY processor-sdk ./processor-sdk")

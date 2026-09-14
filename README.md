@@ -275,6 +275,9 @@ are intentional and reflected directly in the root names:
   They run automatically during local development and remain independently
   addressable and containerizable.
 - **`osii-dashboard/`** and **`osii-mcp/`** are human and agent clients of Core.
+- **`osii-launcher/`** is the separately releasable desktop deployment shell
+  for non-developers. It owns host-level Podman, Quay, shared-drive, profile,
+  and application-lifecycle workflows without moving those concerns into Core.
 - **`osii-toolbox/`** contains the optional OpenCV/Tesseract region extractor
   plus dataset and model-backed tools whose dependencies do not belong in
   Core. Ordinary full-page Tesseract lives with the baseline processors.

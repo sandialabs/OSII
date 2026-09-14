@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import shlex
 import subprocess
 import sys
@@ -59,7 +60,7 @@ def test_tools_do_not_join_core_workspace_or_duplicate_sdk():
 def test_repository_uses_named_component_roots():
     for legacy_root in ("ai-ready-ingest", "ai-ready-mcp", "packages", "services", "toolbox"):
         assert not (ROOT / legacy_root).exists()
-    for component_root in ("osii-core", "osii-dashboard", "osii-mcp", "osii-toolbox"):
+    for component_root in ("osii-core", "osii-dashboard", "osii-launcher", "osii-mcp", "osii-toolbox"):
         assert (ROOT / component_root).is_dir()
 
 
@@ -205,6 +206,34 @@ def test_core_mcp_and_service_exports_have_standalone_build_paths(tmp_path):
     )
     source = service_manifest["tool"]["uv"]["sources"]["osii-processor-sdk"]
     assert source["path"] == "osii-core/processor-sdk"
+
+
+def test_launcher_exports_as_an_independent_component(tmp_path):
+    output = tmp_path / "export"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts/export_components.py"),
+            "--components",
+            "osii-launcher",
+            "--output",
+            str(output),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    launcher = output / "osii-launcher"
+    assert (launcher / "README.md").is_file()
+    assert (launcher / "compose.yaml").is_file()
+    launcher_config = json.loads((launcher / "src-tauri" / "tauri.conf.json").read_text())
+    assert launcher_config["bundle"]["resources"] == {
+        "../compose.yaml": "deployment/compose.yaml"
+    }
+    assert not (launcher / "src-tauri" / "gen").exists()
+    assert not (launcher / "osii-core").exists()
+    assert not (launcher / "osii-dashboard").exists()
 
 
 def test_export_omits_runtime_data_and_credentials(tmp_path, monkeypatch):
