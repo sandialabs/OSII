@@ -1,23 +1,22 @@
 # Corporate pilot images and Quay releases
 
-The main repository's `osii-toolbox/` directory owns specialized images.
-Tesseract is the one bundled, default-swappable Toolbox service, so the normal
-release build and push commands include it. Dataset and model tools remain
-explicit opt-in images with their own build, run, and Quay commands.
+The main repository's `osii-toolbox/` directory owns specialized optional
+images. Normal release and startup commands do not build or start Toolbox
+services. Parallel `toolbox-*` commands make each one easy to deploy when
+needed.
 
-OSII has one user-facing product launch and four image artifacts:
+OSII has one user-facing product launch and three default image artifacts:
 
 | Image suffix | Runs |
 |---|---|
 | `-core` | API, worker, and grounded chat |
 | `-dashboard` | Static dashboard and API proxy |
-| `-baseline-processors` | Extractor, synthesizer, embedder, enricher, or model bridge |
-| `-tesseract` | Bundled OpenCV/Tesseract OCR extractor, replaceable through Processor API configuration |
+| `-baseline-processors` | Native extractor, full-page Tesseract OCR, synthesizer, embedder, enricher, or model bridge |
 
-The deployment starts nine containers: the core image runs API and worker;
-the baseline image runs five independently addressable processor/adapter
-commands; Tesseract runs as a distinct OCR process; and the dashboard serves
-the browser experience. Image count and container count intentionally differ.
+The default deployment starts nine containers: the core image runs API and worker;
+the baseline image runs six independently addressable processor/adapter
+commands; and the dashboard serves the browser experience. Optional Toolbox
+services are added explicitly. Image count and container count intentionally differ.
 Users run one Compose command and do not need to manage these internal process
 boundaries individually.
 
@@ -146,7 +145,8 @@ same guarantee without Dockerfile changes. Registry authentication, TLS, and
 image pulls are still handled by the selected container engine; this switch
 does not disable certificate verification or alter registry trust.
 
-Public UBI repositories do not include Tesseract, so the OCR image builds
+Public UBI repositories do not include Tesseract, so the baseline processor
+image and the optional OpenCV OCR image build
 Tesseract 5.5.3 and Leptonica 1.87.0 from checksum-verified sources. Its eight
 language files come from the pinned `tessdata_fast` 4.1.0 release, matching the
 former packaged behavior. Corporate builds can place byte-identical artifacts
@@ -161,11 +161,12 @@ OSII_TESSDATA_BASE_URL=https://artifact.example/tessdata_fast/4.1.0
 The mirror must retain the upstream bytes because versions and SHA-256
 checksums are fixed in the Dockerfile. `OSII_TESSDATA_BASE_URL` must contain
 `eng`, `fra`, `deu`, `spa`, `jpn`, `kor`, `chi_sim`, and `ara` `.traineddata`
-files. No additional Make target is needed: after configuring `.env`, run
-`make build` normally. Apache Tika remains an upstream optional image rather
-than an OSII-built image.
+files. After configuring `.env`, `make build` builds the normal page-by-page
+OCR inside `osii-baseline-processors`. Use `make toolbox-build
+TOOL=tesseract-opencv` only for the experimental region detector. Apache Tika
+remains an upstream optional image rather than an OSII-built image.
 
-MCP, Tika, and non-bundled Toolbox processors remain optional. Ollama and
+MCP, Tika, and Toolbox processors remain optional. Ollama and
 the upstream OpenAI-compatible service are separately managed endpoints; OSII publishes no
 model weights or private provider packages.
 
@@ -177,11 +178,11 @@ runner/network policy, and required scanning/signing/retention policy. Keep
 registry credentials in the approved CI secret or identity mechanism, never in
 this repository or `.env`.
 
-CI validates the four release images and starts the complete packaged stack on
+CI validates the three release images and starts the complete packaged stack on
 every change. Publishing remains an approved, version-tagged release action
 until the corporate registry team supplies those details.
 
-## Build the four release images
+## Build the three default release images
 
 Use a version tag rather than relying only on `latest`:
 
@@ -198,7 +199,6 @@ This produces:
 quay.io/your-organization/osii-core:0.1.0
 quay.io/your-organization/osii-dashboard:0.1.0
 quay.io/your-organization/osii-baseline-processors:0.1.0
-quay.io/your-organization/osii-tesseract:0.1.0
 ```
 
 On Windows PowerShell:
@@ -211,7 +211,7 @@ On Windows PowerShell:
 
 ## Push after review
 
-Authenticate, inspect the four local tags, and push intentionally:
+Authenticate, inspect the three local tags, and push intentionally:
 
 ```bash
 podman login quay.io
@@ -231,7 +231,7 @@ podman login quay.io
 
 `push-release` refuses the default `localhost/` prefix. It does not create Quay
 permissions or repositories; the authenticated account or robot token must be
-authorized for all four target names.
+authorized for all three target names.
 
 ## Publish a multi-architecture release
 
@@ -266,8 +266,7 @@ make publish-multiarch \
 Use the same command without `OSII_CA_BUNDLE` or
 `DISABLE_CONTAINER_PROXIES` when those controls are unnecessary. The command
 publishes architecture-suffixed images for diagnosis and one manifest-backed
-ordinary tag for each of `core`, `dashboard`, `baseline-processors`, and
-`tesseract`.
+ordinary tag for each of `core`, `dashboard`, and `baseline-processors`.
 
 PowerShell provides the equivalent workflow:
 
@@ -284,7 +283,7 @@ podman login quay.example.org
 
 This succeeds only when the selected base image is published for both target
 architectures and Podman's Linux VM has working AMD64 emulation. A native
-dependency build—especially Tesseract—will be noticeably slower under
+dependency build will be noticeably slower under
 emulation. A failure in one architecture stops publication before its final
 manifest tag is replaced.
 
@@ -338,7 +337,7 @@ immutable** release version before running this command:
 registry_prefix=quay.io/your-organization/osii
 version=0.1.0
 
-for image in core dashboard baseline-processors tesseract; do
+for image in core dashboard baseline-processors; do
   target="${registry_prefix}-${image}:${version}"
   podman manifest create "$target"
   podman manifest add "$target" "docker://${registry_prefix}-${image}:${version}-amd64"
@@ -361,7 +360,6 @@ The resulting ordinary tags remain the same for pilot users:
 quay.io/your-organization/osii-core:0.1.0
 quay.io/your-organization/osii-dashboard:0.1.0
 quay.io/your-organization/osii-baseline-processors:0.1.0
-quay.io/your-organization/osii-tesseract:0.1.0
 ```
 
 When `make run` pulls one of those tags, the registry selects the matching
@@ -392,9 +390,34 @@ podman manifest push --all \
   docker://quay.io/your-organization/osii-core:0.1.0
 ```
 
-The `publish-multiarch` command performs the equivalent operation for all four
-release images and preserves the configured base image, Python version,
-certificate injection, proxy suppression, and mirrored Tesseract source URLs.
+The `publish-multiarch` command performs the equivalent operation for all three
+default release images and preserves the configured base image, Python
+version, certificate injection, and proxy suppression.
+
+## Publish and run optional Toolbox images
+
+The experimental OpenCV/Tesseract region extractor, MiniLM, Model2Vec, and the tabular processors use the same workflow
+but never join the default release implicitly:
+
+```bash
+make toolbox-list
+make toolbox-build TOOL=tesseract-opencv \
+  OSII_IMAGE_PREFIX=quay.io/your-organization/osii \
+  OSII_IMAGE_TAG=0.1.0
+make toolbox-push TOOL=tesseract-opencv \
+  OSII_IMAGE_PREFIX=quay.io/your-organization/osii \
+  OSII_IMAGE_TAG=0.1.0
+make toolbox-run TOOL=tesseract-opencv \
+  OSII_IMAGE_PREFIX=quay.io/your-organization/osii \
+  OSII_IMAGE_TAG=0.1.0
+```
+
+Replace `tesseract-opencv` with `minilm`, `model2vec`, or `tabular`. Publish all four
+optional images as AMD64/ARM64 manifests with `make
+toolbox-publish-multiarch` and the same prefix, tag, base-image, certificate,
+and proxy arguments. PowerShell uses the same command names with `-Tool
+tesseract-opencv`; the repository's `osii-toolbox/README.md` is the Toolbox
+guide.
 
 ### Verify the published release
 

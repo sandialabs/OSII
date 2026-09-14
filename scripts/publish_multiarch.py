@@ -17,7 +17,12 @@ RELEASE_IMAGES = (
     ("core", "osii-core/Dockerfile", "."),
     ("dashboard", "osii-dashboard/dashboard/Dockerfile", "osii-dashboard/dashboard"),
     ("baseline-processors", "osii-core/services/baseline-processors/Dockerfile", "."),
-    ("tesseract", "osii-toolbox/osii-tesseract/Dockerfile", "."),
+)
+TOOLBOX_IMAGES = (
+    ("tesseract-opencv", "osii-toolbox/osii-tesseract/Dockerfile", "."),
+    ("minilm", "osii-toolbox/minilm-embedding-service/Dockerfile", "osii-toolbox/minilm-embedding-service"),
+    ("model2vec", "osii-toolbox/model2vec-embedder/Dockerfile", "."),
+    ("tabular", "osii-toolbox/tabular-dataset-processors/Dockerfile", "."),
 )
 PROXY_NAMES = (
     "HTTP_PROXY", "HTTPS_PROXY", "FTP_PROXY", "ALL_PROXY",
@@ -47,6 +52,9 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--ca-bundle", type=Path)
     result.add_argument("--disable-container-proxies", action="store_true")
+    result.add_argument(
+        "--image-set", choices=("release", "toolbox", "all"), default="release"
+    )
     result.add_argument("--dry-run", action="store_true")
     return result
 
@@ -116,8 +124,13 @@ def main() -> int:
     if not args.dry_run:
         run(["podman", "info"], dry_run=False)
 
+    images = {
+        "release": RELEASE_IMAGES,
+        "toolbox": TOOLBOX_IMAGES,
+        "all": RELEASE_IMAGES + TOOLBOX_IMAGES,
+    }[args.image_set]
     published: dict[str, list[str]] = {}
-    for image_name, dockerfile, context in RELEASE_IMAGES:
+    for image_name, dockerfile, context in images:
         target = f"{prefix}-{image_name}:{args.image_tag}"
         published[target] = []
         for platform, arch in zip(platforms, architectures, strict=True):

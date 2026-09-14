@@ -24,7 +24,7 @@ export function HomePage() {
             <Stack spacing={0.25}>
               <Typography variant="h6" fontWeight={700}>Start your first OSII library</Typography>
               <Typography variant="body2" color="text.secondary">
-                <code>make dev</code> started OSII&apos;s dashboard, backend, Python text extraction, no-AI previews, lexical search tools, and local enrichments. Ollama and Tesseract are optional programs that must be installed separately.
+                <code>make dev</code> started OSII&apos;s dashboard, backend, Python text extraction, full-page Tesseract OCR service, no-AI previews, lexical search tools, and local enrichments. Bare-metal OCR requires the Tesseract program to be installed on this computer; packaged OSII images already contain it. Ollama remains optional and separately installed.
               </Typography>
             </Stack>
             <Alert severity="info">

@@ -25,9 +25,10 @@ uv run --no-project --python 3.12 python scripts/export_components.py --output .
 
 The output contains `osii-core`, `osii-dashboard`, `osii-mcp`, `osii-toolbox`,
 `osii-demo-notebooks`, the
-shared `baseline-processors` image source, the four independently exportable
-local processors, and the HTTP-only `model-provider-bridge` directory, plus
-`EXPORT_MANIFEST.json`. Optional OCR, dataset, and model services now live in
+shared `baseline-processors` image source (including full-page Tesseract OCR),
+the four independently exportable model-free local processors, and the
+HTTP-only `model-provider-bridge` directory, plus `EXPORT_MANIFEST.json`. The
+experimental OpenCV region OCR, dataset, and model services live in
 `osii-toolbox/` in this repository. See [image publishing](publishing-images.md)
 for its deployment role. Export the source with
 `--components osii-toolbox`: the result includes the shared SDK and preserves root

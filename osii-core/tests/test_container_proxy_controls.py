@@ -177,5 +177,25 @@ def test_make_and_powershell_start_container_stacks_detached() -> None:
     makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
     launcher = (REPOSITORY_ROOT / "scripts" / "osii.ps1").read_text(encoding="utf-8")
 
-    assert makefile.count("up -d --no-build --pull missing") == 2
+    assert makefile.count("up -d --no-build --pull missing") == 3
     assert launcher.count('Invoke-OsiiCompose @("up", "-d", "--no-build"') == 2
+
+
+def test_toolbox_images_are_optional_and_have_cross_platform_helpers() -> None:
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    launcher = (REPOSITORY_ROOT / "scripts" / "osii.ps1").read_text(encoding="utf-8")
+    compose = (REPOSITORY_ROOT / "compose.yaml").read_text(encoding="utf-8")
+
+    assert "toolbox-build:" in makefile
+    assert "toolbox-push:" in makefile
+    assert "toolbox-run:" in makefile
+    assert "toolbox-publish-multiarch:" in makefile
+    assert '"toolbox-build"' in launcher
+    assert '"toolbox-push"' in launcher
+    assert '"toolbox-run"' in launcher
+    assert '"toolbox-publish-multiarch"' in launcher
+    assert compose.count('profiles: ["toolbox"]') == 5
+
+    make_run = _make_command("run", disable_proxies=False)
+    assert " tesseract " in make_run
+    assert "tesseract-opencv" not in make_run

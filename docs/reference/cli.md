@@ -28,8 +28,9 @@ Backend API docs: http://localhost:8511/docs
 ```
 
 Press Ctrl+C once in the launch terminal to stop every process owned by this
-run. Open **Setup** in the dashboard to connect optional AI, Apache Tika, or
-Tesseract OCR after the baseline is running.
+run. Open **Setup** in the dashboard to connect optional AI or Apache Tika.
+The packaged baseline already includes full-page Tesseract OCR; bare-metal
+development requires the native Tesseract program to be installed first.
 
 ---
 

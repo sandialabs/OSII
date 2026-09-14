@@ -9,6 +9,8 @@ OSII_PYTHON_VERSION ?= 3.12
 OSII_CA_BUNDLE ?=
 SHARED_DRIVE_PATH ?=
 SHARED_DRIVE_DATA ?= ./osii-data/shared-drive
+TOOL ?=
+MODEL2VEC_MODEL_DIR ?= ./osii-data/models/model2vec
 DISABLE_CONTAINER_PROXIES ?= false
 PROXY_ENVIRONMENT_VARIABLES := HTTP_PROXY HTTPS_PROXY FTP_PROXY ALL_PROXY http_proxy https_proxy ftp_proxy all_proxy
 
@@ -53,7 +55,15 @@ define validate_shared_drive
 	@if [ ! -d "$(SHARED_DRIVE_PATH)" ] || [ ! -r "$(SHARED_DRIVE_PATH)" ]; then echo "Shared drive is unavailable or unreadable: $(SHARED_DRIVE_PATH)"; exit 2; fi
 endef
 
-.PHONY: help dev dev-shared demo demo-data run run-shared build push-release publish-multiarch down logs test docs doctor
+define validate_tool
+	@if [ -z "$(TOOL)" ]; then echo "Set TOOL to tesseract-opencv, minilm, model2vec, or tabular."; exit 2; fi
+	@case "$(TOOL)" in tesseract-opencv|minilm|model2vec|tabular) ;; *) echo "Unknown TOOL=$(TOOL). Choose tesseract-opencv, minilm, model2vec, or tabular."; exit 2 ;; esac
+endef
+
+TOOLBOX_BUILD_SERVICE = $(if $(filter tesseract-opencv,$(TOOL)),tesseract-opencv,$(if $(filter minilm,$(TOOL)),minilm,$(if $(filter model2vec,$(TOOL)),model2vec,tabular-extractor)))
+TOOLBOX_RUN_SERVICES = $(if $(filter tabular,$(TOOL)),tabular-extractor tabular-enricher,$(TOOLBOX_BUILD_SERVICE))
+
+.PHONY: help dev dev-shared demo demo-data run run-shared build push-release publish-multiarch toolbox-list toolbox-build toolbox-push toolbox-run toolbox-stop toolbox-publish-multiarch down logs test docs doctor
 
 help:
 	@echo "OSII startup commands"
@@ -63,6 +73,8 @@ help:
 	@echo "  make run        Start previously built container images"
 	@echo "  make run-shared Start images with an already mounted shared drive"
 	@echo "  make publish-multiarch Build and push Linux AMD64 + ARM64 release manifests"
+	@echo "  make toolbox-list List optional independently deployable tools"
+	@echo "  make toolbox-run TOOL=tesseract-opencv Pull and start one optional tool"
 	@echo "  make down       Stop the container deployment"
 	@echo "  make doctor     Report disk usage; never deletes files"
 	@echo ""
@@ -113,6 +125,7 @@ test:
 	$(UV) run --python $(OSII_PYTHON_VERSION) --package osii --extra dev python -m pytest osii-core/tests
 	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core/processor-sdk --with pytest python -m pytest osii-core/processor-sdk/tests
 	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core/processor-sdk --with-editable osii-core/services/local-extractor --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-extractor/tests
+	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core/processor-sdk --with-editable osii-core/services/local-tesseract --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-tesseract/tests
 	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core/processor-sdk --with-editable osii-core/services/local-synthesizer --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-synthesizer/tests
 	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core/processor-sdk --with-editable osii-core/services/local-embedder --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-embedder/tests
 	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core/processor-sdk --with-editable osii-core/services/local-enricher --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-enricher/tests
@@ -120,23 +133,62 @@ test:
 	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with pytest --with 'uvicorn[standard]' python -m pytest osii-core/services/baseline-processors/tests
 	cd osii-dashboard/dashboard && npm test --if-present && npm run build
 
-# Build the four publishable release images. API and worker share core; the
-# baseline processor services share one selectable-command image; the bundled,
-# default-swappable Tesseract OCR extractor keeps its independent image.
+# Build the three default release images. Optional Toolbox images have their
+# own explicit commands below.
 build:
 	$(require_podman_proxy_control)
 	$(validate_ca_bundle)
 	@trap 'find "$(CURDIR)" -type f -name "podman-build-secret-*" -delete' EXIT HUP INT TERM; \
-		$(COMPOSE) $(PODMAN_CA_BUILD_ARGUMENTS) $(PODMAN_PROXY_BUILD_ARGUMENTS) build api dashboard local-extractor tesseract
+		$(COMPOSE) $(PODMAN_CA_BUILD_ARGUMENTS) $(PODMAN_PROXY_BUILD_ARGUMENTS) build api dashboard local-extractor
 
 push-release:
 	@if echo "$(OSII_IMAGE_PREFIX)" | grep -q '^localhost/'; then echo "Set OSII_IMAGE_PREFIX to a registry path such as quay.io/your-org/osii."; exit 2; fi
-	$(COMPOSE) push api dashboard local-extractor tesseract
+	$(COMPOSE) push api dashboard local-extractor
 
 publish-multiarch:
 	@if echo "$(OSII_IMAGE_PREFIX)" | grep -q '^localhost/'; then echo "Set OSII_IMAGE_PREFIX to your Quay registry path."; exit 2; fi
 	@if [ "$(OSII_IMAGE_TAG)" = "latest" ]; then echo "Set OSII_IMAGE_TAG to an immutable release version."; exit 2; fi
 	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) python scripts/publish_multiarch.py \
+		--image-prefix "$(OSII_IMAGE_PREFIX)" \
+		--image-tag "$(OSII_IMAGE_TAG)" \
+		--base-image "$(OSII_BASE_IMAGE)" \
+		--python-version "$(OSII_PYTHON_VERSION)" \
+		$(if $(strip $(OSII_CA_BUNDLE)),--ca-bundle "$(OSII_CA_BUNDLE)") \
+		$(if $(filter true,$(DISABLE_CONTAINER_PROXIES)),--disable-container-proxies)
+
+toolbox-list:
+	@echo "tesseract-opencv  Experimental OpenCV region OCR       http://localhost:8081"
+	@echo "minilm     MiniLM semantic embedding service          http://localhost:8086"
+	@echo "model2vec  Experimental Model2Vec embedding service    http://localhost:8087"
+	@echo "tabular    CSV extractor + collection table enricher  http://localhost:8097 and :8098"
+
+toolbox-build:
+	$(validate_tool)
+	$(require_podman_proxy_control)
+	$(validate_ca_bundle)
+	@trap 'find "$(CURDIR)" -type f -name "podman-build-secret-*" -delete' EXIT HUP INT TERM; \
+		$(COMPOSE) $(PODMAN_CA_BUILD_ARGUMENTS) $(PODMAN_PROXY_BUILD_ARGUMENTS) build $(TOOLBOX_BUILD_SERVICE)
+
+toolbox-push:
+	$(validate_tool)
+	@if echo "$(OSII_IMAGE_PREFIX)" | grep -q '^localhost/'; then echo "Set OSII_IMAGE_PREFIX to your Quay registry path."; exit 2; fi
+	$(COMPOSE) push $(TOOLBOX_BUILD_SERVICE)
+
+toolbox-run:
+	$(validate_tool)
+	@if [ "$(TOOL)" = "model2vec" ] && [ ! -d "$(MODEL2VEC_MODEL_DIR)" ]; then echo "Stage the approved model directory at $(MODEL2VEC_MODEL_DIR) or set MODEL2VEC_MODEL_DIR."; exit 2; fi
+	$(require_podman_proxy_control)
+	OSII_MODEL2VEC_MODEL_DIR="$(MODEL2VEC_MODEL_DIR)" $(COMPOSE) $(PODMAN_PROXY_RUN_ARGUMENTS) --profile toolbox up -d --no-build --pull missing $(TOOLBOX_RUN_SERVICES)
+
+toolbox-stop:
+	$(validate_tool)
+	$(COMPOSE) stop $(TOOLBOX_RUN_SERVICES)
+
+toolbox-publish-multiarch:
+	@if echo "$(OSII_IMAGE_PREFIX)" | grep -q '^localhost/'; then echo "Set OSII_IMAGE_PREFIX to your Quay registry path."; exit 2; fi
+	@if [ "$(OSII_IMAGE_TAG)" = "latest" ]; then echo "Set OSII_IMAGE_TAG to an immutable release version."; exit 2; fi
+	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) python scripts/publish_multiarch.py \
+		--image-set toolbox \
 		--image-prefix "$(OSII_IMAGE_PREFIX)" \
 		--image-tag "$(OSII_IMAGE_TAG)" \
 		--base-image "$(OSII_BASE_IMAGE)" \

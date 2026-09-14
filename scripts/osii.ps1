@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("help", "dev", "dev-shared", "demo", "demo-data", "run", "run-shared", "build", "push-release", "publish-multiarch", "down", "logs", "doctor")]
+    [ValidateSet("help", "dev", "dev-shared", "demo", "demo-data", "run", "run-shared", "build", "push-release", "publish-multiarch", "toolbox-list", "toolbox-build", "toolbox-push", "toolbox-run", "toolbox-stop", "toolbox-publish-multiarch", "down", "logs", "doctor")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
@@ -20,6 +20,10 @@ param(
     [string]$SourceDir = "",
 
     [string]$RuntimeDir = "",
+
+    [string]$Tool = "",
+
+    [string]$ModelDir = "",
 
     [switch]$InsecureRegistries,
 
@@ -246,6 +250,8 @@ function Show-OsiiHelp {
     Write-Host "  .\scripts\osii.ps1 run        Start previously built container images"
     Write-Host "  .\scripts\osii.ps1 run-shared Start images with an already connected shared drive"
     Write-Host "  .\scripts\osii.ps1 publish-multiarch Build and push Linux AMD64 + ARM64 release manifests"
+    Write-Host "  .\scripts\osii.ps1 toolbox-list List optional independently deployable tools"
+    Write-Host "  .\scripts\osii.ps1 toolbox-run -Tool tesseract-opencv Pull and start one optional tool"
     Write-Host "  .\scripts\osii.ps1 down       Stop the container deployment"
     Write-Host "  .\scripts\osii.ps1 doctor     Report disk usage; never deletes files"
     Write-Host ""
@@ -300,13 +306,13 @@ try {
             Invoke-OsiiCompose @("logs", "-f")
         }
         "build" {
-            Invoke-OsiiCompose @("build", "api", "dashboard", "local-extractor", "tesseract")
+            Invoke-OsiiCompose @("build", "api", "dashboard", "local-extractor")
         }
         "push-release" {
             if ($ImagePrefix.StartsWith("localhost/")) {
                 throw "Set -ImagePrefix to a registry path such as quay.io/your-org/osii."
             }
-            Invoke-OsiiCompose @("push", "api", "dashboard", "local-extractor", "tesseract")
+            Invoke-OsiiCompose @("push", "api", "dashboard", "local-extractor")
         }
         "publish-multiarch" {
             if ($Runtime -ne "Podman") {
@@ -332,6 +338,63 @@ try {
             & uv @PublishArguments
             if ($LASTEXITCODE -ne 0) {
                 throw "Multi-architecture publication failed with code $LASTEXITCODE."
+            }
+        }
+        "toolbox-list" {
+            Write-Host "tesseract-opencv  Experimental OpenCV region OCR       http://localhost:8081"
+            Write-Host "minilm     MiniLM semantic embedding service          http://localhost:8086"
+            Write-Host "model2vec  Experimental Model2Vec embedding service    http://localhost:8087"
+            Write-Host "tabular    CSV extractor + collection table enricher  http://localhost:8097 and :8098"
+        }
+        { $_ -in @("toolbox-build", "toolbox-push", "toolbox-run", "toolbox-stop") } {
+            $ToolServices = switch ($Tool) {
+                "tesseract-opencv" { @("tesseract-opencv") }
+                "minilm" { @("minilm") }
+                "model2vec" { @("model2vec") }
+                "tabular" { @("tabular-extractor", "tabular-enricher") }
+                default { throw "Set -Tool to tesseract-opencv, minilm, model2vec, or tabular." }
+            }
+            $BuildService = $ToolServices[0]
+            switch ($Command) {
+                "toolbox-build" { Invoke-OsiiCompose @("build", $BuildService) }
+                "toolbox-push" {
+                    if ($ImagePrefix.StartsWith("localhost/")) {
+                        throw "Set -ImagePrefix to your Quay registry path."
+                    }
+                    Invoke-OsiiCompose @("push", $BuildService)
+                }
+                "toolbox-run" {
+                    if ($Tool -eq "model2vec") {
+                        $SelectedModelDir = if ($ModelDir) { $ModelDir } else { Join-Path $RepositoryRoot "osii-data\models\model2vec" }
+                        if (-not (Test-Path -LiteralPath $SelectedModelDir -PathType Container)) {
+                            throw "Stage an approved model directory at $SelectedModelDir or pass -ModelDir."
+                        }
+                        $env:OSII_MODEL2VEC_MODEL_DIR = (Resolve-Path -LiteralPath $SelectedModelDir).Path
+                    }
+                    Invoke-OsiiCompose (@("--profile", "toolbox", "up", "-d", "--no-build", "--pull", "missing") + $ToolServices)
+                }
+                "toolbox-stop" { Invoke-OsiiCompose (@("stop") + $ToolServices) }
+            }
+        }
+        "toolbox-publish-multiarch" {
+            if ($Runtime -ne "Podman") {
+                throw "toolbox-publish-multiarch currently requires Podman."
+            }
+            if ($ImagePrefix.StartsWith("localhost/") -or $ImageTag -eq "latest") {
+                throw "Set a Quay -ImagePrefix and an immutable -ImageTag."
+            }
+            $PublishArguments = @(
+                "run", "--no-project", "--python", $PythonVersion,
+                "python", "scripts/publish_multiarch.py", "--image-set", "toolbox",
+                "--image-prefix", $ImagePrefix, "--image-tag", $ImageTag,
+                "--base-image", $BaseImage, "--python-version", $PythonVersion
+            )
+            if ($CaBundle) { $PublishArguments += @("--ca-bundle", $CaBundle) }
+            if ($DisableContainerProxies) { $PublishArguments += "--disable-container-proxies" }
+            if ($DryRun) { $PublishArguments += "--dry-run" }
+            & uv @PublishArguments
+            if ($LASTEXITCODE -ne 0) {
+                throw "Toolbox multi-architecture publication failed with code $LASTEXITCODE."
             }
         }
         "doctor" {

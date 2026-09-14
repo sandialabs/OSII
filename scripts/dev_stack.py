@@ -27,6 +27,7 @@ import urllib.request
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SERVICE_DISPLAY_NAMES = {
     "extractor": "Python text-layer PDF and Office extractor",
+    "ocr": "Tesseract OCR — full page",
     "synthesizer": "cited source-excerpt preview (no AI)",
     "embedder": "lexical hashing vectors (no AI model)",
     "enricher": "document statistics and frequent keywords",
@@ -49,6 +50,7 @@ class Service:
 
 CAPABILITY_SERVICE_INFO = {
     "extractor": ("Python document extractor", "Reads text-layer PDFs, Office files, and text formats.", "/health"),
+    "ocr": ("Tesseract OCR — full page", "Runs ordinary Tesseract once per complete PDF or image page.", "/health"),
     "synthesizer": ("Source excerpt preview", "Creates a cited preview without an AI model.", "/health"),
     "embedder": ("Lexical hashing compatibility embedder", "Optional lexical vectors; BM25 search works without it.", "/health"),
     "enricher": ("Statistics and keywords enricher", "Creates local document statistics and keyword artifacts.", "/health"),
@@ -196,6 +198,11 @@ def build_environment(core_only: bool) -> dict[str, str]:
             "http://127.0.0.1:8095/ollama/embedder",
             "http://127.0.0.1:8095/ollama/synthesizer",
         ]
+        if shutil.which("tesseract") is not None:
+            local_urls.insert(
+                1,
+                f"http://127.0.0.1:{env.get('OSII_TESSERACT_PORT', '8080')}",
+            )
         configured = [item for item in env.get("OSII_PROCESSORS", "").split(",") if item]
         if provider_profile == "openai":
             local_urls.extend([
@@ -237,6 +244,7 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str]) -> None:
             "--package",
             "osii-mcp",
             "--package", "osii-local-extractor",
+            "--package", "osii-local-tesseract",
             "--package", "osii-local-synthesizer",
             "--package", "osii-local-embedder",
             "--package", "osii-local-enricher",
@@ -356,6 +364,7 @@ def service_commands(
     if not core_only:
         processors = (
             ("extractor", "osii-local-extractor", "8092", "OSII_LOCAL_EXTRACTOR_PORT", "local-extractor"),
+            ("ocr", "osii-local-tesseract", "8080", "OSII_TESSERACT_PORT", "local-tesseract"),
             ("synthesizer", "osii-local-synthesizer", "8093", "OSII_LOCAL_SYNTHESIZER_PORT", "local-synthesizer"),
             ("embedder", "osii-local-embedder", "8085", "OSII_EMBEDDINGS_PORT", "local-embedder"),
             ("enricher", "osii-local-enricher", "8094", "OSII_LOCAL_ENRICHER_PORT", "local-enricher"),
@@ -517,6 +526,8 @@ class CapabilitySupervisor:
             prerequisite = None
             if service_id == "tika" and self._compose_command() is None:
                 prerequisite = "Install Podman Compose or Docker Compose to run Apache Tika."
+            elif service_id == "ocr" and shutil.which("tesseract") is None:
+                prerequisite = "Install the native Tesseract program, then restart OSII."
             return {
                 "id": service_id,
                 "display_name": title,
@@ -793,7 +804,11 @@ def run(
         print(f"[dev] MCP: http://localhost:{env.get('OSII_MCP_PORT', '8022')}/mcp")
         print("[ready] Keep this terminal open. Press Ctrl+C once to stop OSII.")
         if not core_only:
-            print("[dev] Open Dashboard → Setup to connect AI or start optional Tika/Tesseract capabilities.")
+            if shutil.which("tesseract") is None:
+                print("[dev] OCR needs the native Tesseract program. Install it, then restart OSII.")
+            else:
+                print("[dev] Baseline full-page Tesseract OCR is ready.")
+            print("[dev] Open Dashboard → Setup to connect AI or start optional Apache Tika.")
             print("[dev] Setup → Advanced & diagnostics contains processor URLs, settings, controls, and logs.")
             if provider_profile == "openai":
                 print("[dev] OpenAI-compatible profile: the configured endpoint is preferred, with Ollama and extractive fallbacks.")

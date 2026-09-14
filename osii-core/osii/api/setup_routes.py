@@ -51,6 +51,7 @@ def _health_only_services(readiness: dict[str, Any]) -> list[dict[str, Any]]:
     definitions = (
         ("tika", "Apache Tika", "Adds broad document-format text extraction."),
         ("local.native-text", "Python document extractor", "Reads text-layer PDFs, Office files, and text formats."),
+        ("local.tesseract-page-ocr", "Tesseract OCR — full page", "Runs ordinary Tesseract once per complete PDF or image page."),
         ("local.extractive-preview", "Source excerpt preview", "Creates a cited preview without an AI model."),
         ("local.hashing", "Lexical hashing compatibility embedder", "Optional lexical vectors; BM25 works without it."),
         ("local.stats-keywords", "Statistics and keywords enricher", "Creates local statistics and keyword artifacts."),

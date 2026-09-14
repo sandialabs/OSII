@@ -5,7 +5,7 @@ credential, or model cache.
 
 | Capability | Guaranteed baseline | Optional enhancement |
 |---|---|---|
-| Extraction | native text-layer PDF, Office, RTF, and text/data formats | Tika, Tesseract OCR, domain processor |
+| Extraction | native text-layer formats; packaged baseline also includes full-page Tesseract OCR | Tika, OpenCV region OCR, domain processor |
 | Synthesis | cited extractive Markdown preview | selected Ollama, OpenAI-compatible, or OpenAI-compatible chat model |
 | Embedding | none required; lexical hashing remains an advanced compatibility method | selected OpenAI-compatible, Ollama, or OpenAI-compatible embedding model |
 | Search | BM25 | provider/model-specific semantic FAISS index |
@@ -37,11 +37,12 @@ make dev
 .\scripts\osii.ps1 dev
 ```
 
-It starts the API (including grounded chat), worker, MCP, dashboard, four baseline processors, and
-the lightweight provider bridge from editable source. The four processors are
-the Python text-layer PDF/Office extractor, the no-AI cited source-excerpt
-preview, lexical token/word-pair hashing vectors, and deterministic document
-statistics/frequent keywords. The bridge makes no
+It starts the API (including grounded chat), worker, MCP, dashboard, five baseline processors, and
+the lightweight provider bridge from editable source. The processors are the
+Python text-layer PDF/Office extractor, ordinary full-page Tesseract OCR, the
+no-AI cited source-excerpt preview, lexical token/word-pair hashing vectors,
+and deterministic document statistics/frequent keywords. Bare-metal Tesseract
+requires its native executable; the packaged baseline image contains it. The bridge makes no
 generation request until that capability is used. Setup performs model
 discovery and, when an embedding model is selected, validates one real vector
 so a model that merely appears in `/models` is not incorrectly offered to
@@ -49,8 +50,7 @@ Intake.
 
 This is the complete guaranteed baseline. It does not silently install or
 launch optional system software. After the dashboard opens, use **Setup** to
-connect Ollama or another AI endpoint and to start Apache Tika or the OSII
-Tesseract service when their prerequisites are installed. The standalone
+connect Ollama or another AI endpoint or to start Apache Tika. The standalone
 MiniLM image in `osii-toolbox` is an opt-in deployment alternative and is not
 started by `demo` or `dev`.
 
@@ -69,7 +69,7 @@ reports Vite proxy failures.
 
 On Windows, Ctrl+C terminates the complete child-process trees created by
 Uvicorn reloaders, watchfiles, MCP, and npm/Vite. This prevents an apparently
-stopped development stack from leaving ports 5173, 8022, 8085, 8092–8095, or
+stopped development stack from leaving ports 5173, 8022, 8080, 8085, 8092–8095, or
 8511 occupied. The repository README includes a scoped recovery command for
 processes left behind by older checkouts; it excludes Ollama and containerized
 OCR services.
@@ -158,15 +158,13 @@ must not be copied or shared. Only the key's environment-variable name enters
 Process environment values take precedence, and file writes are disabled in
 container or administrator-managed deployments.
 
-The recommended OpenCV/Tesseract OCR extractor lives in `osii-toolbox/`; see
-[image publishing](publishing-images.md). In a container deployment, OSII starts its published
-image by default and discovers it through Processor API v1. For host
-development, run the Toolbox image or its isolated host command and add its URL to
-`OSII_PROCESSORS`; it remains swappable with any other Processor API extractor.
-
-The OSII wrapper listens on port 8080 and exposes its region-tuning interface at
-`http://localhost:8080/demo`. OCR extraction stores normalized region boxes, which the Source and Split View
-can overlay on the PDF.
+The normal `local.tesseract-page-ocr` processor runs each complete page through
+Tesseract and is part of `osii-baseline-processors`. The separate
+**Tesseract OCR with OpenCV regions** experiment lives in `osii-toolbox/`; see
+[image publishing](publishing-images.md). Run and register it explicitly when
+you need tunable contour detection and normalized region boxes for Source and
+Split View overlays. Its default host port is 8081 so it can run beside the
+baseline page OCR on port 8080.
 
 On ordinary laptop-width screens, Split View places the source and grounded
 text side by side and wraps each pane's controls within its own column. On

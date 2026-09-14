@@ -1,4 +1,4 @@
-# OSII-Tesseract
+# Experimental Tesseract OCR with OpenCV regions
 
 OSII-Tesseract is an OCR service built around:
 
@@ -13,7 +13,9 @@ It supports:
 - per-document OCR for PDFs and images
 - a demo UI for tuning OpenCV region-detection parameters before running OCR
 
-This is an independently deployable OSII extractor. It exposes the generic OSII
+This is an optional, independently deployable OSII extractor for experiments
+that need tunable text regions and bounding boxes. The normal baseline uses the
+simpler `local.tesseract-page-ocr` full-page processor instead. This service exposes the generic OSII
 Processor API v1 at `POST /v1/extract`, returning one OCR text segment per
 detected region with normalized page bounding boxes and polygons. Its native
 `/ocr/document` API and tuning UI remain available for direct inspection.
@@ -145,7 +147,7 @@ works. From the OSII root, use the same Python 3.12 default as the application
 on macOS, Linux, or Windows:
 
 ```sh
-uv run --no-project --python 3.12 --with-editable osii-core/processor-sdk --with-editable osii-toolbox/osii-tesseract python -m uvicorn app.main:app --app-dir osii-toolbox/osii-tesseract --host 127.0.0.1 --port 8080
+uv run --no-project --python 3.12 --with-editable osii-core/processor-sdk --with-editable osii-toolbox/osii-tesseract python -m uvicorn app.main:app --app-dir osii-toolbox/osii-tesseract --host 127.0.0.1 --port 8081
 ```
 
 Build the image from the OSII repository root. It includes Tesseract, so the
@@ -155,21 +157,21 @@ use the shared RHEL/UBI base. Tesseract 5.5.3, Leptonica 1.87.0, and eight
 build artifacts. See [Quay publishing](../README.md).
 
 ```bash
-podman build --format docker -f osii-toolbox/osii-tesseract/Dockerfile -t osii-tesseract .
-podman run --rm -p 8080:8080 osii-tesseract
+make toolbox-build TOOL=tesseract-opencv
+make toolbox-run TOOL=tesseract-opencv
 ```
 
 Corporate builds can set `OSII_TESSERACT_SOURCE_URL`,
 `OSII_LEPTONICA_SOURCE_URL`, and `OSII_TESSDATA_BASE_URL` in the root `.env` to
-use byte-identical copies from an approved artifact mirror. The normal bundled
-workflow remains `make build`; do not change the checksums to accommodate a
-repacked or unreviewed artifact.
+use byte-identical copies from an approved artifact mirror. Use the explicit
+Toolbox commands above; normal `make build` builds the simpler baseline OCR
+instead. Do not change checksums to accommodate a repacked or unreviewed artifact.
 
 Open:
 
 ```text
-http://127.0.0.1:8080/docs
-http://127.0.0.1:8080/demo
+http://127.0.0.1:8081/docs
+http://127.0.0.1:8081/demo
 ```
 
 Contract tests (mocked OCR; no model downloads) run from this component directory:

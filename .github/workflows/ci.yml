@@ -29,8 +29,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync --python 3.11 --package osii-local-extractor --package osii-local-synthesizer --package osii-local-embedder --package osii-local-enricher --package osii-model-provider-bridge --extra dev
+      - run: uv sync --python 3.11 --package osii-local-extractor --package osii-local-tesseract --package osii-local-synthesizer --package osii-local-embedder --package osii-local-enricher --package osii-model-provider-bridge --extra dev
       - run: cd osii-core/services/local-extractor && uv run --python 3.11 --package osii-local-extractor python -m pytest tests
+      - run: cd osii-core/services/local-tesseract && uv run --python 3.11 --package osii-local-tesseract python -m pytest tests
       - run: cd osii-core/services/local-synthesizer && uv run --python 3.11 --package osii-local-synthesizer python -m pytest tests
       - run: cd osii-core/services/local-embedder && uv run --python 3.11 --package osii-local-embedder python -m pytest tests
       - run: cd osii-core/services/local-enricher && uv run --python 3.11 --package osii-local-enricher python -m pytest tests
@@ -74,7 +75,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker compose config --quiet
       - run: docker compose build api dashboard local-extractor
-      - run: docker compose up --detach --wait local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker dashboard
+      - run: docker compose up --detach --wait tesseract local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker dashboard
       - run: curl --fail --retry 20 --retry-connrefused http://localhost:5173/health
       - run: >-
           curl --fail --show-error --request POST http://localhost:5173/api/chat

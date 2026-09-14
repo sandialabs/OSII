@@ -12,6 +12,7 @@ import uvicorn
 
 SERVICES = {
     "extractor": ("local-extractor", 8092),
+    "ocr": ("local-tesseract", 8080),
     "synthesizer": ("local-synthesizer", 8093),
     "embedder": ("local-embedder", 8085),
     "enricher": ("local-enricher", 8094),

@@ -9,6 +9,7 @@ members = [
   "osii-core",
   "osii-mcp",
   "osii-core/services/local-extractor",
+  "osii-core/services/local-tesseract",
   "osii-core/services/local-synthesizer",
   "osii-core/services/local-embedder",
   "osii-core/services/local-enricher",

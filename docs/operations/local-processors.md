@@ -1,10 +1,13 @@
 # Guaranteed local processors
 
 `make dev` (macOS/Linux) and `.\scripts\osii.ps1 dev` (Windows PowerShell)
-start four independent Processor API v1 services. They need no container,
-internet connection, corporate gateway, or downloaded model.
+start five independent Processor API v1 services. Four need no container,
+internet connection, corporate gateway, or downloaded model. The fifth is
+ordinary page-by-page Tesseract OCR and requires the native `tesseract`
+executable on a bare-metal host. The packaged baseline image contains that
+executable and its checked language data.
 
-For packaged deployment, these four services and the lightweight model-provider
+For packaged deployment, these five services and the lightweight model-provider
 bridge share one `osii-baseline-processors` image. Each container selects one
 command, so the HTTP contracts and process boundaries remain independent. See
 [Publish OSII images to Quay](publishing-images.md).
@@ -12,24 +15,28 @@ command, so the HTTP contracts and process boundaries remain independent. See
 | Capability | Stable name | Port | Baseline behavior |
 |---|---|---:|---|
 | Extractor | `local.native-text` | 8092 | Text PDFs, DOCX, PPTX, XLSX, RTF, and common text/data files |
+| OCR extractor | `local.tesseract-page-ocr` | 8080 | Runs ordinary Tesseract on each complete PDF or image page; no OpenCV region detection |
 | Synthesizer | `local.extractive-preview` | 8093 | Model-free cited Markdown assembled from extracted excerpts; not OCR and does not generate new claims |
 | Embedder | `local.hashing` | 8085 | Deterministic normalized 384D token/bigram hashing for shared-wording similarity; lexical, not semantic |
 | Enricher | `local.stats-keywords` | 8094 | Standard table artifact with counts and keywords |
 
 Each exposes `/health`, `/v1/descriptor`, its `/v1/...` operation, `/docs`,
-`/redoc`, and `/openapi.json`. `make dev` starts all four together; packaged
+`/redoc`, and `/openapi.json`. `make dev` starts all five together; packaged
 deployments run the same contracts as separate containers.
 
-The extractor reads source bytes and returns grounded segments. It cannot OCR a
-scanned PDF; connect Tesseract or another OCR Processor API service for that.
-The processor never writes `.osii`: only core validates and commits results.
+The native extractor reads existing source text and cannot OCR a scanned PDF.
+Select `local.tesseract-page-ocr` for those files. It returns one segment per
+page; the optional `toolchest.tesseract-opencv` processor adds experimental
+region detection and bounding boxes. Neither processor writes `.osii`: only
+Core validates and commits results.
 
 BM25 is OSII's zero-model search baseline. Hashing adds approximate lexical
 similarity and verifies the vector-index pipeline, but it is not a semantic
 language model. Every index records provider, model, dimension, and
 normalization metadata. Switching vector spaces requires rebuilding.
 
-Optional MiniLM and experimental Model2Vec services live in `osii-toolbox/` in
+The experimental OpenCV/Tesseract region extractor, optional MiniLM, and
+experimental Model2Vec services live in `osii-toolbox/` in
 this repository; see [image publishing](publishing-images.md). Their dependencies and
 images remain separate from Core's lockfile, baseline images, and default host
 runtime. The Toolbox guide covers explicit builds and Quay publishing; review

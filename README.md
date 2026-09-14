@@ -89,11 +89,12 @@ inspect the extracted content and see what OSII created without needing a
 model connection.
 
 The baseline includes document extraction, source-excerpt previews, BM25
-search, local enrichment, the worker, API, MCP server, and dashboard. Open
-**Setup** afterward to connect Ollama or another AI endpoint, or to start
-optional Apache Tika and Tesseract OCR. Ollama and the native Tesseract program
-are separate installations; the old standalone MiniLM image is not part of
-normal startup.
+search, local enrichment, the worker, API, MCP server, and dashboard. Its
+ordinary Tesseract service runs once per complete page; on a bare-metal
+`make dev` computer, the Tesseract program must first be installed on the host.
+The packaged baseline image already contains it. Open **Setup** afterward to
+connect Ollama or another AI endpoint, or to add optional Apache Tika. Ollama
+and the old standalone MiniLM image are not part of normal startup.
 
 To stop the local stack, return to the terminal and press <kbd>Ctrl</kbd> +
 <kbd>C</kbd>.
@@ -142,7 +143,7 @@ security details.
 ## Build deployment images with an approved base image
 
 Most people should begin with `make demo` or `make dev` above. Use this section
-when you are ready to build the four packaged OSII images for Podman. These
+when you are ready to build the three default OSII images for Podman. These
 commands choose the base image for this build only; they do not permanently
 change your shell or repository configuration.
 
@@ -229,13 +230,14 @@ Otherwise, start them normally:
 ```
 
 The base image must provide `dnf` and access to the required RHEL packages;
-each OSII image then installs its tested Python 3.12 runtime with uv. Tesseract
-OCR has a separate base-image setting because it needs native OCR packages and
-is the fourth bundled release image. Docker Compose remains available
+each OSII image then installs its tested Python 3.12 runtime. Ordinary
+page-by-page Tesseract OCR is compiled into `osii-baseline-processors`; no
+fourth image is needed. The experimental OpenCV region OCR and other
+`osii-toolbox` images use explicit `toolbox-*` commands. Docker Compose remains available
 with `COMPOSE='docker compose'`, but strict removal of proxy settings inherited
 from a custom base image is guaranteed only on the supported Podman path. See
 [publishing and running images](docs/operations/publishing-images.md) for image
-names, tags, registries, and the dedicated Tesseract base-image setting.
+names, tags, registries, and optional Toolbox publication.
 
 `OSII_CA_BUNDLE`/`-CaBundle` is explicit and build-only. OSII validates that the
 file contains PEM certificates and no private key, prints its SHA-256
@@ -273,9 +275,9 @@ are intentional and reflected directly in the root names:
   They run automatically during local development and remain independently
   addressable and containerizable.
 - **`osii-dashboard/`** and **`osii-mcp/`** are human and agent clients of Core.
-- **`osii-toolbox/`** contains the bundled, default-swappable Tesseract OCR
-  image plus optional dataset and model-backed tools whose dependencies do not
-  belong in Core.
+- **`osii-toolbox/`** contains the optional OpenCV/Tesseract region extractor
+  plus dataset and model-backed tools whose dependencies do not belong in
+  Core. Ordinary full-page Tesseract lives with the baseline processors.
 - **`osii-demo-notebooks/`**, **`docs/`**, and **`scripts/`** provide learning,
   reference, and cross-platform operating support.
 

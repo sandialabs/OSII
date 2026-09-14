@@ -53,6 +53,7 @@ COMPONENTS: dict[str, tuple[ExportEntry, ...]] = {
     "baseline-processors": (
         ExportEntry("osii-core/processor-sdk", "osii-core/processor-sdk"),
         ExportEntry("osii-core/services/local-extractor", "osii-core/services/local-extractor"),
+        ExportEntry("osii-core/services/local-tesseract", "osii-core/services/local-tesseract"),
         ExportEntry("osii-core/services/local-synthesizer", "osii-core/services/local-synthesizer"),
         ExportEntry("osii-core/services/local-embedder", "osii-core/services/local-embedder"),
         ExportEntry("osii-core/services/local-enricher", "osii-core/services/local-enricher"),

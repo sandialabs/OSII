@@ -13,6 +13,7 @@ members = [
     "osii-local-enricher",
     "osii-local-extractor",
     "osii-local-synthesizer",
+    "osii-local-tesseract",
     "osii-mcp",
     "osii-model-provider-bridge",
     "osii-monorepo",
@@ -1075,6 +1076,32 @@ dev = [
 requires-dist = [
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27,<1" },
     { name = "osii-processor-sdk", editable = "osii-core/processor-sdk" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<9" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.35,<1" },
+]
+provides-extras = ["dev"]
+
+[[package]]
+name = "osii-local-tesseract"
+version = "0.1.0"
+source = { editable = "osii-core/services/local-tesseract" }
+dependencies = [
+    { name = "osii-processor-sdk" },
+    { name = "pymupdf" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "httpx" },
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27,<1" },
+    { name = "osii-processor-sdk", editable = "osii-core/processor-sdk" },
+    { name = "pymupdf", specifier = ">=1.24" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<9" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.35,<1" },
 ]

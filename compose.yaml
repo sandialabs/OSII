@@ -1,5 +1,13 @@
 name: osii
 
+x-baseline-build-args: &baseline-build-args
+  OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"
+  OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
+  OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
+  OSII_TESSERACT_SOURCE_URL: "${OSII_TESSERACT_SOURCE_URL:-https://codeload.github.com/tesseract-ocr/tesseract/tar.gz/refs/tags/5.5.3}"
+  OSII_LEPTONICA_SOURCE_URL: "${OSII_LEPTONICA_SOURCE_URL:-https://github.com/DanBloomberg/leptonica/releases/download/1.87.0/leptonica-1.87.0.tar.gz}"
+  OSII_TESSDATA_BASE_URL: "${OSII_TESSDATA_BASE_URL:-https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/4.1.0}"
+
 services:
   api:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-core:${OSII_IMAGE_TAG:-latest}"
@@ -128,8 +136,8 @@ services:
         condition: service_healthy
     profiles: ["agents"]
 
-  tesseract:
-    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-tesseract:${OSII_IMAGE_TAG:-latest}"
+  tesseract-opencv:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-tesseract-opencv:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
       dockerfile: osii-toolbox/osii-tesseract/Dockerfile
@@ -141,12 +149,59 @@ services:
         OSII_LEPTONICA_SOURCE_URL: "${OSII_LEPTONICA_SOURCE_URL:-https://github.com/DanBloomberg/leptonica/releases/download/1.87.0/leptonica-1.87.0.tar.gz}"
         OSII_TESSDATA_BASE_URL: "${OSII_TESSDATA_BASE_URL:-https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/4.1.0}"
     ports:
-      - "${OSII_TESSERACT_PORT:-8080}:8080"
+      - "${OSII_TESSERACT_OPENCV_PORT:-8081}:8080"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
       interval: 10s
       timeout: 3s
       retries: 10
+    profiles: ["toolbox"]
+
+  minilm:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-minilm:${OSII_IMAGE_TAG:-latest}"
+    build:
+      context: osii-toolbox/minilm-embedding-service
+      dockerfile: Dockerfile
+      args:
+        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
+        OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
+    ports: ["${OSII_MINILM_PORT:-8086}:8085"]
+    profiles: ["toolbox"]
+
+  model2vec:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-model2vec:${OSII_IMAGE_TAG:-latest}"
+    build:
+      context: .
+      dockerfile: osii-toolbox/model2vec-embedder/Dockerfile
+      args:
+        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
+        OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
+    ports: ["${OSII_MODEL2VEC_PORT:-8087}:8085"]
+    volumes:
+      - "${OSII_MODEL2VEC_MODEL_DIR:-./osii-data/models/model2vec}:/models/model2vec:ro"
+    profiles: ["toolbox"]
+
+  tabular-extractor:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-tabular:${OSII_IMAGE_TAG:-latest}"
+    build:
+      context: .
+      dockerfile: osii-toolbox/tabular-dataset-processors/Dockerfile
+      args: &tabular-build-args
+        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
+        OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
+    command: ["extractor"]
+    ports: ["${OSII_TABULAR_EXTRACTOR_PORT:-8097}:8097"]
+    profiles: ["toolbox"]
+
+  tabular-enricher:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-tabular:${OSII_IMAGE_TAG:-latest}"
+    build:
+      context: .
+      dockerfile: osii-toolbox/tabular-dataset-processors/Dockerfile
+      args: *tabular-build-args
+    command: ["enricher"]
+    ports: ["${OSII_TABULAR_ENRICHER_PORT:-8098}:8098"]
+    profiles: ["toolbox"]
 
   tika:
     image: apache/tika:3.2.3.0-full
@@ -159,10 +214,7 @@ services:
     build:
       context: .
       dockerfile: osii-core/services/baseline-processors/Dockerfile
-      args: &baseline-build-args
-        OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"
-        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
-        OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
+      args: *baseline-build-args
     command: ["extractor"]
     ports: ["${OSII_LOCAL_EXTRACTOR_PORT:-8092}:8092"]
     healthcheck: &processor-health
@@ -171,6 +223,17 @@ services:
       timeout: 3s
       retries: 10
     environment: {PORT: "8092"}
+
+  tesseract:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"
+    build:
+      context: .
+      dockerfile: osii-core/services/baseline-processors/Dockerfile
+      args: *baseline-build-args
+    command: ["ocr"]
+    ports: ["${OSII_TESSERACT_PORT:-8080}:8080"]
+    healthcheck: *processor-health
+    environment: {PORT: "8080"}
 
   local-synthesizer:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"

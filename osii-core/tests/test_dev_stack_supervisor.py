@@ -86,6 +86,10 @@ def test_service_plan_uses_nested_components_without_concurrent_uv_sync():
     assert by_name["extractor"].working_directory == (
         ROOT / "osii-core" / "services" / "local-extractor"
     )
+    assert by_name["ocr"].working_directory == (
+        ROOT / "osii-core" / "services" / "local-tesseract"
+    )
+    assert by_name["ocr"].port == 8080
     for service in services:
         if service.command[0] == "uv":
             assert "--no-sync" in service.command

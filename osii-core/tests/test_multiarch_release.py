@@ -25,13 +25,23 @@ def dry_run(*extra: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_dry_run_builds_four_images_for_both_linux_architectures() -> None:
+def test_dry_run_builds_three_release_images_for_both_linux_architectures() -> None:
     output = dry_run().stdout
+    assert output.count("podman build --platform linux/amd64") == 3
+    assert output.count("podman build --platform linux/arm64") == 3
+    assert output.count("podman manifest push --all") == 3
+    assert "osii-core:1.2.3-amd64" in output
+    assert "osii-tesseract" not in output
+
+
+def test_toolbox_dry_run_builds_every_optional_image() -> None:
+    output = dry_run("--image-set", "toolbox").stdout
     assert output.count("podman build --platform linux/amd64") == 4
     assert output.count("podman build --platform linux/arm64") == 4
-    assert output.count("podman manifest push --all") == 4
-    assert "osii-core:1.2.3-amd64" in output
-    assert "osii-tesseract:1.2.3-arm64" in output
+    assert "osii-tesseract-opencv:1.2.3-arm64" in output
+    assert "osii-minilm:1.2.3-amd64" in output
+    assert "osii-model2vec:1.2.3-arm64" in output
+    assert "osii-tabular:1.2.3-amd64" in output
 
 
 def test_direct_mode_removes_proxy_variables_from_built_images() -> None:
