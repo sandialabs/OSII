@@ -53,7 +53,7 @@ define validate_shared_drive
 	@if [ ! -d "$(SHARED_DRIVE_PATH)" ] || [ ! -r "$(SHARED_DRIVE_PATH)" ]; then echo "Shared drive is unavailable or unreadable: $(SHARED_DRIVE_PATH)"; exit 2; fi
 endef
 
-.PHONY: help dev dev-shared demo demo-data run run-shared build push-release down logs test docs doctor
+.PHONY: help dev dev-shared demo demo-data run run-shared build push-release publish-multiarch down logs test docs doctor
 
 help:
 	@echo "OSII startup commands"
@@ -62,6 +62,7 @@ help:
 	@echo "  make dev-shared Start OSII against an already mounted shared drive"
 	@echo "  make run        Start previously built container images"
 	@echo "  make run-shared Start images with an already mounted shared drive"
+	@echo "  make publish-multiarch Build and push Linux AMD64 + ARM64 release manifests"
 	@echo "  make down       Stop the container deployment"
 	@echo "  make doctor     Report disk usage; never deletes files"
 	@echo ""
@@ -131,6 +132,17 @@ build:
 push-release:
 	@if echo "$(OSII_IMAGE_PREFIX)" | grep -q '^localhost/'; then echo "Set OSII_IMAGE_PREFIX to a registry path such as quay.io/your-org/osii."; exit 2; fi
 	$(COMPOSE) push api dashboard local-extractor tesseract
+
+publish-multiarch:
+	@if echo "$(OSII_IMAGE_PREFIX)" | grep -q '^localhost/'; then echo "Set OSII_IMAGE_PREFIX to your Quay registry path."; exit 2; fi
+	@if [ "$(OSII_IMAGE_TAG)" = "latest" ]; then echo "Set OSII_IMAGE_TAG to an immutable release version."; exit 2; fi
+	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) python scripts/publish_multiarch.py \
+		--image-prefix "$(OSII_IMAGE_PREFIX)" \
+		--image-tag "$(OSII_IMAGE_TAG)" \
+		--base-image "$(OSII_BASE_IMAGE)" \
+		--python-version "$(OSII_PYTHON_VERSION)" \
+		$(if $(strip $(OSII_CA_BUNDLE)),--ca-bundle "$(OSII_CA_BUNDLE)") \
+		$(if $(filter true,$(DISABLE_CONTAINER_PROXIES)),--disable-container-proxies)
 
 docs:
 	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) python scripts/check_docs_links.py

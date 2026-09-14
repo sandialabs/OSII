@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("help", "dev", "dev-shared", "demo", "demo-data", "run", "run-shared", "build", "push-release", "down", "logs", "doctor")]
+    [ValidateSet("help", "dev", "dev-shared", "demo", "demo-data", "run", "run-shared", "build", "push-release", "publish-multiarch", "down", "logs", "doctor")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
@@ -245,6 +245,7 @@ function Show-OsiiHelp {
     Write-Host "  .\scripts\osii.ps1 dev-shared Start OSII against an already connected shared drive"
     Write-Host "  .\scripts\osii.ps1 run        Start previously built container images"
     Write-Host "  .\scripts\osii.ps1 run-shared Start images with an already connected shared drive"
+    Write-Host "  .\scripts\osii.ps1 publish-multiarch Build and push Linux AMD64 + ARM64 release manifests"
     Write-Host "  .\scripts\osii.ps1 down       Stop the container deployment"
     Write-Host "  .\scripts\osii.ps1 doctor     Report disk usage; never deletes files"
     Write-Host ""
@@ -306,6 +307,32 @@ try {
                 throw "Set -ImagePrefix to a registry path such as quay.io/your-org/osii."
             }
             Invoke-OsiiCompose @("push", "api", "dashboard", "local-extractor", "tesseract")
+        }
+        "publish-multiarch" {
+            if ($Runtime -ne "Podman") {
+                throw "publish-multiarch currently requires Podman."
+            }
+            if ($ImagePrefix.StartsWith("localhost/")) {
+                throw "Set -ImagePrefix to your Quay registry path."
+            }
+            if ($ImageTag -eq "latest") {
+                throw "Set -ImageTag to an immutable release version."
+            }
+            $PublishArguments = @(
+                "run", "--no-project", "--python", $PythonVersion,
+                "python", "scripts/publish_multiarch.py",
+                "--image-prefix", $ImagePrefix,
+                "--image-tag", $ImageTag,
+                "--base-image", $BaseImage,
+                "--python-version", $PythonVersion
+            )
+            if ($CaBundle) { $PublishArguments += @("--ca-bundle", $CaBundle) }
+            if ($DisableContainerProxies) { $PublishArguments += "--disable-container-proxies" }
+            if ($DryRun) { $PublishArguments += "--dry-run" }
+            & uv @PublishArguments
+            if ($LASTEXITCODE -ne 0) {
+                throw "Multi-architecture publication failed with code $LASTEXITCODE."
+            }
         }
         "doctor" {
             & uv run --no-project --python $PythonVersion python scripts/disk_usage.py

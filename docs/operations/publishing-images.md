@@ -231,12 +231,10 @@ authorized for all four target names.
 
 ## Publish a multi-architecture release
 
-`make build` and `make push-release` build and publish images for the
-architecture of the machine that runs them. They do not currently create a
-multi-architecture manifest. A multi-architecture release is a deliberate
-release-owner step: publish one immutable, architecture-suffixed image for
-each supported platform, then publish a manifest list at the ordinary version
-tag.
+`make build` and `make push-release` remain the single-architecture commands.
+For the normal two-platform release, `publish-multiarch` builds immutable
+`linux/amd64` and `linux/arm64` variants, pushes them, creates OCI manifest
+lists, inspects them, and pushes the ordinary version tags.
 
 The intended initial platform pair is `linux/amd64` and `linux/arm64`. Add a
 platform only after the complete packaged stack has been tested on that native
@@ -244,7 +242,49 @@ architecture. Every architecture build must use the same commit, version,
 `OSII_BASE_IMAGE`, Python version, source-mirror settings, and—when used—the
 same approved CA bundle.
 
-### Preferred method: native builders
+### One-command publication from an Apple Silicon Mac
+
+Native builders are not required. Podman can execute the AMD64 build through
+QEMU inside its Linux virtual machine while building ARM64 natively. Start the
+Podman machine, authenticate once, and run:
+
+```bash
+podman machine start
+podman login quay.example.org
+make publish-multiarch \
+  OSII_IMAGE_PREFIX=quay.example.org/your-organization/osii \
+  OSII_IMAGE_TAG=0.1.0 \
+  OSII_BASE_IMAGE=quay.example.org/approved/rhel9 \
+  OSII_CA_BUNDLE=/absolute/path/to/corporate-roots.pem \
+  DISABLE_CONTAINER_PROXIES=true
+```
+
+Use the same command without `OSII_CA_BUNDLE` or
+`DISABLE_CONTAINER_PROXIES` when those controls are unnecessary. The command
+publishes architecture-suffixed images for diagnosis and one manifest-backed
+ordinary tag for each of `core`, `dashboard`, `baseline-processors`, and
+`tesseract`.
+
+PowerShell provides the equivalent workflow:
+
+```powershell
+podman machine start
+podman login quay.example.org
+.\scripts\osii.ps1 publish-multiarch `
+  -ImagePrefix quay.example.org/your-organization/osii `
+  -ImageTag 0.1.0 `
+  -BaseImage quay.example.org/approved/rhel9 `
+  -CaBundle C:\certificates\corporate-roots.pem `
+  -DisableContainerProxies
+```
+
+This succeeds only when the selected base image is published for both target
+architectures and Podman's Linux VM has working AMD64 emulation. A native
+dependency build—especially Tesseract—will be noticeably slower under
+emulation. A failure in one architecture stops publication before its final
+manifest tag is replaced.
+
+### Higher-assurance method: native builders
 
 Build on one native `amd64` builder and one native `arm64` builder. This avoids
 emulation during native compilation in the Tesseract image and gives each
@@ -316,12 +356,17 @@ When `make run` pulls one of those tags, the registry selects the matching
 architecture automatically. A pilot still pins `OSII_IMAGE_TAG=0.1.0`; it does
 not need separate Compose files or architecture-specific configuration.
 
-### Emulation is a fallback, not the release baseline
+### How the single-machine command works
 
-Podman can create a manifest while building more than one `--platform` on one
-machine, but `RUN` steps for a non-native architecture need compatible
-user-mode emulation such as QEMU. This can be useful for a quick experiment,
-but it is slower and does not replace native smoke testing:
+The launcher deliberately builds and pushes architecture-suffixed images
+before assembling the manifest. This makes an interrupted build resumable and
+leaves explicit images that a release owner can inspect. Underneath, it uses
+Podman's `--platform`, `manifest add`, and `manifest push --all` operations.
+
+Podman requires compatible user-mode emulation such as QEMU for `RUN` steps on
+the non-native platform. Emulation is suitable for producing a pilot release,
+but it does not prove runtime behavior on a native AMD64 host. Smoke-test the
+published ordinary tag on each architecture before promoting it:
 
 ```bash
 podman build \
@@ -335,9 +380,9 @@ podman manifest push --all \
   docker://quay.io/your-organization/osii-core:0.1.0
 ```
 
-This example covers the core image only. A real release must build, inspect,
-and publish all four image artifacts with their correct build contexts and
-arguments. Prefer the native-builder method above for a supported release.
+The `publish-multiarch` command performs the equivalent operation for all four
+release images and preserves the configured base image, Python version,
+certificate injection, proxy suppression, and mirrored Tesseract source URLs.
 
 ### Verify the published release
 
