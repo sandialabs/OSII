@@ -187,7 +187,7 @@ function Invoke-OsiiCompose {
             "--env", "REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
             "--env", "CURL_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
             "--env", "PIP_CERT=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
-            "--env", "UV_NATIVE_TLS=true",
+            "--env", "UV_SYSTEM_CERTS=true",
             "--env", "NODE_EXTRA_CA_CERTS=/etc/pki/ca-trust/source/anchors/osii-local-ca-bundle.pem"
         )
         $SecurityArguments += "--podman-build-args=$($CaBuildOptions -join ' ')"

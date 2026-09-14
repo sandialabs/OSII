@@ -28,7 +28,7 @@ CERTIFICATE_ENV = {
     "REQUESTS_CA_BUNDLE": "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
     "CURL_CA_BUNDLE": "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
     "PIP_CERT": "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
-    "UV_NATIVE_TLS": "true",
+    "UV_SYSTEM_CERTS": "true",
     "NODE_EXTRA_CA_CERTS": "/etc/pki/ca-trust/source/anchors/osii-local-ca-bundle.pem",
 }
 

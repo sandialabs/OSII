@@ -107,7 +107,7 @@ def test_make_passes_ca_bundle_as_cache_safe_build_secret(tmp_path: Path) -> Non
     assert "--mount=type=secret,id=osii_ca_bundle" in result.stdout
     assert "--build-arg OSII_CA_BUNDLE_SHA256=" in result.stdout
     assert "--env REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem" in result.stdout
-    assert "--env UV_NATIVE_TLS=true" in result.stdout
+    assert "--env UV_SYSTEM_CERTS=true" in result.stdout
     assert "--env NODE_EXTRA_CA_CERTS=" in result.stdout
     assert "COPY" not in result.stdout
 

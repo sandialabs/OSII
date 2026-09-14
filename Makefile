@@ -21,7 +21,7 @@ endif
 
 ifneq ($(strip $(OSII_CA_BUNDLE)),)
 OSII_CA_BUNDLE_SHA256 := $(shell if command -v sha256sum >/dev/null 2>&1; then sha256sum "$(OSII_CA_BUNDLE)"; else shasum -a 256 "$(OSII_CA_BUNDLE)"; fi 2>/dev/null | awk '{print $$1}')
-PODMAN_CA_BUILD_ARGUMENTS := --podman-build-args='--secret=id=osii_ca_bundle,src="$(OSII_CA_BUNDLE)" --mount=type=secret,id=osii_ca_bundle --build-arg OSII_CA_BUNDLE_SHA256=$(OSII_CA_BUNDLE_SHA256) --env SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem --env REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem --env CURL_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem --env PIP_CERT=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem --env UV_NATIVE_TLS=true --env NODE_EXTRA_CA_CERTS=/etc/pki/ca-trust/source/anchors/osii-local-ca-bundle.pem'
+PODMAN_CA_BUILD_ARGUMENTS := --podman-build-args='--secret=id=osii_ca_bundle,src="$(OSII_CA_BUNDLE)" --mount=type=secret,id=osii_ca_bundle --build-arg OSII_CA_BUNDLE_SHA256=$(OSII_CA_BUNDLE_SHA256) --env SSL_CERT_FILE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem --env REQUESTS_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem --env CURL_CA_BUNDLE=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem --env PIP_CERT=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem --env UV_SYSTEM_CERTS=true --env NODE_EXTRA_CA_CERTS=/etc/pki/ca-trust/source/anchors/osii-local-ca-bundle.pem'
 endif
 export UV_PROJECT_ENVIRONMENT := $(CURDIR)/osii-env
 export OSII_IMAGE_PREFIX OSII_IMAGE_TAG OSII_BASE_IMAGE OSII_PYTHON_VERSION
