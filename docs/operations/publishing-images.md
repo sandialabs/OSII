@@ -229,6 +229,132 @@ podman login quay.io
 permissions or repositories; the authenticated account or robot token must be
 authorized for all four target names.
 
+## Publish a multi-architecture release
+
+`make build` and `make push-release` build and publish images for the
+architecture of the machine that runs them. They do not currently create a
+multi-architecture manifest. A multi-architecture release is a deliberate
+release-owner step: publish one immutable, architecture-suffixed image for
+each supported platform, then publish a manifest list at the ordinary version
+tag.
+
+The intended initial platform pair is `linux/amd64` and `linux/arm64`. Add a
+platform only after the complete packaged stack has been tested on that native
+architecture. Every architecture build must use the same commit, version,
+`OSII_BASE_IMAGE`, Python version, source-mirror settings, and—when used—the
+same approved CA bundle.
+
+### Preferred method: native builders
+
+Build on one native `amd64` builder and one native `arm64` builder. This avoids
+emulation during native compilation in the Tesseract image and gives each
+platform a real packaged-stack test. On each builder, authenticate to the
+registry and run the normal release build with an architecture suffix:
+
+```bash
+# Run on the linux/amd64 builder.
+podman login quay.io
+make build \
+  OSII_IMAGE_PREFIX=quay.io/your-organization/osii \
+  OSII_IMAGE_TAG=0.1.0-amd64
+make push-release \
+  OSII_IMAGE_PREFIX=quay.io/your-organization/osii \
+  OSII_IMAGE_TAG=0.1.0-amd64
+```
+
+```bash
+# Run the same checked-out commit on the linux/arm64 builder.
+podman login quay.io
+make build \
+  OSII_IMAGE_PREFIX=quay.io/your-organization/osii \
+  OSII_IMAGE_TAG=0.1.0-arm64
+make push-release \
+  OSII_IMAGE_PREFIX=quay.io/your-organization/osii \
+  OSII_IMAGE_TAG=0.1.0-arm64
+```
+
+For a corporate base image, certificate bundle, or artifact mirror, include
+the same approved arguments on both builders. Do not copy certificates or
+registry credentials into the repository to make the builds match.
+
+After both architecture-suffixed releases have passed their native smoke tests,
+use a release host with registry access to create and publish one manifest list
+for each OSII image. Substitute the actual registry prefix and a **new,
+immutable** release version before running this command:
+
+```bash
+registry_prefix=quay.io/your-organization/osii
+version=0.1.0
+
+for image in core dashboard baseline-processors tesseract; do
+  target="${registry_prefix}-${image}:${version}"
+  podman manifest create "$target"
+  podman manifest add "$target" "docker://${registry_prefix}-${image}:${version}-amd64"
+  podman manifest add "$target" "docker://${registry_prefix}-${image}:${version}-arm64"
+  podman manifest inspect "$target"
+  podman manifest push --all "$target" "docker://${target}"
+done
+```
+
+`podman manifest inspect` must show one descriptor for `amd64` and one for
+`arm64` before the push. `--all` is essential: it publishes both referenced
+images as well as the manifest list. Podman documents this manifest workflow
+and its multi-platform build support in its [build
+documentation](https://docs.podman.io/en/stable/markdown/podman-build.1.html)
+and [manifest-push documentation](https://docs.podman.io/en/latest/markdown/podman-manifest-push.1.html).
+
+The resulting ordinary tags remain the same for pilot users:
+
+```text
+quay.io/your-organization/osii-core:0.1.0
+quay.io/your-organization/osii-dashboard:0.1.0
+quay.io/your-organization/osii-baseline-processors:0.1.0
+quay.io/your-organization/osii-tesseract:0.1.0
+```
+
+When `make run` pulls one of those tags, the registry selects the matching
+architecture automatically. A pilot still pins `OSII_IMAGE_TAG=0.1.0`; it does
+not need separate Compose files or architecture-specific configuration.
+
+### Emulation is a fallback, not the release baseline
+
+Podman can create a manifest while building more than one `--platform` on one
+machine, but `RUN` steps for a non-native architecture need compatible
+user-mode emulation such as QEMU. This can be useful for a quick experiment,
+but it is slower and does not replace native smoke testing:
+
+```bash
+podman build \
+  --platform linux/amd64,linux/arm64 \
+  --manifest quay.io/your-organization/osii-core:0.1.0 \
+  --file osii-core/Dockerfile \
+  --build-arg OSII_VERSION=0.1.0 \
+  .
+podman manifest push --all \
+  quay.io/your-organization/osii-core:0.1.0 \
+  docker://quay.io/your-organization/osii-core:0.1.0
+```
+
+This example covers the core image only. A real release must build, inspect,
+and publish all four image artifacts with their correct build contexts and
+arguments. Prefer the native-builder method above for a supported release.
+
+### Verify the published release
+
+On each target architecture, configure the ordinary immutable tag and use the
+normal packaged launch:
+
+```bash
+make run \
+  OSII_IMAGE_PREFIX=quay.io/your-organization/osii \
+  OSII_IMAGE_TAG=0.1.0
+curl --fail http://localhost:5173/health
+```
+
+This verifies the same manifest-selection path users will take. Confirm the
+dashboard starts, the health endpoint responds, and an intake/search smoke test
+works on both `amd64` and `arm64` before declaring the version released.
+
 ## Run a corporate pilot
 
 The release owner supplies an immutable version tag. Copy `.env.example` to
