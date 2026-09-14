@@ -30,7 +30,7 @@ Install Node.js, Rust, Podman 5 or newer, and a Compose provider, then run:
 
 ```bash
 npm install
-npm run tauri dev
+npm run tauri -- dev
 ```
 
 Corporate builds can prefill their approved deployment coordinates without
@@ -40,7 +40,7 @@ putting internal names in this public repository:
 VITE_OSII_REGISTRY=quay.corp.example \
 VITE_OSII_IMAGE_PREFIX=quay.corp.example/team/osii \
 VITE_OSII_IMAGE_TAG=2026.09.14 \
-npm run tauri build
+npm run tauri -- build
 ```
 
 The tag must identify a pinned release; the launcher rejects `latest`.

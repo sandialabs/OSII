@@ -1,2 +1,0 @@
-pytest>=8,<9
-pydantic>=2.9,<3
