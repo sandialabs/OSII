@@ -32,6 +32,7 @@ export const launcherApi = {
   listProfiles: () => invoke<Profile[]>("list_profiles"),
   saveProfile: (draft: ProfileDraft, profileId?: string) =>
     invoke<Profile>("save_profile", { draft, profileId: profileId ?? null }),
+  deleteProfile: (profileId: string) => invoke<Profile[]>("delete_profile", { profileId }),
   startProfile: (profileId: string, apiKey: string) =>
     invoke<DeploymentStatus>("start_profile", { profileId, apiKey }),
   stopProfile: (profileId: string) => invoke<DeploymentStatus>("stop_profile", { profileId }),

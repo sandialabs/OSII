@@ -414,6 +414,29 @@ fn write_profiles(app: &AppHandle, profiles: &[Profile]) -> Result<(), String> {
         .map_err(|error| format!("Could not finish saving library profiles: {error}"))
 }
 
+fn same_profile_settings(left: &Profile, right: &Profile) -> bool {
+    left.name == right.name
+        && left.source_dir == right.source_dir
+        && left.image_prefix == right.image_prefix
+        && left.image_tag == right.image_tag
+        && left.openai_base_url == right.openai_base_url
+        && left.openai_embedding_model == right.openai_embedding_model
+        && left.openai_chat_model == right.openai_chat_model
+}
+
+fn deduplicate_profiles(profiles: Vec<Profile>) -> Vec<Profile> {
+    let mut unique = Vec::with_capacity(profiles.len());
+    for profile in profiles {
+        if !unique
+            .iter()
+            .any(|existing| same_profile_settings(existing, &profile))
+        {
+            unique.push(profile);
+        }
+    }
+    unique
+}
+
 fn validate_image_part(value: &str, label: &str, allow_slash: bool) -> Result<String, String> {
     let value = value.trim();
     let allowed = value.chars().all(|character| {
@@ -461,7 +484,13 @@ fn canonical_source(source_dir: &str) -> Result<PathBuf, String> {
 
 #[tauri::command]
 fn list_profiles(app: AppHandle) -> Result<Vec<Profile>, String> {
-    read_profiles(&app)
+    let profiles = read_profiles(&app)?;
+    let original_count = profiles.len();
+    let profiles = deduplicate_profiles(profiles);
+    if profiles.len() != original_count {
+        write_profiles(&app, &profiles)?;
+    }
+    Ok(profiles)
 }
 
 #[tauri::command]
@@ -494,7 +523,15 @@ fn save_profile(
         }
         value
     };
-    let id = profile_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let mut profiles = deduplicate_profiles(read_profiles(&app)?);
+    let id = match profile_id {
+        Some(id) => id,
+        None => profiles
+            .iter()
+            .find(|profile| profile.name == name && profile.source_dir == source.to_string_lossy())
+            .map(|profile| profile.id.clone())
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+    };
     validate_profile_id(&id)?;
     let profile = Profile {
         id: id.clone(),
@@ -506,13 +543,29 @@ fn save_profile(
         openai_embedding_model: draft.openai_embedding_model.trim().to_string(),
         openai_chat_model: draft.openai_chat_model.trim().to_string(),
     };
-    let mut profiles = read_profiles(&app)?;
-    profiles.retain(|item| item.id != id);
+    profiles.retain(|item| item.id != id && !same_profile_settings(item, &profile));
     profiles.insert(0, profile.clone());
     write_profiles(&app, &profiles)?;
     fs::create_dir_all(profile_data_dir(&app, &id)?)
         .map_err(|error| format!("Could not create the library state directory: {error}"))?;
     Ok(profile)
+}
+
+#[tauri::command]
+fn delete_profile(app: AppHandle, profile_id: String) -> Result<Vec<Profile>, String> {
+    validate_profile_id(&profile_id)?;
+    if active_profile(&app)?.as_deref() == Some(profile_id.as_str()) {
+        return Err("Stop this library before removing its saved profile.".to_string());
+    }
+    let mut profiles = read_profiles(&app)?;
+    let original_count = profiles.len();
+    profiles.retain(|profile| profile.id != profile_id);
+    if profiles.len() == original_count {
+        return Err("The selected library profile no longer exists.".to_string());
+    }
+    profiles = deduplicate_profiles(profiles);
+    write_profiles(&app, &profiles)?;
+    Ok(profiles)
 }
 
 fn discovery_api_key(api_key: &str) -> Result<String, String> {
@@ -1291,6 +1344,7 @@ pub fn run() {
             discover_models,
             list_profiles,
             save_profile,
+            delete_profile,
             start_profile,
             stop_profile,
             deployment_status,
@@ -1368,5 +1422,26 @@ mod tests {
             document.pointer("/services/api/environment/OPENAI_API_KEY_FILE"),
             Some(&json!(format!("/run/secrets/{secret}")))
         );
+    }
+
+    #[test]
+    fn duplicate_profile_settings_are_collapsed() {
+        let first = Profile {
+            id: "first".to_string(),
+            name: "My OSII library".to_string(),
+            source_dir: "/source".to_string(),
+            image_prefix: "quay.example.test/team/osii".to_string(),
+            image_tag: "2026.09.14".to_string(),
+            openai_base_url: String::new(),
+            openai_embedding_model: String::new(),
+            openai_chat_model: String::new(),
+        };
+        let mut duplicate = first.clone();
+        duplicate.id = "second".to_string();
+
+        let profiles = deduplicate_profiles(vec![first.clone(), duplicate]);
+
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].id, first.id);
     }
 }

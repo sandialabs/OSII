@@ -84,6 +84,20 @@ nor deletes them. A user who tested an earlier build can remove those entries in
 macOS Keychain Access; removing them is optional and does not affect saved OSII
 profiles.
 
+## Saved profiles
+
+Profiles contain non-secret launcher settings and are stored outside the source
+repository in the operating system's application-data directory:
+
+- macOS: `~/Library/Application Support/org.osii.launcher/profiles.json`
+- Windows: `%APPDATA%\org.osii.launcher\profiles.json`
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/org.osii.launcher/profiles.json`
+
+The launcher collapses exact historical duplicates when it loads this file and
+reuses a profile when the same library name and canonical source folder are saved
+again. **Remove selected** deletes only the saved profile record. It does not
+delete the source folder or the launcher's indexed library-data directory.
+
 If the corporate model endpoint needs a private certificate authority during
 development, start the launcher from a terminal with `OSII_CA_BUNDLE` set to the
 approved PEM bundle. Production installers should rely on the certificate

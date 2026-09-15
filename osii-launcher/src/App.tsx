@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { launcherApi } from "./launcherApi";
 import type {
   DeploymentPreview,
@@ -73,6 +73,7 @@ function App() {
   const [notice, setNotice] = useState("Checking this workstation…");
   const [problem, setProblem] = useState<string | null>(null);
   const [saveAttempted, setSaveAttempted] = useState(false);
+  const saveInFlight = useRef(false);
 
   const selected = useMemo(
     () => profiles.find((profile) => profile.id === selectedId) ?? null,
@@ -171,19 +172,41 @@ function App() {
   }
 
   async function save() {
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
     setSaveAttempted(true);
-    if (validation) {
-      setProblem(validation);
-      return;
+    try {
+      if (validation) {
+        setProblem(validation);
+        return;
+      }
+      const saved = await run("Saving library", () => launcherApi.saveProfile(draft, selectedId ?? undefined));
+      if (!saved) return;
+      setSelectedId(saved.id);
+      setProfiles((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
+      setDraft(saved);
+      setSaveAttempted(false);
+      setDeploymentPreview(null);
+      setNotice("Library settings saved.");
+    } finally {
+      saveInFlight.current = false;
     }
-    const saved = await run("Saving library", () => launcherApi.saveProfile(draft, selectedId ?? undefined));
-    if (!saved) return;
-    setSelectedId(saved.id);
-    setProfiles((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
-    setDraft(saved);
-    setSaveAttempted(false);
+  }
+
+  async function removeSelectedProfile() {
+    if (!selected) return;
+    if (!window.confirm(`Remove the saved profile “${selected.name}”? Your source folder and OSII library data will not be deleted.`)) return;
+    const remaining = await run("Removing library profile", () => launcherApi.deleteProfile(selected.id));
+    if (!remaining) return;
+    setProfiles(remaining);
+    const next = remaining[0] ?? null;
+    setSelectedId(next?.id ?? null);
+    setDraft(next ?? emptyDraft);
+    setApiKey("");
+    setAdvancedOpen(false);
     setDeploymentPreview(null);
-    setNotice("Library settings saved.");
+    setLogs("");
+    setNotice("Saved profile removed. Library files were preserved.");
   }
 
   async function chooseSource() {
@@ -358,6 +381,11 @@ function App() {
                 <small>{profile.sourceDir}</small>
               </button>
             ))}
+            {selected && (
+              <button className="text-button danger remove-profile" disabled={Boolean(busy) || runningSelected} onClick={() => void removeSelectedProfile()}>
+                Remove selected
+              </button>
+            )}
           </div>
 
           <div className="readiness">
