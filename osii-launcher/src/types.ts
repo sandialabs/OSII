@@ -22,6 +22,9 @@ export interface ProfileDraft {
   openaiBaseUrl: string;
   openaiEmbeddingModel: string;
   openaiChatModel: string;
+  readableWiki: boolean;
+  conceptEntityWiki: boolean;
+  tesseractOpenCv: boolean;
 }
 
 export interface Profile extends ProfileDraft {

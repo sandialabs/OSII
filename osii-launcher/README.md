@@ -60,6 +60,19 @@ npm install
 npm run tauri -- dev
 ```
 
+## Local Windows build output
+
+After `npm run tauri -- build` on Windows, the NSIS installer is normally at
+`src-tauri\target\release\bundle\nsis\OSII Launcher_<version>_x64-setup.exe`.
+To locate every Windows installer that the build produced, run this from the
+`osii-launcher` directory:
+
+```powershell
+Get-ChildItem .\src-tauri\target\release\bundle -Recurse -File |
+  Where-Object { $_.Extension -in ".exe", ".msi" } |
+  Select-Object -ExpandProperty FullName
+```
+
 ## Corporate defaults
 
 Use a git-ignored `.env.local` to prefill the corporate registry, image release,
@@ -196,6 +209,33 @@ The launcher uses the generated `compose.env` with both supported Compose
 providers. External Podman secrets use the same name in the secret store, Compose
 configuration, and container mount path. This avoids the unsupported external
 secret alias behavior in `podman-compose` 1.6.x.
+
+## If a Quay image pull fails
+
+**Start OSII** pulls Core, the dashboard, and baseline processors before it
+starts Compose. It also pulls the optional Toolbox image for each service chosen
+in the library profile. If a pull fails, open **Advanced view**. It shows the
+exact recovery commands for the selected library profile.
+
+On Windows, open PowerShell and run the displayed `podman login` command, then
+the three `podman pull` commands in order. `podman login` prompts for your Quay
+credentials. When every displayed pull succeeds, return to the launcher and select
+**Start OSII** again. Do not start Compose directly: the launcher generates the
+library-specific configuration and passes the temporary model API-key secret.
+
+For a manual example, replace these three values with the registry, image
+prefix, and pinned tag shown in the launcher:
+
+```powershell
+$registry = "quay.corp.example"
+$prefix = "quay.corp.example/team/osii"
+$tag = "2026.09.14"
+
+podman login $registry
+podman pull "${prefix}-core:${tag}"
+podman pull "${prefix}-dashboard:${tag}"
+podman pull "${prefix}-baseline-processors:${tag}"
+```
 
 ## Release shape
 

@@ -54,6 +54,12 @@ struct ProfileDraft {
     openai_base_url: String,
     openai_embedding_model: String,
     openai_chat_model: String,
+    #[serde(default)]
+    readable_wiki: bool,
+    #[serde(default)]
+    concept_entity_wiki: bool,
+    #[serde(default)]
+    tesseract_open_cv: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -67,6 +73,12 @@ struct Profile {
     openai_base_url: String,
     openai_embedding_model: String,
     openai_chat_model: String,
+    #[serde(default)]
+    readable_wiki: bool,
+    #[serde(default)]
+    concept_entity_wiki: bool,
+    #[serde(default)]
+    tesseract_open_cv: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -422,6 +434,9 @@ fn same_profile_settings(left: &Profile, right: &Profile) -> bool {
         && left.openai_base_url == right.openai_base_url
         && left.openai_embedding_model == right.openai_embedding_model
         && left.openai_chat_model == right.openai_chat_model
+        && left.readable_wiki == right.readable_wiki
+        && left.concept_entity_wiki == right.concept_entity_wiki
+        && left.tesseract_open_cv == right.tesseract_open_cv
 }
 
 fn deduplicate_profiles(profiles: Vec<Profile>) -> Vec<Profile> {
@@ -603,6 +618,9 @@ fn save_profile(
         openai_base_url,
         openai_embedding_model: draft.openai_embedding_model.trim().to_string(),
         openai_chat_model: draft.openai_chat_model.trim().to_string(),
+        readable_wiki: draft.readable_wiki,
+        concept_entity_wiki: draft.concept_entity_wiki,
+        tesseract_open_cv: draft.tesseract_open_cv,
     };
     profiles.retain(|item| item.id != id && !same_profile_settings(item, &profile));
     profiles.insert(0, profile.clone());
@@ -946,78 +964,39 @@ fn deployment_environment(profile: &Profile) -> Result<String, String> {
 fn profile_override_document(
     profile: &Profile,
     data_dir: &Path,
-    has_key: bool,
+    config_dir: &Path,
+    _has_key: bool,
 ) -> Result<Value, String> {
     let data_mount = format!("{}:/data", data_dir.to_string_lossy());
     let data_mount_read_only = format!("{}:/data:ro", data_dir.to_string_lossy());
-    let runtime_secret = has_key.then(|| secret_name(&profile.id)).transpose()?;
+    let config_mount = format!("{}:/config", config_dir.to_string_lossy());
+    let config_mount_read_only = format!("{}:/config:ro", config_dir.to_string_lossy());
 
     let mut shared_environment = serde_json::Map::new();
-    if !profile.openai_base_url.is_empty() {
-        shared_environment.insert("OPENAI_BASE_URL".into(), json!(profile.openai_base_url));
-        shared_environment.insert("CHAT_PROVIDER".into(), json!("openai"));
-        shared_environment.insert(
-            "CHAT_PROVIDER_CHAIN".into(),
-            json!("openai,ollama,extractive"),
-        );
-        shared_environment.insert(
-            "OSII_DEFAULT_SYNTHESIZER".into(),
-            json!("openai.synthesizer"),
-        );
-        shared_environment.insert("OSII_DEFAULT_EMBEDDER".into(), json!("openai.embedder"));
-        shared_environment.insert(
-            "OSII_PROCESSORS".into(),
-            json!("http://local-extractor:8092,http://tesseract:8080,http://local-synthesizer:8093,http://local-embedder:8085,http://local-enricher:8094,http://model-provider-bridge:8095/openai/embedder,http://model-provider-bridge:8095/openai/synthesizer,http://model-provider-bridge:8095/ollama/embedder,http://model-provider-bridge:8095/ollama/synthesizer"),
-        );
-    }
-    if !profile.openai_embedding_model.is_empty() {
-        shared_environment.insert(
-            "OPENAI_EMBEDDING_MODEL".into(),
-            json!(profile.openai_embedding_model),
-        );
-    }
-    if !profile.openai_chat_model.is_empty() {
-        shared_environment.insert("OPENAI_CHAT_MODEL".into(), json!(profile.openai_chat_model));
-        shared_environment.insert(
-            "OPENAI_SYNTHESIS_MODEL".into(),
-            json!(profile.openai_chat_model),
-        );
-    }
-    if has_key {
-        shared_environment.insert(
-            "OPENAI_API_KEY_FILE".into(),
-            json!(format!(
-                "/run/secrets/{}",
-                runtime_secret.as_deref().unwrap_or_default()
-            )),
-        );
-    }
+    shared_environment.insert("OSII_CONFIG_DIR".into(), json!("/config"));
+    shared_environment.insert("OSII_ENV_FILE".into(), json!("/config/secrets.env"));
+    shared_environment.insert("OSII_ACTIVE_PROFILE".into(), json!("development"));
+    shared_environment.insert("OSII_ALLOW_LOCAL_CONFIG_WRITES".into(), json!("true"));
+    shared_environment.insert("OSII_MODEL_GATEWAY_PUBLIC_URL".into(), json!("http://model-provider-bridge:8095/v1"));
+    shared_environment.insert("OSII_MODEL_GATEWAY_SECRET".into(), json!(format!("launcher-{}", profile.id)));
 
     let mut services = serde_json::Map::new();
-    for (name, mount) in [
-        ("api", data_mount.as_str()),
-        ("worker", data_mount.as_str()),
-        ("model-provider-bridge", data_mount_read_only.as_str()),
+    for (name, mount, config) in [
+        ("api", data_mount.as_str(), config_mount.as_str()),
+        ("worker", data_mount.as_str(), config_mount_read_only.as_str()),
+        ("model-provider-bridge", data_mount_read_only.as_str(), config_mount_read_only.as_str()),
     ] {
         let mut service = serde_json::Map::new();
-        service.insert("volumes".into(), json!([mount]));
+        service.insert("volumes".into(), json!([mount, config]));
         service.insert(
             "environment".into(),
             Value::Object(shared_environment.clone()),
         );
-        if let Some(secret) = runtime_secret.as_deref() {
-            service.insert("secrets".into(), json!([secret]));
-        }
         services.insert(name.into(), Value::Object(service));
     }
 
     let mut root = serde_json::Map::new();
     root.insert("services".into(), Value::Object(services));
-    if let Some(secret) = runtime_secret {
-        let mut secrets = serde_json::Map::new();
-        secrets.insert(secret, json!({ "external": true }));
-        root.insert("secrets".into(), Value::Object(secrets));
-    }
     Ok(Value::Object(root))
 }
 
@@ -1033,6 +1012,27 @@ fn deployment_files(
     fs::create_dir_all(&data_dir)
         .map_err(|error| format!("Could not create library state: {error}"))?;
 
+    let models_path = config_dir.join("models.yml");
+    if !models_path.exists() {
+        fs::write(
+            &models_path,
+            "version: 1\nmodels:\n  base:\n    type: ollama-local\n    base_url: http://host.containers.internal:11434\n    model: llama3.2:1b\n    capabilities: [chat, synthesis]\n  minilm:\n    type: ollama-local\n    base_url: http://host.containers.internal:11434\n    model: all-minilm\n    capabilities: [embedding]\ndefaults:\n  chat: base\n  synthesis: base\n  embedding: minilm\n",
+        ).map_err(|error| format!("Could not create model configuration: {error}"))?;
+    }
+    let tools = format!(
+        "version: 1\nprofiles:\n  development:\n    tools:\n      readable-llm-wiki:\n        enabled: {}\n        processor_id: toolbox.readable-wiki\n        display_name: Readable LLM Wiki\n        kind: enricher\n        runtime: {{mode: external, endpoint: http://readable-wiki-enricher:8099}}\n        model_access: {{mode: gateway, bindings: {{chat: base}}}}\n      concept-entity-llm-wiki:\n        enabled: {}\n        processor_id: toolbox.concept-entity-wiki\n        display_name: Concept and Entity LLM Wiki\n        kind: enricher\n        runtime: {{mode: external, endpoint: http://concept-entity-wiki-enricher:8100}}\n        model_access: {{mode: gateway, bindings: {{chat: base}}}}\n      tesseract-opencv:\n        enabled: {}\n        processor_id: toolbox.tesseract-opencv\n        aliases: [toolchest.tesseract-opencv]\n        display_name: Tesseract OCR with OpenCV regions\n        kind: extractor\n        runtime: {{mode: external, endpoint: http://tesseract-opencv:8080}}\n        model_access: {{mode: none}}\n",
+        profile.readable_wiki,
+        profile.concept_entity_wiki,
+        profile.tesseract_open_cv,
+    );
+    fs::write(config_dir.join("tools.yml"), tools)
+        .map_err(|error| format!("Could not save tool configuration: {error}"))?;
+    let secrets_path = config_dir.join("secrets.env");
+    if !secrets_path.exists() {
+        fs::write(&secrets_path, "# API keys saved from Workbench Setup appear here.\n")
+            .map_err(|error| format!("Could not create secrets configuration: {error}"))?;
+    }
+
     let environment_path = config_dir.join("compose.env");
     let environment = deployment_environment(profile)?;
     fs::write(&environment_path, &environment)
@@ -1040,7 +1040,7 @@ fn deployment_files(
 
     let override_path = config_dir.join("compose.override.json");
     let compose_override =
-        serde_json::to_string_pretty(&profile_override_document(profile, &data_dir, has_key)?)
+        serde_json::to_string_pretty(&profile_override_document(profile, &data_dir, &config_dir, has_key)?)
             .map_err(|error| format!("Could not generate deployment configuration: {error}"))?;
     fs::write(&override_path, format!("{compose_override}\n"))
         .map_err(|error| format!("Could not save deployment configuration: {error}"))?;
@@ -1052,15 +1052,36 @@ fn deployment_files(
     })
 }
 
-fn profile_images(profile: &Profile) -> [String; 3] {
-    [
+fn profile_images(profile: &Profile) -> Vec<String> {
+    let mut images = vec![
         format!("{}-core:{}", profile.image_prefix, profile.image_tag),
         format!("{}-dashboard:{}", profile.image_prefix, profile.image_tag),
         format!(
             "{}-baseline-processors:{}",
             profile.image_prefix, profile.image_tag
         ),
-    ]
+    ];
+    if profile.readable_wiki || profile.concept_entity_wiki {
+        images.push(format!("{}-llm-wikis:{}", profile.image_prefix, profile.image_tag));
+    }
+    if profile.tesseract_open_cv {
+        images.push(format!("{}-tesseract-opencv:{}", profile.image_prefix, profile.image_tag));
+    }
+    images
+}
+
+fn selected_services(profile: &Profile) -> Vec<&'static str> {
+    let mut services = BASELINE_SERVICES.to_vec();
+    if profile.readable_wiki {
+        services.push("readable-wiki-enricher");
+    }
+    if profile.concept_entity_wiki {
+        services.push("concept-entity-wiki-enricher");
+    }
+    if profile.tesseract_open_cv {
+        services.push("tesseract-opencv");
+    }
+    services
 }
 
 fn display_argument(value: &str) -> String {
@@ -1091,7 +1112,7 @@ fn deployment_preview(
 ) -> Result<DeploymentPreview, String> {
     let profile = find_profile(&app, &profile_id)?;
     let compose = compose_file(&app)?;
-    let needs_key = !profile.openai_base_url.is_empty();
+    let needs_key = false;
     let files = deployment_files(&app, &profile, needs_key)?;
     let provider =
         compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
@@ -1126,7 +1147,8 @@ fn deployment_preview(
         ));
     }
     let mut start_args = vec!["up", "-d", "--no-build"];
-    start_args.extend(BASELINE_SERVICES.iter().copied());
+    let selected = selected_services(&profile);
+    start_args.extend(selected.iter().copied());
     let (program, arguments) = compose_invocation(
         provider,
         &compose,
@@ -1280,13 +1302,15 @@ fn start_profile(
     for image in profile_images(&profile) {
         run_checked("podman", &["pull", &image])?;
     }
-    let has_key = create_runtime_secret(&profile, &api_key)?;
+    let _ = api_key;
+    let has_key = false;
     let files = deployment_files(&app, &profile, has_key)?;
     let compose = compose_file(&app)?;
     let provider =
         compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
     let mut args = vec!["up", "-d", "--no-build"];
-    args.extend(BASELINE_SERVICES.iter().copied());
+    let selected = selected_services(&profile);
+    args.extend(selected.iter().copied());
     if let Err(error) = compose_checked(
         provider,
         &compose,
@@ -1454,7 +1478,7 @@ mod tests {
     }
 
     #[test]
-    fn external_secret_uses_its_podman_name_without_a_compose_alias() {
+    fn workbench_config_is_mounted_without_provider_secrets() {
         let profile = Profile {
             id: "9a35f814-402d-4d33-8ded-19b12ffccb21".to_string(),
             name: "Test".to_string(),
@@ -1464,26 +1488,23 @@ mod tests {
             openai_base_url: "https://models.example.test/v1".to_string(),
             openai_embedding_model: "minilm".to_string(),
             openai_chat_model: "gemma-4".to_string(),
+            readable_wiki: true,
+            concept_entity_wiki: true,
+            tesseract_open_cv: false,
         };
-        let secret = secret_name(&profile.id).expect("valid secret name");
-        let document =
-            profile_override_document(&profile, Path::new("/data"), true).expect("valid override");
+        let document = profile_override_document(
+            &profile,
+            Path::new("/data"),
+            Path::new("/config"),
+            false,
+        ).expect("valid override");
 
         assert_eq!(
-            document.pointer(&format!("/secrets/{secret}/external")),
-            Some(&json!(true))
+            document.pointer("/services/api/environment/OSII_CONFIG_DIR"),
+            Some(&json!("/config"))
         );
-        assert!(document
-            .pointer(&format!("/secrets/{secret}/name"))
-            .is_none());
-        assert_eq!(
-            document.pointer("/services/api/secrets/0"),
-            Some(&json!(secret))
-        );
-        assert_eq!(
-            document.pointer("/services/api/environment/OPENAI_API_KEY_FILE"),
-            Some(&json!(format!("/run/secrets/{secret}")))
-        );
+        assert!(document.pointer("/secrets").is_none());
+        assert_eq!(profile_images(&profile).iter().filter(|image| image.contains("llm-wikis")).count(), 1);
     }
 
     #[test]
@@ -1497,6 +1518,9 @@ mod tests {
             openai_base_url: String::new(),
             openai_embedding_model: String::new(),
             openai_chat_model: String::new(),
+            readable_wiki: false,
+            concept_entity_wiki: false,
+            tesseract_open_cv: false,
         };
         let mut duplicate = first.clone();
         duplicate.id = "second".to_string();

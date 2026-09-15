@@ -20,6 +20,9 @@ const emptyDraft: ProfileDraft = {
   openaiBaseUrl: import.meta.env.VITE_OSII_OPENAI_BASE_URL ?? "",
   openaiEmbeddingModel: import.meta.env.VITE_OSII_OPENAI_EMBEDDING_MODEL ?? "",
   openaiChatModel: import.meta.env.VITE_OSII_OPENAI_CHAT_MODEL ?? "",
+  readableWiki: false,
+  conceptEntityWiki: false,
+  tesseractOpenCv: false,
 };
 
 const stopped: DeploymentStatus = {
@@ -89,6 +92,18 @@ function App() {
   );
   const validation = profileProblem(draft);
   const runningSelected = deployment.profileId === selectedId && deployment.state !== "stopped";
+  const imageRecoveryCommands = selected ? [
+    `podman login ${registryHost.trim()}`,
+    `podman pull ${coreImage(selected)}`,
+    `podman pull ${selected.imagePrefix.trim()}-dashboard:${selected.imageTag.trim()}`,
+    `podman pull ${selected.imagePrefix.trim()}-baseline-processors:${selected.imageTag.trim()}`,
+    ...((selected.readableWiki || selected.conceptEntityWiki)
+      ? [`podman pull ${selected.imagePrefix.trim()}-llm-wikis:${selected.imageTag.trim()}`]
+      : []),
+    ...(selected.tesseractOpenCv
+      ? [`podman pull ${selected.imagePrefix.trim()}-tesseract-opencv:${selected.imageTag.trim()}`]
+      : []),
+  ].join("\n") : "";
 
   const run = useCallback(async <T,>(label: string, operation: () => Promise<T>): Promise<T | null> => {
     setBusy(label);
@@ -305,11 +320,7 @@ function App() {
       setProblem("Save this library before starting OSII.");
       return;
     }
-    if (selected?.openaiBaseUrl && !apiKey) {
-      setProblem("Paste the model API key before starting OSII.");
-      return;
-    }
-    const result = await run("Starting OSII", () => launcherApi.startProfile(selectedId, apiKey));
+    const result = await run("Starting OSII", () => launcherApi.startProfile(selectedId, ""));
     if (result) {
       setDeployment(result);
       setNotice(result.message);
@@ -463,30 +474,16 @@ function App() {
           <section className="panel section-card">
             <div className="section-number">3</div>
             <div className="section-body">
-              <div className="section-title"><div><p className="step-label">Models</p><h2>Corporate models first, Ollama as fallback</h2></div><StepStatus state={modelCheckState} verifiedText="Models verified" /></div>
-              <p className="section-copy">Enter the endpoint and key, then let OSII list the available models. It prefers a MiniLM embedding model and Gemma 4 for chat when those names are available. Leave the endpoint blank for local Ollama only.</p>
-              <div className="form-grid">
-                <label className="wide">OpenAI-compatible endpoint<input value={draft.openaiBaseUrl} onChange={(event) => update("openaiBaseUrl", event.target.value)} placeholder="https://models.corp.example/v1" /></label>
-                <label>Embedding model<select value={draft.openaiEmbeddingModel} onChange={(event) => update("openaiEmbeddingModel", event.target.value)} disabled={!draft.openaiBaseUrl.trim()}>
-                  <option value="">Find available models to choose</option>
-                  {modelOptions.map((model) => <option value={model} key={`embedding-${model}`}>{model}</option>)}
-                </select></label>
-                <label>Chat model<select value={draft.openaiChatModel} onChange={(event) => update("openaiChatModel", event.target.value)} disabled={!draft.openaiBaseUrl.trim()}>
-                  <option value="">Find available models to choose</option>
-                  {modelOptions.map((model) => <option value={model} key={`chat-${model}`}>{model}</option>)}
-                </select></label>
-                <label className="wide">API key — session only<input type="password" value={apiKey} onChange={(event) => {
-                  setApiKey(event.target.value);
-                  setModelDiscovery(null);
-                  setModelCheckState("idle");
-                }} autoComplete="off" placeholder="Paste again each time you open the launcher" /></label>
+              <div className="section-title"><div><p className="step-label">Optional tools</p><h2>Choose extra processing services</h2></div></div>
+              <p className="section-copy">The baseline works without these. Selected tools are pulled from Quay and started with this library; configure any language-model connections later in Workbench Setup.</p>
+              <div className="tool-choice-list">
+                <label><input type="checkbox" checked={draft.readableWiki} onChange={(event) => update("readableWiki", event.target.checked)} /><span><strong>Readable LLM Wiki</strong><small>Cited, reader-friendly Markdown. Uses a model connection chosen in Setup.</small></span></label>
+                <label><input type="checkbox" checked={draft.conceptEntityWiki} onChange={(event) => update("conceptEntityWiki", event.target.checked)} /><span><strong>Concept and Entity LLM Wiki</strong><small>Produces a wiki, entity list, and sortable concept table.</small></span></label>
+                <label><input type="checkbox" checked={draft.tesseractOpenCv} onChange={(event) => update("tesseractOpenCv", event.target.checked)} /><span><strong>Tesseract OCR with OpenCV regions</strong><small>Self-contained OCR with region and bounding-box provenance; no model connection.</small></span></label>
               </div>
               <div className="button-row">
-                <button className="secondary" disabled={Boolean(busy) || !draft.openaiBaseUrl.trim() || !apiKey} onClick={() => void discoverModels()}>{busy === "Checking model API" ? "Checking…" : "Find available models"}</button>
                 <button disabled={Boolean(busy)} onClick={() => void save()}>{busy === "Saving library" ? "Saving…" : "Save library"}</button>
               </div>
-              {modelDiscovery && <p className="check-detail ok">{modelDiscovery.message}</p>}
-              <p className="secure-note">The launcher keeps this key only in memory for the current session. It is not saved in the profile or operating-system credential store.</p>
               {saveAttempted && validation && <div className="form-error" role="alert"><strong>Library not saved.</strong> {validation}</div>}
             </div>
           </section>
@@ -528,6 +525,11 @@ function App() {
                       {deploymentPreview.commands.map((command, index) => <li key={`${index}-${command}`}><code>{command}</code></li>)}
                     </ol>
                   </section>
+                  {selected && <section>
+                    <h3>If a Quay pull fails</h3>
+                    <p className="technical-note">On Windows, open PowerShell and run these commands in order. <code>podman login</code> prompts for your Quay credentials. After every displayed pull succeeds, return here and select <strong>Start OSII</strong>; do not run Compose directly because the launcher creates this library's configuration and temporary model secret.</p>
+                    <pre>{imageRecoveryCommands}</pre>
+                  </section>}
                   <section>
                     <h3>Compose environment</h3>
                     <p className="diagnostic-path">{deploymentPreview.environmentPath}</p>

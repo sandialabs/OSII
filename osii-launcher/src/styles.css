@@ -85,6 +85,11 @@ main { max-width: 1320px; margin: 0 auto; padding: 2.2rem 2.5rem 5rem; }
 .source-note strong { color: var(--ink); }
 .source-note code { color: var(--turquoise-dark); font: 0.73rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .form-error { margin-top: 0.9rem; padding: 0.75rem 0.85rem; border: 1px solid var(--orange); border-radius: 9px; background: #fff; color: var(--orange-dark); font-size: 0.8rem; }
+.tool-choice-list { display: grid; gap: 0.65rem; }
+.tool-choice-list label { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.8rem; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+.tool-choice-list input { width: auto; margin-top: 0.2rem; }
+.tool-choice-list span, .tool-choice-list small { display: block; }
+.tool-choice-list small { margin-top: 0.2rem; color: var(--muted); line-height: 1.4; }
 
 .launch-card { display: flex; align-items: center; justify-content: space-between; gap: 2rem; padding: 1.5rem 1.7rem; border: 2px solid var(--turquoise); background: #fff; color: var(--ink); }
 .launch-card h2 { margin-bottom: 0.35rem; color: var(--ink); font-family: Georgia, serif; font-size: 1.45rem; font-weight: 500; }

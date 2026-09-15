@@ -10,6 +10,9 @@ const valid: ProfileDraft = {
   openaiBaseUrl: "https://models.corp.example/v1",
   openaiEmbeddingModel: "embed",
   openaiChatModel: "chat",
+  readableWiki: false,
+  conceptEntityWiki: false,
+  tesseractOpenCv: false,
 };
 
 describe("profile validation", () => {
