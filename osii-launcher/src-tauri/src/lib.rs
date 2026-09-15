@@ -469,17 +469,77 @@ fn validated_model_base_url(value: &str) -> Result<String, String> {
     Ok(value.to_string())
 }
 
+fn is_network_source_path(source_dir: &str) -> bool {
+    let source = source_dir.trim();
+    source.starts_with("\\\\") || source.starts_with("//")
+}
+
+fn source_connection_help(source_dir: &str) -> &'static str {
+    if is_network_source_path(source_dir) {
+        " OSII does not mount shares or store share credentials. Open the share in Windows Explorer or Finder first; on Windows, a mapped drive can be more reliable for Podman."
+    } else {
+        " For a shared drive, connect it in Windows Explorer or Finder first, then use its mounted folder path. OSII does not mount shares or store share credentials."
+    }
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn remove_windows_extended_path_prefix(value: &str) -> String {
+    if let Some(unc_path) = value.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc_path}")
+    } else if let Some(path) = value.strip_prefix(r"\\?\") {
+        path.to_string()
+    } else {
+        value.to_string()
+    }
+}
+
 fn canonical_source(source_dir: &str) -> Result<PathBuf, String> {
-    let source = Path::new(source_dir.trim());
-    let canonical = source
-        .canonicalize()
-        .map_err(|error| format!("The selected source folder is not accessible: {error}"))?;
+    let value = source_dir.trim();
+    if value.is_empty() {
+        return Err("Choose a document folder first.".to_string());
+    }
+    let source = Path::new(value);
+    let canonical = source.canonicalize().map_err(|error| {
+        format!(
+            "The selected source folder is not accessible: {error}.{}",
+            source_connection_help(value)
+        )
+    })?;
     if !canonical.is_dir() {
         return Err("The selected source path is not a folder.".to_string());
     }
-    fs::read_dir(&canonical)
-        .map_err(|error| format!("The selected source folder cannot be read: {error}"))?;
+    fs::read_dir(&canonical).map_err(|error| {
+        format!(
+            "The selected source folder cannot be read: {error}.{}",
+            source_connection_help(value)
+        )
+    })?;
     Ok(canonical)
+}
+
+fn profile_source_path(source_dir: &str, canonical: &Path) -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        // std::fs::canonicalize adds a `\\?\` extended-path prefix on Windows.
+        // It is useful for validation, but Podman Compose cannot reliably bind
+        // mount that form. Retain a normal absolute drive or UNC path instead.
+        let requested = Path::new(source_dir.trim());
+        let absolute = if requested.is_absolute() {
+            requested.to_path_buf()
+        } else {
+            env::current_dir()
+                .map_err(|error| format!("Could not resolve the source folder: {error}"))?
+                .join(requested)
+        };
+        Ok(remove_windows_extended_path_prefix(
+            &absolute.to_string_lossy(),
+        ))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = source_dir;
+        Ok(canonical.to_string_lossy().to_string())
+    }
 }
 
 #[tauri::command]
@@ -504,6 +564,7 @@ fn save_profile(
         return Err("Give this library a name.".to_string());
     }
     let source = canonical_source(&draft.source_dir)?;
+    let source_dir = profile_source_path(&draft.source_dir, &source)?;
     let image_prefix = validate_image_part(&draft.image_prefix, "image prefix", true)?;
     let image_tag = validate_image_part(&draft.image_tag, "image tag", false)?;
     if image_tag.eq_ignore_ascii_case("latest") {
@@ -528,7 +589,7 @@ fn save_profile(
         Some(id) => id,
         None => profiles
             .iter()
-            .find(|profile| profile.name == name && profile.source_dir == source.to_string_lossy())
+            .find(|profile| profile.name == name && profile.source_dir == source_dir)
             .map(|profile| profile.id.clone())
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
     };
@@ -536,7 +597,7 @@ fn save_profile(
     let profile = Profile {
         id: id.clone(),
         name: name.to_string(),
-        source_dir: source.to_string_lossy().to_string(),
+        source_dir,
         image_prefix,
         image_tag,
         openai_base_url,
@@ -656,8 +717,9 @@ fn discover_models(base_url: String, api_key: String) -> Result<ModelDiscovery, 
 #[tauri::command]
 fn validate_source(source_dir: String, probe_image: String) -> Result<SourceCheck, String> {
     let source = canonical_source(&source_dir)?;
+    let mount_source = profile_source_path(&source_dir, &source)?;
     let image = validate_image_part(&probe_image, "probe image", true)?;
-    let mount = format!("{}:/source:ro", source.to_string_lossy());
+    let mount = format!("{mount_source}:/source:ro");
     let output = run_output(
         "podman",
         &[
@@ -675,13 +737,13 @@ fn validate_source(source_dir: String, probe_image: String) -> Result<SourceChec
     let visible = output.status.success();
     Ok(SourceCheck {
         ok: visible,
-        canonical_path: source.to_string_lossy().to_string(),
+        canonical_path: mount_source,
         container_visible: visible,
         message: if visible {
-            "The folder is readable from an OSII container.".to_string()
+            "The folder is readable from an OSII container and will be mounted read-only. OSII stores its catalog and derived artifacts separately on this workstation.".to_string()
         } else {
             format!(
-                "Podman could not read this folder with {}: {}",
+                "Podman could not read this folder with {}. If it is a shared drive, first confirm it opens in Explorer or Finder, then make the mounted folder available to Podman Desktop or the Podman machine. OSII will not mount the share or write to it. Details: {}",
                 image,
                 output_text(&output)
             )
@@ -1443,5 +1505,29 @@ mod tests {
 
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].id, first.id);
+    }
+
+    #[test]
+    fn network_source_paths_get_network_specific_guidance() {
+        assert!(is_network_source_path(r"\\server\share\documents"));
+        assert!(is_network_source_path("//server/share/documents"));
+        assert!(!is_network_source_path("/Volumes/documents"));
+        assert!(source_connection_help(r"\\server\share").contains("mapped drive"));
+    }
+
+    #[test]
+    fn removes_windows_extended_prefix_without_changing_normal_paths() {
+        assert_eq!(
+            remove_windows_extended_path_prefix(r"\\?\UNC\server\share\documents"),
+            r"\\server\share\documents"
+        );
+        assert_eq!(
+            remove_windows_extended_path_prefix(r"\\?\C:\documents"),
+            r"C:\documents"
+        );
+        assert_eq!(
+            remove_windows_extended_path_prefix("/Volumes/documents"),
+            "/Volumes/documents"
+        );
     }
 }

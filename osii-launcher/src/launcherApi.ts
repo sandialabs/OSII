@@ -19,7 +19,7 @@ export const launcherApi = {
   loginRegistry: (registry: string, username: string, password: string) =>
     invoke<RegistryStatus>("login_registry", { registry, username, password }),
   chooseSource: async () => {
-    const choice = await open({ directory: true, multiple: false, title: "Choose the source folder OSII may read" });
+    const choice = await open({ directory: true, multiple: false, title: "Choose a local or already-mounted OSII source folder" });
     return typeof choice === "string" ? choice : null;
   },
   validateSource: (sourceDir: string, probeImage: string) =>

@@ -437,12 +437,14 @@ function App() {
             <div className="section-number">2</div>
             <div className="section-body">
               <div className="section-title"><div><p className="step-label">Library profile</p><h2>Choose what OSII may read</h2></div><StepStatus state={sourceCheckState} verifiedText="Folder verified" /></div>
+              <p className="section-copy">OSII reads this folder but never changes its original files. For a shared drive, connect it in Finder or Windows Explorer first, then paste its mounted, mapped-drive, or UNC path here. The Browse window selects folders that are already available; it does not sign in to or mount network shares.</p>
               <div className="form-grid">
                 <label>Library name<input value={draft.name} onChange={(event) => update("name", event.target.value)} /></label>
-                <label className="wide">Shared-drive or local folder<div className="input-action"><input value={draft.sourceDir} onChange={(event) => update("sourceDir", event.target.value)} placeholder="Choose a folder" /><button className="secondary" onClick={() => void chooseSource()}>Browse</button></div></label>
+                <label className="wide">Document folder — local or already-connected shared drive<div className="input-action"><input value={draft.sourceDir} onChange={(event) => update("sourceDir", event.target.value)} placeholder={"e.g. /Volumes/Team Documents, S:\\Team Documents, or \\\\server\\share\\folder"} /><button className="secondary" onClick={() => void chooseSource()}>Browse mounted folder</button></div></label>
                 <label>Quay image prefix<input value={draft.imagePrefix} onChange={(event) => update("imagePrefix", event.target.value)} placeholder="quay.corp.example/team/osii" /></label>
                 <label>Release tag<input value={draft.imageTag} onChange={(event) => update("imageTag", event.target.value)} placeholder="2026.09.14" /></label>
               </div>
+              <p className="source-note"><strong>Shared-drive setup:</strong> OSII does not store share credentials or mount shares. On Windows, open the share in Explorer or map a drive; on macOS, connect it in Finder so it appears under <code>/Volumes</code>. Then use <strong>Test container access</strong>. OSII mounts a verified source read-only inside its containers.</p>
               <div className="button-row">
                 <button className="secondary" disabled={Boolean(busy) || !workstationReady} onClick={() => void checkSource()}>Test container access</button>
               </div>

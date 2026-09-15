@@ -18,6 +18,32 @@ canonical data, retrieval, RAG, and Processor API orchestration; the dashboard
 continues to own the product interface. Containers must not receive the Podman
 socket, and optional processors must not mount the user's source or OSII state.
 
+## Shared drives: connect first, then select read-only
+
+The launcher does not mount SMB/Samba shares and never asks for, stores, or
+passes along share credentials. That work belongs to the operating system. In
+the launcher, choose a folder that is already available to your user account:
+
+- **Windows:** open the share in Explorer, map it to a drive, or paste a UNC
+  path such as `\\server\share\documents` into **Document folder**.
+- **macOS:** connect through Finder (**Go → Connect to Server**) and select or
+  paste the mounted path, normally under `/Volumes`.
+- **Linux:** use the folder already mounted by your desktop or administrator.
+
+The native folder picker cannot log in to or mount a network share. Paste an
+already-connected path when it is not visible in that picker, then select
+**Test container access**. The test checks both your workstation's read access
+and Podman's access. A successful profile mounts the documents into OSII at
+`/data/source` **read-only**. OSII writes `.osii`, catalogs, indexes, and other
+derived artifacts only to its separate local library-data directory.
+
+On macOS and Windows, Podman runs in a Linux virtual machine. If the host can
+open a share but the test fails, permit the mounted folder in Podman Desktop or
+the Podman machine, then test again. OSII never works around that boundary by
+copying originals or mounting the share itself. See
+[Shared drives and Samba](../docs/operations/shared-drives.md) for command-line
+deployment details.
+
 Frontend code can invoke only registered, typed launcher commands. There is no
 generic shell command. Quay credentials are passed to `podman login` on standard
 input and then owned by Podman. Model API keys remain only in application memory

@@ -77,9 +77,12 @@ main { max-width: 1320px; margin: 0 auto; padding: 2.2rem 2.5rem 5rem; }
 .text-button { padding: 0.35rem 0.45rem; background: #fff; color: var(--turquoise-dark); }
 .text-button:hover:not(:disabled) { transform: none; background: #fff; color: var(--orange-dark); }
 .text-button.danger { color: var(--orange-dark); }
-.check-detail, .secure-note { margin: 0.75rem 0 0; color: var(--muted); font-size: 0.76rem; line-height: 1.45; }
+.check-detail, .secure-note, .source-note { margin: 0.75rem 0 0; color: var(--muted); font-size: 0.76rem; line-height: 1.45; }
 .check-detail.ok, .secure-note { color: var(--turquoise-dark); }
 .check-detail.bad { color: var(--orange-dark); }
+.source-note { max-width: 820px; padding: 0.7rem 0.8rem; border-left: 3px solid var(--turquoise); background: #f5fbfb; }
+.source-note strong { color: var(--ink); }
+.source-note code { color: var(--turquoise-dark); font: 0.73rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .form-error { margin-top: 0.9rem; padding: 0.75rem 0.85rem; border: 1px solid var(--orange); border-radius: 9px; background: #fff; color: var(--orange-dark); font-size: 0.8rem; }
 
 .launch-card { display: flex; align-items: center; justify-content: space-between; gap: 2rem; padding: 1.5rem 1.7rem; border: 2px solid var(--turquoise); background: #fff; color: var(--ink); }
