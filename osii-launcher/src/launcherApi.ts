@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
   DeploymentStatus,
+  DeploymentPreview,
   ModelDiscovery,
   PodmanStatus,
   Profile,
@@ -35,6 +36,8 @@ export const launcherApi = {
     invoke<DeploymentStatus>("start_profile", { profileId, apiKey }),
   stopProfile: (profileId: string) => invoke<DeploymentStatus>("stop_profile", { profileId }),
   deploymentStatus: () => invoke<DeploymentStatus>("deployment_status"),
+  deploymentPreview: (profileId: string, hasApiKey: boolean) =>
+    invoke<DeploymentPreview>("deployment_preview", { profileId, hasApiKey }),
   logs: (profileId: string) => invoke<string>("profile_logs", { profileId }),
   openDashboard: () => invoke<void>("open_dashboard"),
 };

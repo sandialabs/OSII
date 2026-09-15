@@ -95,6 +95,23 @@ struct DeploymentStatus {
     message: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeploymentPreview {
+    environment_path: String,
+    environment: String,
+    override_path: String,
+    compose_override: String,
+    commands: Vec<String>,
+}
+
+struct DeploymentFiles {
+    environment_path: PathBuf,
+    environment: String,
+    override_path: PathBuf,
+    compose_override: String,
+}
+
 #[derive(Debug, Clone, Copy)]
 enum ComposeProvider {
     PodmanCompose,
@@ -722,27 +739,26 @@ fn secret_name(profile_id: &str) -> Result<String, String> {
 fn compose_command(
     provider: ComposeProvider,
     compose: &Path,
+    environment_file: &Path,
     override_file: &Path,
     project: &str,
     profile: &Profile,
     args: &[&str],
 ) -> Result<Output, String> {
-    let compose = compose.to_string_lossy().to_string();
-    let override_file = override_file.to_string_lossy().to_string();
-    let mut command = match provider {
-        ComposeProvider::PodmanCompose => Command::new(program_path("podman-compose")),
-        ComposeProvider::PodmanPlugin => {
-            let mut command = Command::new(program_path("podman"));
-            command.arg("compose");
-            command
-        }
-    };
+    let (program, arguments) = compose_invocation(
+        provider,
+        compose,
+        environment_file,
+        override_file,
+        project,
+        args,
+    );
+    let mut command = Command::new(program);
     command
-        .args(["-f", &compose, "-f", &override_file, "-p", project])
+        .args(arguments)
         .env("OSII_SOURCE_DIR", &profile.source_dir)
         .env("OSII_IMAGE_PREFIX", &profile.image_prefix)
         .env("OSII_IMAGE_TAG", &profile.image_tag)
-        .args(args)
         .output()
         .map_err(|error| format!("Could not run the Compose provider: {error}"))
 }
@@ -750,12 +766,21 @@ fn compose_command(
 fn compose_checked(
     provider: ComposeProvider,
     compose: &Path,
+    environment_file: &Path,
     override_file: &Path,
     project: &str,
     profile: &Profile,
     args: &[&str],
 ) -> Result<String, String> {
-    let output = compose_command(provider, compose, override_file, project, profile, args)?;
+    let output = compose_command(
+        provider,
+        compose,
+        environment_file,
+        override_file,
+        project,
+        profile,
+        args,
+    )?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
@@ -763,15 +788,54 @@ fn compose_checked(
     }
 }
 
-fn profile_override(app: &AppHandle, profile: &Profile, has_key: bool) -> Result<PathBuf, String> {
-    let config_dir = profile_config_dir(app, &profile.id)?;
-    let data_dir = profile_data_dir(app, &profile.id)?;
-    fs::create_dir_all(&config_dir)
-        .map_err(|error| format!("Could not create deployment configuration: {error}"))?;
-    fs::create_dir_all(&data_dir)
-        .map_err(|error| format!("Could not create library state: {error}"))?;
+fn compose_invocation(
+    provider: ComposeProvider,
+    compose: &Path,
+    environment_file: &Path,
+    override_file: &Path,
+    project: &str,
+    args: &[&str],
+) -> (PathBuf, Vec<String>) {
+    let (program, mut arguments) = match provider {
+        ComposeProvider::PodmanCompose => (program_path("podman-compose"), Vec::new()),
+        ComposeProvider::PodmanPlugin => (program_path("podman"), vec!["compose".to_string()]),
+    };
+    arguments.extend([
+        "--env-file".to_string(),
+        environment_file.to_string_lossy().to_string(),
+        "-f".to_string(),
+        compose.to_string_lossy().to_string(),
+        "-f".to_string(),
+        override_file.to_string_lossy().to_string(),
+        "-p".to_string(),
+        project.to_string(),
+    ]);
+    arguments.extend(args.iter().map(|value| value.to_string()));
+    (program, arguments)
+}
+
+fn dotenv_value(value: &str) -> Result<String, String> {
+    serde_json::to_string(value)
+        .map_err(|error| format!("Could not generate deployment environment: {error}"))
+}
+
+fn deployment_environment(profile: &Profile) -> Result<String, String> {
+    Ok(format!(
+        "OSII_SOURCE_DIR={}\nOSII_IMAGE_PREFIX={}\nOSII_IMAGE_TAG={}\n",
+        dotenv_value(&profile.source_dir)?,
+        dotenv_value(&profile.image_prefix)?,
+        dotenv_value(&profile.image_tag)?,
+    ))
+}
+
+fn profile_override_document(
+    profile: &Profile,
+    data_dir: &Path,
+    has_key: bool,
+) -> Result<Value, String> {
     let data_mount = format!("{}:/data", data_dir.to_string_lossy());
     let data_mount_read_only = format!("{}:/data:ro", data_dir.to_string_lossy());
+    let runtime_secret = has_key.then(|| secret_name(&profile.id)).transpose()?;
 
     let mut shared_environment = serde_json::Map::new();
     if !profile.openai_base_url.is_empty() {
@@ -807,7 +871,10 @@ fn profile_override(app: &AppHandle, profile: &Profile, has_key: bool) -> Result
     if has_key {
         shared_environment.insert(
             "OPENAI_API_KEY_FILE".into(),
-            json!("/run/secrets/openai_api_key"),
+            json!(format!(
+                "/run/secrets/{}",
+                runtime_secret.as_deref().unwrap_or_default()
+            )),
         );
     }
 
@@ -823,31 +890,51 @@ fn profile_override(app: &AppHandle, profile: &Profile, has_key: bool) -> Result
             "environment".into(),
             Value::Object(shared_environment.clone()),
         );
-        if has_key {
-            service.insert("secrets".into(), json!(["openai_api_key"]));
+        if let Some(secret) = runtime_secret.as_deref() {
+            service.insert("secrets".into(), json!([secret]));
         }
         services.insert(name.into(), Value::Object(service));
     }
 
     let mut root = serde_json::Map::new();
     root.insert("services".into(), Value::Object(services));
-    if has_key {
-        root.insert(
-            "secrets".into(),
-            json!({
-                "openai_api_key": {
-                    "external": true,
-                    "name": secret_name(&profile.id)?
-                }
-            }),
-        );
+    if let Some(secret) = runtime_secret {
+        let mut secrets = serde_json::Map::new();
+        secrets.insert(secret, json!({ "external": true }));
+        root.insert("secrets".into(), Value::Object(secrets));
     }
-    let path = config_dir.join("compose.override.json");
-    let content = serde_json::to_string_pretty(&Value::Object(root))
-        .map_err(|error| format!("Could not generate deployment configuration: {error}"))?;
-    fs::write(&path, format!("{content}\n"))
+    Ok(Value::Object(root))
+}
+
+fn deployment_files(
+    app: &AppHandle,
+    profile: &Profile,
+    has_key: bool,
+) -> Result<DeploymentFiles, String> {
+    let config_dir = profile_config_dir(app, &profile.id)?;
+    let data_dir = profile_data_dir(app, &profile.id)?;
+    fs::create_dir_all(&config_dir)
+        .map_err(|error| format!("Could not create deployment configuration: {error}"))?;
+    fs::create_dir_all(&data_dir)
+        .map_err(|error| format!("Could not create library state: {error}"))?;
+
+    let environment_path = config_dir.join("compose.env");
+    let environment = deployment_environment(profile)?;
+    fs::write(&environment_path, &environment)
+        .map_err(|error| format!("Could not save deployment environment: {error}"))?;
+
+    let override_path = config_dir.join("compose.override.json");
+    let compose_override =
+        serde_json::to_string_pretty(&profile_override_document(profile, &data_dir, has_key)?)
+            .map_err(|error| format!("Could not generate deployment configuration: {error}"))?;
+    fs::write(&override_path, format!("{compose_override}\n"))
         .map_err(|error| format!("Could not save deployment configuration: {error}"))?;
-    Ok(path)
+    Ok(DeploymentFiles {
+        environment_path,
+        environment,
+        override_path,
+        compose_override,
+    })
 }
 
 fn profile_images(profile: &Profile) -> [String; 3] {
@@ -859,6 +946,89 @@ fn profile_images(profile: &Profile) -> [String; 3] {
             profile.image_prefix, profile.image_tag
         ),
     ]
+}
+
+fn display_argument(value: &str) -> String {
+    if !value.is_empty()
+        && value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "/\\._:@,=+-".contains(character))
+    {
+        value.to_string()
+    } else {
+        serde_json::to_string(value).unwrap_or_else(|_| "<unprintable>".to_string())
+    }
+}
+
+fn display_command(program: &Path, arguments: &[String]) -> String {
+    std::iter::once(program.to_string_lossy().to_string())
+        .chain(arguments.iter().cloned())
+        .map(|value| display_argument(&value))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[tauri::command]
+fn deployment_preview(
+    app: AppHandle,
+    profile_id: String,
+    has_api_key: bool,
+) -> Result<DeploymentPreview, String> {
+    let profile = find_profile(&app, &profile_id)?;
+    let compose = compose_file(&app)?;
+    let needs_key = !profile.openai_base_url.is_empty();
+    let files = deployment_files(&app, &profile, needs_key)?;
+    let provider =
+        compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
+    let project = project_name(&profile_id)?;
+    let mut commands = profile_images(&profile)
+        .iter()
+        .map(|image| {
+            display_command(
+                &program_path("podman"),
+                &["pull".to_string(), image.to_string()],
+            )
+        })
+        .collect::<Vec<_>>();
+    if needs_key {
+        commands.push(format!(
+            "{}  # stdin: {}",
+            display_command(
+                &program_path("podman"),
+                &[
+                    "secret".to_string(),
+                    "create".to_string(),
+                    "--replace".to_string(),
+                    secret_name(&profile_id)?,
+                    "-".to_string(),
+                ],
+            ),
+            if has_api_key {
+                "<redacted session key>"
+            } else {
+                "<API key required>"
+            }
+        ));
+    }
+    let mut start_args = vec!["up", "-d", "--no-build"];
+    start_args.extend(BASELINE_SERVICES.iter().copied());
+    let (program, arguments) = compose_invocation(
+        provider,
+        &compose,
+        &files.environment_path,
+        &files.override_path,
+        &project,
+        &start_args,
+    );
+    commands.push(display_command(&program, &arguments));
+
+    Ok(DeploymentPreview {
+        environment_path: files.environment_path.to_string_lossy().to_string(),
+        environment: files.environment,
+        override_path: files.override_path.to_string_lossy().to_string(),
+        compose_override: files.compose_override,
+        commands,
+    })
 }
 
 fn create_runtime_secret(profile: &Profile, api_key: &str) -> Result<bool, String> {
@@ -945,11 +1115,12 @@ fn stop_profile_inner(app: &AppHandle, profile_id: &str) -> Result<DeploymentSta
     let provider =
         compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
     let compose = compose_file(app)?;
-    let override_file = profile_override(app, &profile, false)?;
+    let files = deployment_files(app, &profile, false)?;
     compose_checked(
         provider,
         &compose,
-        &override_file,
+        &files.environment_path,
+        &files.override_path,
         &project_name(profile_id)?,
         &profile,
         &["down", "--remove-orphans"],
@@ -995,7 +1166,7 @@ fn start_profile(
         run_checked("podman", &["pull", &image])?;
     }
     let has_key = create_runtime_secret(&profile, &api_key)?;
-    let override_file = profile_override(&app, &profile, has_key)?;
+    let files = deployment_files(&app, &profile, has_key)?;
     let compose = compose_file(&app)?;
     let provider =
         compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
@@ -1004,7 +1175,8 @@ fn start_profile(
     if let Err(error) = compose_checked(
         provider,
         &compose,
-        &override_file,
+        &files.environment_path,
+        &files.override_path,
         &project_name(&profile_id)?,
         &profile,
         &args,
@@ -1029,13 +1201,14 @@ fn start_profile(
 fn profile_logs(app: AppHandle, profile_id: String) -> Result<String, String> {
     let profile = find_profile(&app, &profile_id)?;
     let compose = compose_file(&app)?;
-    let override_file = profile_override(&app, &profile, false)?;
+    let files = deployment_files(&app, &profile, false)?;
     let provider =
         compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
     let output = compose_checked(
         provider,
         &compose,
-        &override_file,
+        &files.environment_path,
+        &files.override_path,
         &project_name(&profile_id)?,
         &profile,
         &["logs", "--no-color", "--tail", "250"],
@@ -1121,6 +1294,7 @@ pub fn run() {
             start_profile,
             stop_profile,
             deployment_status,
+            deployment_preview,
             profile_logs,
             open_dashboard,
         ])
@@ -1160,6 +1334,39 @@ mod tests {
         assert_eq!(
             model_ids(&json!({"models": [{"name": "corp-chat"}]})),
             vec!["corp-chat"]
+        );
+    }
+
+    #[test]
+    fn external_secret_uses_its_podman_name_without_a_compose_alias() {
+        let profile = Profile {
+            id: "9a35f814-402d-4d33-8ded-19b12ffccb21".to_string(),
+            name: "Test".to_string(),
+            source_dir: "/source".to_string(),
+            image_prefix: "quay.example.test/team/osii".to_string(),
+            image_tag: "2026.09.14".to_string(),
+            openai_base_url: "https://models.example.test/v1".to_string(),
+            openai_embedding_model: "minilm".to_string(),
+            openai_chat_model: "gemma-4".to_string(),
+        };
+        let secret = secret_name(&profile.id).expect("valid secret name");
+        let document =
+            profile_override_document(&profile, Path::new("/data"), true).expect("valid override");
+
+        assert_eq!(
+            document.pointer(&format!("/secrets/{secret}/external")),
+            Some(&json!(true))
+        );
+        assert!(document
+            .pointer(&format!("/secrets/{secret}/name"))
+            .is_none());
+        assert_eq!(
+            document.pointer("/services/api/secrets/0"),
+            Some(&json!(secret))
+        );
+        assert_eq!(
+            document.pointer("/services/api/environment/OPENAI_API_KEY_FILE"),
+            Some(&json!(format!("/run/secrets/{secret}")))
         );
     }
 }

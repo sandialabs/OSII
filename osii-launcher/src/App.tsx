@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { launcherApi } from "./launcherApi";
 import type {
+  DeploymentPreview,
   DeploymentStatus,
   ModelDiscovery,
   PodmanStatus,
@@ -65,6 +66,8 @@ function App() {
   const [modelDiscovery, setModelDiscovery] = useState<ModelDiscovery | null>(null);
   const [modelCheckState, setModelCheckState] = useState<CheckState>("idle");
   const [deployment, setDeployment] = useState<DeploymentStatus>(stopped);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [deploymentPreview, setDeploymentPreview] = useState<DeploymentPreview | null>(null);
   const [logs, setLogs] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState("Checking this workstation…");
@@ -143,7 +146,28 @@ function App() {
     setModelDiscovery(null);
     setModelCheckState("idle");
     setSaveAttempted(false);
+    setAdvancedOpen(false);
+    setDeploymentPreview(null);
     setLogs("");
+  }
+
+  const loadAdvanced = useCallback(async () => {
+    if (!selectedId) {
+      setDeploymentPreview(null);
+      return;
+    }
+    try {
+      const preview = await launcherApi.deploymentPreview(selectedId, Boolean(apiKey));
+      setDeploymentPreview(preview);
+    } catch (error) {
+      setProblem(errorMessage(error));
+    }
+  }, [apiKey, selectedId]);
+
+  async function toggleAdvanced() {
+    const opening = !advancedOpen;
+    setAdvancedOpen(opening);
+    if (opening) await loadAdvanced();
   }
 
   async function save() {
@@ -158,6 +182,7 @@ function App() {
     setProfiles((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
     setDraft(saved);
     setSaveAttempted(false);
+    setDeploymentPreview(null);
     setNotice("Library settings saved.");
   }
 
@@ -257,6 +282,10 @@ function App() {
     if (result) {
       setDeployment(result);
       setNotice(result.message);
+      if (advancedOpen) await loadAdvanced();
+    } else {
+      setAdvancedOpen(true);
+      await loadAdvanced();
     }
   }
 
@@ -313,6 +342,8 @@ function App() {
               setModelDiscovery(null);
               setModelCheckState("idle");
               setSaveAttempted(false);
+              setAdvancedOpen(false);
+              setDeploymentPreview(null);
             }}>+</button>
           </div>
           <div className="profile-list">
@@ -435,8 +466,42 @@ function App() {
                 </>
               )}
               {selectedId && <button className="text-button" disabled={Boolean(busy)} onClick={() => void fetchLogs()}>View recent logs</button>}
+              {selectedId && <button className="text-button" disabled={Boolean(busy)} onClick={() => void toggleAdvanced()}>{advancedOpen ? "Hide advanced" : "Advanced view"}</button>}
             </div>
           </section>
+
+          {advancedOpen && (
+            <section className="panel advanced-diagnostics">
+              <div className="panel-heading">
+                <div><p className="step-label">Advanced</p><h2>Deployment preview</h2></div>
+                <button className="secondary" disabled={!selectedId} onClick={() => void loadAdvanced()}>Refresh</button>
+              </div>
+              {!deploymentPreview ? (
+                <p className="empty">Save and select a library to generate its deployment preview.</p>
+              ) : (
+                <div className="advanced-content">
+                  <p className="technical-note">This is the saved profile OSII will run. Credentials are never shown; secret input is marked as redacted.</p>
+                  <section>
+                    <h3>Queued start commands</h3>
+                    <ol className="command-list">
+                      {deploymentPreview.commands.map((command, index) => <li key={`${index}-${command}`}><code>{command}</code></li>)}
+                    </ol>
+                  </section>
+                  <section>
+                    <h3>Compose environment</h3>
+                    <p className="diagnostic-path">{deploymentPreview.environmentPath}</p>
+                    <pre>{deploymentPreview.environment}</pre>
+                  </section>
+                  <section>
+                    <h3>Compose override</h3>
+                    <p className="diagnostic-path">{deploymentPreview.overridePath}</p>
+                    <pre>{deploymentPreview.composeOverride}</pre>
+                  </section>
+                  {problem && <section><h3>Latest error</h3><pre className="error-output">{problem}</pre></section>}
+                </div>
+              )}
+            </section>
+          )}
 
           {logs && <section className="panel logs"><div className="panel-heading"><div><p className="step-label">Diagnostics</p><h2>Recent service logs</h2></div><button className="icon-button" onClick={() => setLogs("")}>×</button></div><pre>{logs}</pre></section>}
         </div>

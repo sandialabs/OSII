@@ -47,3 +47,11 @@ export interface DeploymentStatus {
   apiReady: boolean;
   message: string;
 }
+
+export interface DeploymentPreview {
+  environmentPath: string;
+  environment: string;
+  overridePath: string;
+  composeOverride: string;
+  commands: string[];
+}

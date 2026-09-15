@@ -100,6 +100,20 @@ The Tauri build bundles the repository's packaged `compose.yaml` as a resource.
 The component export script rewrites that resource path for the launcher's
 standalone corporate repository.
 
+## Advanced deployment view
+
+After saving a library, select **Advanced view** beside the deployment controls.
+The panel shows the exact generated `compose.env`, the generated Compose override,
+their full workstation paths, and the ordered commands used to pull and start the
+bundle. It opens automatically when a start command fails and includes the latest
+error output. API keys and registry passwords are never included; secret standard
+input is displayed only as `<redacted session key>`.
+
+The launcher uses the generated `compose.env` with both supported Compose
+providers. External Podman secrets use the same name in the secret store, Compose
+configuration, and container mount path. This avoids the unsupported external
+secret alias behavior in `podman-compose` 1.6.x.
+
 ## Release shape
 
 The intended signed artifacts are an MSI and setup EXE on Windows, a notarized
