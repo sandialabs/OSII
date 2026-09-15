@@ -5,7 +5,7 @@ from osii.expert_context import resolve_expert_context
 from typing import Any, ClassVar
 import uuid
 
-from osii_processor_sdk import DocumentInput, ProcessorClient, ScopeInput, SynthesisRequest
+from osii.processor_sdk import DocumentInput, ProcessorClient, ScopeInput, SynthesisRequest
 
 from osii.domain.artifacts.enrichment_artifacts import write_scope_enrichment_variant
 from osii.domain.model_provider_config import selected_processor

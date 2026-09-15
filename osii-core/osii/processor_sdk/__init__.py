@@ -1,3 +1,5 @@
+"""Public Processor API contracts and helpers, included with OSII."""
+
 from .client import ProcessorClient, ProcessorClientError
 from .models import (
     Artifact,

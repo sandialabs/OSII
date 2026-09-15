@@ -157,30 +157,6 @@ services:
       retries: 10
     profiles: ["toolbox"]
 
-  minilm:
-    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-minilm:${OSII_IMAGE_TAG:-latest}"
-    build:
-      context: osii-toolbox/minilm-embedding-service
-      dockerfile: Dockerfile
-      args:
-        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
-        OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
-    ports: ["${OSII_MINILM_PORT:-8086}:8085"]
-    profiles: ["toolbox"]
-
-  model2vec:
-    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-model2vec:${OSII_IMAGE_TAG:-latest}"
-    build:
-      context: .
-      dockerfile: osii-toolbox/model2vec-embedder/Dockerfile
-      args:
-        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
-        OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
-    ports: ["${OSII_MODEL2VEC_PORT:-8087}:8085"]
-    volumes:
-      - "${OSII_MODEL2VEC_MODEL_DIR:-./osii-data/models/model2vec}:/models/model2vec:ro"
-    profiles: ["toolbox"]
-
   tabular-extractor:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-tabular:${OSII_IMAGE_TAG:-latest}"
     build:

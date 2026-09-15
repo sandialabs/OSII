@@ -13,7 +13,8 @@ Read:
 The main repository boundaries are:
 
 - `osii-core/osii`: core domain logic, persistence, REST API, worker, and grounded RAG under `osii/rag`;
-- `osii-core/processor-sdk`: separately installable public processor contracts and service helpers;
+- `osii-core/osii/processor_sdk`: public processor contracts and service helpers, included in `osii`;
+- `osii-core/processor-sdk`: copyable processor examples and contract tests;
 - `osii-core/services`: guaranteed local, independently addressable processor hosts;
 - `osii-dashboard/dashboard`: React and TypeScript user interface;
 - `osii-mcp`: agent-facing OSII tools;
@@ -68,6 +69,18 @@ FastAPI/Pydantic dependency set.
 ```bash
 make test
 ```
+
+To check that OSII can be installed without the monorepo, build its source
+distribution and wheel and install into a temporary, clean environment:
+
+```bash
+uv run --no-project --python 3.12 --with build python scripts/check_python_distribution.py
+```
+
+CI runs this on Linux, macOS, and Windows with Python 3.12. Both
+`osii.processor_sdk` and the compatibility imports `osii_processor_sdk` ship in
+one distribution. Processor services depend on `osii` and install Core's normal
+dependencies; package installation does not launch any services.
 
 For documentation:
 

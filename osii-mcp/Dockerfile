@@ -26,7 +26,6 @@ WORKDIR /workspace
 COPY osii-core /workspace/osii-core
 COPY osii-mcp /workspace/osii-mcp
 RUN "${VIRTUAL_ENV}/bin/python" -m pip install --no-cache-dir \
-    /workspace/osii-core/processor-sdk \
     /workspace/osii-core \
     /workspace/osii-mcp && \
     groupadd --system osii && \

@@ -173,5 +173,5 @@ print("Original source files included: no")
 # 2. scope text to cited Markdown with a custom synthesizer;
 # 3. scope text to a standard entity artifact with a custom enricher.
 #
-# Each example uses only top-level imports from `osii_processor_sdk`, which is
+# Each example uses only top-level imports from `osii.processor_sdk`, which is
 # the friendly compatibility boundary for external research code.

@@ -941,9 +941,9 @@ dependencies = [
     { name = "jinja2" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "osii-processor-sdk" },
     { name = "pdfminer-six" },
     { name = "pillow" },
+    { name = "pydantic" },
     { name = "pymupdf" },
     { name = "python-multipart" },
     { name = "requests" },
@@ -968,9 +968,9 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27,<1" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "numpy" },
-    { name = "osii-processor-sdk", editable = "osii-core/processor-sdk" },
     { name = "pdfminer-six", specifier = ">=20231228" },
     { name = "pillow", specifier = ">=10" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
     { name = "pymupdf", specifier = ">=1.24" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<9" },
     { name = "python-multipart", specifier = "==0.0.20" },
@@ -986,7 +986,7 @@ name = "osii-local-embedder"
 version = "0.1.0"
 source = { editable = "osii-core/services/local-embedder" }
 dependencies = [
-    { name = "osii-processor-sdk" },
+    { name = "osii" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -999,7 +999,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27,<1" },
-    { name = "osii-processor-sdk", editable = "osii-core/processor-sdk" },
+    { name = "osii", editable = "osii-core" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<9" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.35,<1" },
 ]
@@ -1010,7 +1010,7 @@ name = "osii-local-enricher"
 version = "0.1.0"
 source = { editable = "osii-core/services/local-enricher" }
 dependencies = [
-    { name = "osii-processor-sdk" },
+    { name = "osii" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1023,7 +1023,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27,<1" },
-    { name = "osii-processor-sdk", editable = "osii-core/processor-sdk" },
+    { name = "osii", editable = "osii-core" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<9" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.35,<1" },
 ]
@@ -1035,7 +1035,7 @@ version = "0.1.0"
 source = { editable = "osii-core/services/local-extractor" }
 dependencies = [
     { name = "docx2txt" },
-    { name = "osii-processor-sdk" },
+    { name = "osii" },
     { name = "pymupdf" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1050,7 +1050,7 @@ dev = [
 requires-dist = [
     { name = "docx2txt", specifier = ">=0.8" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27,<1" },
-    { name = "osii-processor-sdk", editable = "osii-core/processor-sdk" },
+    { name = "osii", editable = "osii-core" },
     { name = "pymupdf", specifier = ">=1.24" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<9" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.35,<1" },
@@ -1062,7 +1062,7 @@ name = "osii-local-synthesizer"
 version = "0.1.0"
 source = { editable = "osii-core/services/local-synthesizer" }
 dependencies = [
-    { name = "osii-processor-sdk" },
+    { name = "osii" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1075,7 +1075,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27,<1" },
-    { name = "osii-processor-sdk", editable = "osii-core/processor-sdk" },
+    { name = "osii", editable = "osii-core" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<9" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.35,<1" },
 ]
@@ -1086,7 +1086,7 @@ name = "osii-local-tesseract"
 version = "0.1.0"
 source = { editable = "osii-core/services/local-tesseract" }
 dependencies = [
-    { name = "osii-processor-sdk" },
+    { name = "osii" },
     { name = "pymupdf" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1100,7 +1100,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27,<1" },
-    { name = "osii-processor-sdk", editable = "osii-core/processor-sdk" },
+    { name = "osii", editable = "osii-core" },
     { name = "pymupdf", specifier = ">=1.24" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<9" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.35,<1" },
@@ -1134,7 +1134,7 @@ name = "osii-model-provider-bridge"
 version = "0.1.0"
 source = { editable = "osii-core/services/model-provider-bridge" }
 dependencies = [
-    { name = "osii-processor-sdk" },
+    { name = "osii" },
     { name = "requests" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1149,7 +1149,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27,<1" },
-    { name = "osii-processor-sdk", editable = "osii-core/processor-sdk" },
+    { name = "osii", editable = "osii-core" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<9" },
     { name = "python-multipart", marker = "extra == 'dev'", specifier = ">=0.0.20,<1" },
     { name = "requests", specifier = ">=2.32,<3" },
@@ -1161,23 +1161,6 @@ provides-extras = ["dev"]
 name = "osii-monorepo"
 version = "0.1.0"
 source = { virtual = "." }
-
-[[package]]
-name = "osii-processor-sdk"
-version = "0.1.0"
-source = { editable = "osii-core/processor-sdk" }
-dependencies = [
-    { name = "fastapi" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "fastapi", specifier = ">=0.116,<1" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "packaging"

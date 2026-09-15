@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi.staticfiles import StaticFiles
-from osii_processor_sdk import create_processor_app
+from osii.processor_sdk import create_processor_app
 
 from app.api.ocr import router as ocr_router
 from app.config import settings

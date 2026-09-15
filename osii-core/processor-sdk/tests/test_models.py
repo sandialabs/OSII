@@ -4,7 +4,7 @@ import urllib.error
 import pytest
 from pydantic import ValidationError
 
-from osii_processor_sdk import (
+from osii.processor_sdk import (
     Artifact,
     DocumentInput,
     KnowledgeGraphArtifactData,
@@ -15,7 +15,21 @@ from osii_processor_sdk import (
     TableArtifactData,
     TableColumn,
 )
-from osii_processor_sdk.client import ProcessorClient, ProcessorClientError
+from osii.processor_sdk.client import ProcessorClient, ProcessorClientError
+
+
+def test_legacy_sdk_imports_share_the_public_contract():
+    import importlib
+
+    import osii.processor_sdk as sdk
+    import osii_processor_sdk as legacy
+
+    for name in sdk.__all__:
+        assert getattr(legacy, name) is getattr(sdk, name)
+    for module in ("client", "models", "service"):
+        assert importlib.import_module(f"osii_processor_sdk.{module}") is importlib.import_module(
+            f"osii.processor_sdk.{module}"
+        )
 
 
 def test_processor_client_preserves_http_error_body(monkeypatch):

@@ -6,11 +6,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
-from pathlib import Path
 import shlex
 import subprocess
 import sys
-
+from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 RELEASE_IMAGES = (
@@ -20,8 +19,6 @@ RELEASE_IMAGES = (
 )
 TOOLBOX_IMAGES = (
     ("tesseract-opencv", "osii-toolbox/osii-tesseract/Dockerfile", "."),
-    ("minilm", "osii-toolbox/minilm-embedding-service/Dockerfile", "osii-toolbox/minilm-embedding-service"),
-    ("model2vec", "osii-toolbox/model2vec-embedder/Dockerfile", "."),
     ("tabular", "osii-toolbox/tabular-dataset-processors/Dockerfile", "."),
 )
 PROXY_NAMES = (
@@ -56,6 +53,10 @@ def parser() -> argparse.ArgumentParser:
         "--image-set", choices=("release", "toolbox", "all"), default="release"
     )
     result.add_argument("--dry-run", action="store_true")
+    result.add_argument("--phase", choices=("all", "build", "manifest"), default="all",
+                        help="Native CI runners build one architecture; a later job assembles manifests.")
+    result.add_argument("--require-new", action="store_true",
+                        help="Refuse to overwrite registry tags; requires skopeo and registry login.")
     return result
 
 
@@ -70,6 +71,18 @@ def architecture(platform: str) -> str:
     if len(parts) < 2 or parts[0] != "linux" or not parts[1]:
         raise ValueError(f"Unsupported platform {platform!r}; use linux/ARCH.")
     return parts[1]
+
+
+def require_new_tag(reference: str) -> None:
+    result = subprocess.run(
+        ["skopeo", "inspect", "--raw", f"docker://{reference}"],
+        text=True, capture_output=True, check=False,
+    )
+    if result.returncode == 0:
+        raise SystemExit(f"Release image already exists: {reference}. Choose a new version.")
+    # Authentication, TLS, and network failures must never be treated as absence.
+    if "manifest unknown" not in result.stderr.lower():
+        raise SystemExit(f"Cannot verify unused image tag {reference}: {result.stderr.strip()}")
 
 
 def certificate_options(bundle: Path | None) -> list[str]:
@@ -129,12 +142,22 @@ def main() -> int:
         "toolbox": TOOLBOX_IMAGES,
         "all": RELEASE_IMAGES + TOOLBOX_IMAGES,
     }[args.image_set]
+    if args.require_new and not args.dry_run:
+        for image_name, _, _ in images:
+            target = f"{prefix}-{image_name}:{args.image_tag}"
+            require_new_tag(target)
+            if args.phase != "manifest":
+                for arch in architectures:
+                    require_new_tag(f"{target}-{arch}")
     published: dict[str, list[str]] = {}
     for image_name, dockerfile, context in images:
         target = f"{prefix}-{image_name}:{args.image_tag}"
         published[target] = []
         for platform, arch in zip(platforms, architectures, strict=True):
             arch_target = f"{target}-{arch}"
+            published[target].append(arch_target)
+            if args.phase == "manifest":
+                continue
             command = [
                 "podman", "build", "--platform", platform,
                 "--file", dockerfile, "--tag", arch_target,
@@ -152,13 +175,13 @@ def main() -> int:
             command.append(context)
             run(command, dry_run=args.dry_run)
             run(["podman", "push", arch_target], dry_run=args.dry_run)
-            published[target].append(arch_target)
 
-    for target, members in published.items():
+    for target, members in (published.items() if args.phase != "build" else []):
         if not args.dry_run:
             subprocess.run(
                 ["podman", "manifest", "rm", target],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=False,
             )
         else:
             print("+ " + shlex.join(["podman", "manifest", "rm", target]) + "  # if present")

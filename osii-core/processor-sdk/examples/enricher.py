@@ -2,7 +2,7 @@
 
 import re
 
-from osii_processor_sdk import (
+from osii.processor_sdk import (
     Artifact,
     Capability,
     Enricher,

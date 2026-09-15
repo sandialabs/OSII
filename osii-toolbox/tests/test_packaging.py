@@ -17,16 +17,12 @@ ROOT = Path(__file__).resolve().parents[2]
 TOOLS = (
     "osii-tesseract",
     "tabular-dataset-processors",
-    "minilm-embedding-service",
-    "model2vec-embedder",
 )
 
 PYTHON_DOCKERFILES = (
     "osii-core/Dockerfile",
     "osii-core/services/baseline-processors/Dockerfile",
     "osii-mcp/Dockerfile",
-    "osii-toolbox/minilm-embedding-service/Dockerfile",
-    "osii-toolbox/model2vec-embedder/Dockerfile",
     "osii-toolbox/osii-tesseract/Dockerfile",
     "osii-toolbox/tabular-dataset-processors/Dockerfile",
 )
@@ -35,7 +31,7 @@ PYTHON_DOCKERFILES = (
 @pytest.mark.parametrize("tool", TOOLS)
 def test_container_copy_sources_exist(tool):
     directory = ROOT / "osii-toolbox" / tool
-    context = directory if tool == "minilm-embedding-service" else ROOT
+    context = ROOT
     for line in (directory / "Dockerfile").read_text().splitlines():
         if line.startswith("COPY "):
             sources = shlex.split(line)[1:-1]
@@ -53,8 +49,8 @@ def test_tools_do_not_join_core_workspace_or_duplicate_sdk():
     for tool in TOOLS:
         manifest = ROOT / "osii-toolbox" / tool / "pyproject.toml"
         if manifest.exists():
-            source = tomllib.loads(manifest.read_text())["tool"]["uv"]["sources"]["osii-processor-sdk"]
-            assert (manifest.parent / source["path"]).resolve() == ROOT / "osii-core" / "processor-sdk"
+            source = tomllib.loads(manifest.read_text())["tool"]["uv"]["sources"]["osii"]
+            assert (manifest.parent / source["path"]).resolve() == ROOT / "osii-core"
 
 
 def test_repository_uses_named_component_roots():
@@ -150,15 +146,6 @@ def test_tesseract_uses_shared_base_configuration_everywhere():
     assert "OSII_TESSDATA_BASE_URL" in compose
 
 
-def test_model2vec_image_uses_model2vec_not_baseline_hashing():
-    recipe = (ROOT / "osii-toolbox/model2vec-embedder/Dockerfile").read_text()
-    assert "osii-core/services/local-embedder" not in recipe
-    assert "model2vec-embedder[model2vec]" in recipe
-    assert "OSII_LOCAL_EMBEDDING_PROVIDER=model2vec" in recipe
-    assert "OSII_OFFLINE=1" in recipe
-    assert "OSII_MODEL2VEC_MODEL=/models/model2vec" in recipe
-
-
 def test_toolbox_export_preserves_build_layout(tmp_path):
     output = tmp_path / "export"
     subprocess.run(
@@ -167,7 +154,8 @@ def test_toolbox_export_preserves_build_layout(tmp_path):
         check=True, capture_output=True, text=True,
     )
     exported = output / "osii-toolbox"
-    assert (exported / "osii-core/processor-sdk/pyproject.toml").is_file()
+    assert (exported / "osii-core/pyproject.toml").is_file()
+    assert (exported / "osii-core/osii/processor_sdk/__init__.py").is_file()
     assert (exported / ".dockerignore").is_file()
     assert (exported / "osii-toolbox/README.md").is_file()
     for tool in TOOLS:
@@ -193,7 +181,7 @@ def test_core_mcp_and_service_exports_have_standalone_build_paths(tmp_path):
     )
 
     core_recipe = (output / "osii-core" / "Dockerfile").read_text()
-    assert "COPY processor-sdk ./processor-sdk" in core_recipe
+    assert "COPY osii_processor_sdk ./osii_processor_sdk" in core_recipe
     assert "COPY osii-core/" not in core_recipe
 
     mcp_recipe = (output / "osii-mcp" / "Dockerfile").read_text()
@@ -204,8 +192,8 @@ def test_core_mcp_and_service_exports_have_standalone_build_paths(tmp_path):
     service_manifest = tomllib.loads(
         (output / "local-extractor" / "pyproject.toml").read_text()
     )
-    source = service_manifest["tool"]["uv"]["sources"]["osii-processor-sdk"]
-    assert source["path"] == "osii-core/processor-sdk"
+    source = service_manifest["tool"]["uv"]["sources"]["osii"]
+    assert source["path"] == "osii-core"
 
 
 def test_launcher_exports_as_an_independent_component(tmp_path):

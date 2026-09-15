@@ -396,7 +396,7 @@ version, certificate injection, and proxy suppression.
 
 ## Publish and run optional Toolbox images
 
-The experimental OpenCV/Tesseract region extractor, MiniLM, Model2Vec, and the tabular processors use the same workflow
+The experimental OpenCV/Tesseract region extractor and the tabular processors use the same workflow
 but never join the default release implicitly:
 
 ```bash
@@ -412,7 +412,7 @@ make toolbox-run TOOL=tesseract-opencv \
   OSII_IMAGE_TAG=0.1.0
 ```
 
-Replace `tesseract-opencv` with `minilm`, `model2vec`, or `tabular`. Publish all four
+Replace `tesseract-opencv` with `tabular` for table processing. Publish both
 optional images as AMD64/ARM64 manifests with `make
 toolbox-publish-multiarch` and the same prefix, tag, base-image, certificate,
 and proxy arguments. PowerShell uses the same command names with `-Tool

@@ -1,0 +1,117 @@
+# Corporate runners are provisioned hosts; no public Docker-in-Docker image.
+# See docs/operations/corporate-deployment.md for runner tags and variables.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - when: never
+
+stages: [verify, approve, build, publish]
+
+default:
+  tags: [osii-linux-amd64]
+  interruptible: true
+
+variables:
+  GIT_DEPTH: "0"
+  UV_PYTHON_DOWNLOADS: "never"
+  OSII_PYTHON_VERSION: "3.12"
+
+.release:
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ && $CI_COMMIT_REF_PROTECTED == "true"'
+  interruptible: false
+
+checks:
+  stage: verify
+  script:
+    - uv run --frozen --python 3.12 --package osii --extra dev python -m pytest osii-core/tests osii-core/processor-sdk/tests osii-toolbox/tests/test_packaging.py -q
+    - |
+      for service in local-extractor local-tesseract local-synthesizer local-embedder local-enricher model-provider-bridge; do
+        uv run --isolated --no-project --python 3.12 --with-editable osii-core \
+          --with-editable "osii-core/services/$service" --with pytest \
+          --with 'httpx>=0.27,<1' python -m pytest "osii-core/services/$service/tests" -q
+      done
+      uv run --isolated --no-project --python 3.12 --with pytest \
+        --with 'uvicorn[standard]>=0.35,<1' python -m pytest \
+        osii-core/services/baseline-processors/tests -q
+    - make docs
+    - cd osii-dashboard/dashboard
+    - npm ci
+    - npm test --if-present
+    - npm run build
+    - cd ../../osii-launcher
+    - npm ci
+    - npm test
+    - npm run build
+
+release-version:
+  extends: .release
+  stage: verify
+  script:
+    - uv run --no-project --python 3.12 python scripts/corporate_release.py version
+
+approve-release:
+  extends: .release
+  stage: approve
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ && $CI_COMMIT_REF_PROTECTED == "true"'
+      when: manual
+      allow_failure: false
+  environment:
+    name: corporate-release
+    action: prepare
+  script:
+    - uv run --no-project --python 3.12 python scripts/corporate_release.py preflight
+
+python-package:
+  extends: .release
+  stage: build
+  script:
+    - uv run --no-project --python 3.12 --with build python scripts/check_python_distribution.py
+    - uv build osii-core --out-dir release/python
+  artifacts:
+    paths: [release/python/]
+    expire_in: 14 days
+
+native-images:
+  extends: .release
+  stage: build
+  parallel:
+    matrix:
+      - OSII_ARCH: [amd64, arm64]
+  tags: ["osii-linux-$OSII_ARCH"]
+  resource_group: "quay-$OSII_ARCH"
+  timeout: 3h
+  script:
+    - uv run --no-project --python 3.12 python scripts/corporate_release.py images
+
+desktop-installers:
+  extends: .release
+  stage: build
+  parallel:
+    matrix:
+      - OSII_DESKTOP_TARGET: [windows-x64, macos-arm64, macos-x64]
+  tags: ["osii-$OSII_DESKTOP_TARGET"]
+  timeout: 1h
+  script:
+    - uv run --no-project --python 3.12 --with build python scripts/check_python_distribution.py
+    - uv run --no-project --python 3.12 python scripts/corporate_release.py installer
+  artifacts:
+    name: "osii-$CI_COMMIT_TAG-$OSII_DESKTOP_TARGET"
+    paths: [release/installers/]
+    expire_in: 14 days
+
+publish-release:
+  extends: .release
+  stage: publish
+  # GitLab downloads all earlier build artifacts after every build succeeds.
+  resource_group: corporate-release
+  environment:
+    name: corporate-release
+  script:
+    - uv run --no-project --python 3.12 --with twine --with PyYAML python scripts/corporate_release.py publish

@@ -18,7 +18,7 @@ the dashboard:
 7. return standard artifacts that work for both people and agents;
 8. export a collection sidecar without bundling original sources.
 
-The final extension track uses the public `osii_processor_sdk` package to build
+The final extension track uses the public `osii.processor_sdk` package to build
 and test a small extractor, synthesizer, and enricher. Those examples are
 intended to be copied into independent domain-processor services.
 

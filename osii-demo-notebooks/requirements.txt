@@ -6,7 +6,6 @@
 # packages are not expected to be downloaded from PyPI. The demo scripts call
 # optional processor services over HTTP, so those services are not installed
 # into this environment; start them separately when a demo requires one.
--e ../osii-core/processor-sdk
 -e ../osii-core
 
 # Notebook and conversion tools.

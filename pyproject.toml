@@ -17,5 +17,4 @@ members = [
 ]
 
 [tool.uv.sources]
-osii-processor-sdk = { path = "osii-core/processor-sdk", editable = true }
 osii = { workspace = true }

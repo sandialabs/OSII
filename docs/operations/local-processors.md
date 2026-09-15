@@ -35,19 +35,19 @@ similarity and verifies the vector-index pipeline, but it is not a semantic
 language model. Every index records provider, model, dimension, and
 normalization metadata. Switching vector spaces requires rebuilding.
 
-The experimental OpenCV/Tesseract region extractor, optional MiniLM, and
-experimental Model2Vec services live in `osii-toolbox/` in
+The experimental OpenCV/Tesseract region extractor and
+tabular processors live in `osii-toolbox/` in
 this repository; see [image publishing](publishing-images.md). Their dependencies and
 images remain separate from Core's lockfile, baseline images, and default host
 runtime. The Toolbox guide covers explicit builds and Quay publishing; review
-their dependency and model-provenance risks independently.
+their dependencies independently.
 
 ## Moving a processor to its own repository
 
 Each `osii-core/services/local-*` directory is a self-contained Python package. The
 component-export script supplies a standalone Dockerfile when copying one into
 its own repository; the monorepo itself uses the shared baseline image. Publish
-the SDK in the destination environment and replace the workspace dependency
+the `osii` package in the destination environment and replace the workspace dependency
 with that published version. Configure core with its URL in `OSII_PROCESSORS`
 and select it with `OSII_DEFAULT_EXTRACTOR`, `OSII_DEFAULT_SYNTHESIZER`,
 `OSII_DEFAULT_EMBEDDER`, or `OSII_DEFAULT_ENRICHER`.

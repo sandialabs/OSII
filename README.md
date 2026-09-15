@@ -94,7 +94,7 @@ ordinary Tesseract service runs once per complete page; on a bare-metal
 `make dev` computer, the Tesseract program must first be installed on the host.
 The packaged baseline image already contains it. Open **Setup** afterward to
 connect Ollama or another AI endpoint, or to add optional Apache Tika. Ollama
-and the old standalone MiniLM image are not part of normal startup.
+is not part of normal startup.
 
 To stop the local stack, return to the terminal and press <kbd>Ctrl</kbd> +
 <kbd>C</kbd>.
@@ -268,9 +268,9 @@ are intentional and reflected directly in the root names:
 
 - **`osii-core/`** owns canonical `.osii` persistence, scopes, retrieval, the
   REST API, the worker, and bounded grounded chat.
-- **`osii-core/processor-sdk/`** is a small, separately installable contract
-  package for custom processors. It lives with Core because Core owns that
-  boundary; an external processor does not need to install all of Core.
+- **`osii-core/osii/processor_sdk/`** contains the public contracts for custom
+  processors, included in the single `osii` Python package. Copyable examples
+  and contract tests live in `osii-core/processor-sdk/`.
 - **`osii-core/services/`** contains the guaranteed local processor hosts.
   They run automatically during local development and remain independently
   addressable and containerizable.

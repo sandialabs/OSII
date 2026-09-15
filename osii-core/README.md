@@ -19,6 +19,29 @@ This repository is not responsible for user-facing browsing or dashboard UX. Use
 
 ---
 
+## Install the Python library
+
+From the monorepo root, in a Python 3.12 virtual environment:
+
+```bash
+python -m pip install ./osii-core
+```
+
+This installs the `osii` library and its processor contracts together. For custom
+processors, import the public extension API directly:
+
+```python
+from osii.processor_sdk import Enricher, EnrichmentRequest, EnrichmentResponse
+```
+
+Existing `osii_processor_sdk` imports continue to work. After publishing the
+distribution to PyPI or a configured corporate Python registry, installation
+becomes `python -m pip install osii`. Registry publishing is a separate release
+step; the local command above works before publication.
+
+This installs Python code and dependencies. Launch the dashboard and optional
+processor containers through the normal OSII launcher.
+
 ## Human-readable overview
 
 The core workflow is:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 
-from osii_processor_sdk import (
+from osii.processor_sdk import (
     Artifact,
     Capability,
     Enricher,

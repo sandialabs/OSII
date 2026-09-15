@@ -8,7 +8,7 @@ import io
 import json
 from typing import Any
 
-from osii_processor_sdk import (
+from osii.processor_sdk import (
     Artifact,
     Capability,
     Enricher,

@@ -1,6 +1,6 @@
 """Minimal local synthesizer. Replace the first-lines logic with a local LLM."""
 
-from osii_processor_sdk import (
+from osii.processor_sdk import (
     Capability,
     ProcessorDescriptor,
     ProcessorKind,

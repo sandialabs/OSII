@@ -128,12 +128,14 @@ RUN dnf install -y \
 COPY --from=native-builder /opt/tesseract /opt/tesseract
 
 WORKDIR /workspace
-COPY osii-core/processor-sdk /workspace/osii-core/processor-sdk
+COPY osii-core/pyproject.toml osii-core/README.md /workspace/osii-core/
+COPY osii-core/osii /workspace/osii-core/osii
+COPY osii-core/osii_processor_sdk /workspace/osii-core/osii_processor_sdk
 COPY osii-toolbox/osii-tesseract/requirements.txt /workspace/osii-tesseract/requirements.txt
 WORKDIR /workspace/osii-tesseract
 RUN "${VIRTUAL_ENV}/bin/python" -m pip install --no-cache-dir \
     -r requirements.txt \
-    /workspace/osii-core/processor-sdk
+    /workspace/osii-core
 
 COPY osii-toolbox/osii-tesseract/app ./app
 COPY osii-toolbox/osii-tesseract/README.md ./README.md

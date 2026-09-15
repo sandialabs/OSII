@@ -3,6 +3,11 @@
 Start with the [hello table enricher](hello-enricher.md), then copy the closest
 small implementation from `osii-core/processor-sdk/examples/`.
 
+The extension API is included in OSII. From the monorepo root, install it with
+`python -m pip install ./osii-core` in your Python environment. After publication
+to your package registry, use `python -m pip install osii`. Import from
+`osii.processor_sdk`; existing `osii_processor_sdk` imports remain compatible.
+
 ## Choose the boundary first
 
 | Kind | Responsibility | Must not do |
@@ -21,7 +26,7 @@ data alongside text that has already been extracted.
 Each service subclasses exactly one SDK interface and declares one descriptor:
 
 ```python
-from osii_processor_sdk import (
+from osii.processor_sdk import (
     Enricher,
     EnrichmentRequest,
     EnrichmentResponse,

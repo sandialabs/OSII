@@ -25,10 +25,18 @@ class ExportEntry:
     destination: str
 
 
+CORE_PACKAGE_ENTRIES = (
+    ExportEntry("osii-core/pyproject.toml", "osii-core/pyproject.toml"),
+    ExportEntry("osii-core/README.md", "osii-core/README.md"),
+    ExportEntry("osii-core/osii", "osii-core/osii"),
+    ExportEntry("osii-core/osii_processor_sdk", "osii-core/osii_processor_sdk"),
+)
+
+
 COMPONENTS: dict[str, tuple[ExportEntry, ...]] = {
     "osii-toolbox": (
         ExportEntry("osii-toolbox", "osii-toolbox"),
-        ExportEntry("osii-core/processor-sdk", "osii-core/processor-sdk"),
+        *CORE_PACKAGE_ENTRIES,
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
         ExportEntry(".dockerignore", ".dockerignore"),
     ),
@@ -56,7 +64,7 @@ COMPONENTS: dict[str, tuple[ExportEntry, ...]] = {
         ExportEntry("docs/tutorials", "docs/tutorials"),
     ),
     "baseline-processors": (
-        ExportEntry("osii-core/processor-sdk", "osii-core/processor-sdk"),
+        *CORE_PACKAGE_ENTRIES,
         ExportEntry("osii-core/services/local-extractor", "osii-core/services/local-extractor"),
         ExportEntry("osii-core/services/local-tesseract", "osii-core/services/local-tesseract"),
         ExportEntry("osii-core/services/local-synthesizer", "osii-core/services/local-synthesizer"),
@@ -69,27 +77,27 @@ COMPONENTS: dict[str, tuple[ExportEntry, ...]] = {
     ),
     "local-extractor": (
         ExportEntry("osii-core/services/local-extractor", "."),
-        ExportEntry("osii-core/processor-sdk", "osii-core/processor-sdk"),
+        *CORE_PACKAGE_ENTRIES,
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
     "local-synthesizer": (
         ExportEntry("osii-core/services/local-synthesizer", "."),
-        ExportEntry("osii-core/processor-sdk", "osii-core/processor-sdk"),
+        *CORE_PACKAGE_ENTRIES,
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
     "local-embedder": (
         ExportEntry("osii-core/services/local-embedder", "."),
-        ExportEntry("osii-core/processor-sdk", "osii-core/processor-sdk"),
+        *CORE_PACKAGE_ENTRIES,
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
     "local-enricher": (
         ExportEntry("osii-core/services/local-enricher", "."),
-        ExportEntry("osii-core/processor-sdk", "osii-core/processor-sdk"),
+        *CORE_PACKAGE_ENTRIES,
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
     "model-provider-bridge": (
         ExportEntry("osii-core/services/model-provider-bridge", "."),
-        ExportEntry("osii-core/processor-sdk", "osii-core/processor-sdk"),
+        *CORE_PACKAGE_ENTRIES,
         ExportEntry("docs/reference/model-providers.md", "docs/model-providers.md"),
         ExportEntry("docs/reference/processor-api", "docs/reference/processor-api"),
     ),
@@ -153,7 +161,7 @@ def write_manifest(output: Path, selected: list[str]) -> None:
             "osii-core": "Publish the osii Python package to the corporate package registry before exporting MCP consumers.",
             "osii-dashboard": "Configure its API endpoint for the deployed OSII backend.",
             "osii-launcher": "Build and sign desktop installers separately from the container images.",
-            "osii-toolbox": "Processor services use the shared osii-processor-sdk contract package.",
+            "osii-toolbox": "Processor contracts are included in the osii Python package.",
         },
     }
     (output / "EXPORT_MANIFEST.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -171,7 +179,7 @@ def adapt_container_files(component: str, component_root: Path) -> None:
         )
     if component == "osii-core" and dockerfile.exists():
         content = dockerfile.read_text(encoding="utf-8")
-        content = content.replace("COPY osii-core/processor-sdk ./processor-sdk", "COPY processor-sdk ./processor-sdk")
+        content = content.replace("COPY osii-core/osii_processor_sdk ./osii_processor_sdk", "COPY osii_processor_sdk ./osii_processor_sdk")
         content = content.replace("COPY osii-core/pyproject.toml osii-core/README.md ./", "COPY pyproject.toml README.md ./")
         content = content.replace("COPY osii-core/osii ./osii", "COPY osii ./osii")
         content = content.replace("COPY osii-core/config ./config", "COPY config ./config")
@@ -182,7 +190,6 @@ def adapt_container_files(component: str, component_root: Path) -> None:
                 "COPY osii-core /workspace/osii-core\n"
                 "COPY osii-mcp /workspace/osii-mcp\n"
                 "RUN \"${VIRTUAL_ENV}/bin/python\" -m pip install --no-cache-dir \\\n"
-                "    /workspace/osii-core/processor-sdk \\\n"
                 "    /workspace/osii-core \\\n"
                 "    /workspace/osii-mcp && \\\n",
                 "COPY . /workspace/osii-mcp\n"
@@ -195,8 +202,8 @@ def adapt_container_files(component: str, component_root: Path) -> None:
         pyproject = component_root / "pyproject.toml"
         pyproject.write_text(
             pyproject.read_text(encoding="utf-8").replace(
-                'osii-processor-sdk = { path = "../../processor-sdk", editable = true }',
-                'osii-processor-sdk = { path = "osii-core/processor-sdk", editable = true }',
+                'osii = { path = "../..", editable = true }',
+                'osii = { path = "osii-core", editable = true }',
             ),
             encoding="utf-8",
         )
@@ -219,10 +226,10 @@ def adapt_container_files(component: str, component_root: Path) -> None:
             "    \"python${OSII_PYTHON_VERSION}\" -m venv \"${VIRTUAL_ENV}\" && \\\n"
             "    \"${VIRTUAL_ENV}/bin/python\" -m pip install --no-cache-dir --upgrade pip\n"
             "WORKDIR /workspace\n"
-            "COPY osii-core/processor-sdk /workspace/osii-core/processor-sdk\n"
+            "COPY osii-core /workspace/osii-core\n"
             "COPY . /workspace/service\n"
             "RUN \"${VIRTUAL_ENV}/bin/python\" -m pip install --no-cache-dir "
-            "/workspace/osii-core/processor-sdk /workspace/service && \\\n"
+            "/workspace/osii-core /workspace/service && \\\n"
             "    groupadd --system osii && \\\n"
             "    useradd --system --gid osii --home-dir /workspace osii && \\\n"
             "    chown -R osii:osii /workspace\n"

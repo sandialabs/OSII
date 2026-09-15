@@ -94,9 +94,11 @@ RUN dnf install -y \
 COPY --from=tesseract-builder /opt/tesseract /opt/tesseract
 
 WORKDIR /workspace
-COPY osii-core/processor-sdk /workspace/processor-sdk
+COPY osii-core/pyproject.toml osii-core/README.md /workspace/osii-core/
+COPY osii-core/osii /workspace/osii-core/osii
+COPY osii-core/osii_processor_sdk /workspace/osii-core/osii_processor_sdk
 RUN "${VIRTUAL_ENV}/bin/python" -m pip install --no-cache-dir \
-    /workspace/processor-sdk \
+    /workspace/osii-core \
     "uvicorn[standard]>=0.35,<1" \
     "PyMuPDF>=1.24" \
     "docx2txt>=0.8" \

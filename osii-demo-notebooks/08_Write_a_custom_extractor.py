@@ -13,13 +13,13 @@
 # ## The friendly extension surface
 #
 # Everything in this notebook comes from the top-level
-# `osii_processor_sdk` package. These names form the compatibility boundary for
+# `osii.processor_sdk` package. These names form the compatibility boundary for
 # an independently deployed processor.
 
 # %%
 import base64
 
-from osii_processor_sdk import (
+from osii.processor_sdk import (
     Capability,
     DocumentInput,
     ExtractionRequest,

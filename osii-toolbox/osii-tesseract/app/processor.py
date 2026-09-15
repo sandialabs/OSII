@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 
-from osii_processor_sdk import (
+from osii.processor_sdk import (
     Capability,
     ExtractionRequest,
     ExtractionResponse,

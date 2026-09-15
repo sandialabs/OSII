@@ -24,8 +24,6 @@ CA_AWARE_DOCKERFILES = (
     "osii-core/services/baseline-processors/Dockerfile",
     "osii-dashboard/dashboard/Dockerfile",
     "osii-mcp/Dockerfile",
-    "osii-toolbox/minilm-embedding-service/Dockerfile",
-    "osii-toolbox/model2vec-embedder/Dockerfile",
     "osii-toolbox/osii-tesseract/Dockerfile",
     "osii-toolbox/tabular-dataset-processors/Dockerfile",
 )
@@ -194,7 +192,7 @@ def test_toolbox_images_are_optional_and_have_cross_platform_helpers() -> None:
     assert '"toolbox-push"' in launcher
     assert '"toolbox-run"' in launcher
     assert '"toolbox-publish-multiarch"' in launcher
-    assert compose.count('profiles: ["toolbox"]') == 5
+    assert compose.count('profiles: ["toolbox"]') == 3
 
     make_run = _make_command("run", disable_proxies=False)
     assert " tesseract " in make_run

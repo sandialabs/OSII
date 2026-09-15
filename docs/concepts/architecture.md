@@ -53,7 +53,7 @@ Core owns the protocol and canonical commit adapters. A processor can run as a
 bundled local host, an independently deployed container, or an SME-owned
 service without changing how Core validates and persists its response:
 
-1. wrap the implementation with `osii-processor-sdk`;
+1. wrap the implementation with `osii.processor_sdk`, included with OSII;
 2. add golden contract tests;
 3. contract-test the descriptor and operation;
 4. register its service URL; and
@@ -87,7 +87,7 @@ plane to evolve independently.
 
 - `osii-core`: core domain, persistence, API, worker, bounded RAG orchestration,
   and grounded chat
-- `osii-core/processor-sdk`: separately installable public contracts and
+- `osii-core/osii/processor_sdk`: public contracts bundled with OSII and
   service/client helpers owned by Core
 - `osii-core/services`: guaranteed local Processor API hosts; independently
   addressable and containerizable despite being grouped with their owner

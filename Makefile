@@ -10,7 +10,6 @@ OSII_CA_BUNDLE ?=
 SHARED_DRIVE_PATH ?=
 SHARED_DRIVE_DATA ?= ./osii-data/shared-drive
 TOOL ?=
-MODEL2VEC_MODEL_DIR ?= ./osii-data/models/model2vec
 DISABLE_CONTAINER_PROXIES ?= false
 PROXY_ENVIRONMENT_VARIABLES := HTTP_PROXY HTTPS_PROXY FTP_PROXY ALL_PROXY http_proxy https_proxy ftp_proxy all_proxy
 
@@ -56,11 +55,11 @@ define validate_shared_drive
 endef
 
 define validate_tool
-	@if [ -z "$(TOOL)" ]; then echo "Set TOOL to tesseract-opencv, minilm, model2vec, or tabular."; exit 2; fi
-	@case "$(TOOL)" in tesseract-opencv|minilm|model2vec|tabular) ;; *) echo "Unknown TOOL=$(TOOL). Choose tesseract-opencv, minilm, model2vec, or tabular."; exit 2 ;; esac
+	@if [ -z "$(TOOL)" ]; then echo "Set TOOL to tesseract-opencv or tabular."; exit 2; fi
+	@case "$(TOOL)" in tesseract-opencv|tabular) ;; *) echo "Unknown TOOL=$(TOOL). Choose tesseract-opencv or tabular."; exit 2 ;; esac
 endef
 
-TOOLBOX_BUILD_SERVICE = $(if $(filter tesseract-opencv,$(TOOL)),tesseract-opencv,$(if $(filter minilm,$(TOOL)),minilm,$(if $(filter model2vec,$(TOOL)),model2vec,tabular-extractor)))
+TOOLBOX_BUILD_SERVICE = $(if $(filter tesseract-opencv,$(TOOL)),tesseract-opencv,tabular-extractor)
 TOOLBOX_RUN_SERVICES = $(if $(filter tabular,$(TOOL)),tabular-extractor tabular-enricher,$(TOOLBOX_BUILD_SERVICE))
 
 .PHONY: help dev dev-shared demo demo-data run run-shared build push-release publish-multiarch toolbox-list toolbox-build toolbox-push toolbox-run toolbox-stop toolbox-publish-multiarch down logs test docs doctor
@@ -123,13 +122,13 @@ logs:
 test:
 	$(UV) sync --python $(OSII_PYTHON_VERSION) --package osii --extra dev
 	$(UV) run --python $(OSII_PYTHON_VERSION) --package osii --extra dev python -m pytest osii-core/tests
-	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core/processor-sdk --with pytest python -m pytest osii-core/processor-sdk/tests
-	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core/processor-sdk --with-editable osii-core/services/local-extractor --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-extractor/tests
-	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core/processor-sdk --with-editable osii-core/services/local-tesseract --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-tesseract/tests
-	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core/processor-sdk --with-editable osii-core/services/local-synthesizer --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-synthesizer/tests
-	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core/processor-sdk --with-editable osii-core/services/local-embedder --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-embedder/tests
-	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core/processor-sdk --with-editable osii-core/services/local-enricher --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-enricher/tests
-	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core/processor-sdk --with-editable osii-core/services/model-provider-bridge --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/model-provider-bridge/tests
+	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core --with pytest python -m pytest osii-core/processor-sdk/tests
+	$(UV) run --isolated --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core --with-editable osii-core/services/local-extractor --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-extractor/tests
+	$(UV) run --isolated --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core --with-editable osii-core/services/local-tesseract --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-tesseract/tests
+	$(UV) run --isolated --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core --with-editable osii-core/services/local-synthesizer --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-synthesizer/tests
+	$(UV) run --isolated --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core --with-editable osii-core/services/local-embedder --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-embedder/tests
+	$(UV) run --isolated --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core --with-editable osii-core/services/local-enricher --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/local-enricher/tests
+	$(UV) run --isolated --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core --with-editable osii-core/services/model-provider-bridge --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/model-provider-bridge/tests
 	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with pytest --with 'uvicorn[standard]' python -m pytest osii-core/services/baseline-processors/tests
 	cd osii-dashboard/dashboard && npm test --if-present && npm run build
 
@@ -158,8 +157,6 @@ publish-multiarch:
 
 toolbox-list:
 	@echo "tesseract-opencv  Experimental OpenCV region OCR       http://localhost:8081"
-	@echo "minilm     MiniLM semantic embedding service          http://localhost:8086"
-	@echo "model2vec  Experimental Model2Vec embedding service    http://localhost:8087"
 	@echo "tabular    CSV extractor + collection table enricher  http://localhost:8097 and :8098"
 
 toolbox-build:
@@ -176,9 +173,8 @@ toolbox-push:
 
 toolbox-run:
 	$(validate_tool)
-	@if [ "$(TOOL)" = "model2vec" ] && [ ! -d "$(MODEL2VEC_MODEL_DIR)" ]; then echo "Stage the approved model directory at $(MODEL2VEC_MODEL_DIR) or set MODEL2VEC_MODEL_DIR."; exit 2; fi
 	$(require_podman_proxy_control)
-	OSII_MODEL2VEC_MODEL_DIR="$(MODEL2VEC_MODEL_DIR)" $(COMPOSE) $(PODMAN_PROXY_RUN_ARGUMENTS) --profile toolbox up -d --no-build --pull missing $(TOOLBOX_RUN_SERVICES)
+	$(COMPOSE) $(PODMAN_PROXY_RUN_ARGUMENTS) --profile toolbox up -d --no-build --pull missing $(TOOLBOX_RUN_SERVICES)
 
 toolbox-stop:
 	$(validate_tool)

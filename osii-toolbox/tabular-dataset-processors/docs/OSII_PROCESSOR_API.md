@@ -11,7 +11,7 @@ persists the typed response.
 
 Every process also provides `GET /health`, `GET /v1/descriptor`, and FastAPI
 schema documentation at `GET /docs`. The exact request and response schemas
-are supplied by the bundled `osii-processor-sdk`; inspect `/docs` on the
+are supplied by the bundled `osii.processor_sdk`; inspect `/docs` on the
 running service when integrating a particular release.
 
 The extractor accepts CSV bytes as an explicit base64 document payload and

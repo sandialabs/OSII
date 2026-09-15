@@ -53,7 +53,7 @@ The monorepo installs two packages used in this series:
   indexing, and search. The current research API is explicit: some examples
   import focused modules such as `osii.domain.scopes.collections` rather than a
   single top-level convenience object.
-- `osii_processor_sdk` is the stable public extension surface. It provides
+- `osii.processor_sdk` is the stable public extension surface. It provides
   typed requests and responses plus one-method interfaces for extractors,
   synthesizers, embedders, and enrichers.
 

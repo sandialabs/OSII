@@ -64,6 +64,7 @@ nav:
       - Sensitive data and transfer: operations/sensitive-data.md
       - Export components: operations/component-export.md
       - Publish images to Quay: operations/publishing-images.md
+      - Public and corporate releases: operations/corporate-deployment.md
   - API and formats:
       - REST API:
           - Overview: reference/api/index.md

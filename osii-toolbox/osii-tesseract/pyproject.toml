@@ -8,10 +8,10 @@ version = "0.2.0"
 description = "Region-aware OpenCV and Tesseract OCR Processor API service for OSII."
 requires-python = ">=3.11,<3.14"
 dependencies = [
-  "osii-processor-sdk",
+  "osii",
   "fastapi>=0.116,<1",
   "uvicorn[standard]>=0.35,<1",
-  "python-multipart==0.0.9",
+  "python-multipart==0.0.20",
   "opencv-python-headless==4.10.0.84",
   "numpy==2.1.1",
   "pytesseract==0.3.13",
@@ -26,7 +26,7 @@ dependencies = [
 dev = ["pytest>=8,<9"]
 
 [tool.uv.sources]
-osii-processor-sdk = { path = "../../osii-core/processor-sdk", editable = true }
+osii = { path = "../../osii-core", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]

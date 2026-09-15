@@ -7,13 +7,13 @@ name = "osii-model-provider-bridge"
 version = "0.1.0"
 description = "HTTP-only Ollama and OpenAI-compatible Processor API adapters for OSII."
 requires-python = ">=3.11,<3.14"
-dependencies = ["osii-processor-sdk", "requests>=2.32,<3", "uvicorn[standard]>=0.35,<1"]
+dependencies = ["osii", "requests>=2.32,<3", "uvicorn[standard]>=0.35,<1"]
 
 [project.optional-dependencies]
 dev = ["httpx>=0.27,<1", "pytest>=8,<9", "python-multipart>=0.0.20,<1"]
 
 [tool.uv.sources]
-osii-processor-sdk = { path = "../../processor-sdk", editable = true }
+osii = { path = "../..", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]

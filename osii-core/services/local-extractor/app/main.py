@@ -11,7 +11,7 @@ from xml.etree import ElementTree
 import docx2txt
 import pymupdf as fitz
 
-from osii_processor_sdk import (
+from osii.processor_sdk import (
     Capability,
     ExtractionRequest,
     ExtractionResponse,

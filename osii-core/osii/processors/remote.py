@@ -11,7 +11,7 @@ from pathlib import Path
 from osii.expert_context import resolve_expert_context
 from typing import Any
 
-from osii_processor_sdk import (
+from osii.processor_sdk import (
     DocumentInput,
     EmbeddingInput,
     EmbeddingRequest,

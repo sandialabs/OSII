@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 
 from tabular_processors.processors import CollectionTableEnricher, CsvTableExtractor
-from osii_processor_sdk import (
+from osii.processor_sdk import (
     DocumentInput,
     EnrichmentRequest,
     ExtractionRequest,

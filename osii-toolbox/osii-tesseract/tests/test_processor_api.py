@@ -6,7 +6,7 @@ import pytest
 
 from app.core.models import DocumentPageResult
 from app.processor import TesseractRegionExtractor
-from osii_processor_sdk import DocumentInput, ExtractionRequest
+from osii.processor_sdk import DocumentInput, ExtractionRequest
 
 
 def test_processor_api_preserves_region_geometry(monkeypatch) -> None:

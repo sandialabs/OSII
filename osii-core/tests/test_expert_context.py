@@ -110,7 +110,7 @@ def test_llm_wiki_reuses_context_without_treating_it_as_source_text(
 ):
     import json
     from osii.enrichment import llm_wiki
-    from osii_processor_sdk import Capability, ProcessorDescriptor, ProcessorKind, SynthesisResponse
+    from osii.processor_sdk import Capability, ProcessorDescriptor, ProcessorKind, SynthesisResponse
 
     scope = {"scope_type": kind}
     if kind == "object":

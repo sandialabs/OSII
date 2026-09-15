@@ -6,7 +6,7 @@ when a deployment selects it. None are built or started by the default
 `make build`, `make run`, or `make dev` workflow. The dependable full-page
 Tesseract extractor is not a Toolbox tool; it is included in the shared
 `osii-baseline-processors` image.
-The shared Processor SDK stays in `osii-core/processor-sdk/`.
+The shared Processor SDK is included in `osii` as `osii.processor_sdk`.
 
 ## Pick the capability you need
 
@@ -14,10 +14,8 @@ The shared Processor SDK stays in `osii-core/processor-sdk/`.
 |---|---|---|---|---|
 | [osii-tesseract](osii-tesseract/README.md) / `-tesseract-opencv` | Experimental | OpenCV region detection + Tesseract OCR; text and page bounding boxes | Processor API extractor | 8081 |
 | [tabular-dataset-processors](tabular-dataset-processors/README.md) / `-tabular` | Optional | CSV rows as standard tables; collection tables retaining row provenance | Processor API extractor and enricher; **one image, two processes** | 8097 / 8098 |
-| [minilm-embedding-service](minilm-embedding-service/README.md) / `-minilm` | Optional | CPU MiniLM semantic embeddings, 384 dimensions | OpenAI-compatible `/v1/embeddings`, **not** Processor API | 8086 |
-| [model2vec-embedder](model2vec-embedder/README.md) / `-model2vec` | Optional | Experimental semantic embeddings from an explicitly staged model | Processor API embedder | 8087 |
 
-That is **four possible images, five containers if you run every capability**.
+That is **two possible images, three containers if you run every capability**.
 You need not publish or run all of them. Apache Tika is an upstream image and
 Ollama is a separately managed provider; neither is copied into this Toolbox.
 Core and its normal model connections remain unchanged.
@@ -73,7 +71,7 @@ make toolbox-run TOOL=tesseract-opencv \
   OSII_IMAGE_TAG=0.1.0
 ```
 
-Use `TOOL=minilm`, `TOOL=model2vec`, or `TOOL=tabular` for the other images.
+Use `TOOL=tabular` for the tabular image.
 The tabular command starts its extractor and enricher processes together. Stop
 the selected tool with `make toolbox-stop TOOL=tesseract-opencv`.
 
@@ -88,7 +86,7 @@ PowerShell uses the same command names and `-Tool`:
   -ImagePrefix quay.io/your-namespace/osii -ImageTag 0.1.0
 ```
 
-To build and publish all four Toolbox images for both Linux architectures:
+To build and publish both Toolbox images for both Linux architectures:
 
 ```bash
 make toolbox-publish-multiarch \
@@ -124,8 +122,8 @@ above are for host development; a remote deployment needs its own private
 network, access control, and TLS gateway.
 
 Inspect running services with `podman-compose ps` and failures with
-`podman-compose logs SERVICE`. The service names are `tesseract-opencv`, `minilm`,
-`model2vec`, `tabular-extractor`, and `tabular-enricher`.
+`podman-compose logs SERVICE`. The service names are `tesseract-opencv`,
+`tabular-extractor`, and `tabular-enricher`.
 
 Before a real release, review licenses, scan images/dependencies, and record
 image digests. Existing dependency pins are carried over from the Tool Chest,
@@ -135,57 +133,6 @@ here are a publishing starter, not a security certification.
 Reference: [Podman build/platform options](https://docs.podman.io/en/stable/markdown/podman-build.1.html),
 [Podman push](https://docs.podman.io/en/stable/markdown/podman-push.1.html), and
 [Quay repository permissions and push/pull](https://docs.quay.io/guides/pushpull.html).
-
-## Optional model-heavy images
-
-Skip this section when Ollama or your existing embedding endpoint is sufficient.
-Neither Python stack is added to OSII's normal environment or lockfile. There
-are no model files in Git; local `models/` folders are ignored. Rebuild the
-semantic index when changing provider, model, or dimensions.
-
-### MiniLM: embeds its model during the build
-
-This existing implementation installs PyTorch/Sentence Transformers and downloads
-`sentence-transformers/all-MiniLM-L6-v2` from Hugging Face **at build time**.
-It consumes substantially more disk/RAM than the starter tools. Review and
-approve those dependencies and model provenance independently; do not build
-it if Hugging Face access is disallowed. The finished image uses offline mode.
-
-Build and run it with `make toolbox-build TOOL=minilm` and
-`make toolbox-run TOOL=minilm`, supplying the same image prefix, tag, base,
-certificate, and proxy options shown above.
-
-Check <http://127.0.0.1:8086/health> and `/docs`, then configure **Setup → AI model
-connections → Other OpenAI-compatible endpoint**, base URL
-`http://127.0.0.1:8086/v1`, embedding model
-`sentence-transformers/all-MiniLM-L6-v2`. Enter the model manually: this service
-does not provide `/models` discovery or chat. It does not require an API key.
-Do **not** register it as a Processor API URL. After validation:
-
-```sh
-podman push "${TOOLBOX_PREFIX}-minilm-embedding:${TOOLBOX_TAG}"
-```
-
-### Model2Vec: mount an approved, staged model
-
-The image installs the experimental Model2Vec dependency but **no model**. Stage
-your approved complete model directory outside Git. Without it startup fails
-explicitly, instead of silently providing hashing vectors.
-
-Stage the model in `osii-data/models/model2vec`, or set its location explicitly:
-
-```bash
-MODEL2VEC_MODEL_DIR="/absolute/path/to/approved-model" make toolbox-run TOOL=model2vec
-```
-
-```powershell
-$ModelDir = "C:\Models\approved-model"
-.\scripts\osii.ps1 toolbox-run -Tool model2vec -ModelDir $ModelDir
-```
-
-Register `http://127.0.0.1:8087` as a Processor API endpoint; check its descriptor
-is `local.model2vec`. The selected model directory must be readable inside the
-Podman machine.
 
 ## Develop without containers / export to another repository
 
@@ -201,7 +148,7 @@ uv run --no-project --python 3.12 python scripts/export_components.py --componen
 ```
 
 Use the new `../osii-toolbox-export/osii-toolbox/` as the receiving repository root;
-it contains `osii-toolbox/` and `osii-core/processor-sdk/` so the root-context build commands above
+it contains `osii-toolbox/` and the installable `osii-core/` package so the root-context build commands above
 still work. The original sibling checkout's Git history and local environments
 were not imported. Its moved source is now maintained here; no private provider
 package or separate proprietary bridge is included.

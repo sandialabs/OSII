@@ -1,7 +1,7 @@
 from pathlib import Path
 import tomllib
 
-from osii_processor_sdk import (
+from osii.processor_sdk import (
     Capability,
     ExtractionResponse,
     ProcessorDescriptor,

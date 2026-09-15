@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from app.env_credentials import resolve_secret
 
-from osii_processor_sdk import (
+from osii.processor_sdk import (
     Capability,
     Embedder,
     EmbeddingRequest,

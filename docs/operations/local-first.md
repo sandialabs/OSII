@@ -50,9 +50,7 @@ Intake.
 
 This is the complete guaranteed baseline. It does not silently install or
 launch optional system software. After the dashboard opens, use **Setup** to
-connect Ollama or another AI endpoint or to start Apache Tika. The standalone
-MiniLM image in `osii-toolbox` is an opt-in deployment alternative and is not
-started by `demo` or `dev`.
+connect Ollama or another AI endpoint or to start Apache Tika.
 
 For the packaged Podman stack, `make run DISABLE_CONTAINER_PROXIES=true` or
 `.\scripts\osii.ps1 run -DisableContainerProxies` starts in direct-network mode

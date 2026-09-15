@@ -1,6 +1,6 @@
 import json
 
-from osii_processor_sdk import (
+from osii.processor_sdk import (
     Capability,
     EntityListArtifactData,
     ProcessorDescriptor,

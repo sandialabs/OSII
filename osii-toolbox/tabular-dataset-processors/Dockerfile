@@ -22,10 +22,12 @@ RUN dnf install -y "python${OSII_PYTHON_VERSION}" "python${OSII_PYTHON_VERSION}-
     "${VIRTUAL_ENV}/bin/python" -m pip install --no-cache-dir --upgrade pip
 
 WORKDIR /workspace
-COPY osii-core/processor-sdk /workspace/osii-core/processor-sdk
+COPY osii-core/pyproject.toml osii-core/README.md /workspace/osii-core/
+COPY osii-core/osii /workspace/osii-core/osii
+COPY osii-core/osii_processor_sdk /workspace/osii-core/osii_processor_sdk
 COPY osii-toolbox/tabular-dataset-processors /workspace/tabular-dataset-processors
 RUN "${VIRTUAL_ENV}/bin/python" -m pip install --no-cache-dir \
-    /workspace/osii-core/processor-sdk \
+    /workspace/osii-core \
     /workspace/tabular-dataset-processors && \
     groupadd --system osii && \
     useradd --system --gid osii --home-dir /workspace osii && \

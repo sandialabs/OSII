@@ -41,7 +41,7 @@ Always review the resulting diff. Never hand-edit notebook JSON.
 - Start from local and model-free behavior, then label optional OCR, model,
   corporate, and emulated paths accurately. Never hide a network or model call
   inside an otherwise local-looking cell.
-- Use `osii_processor_sdk` top-level imports in extension lessons. Show a
+- Use `osii.processor_sdk` top-level imports in extension lessons. Show a
   descriptor, typed sample request, direct algorithm test, assertions, and the
   generated HTTP adapter in distinct steps.
 - Use core `osii` imports deliberately. If an example reaches into a focused

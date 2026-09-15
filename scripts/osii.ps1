@@ -23,8 +23,6 @@ param(
 
     [string]$Tool = "",
 
-    [string]$ModelDir = "",
-
     [switch]$InsecureRegistries,
 
     [switch]$DisableContainerProxies,
@@ -342,17 +340,13 @@ try {
         }
         "toolbox-list" {
             Write-Host "tesseract-opencv  Experimental OpenCV region OCR       http://localhost:8081"
-            Write-Host "minilm     MiniLM semantic embedding service          http://localhost:8086"
-            Write-Host "model2vec  Experimental Model2Vec embedding service    http://localhost:8087"
             Write-Host "tabular    CSV extractor + collection table enricher  http://localhost:8097 and :8098"
         }
         { $_ -in @("toolbox-build", "toolbox-push", "toolbox-run", "toolbox-stop") } {
             $ToolServices = switch ($Tool) {
                 "tesseract-opencv" { @("tesseract-opencv") }
-                "minilm" { @("minilm") }
-                "model2vec" { @("model2vec") }
                 "tabular" { @("tabular-extractor", "tabular-enricher") }
-                default { throw "Set -Tool to tesseract-opencv, minilm, model2vec, or tabular." }
+                default { throw "Set -Tool to tesseract-opencv or tabular." }
             }
             $BuildService = $ToolServices[0]
             switch ($Command) {
@@ -364,13 +358,6 @@ try {
                     Invoke-OsiiCompose @("push", $BuildService)
                 }
                 "toolbox-run" {
-                    if ($Tool -eq "model2vec") {
-                        $SelectedModelDir = if ($ModelDir) { $ModelDir } else { Join-Path $RepositoryRoot "osii-data\models\model2vec" }
-                        if (-not (Test-Path -LiteralPath $SelectedModelDir -PathType Container)) {
-                            throw "Stage an approved model directory at $SelectedModelDir or pass -ModelDir."
-                        }
-                        $env:OSII_MODEL2VEC_MODEL_DIR = (Resolve-Path -LiteralPath $SelectedModelDir).Path
-                    }
                     Invoke-OsiiCompose (@("--profile", "toolbox", "up", "-d", "--no-build", "--pull", "missing") + $ToolServices)
                 }
                 "toolbox-stop" { Invoke-OsiiCompose (@("stop") + $ToolServices) }

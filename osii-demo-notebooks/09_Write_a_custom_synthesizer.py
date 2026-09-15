@@ -10,7 +10,7 @@
 # ## Import the public contract
 
 # %%
-from osii_processor_sdk import (
+from osii.processor_sdk import (
     Capability,
     DocumentInput,
     ProcessorDescriptor,

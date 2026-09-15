@@ -33,7 +33,7 @@ from pathlib import Path
 import base64
 import hashlib
 
-from osii_processor_sdk import DocumentInput, ExtractionRequest, ProcessorClient
+from osii.processor_sdk import DocumentInput, ExtractionRequest, ProcessorClient
 
 
 IRIS_CSV = Path("../osii-data/source/example-datasets/iris/data/setosa.csv")

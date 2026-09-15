@@ -31,7 +31,7 @@ The agent's job is to execute the human's command—nothing more.
   deployable tools: only an explicitly designated bundled, default-swappable
   service may appear in the default packaged Compose stack; every other Toolbox
   processor is enabled only through explicit deployment configuration.
-- Treat `osii_processor_sdk` as the public boundary for external processors.
+- Treat `osii.processor_sdk` as the public boundary for external processors.
   Preserve standard artifact formats so people, the dashboard, and agents can
   inspect the same results.
 
@@ -66,6 +66,27 @@ The agent's job is to execute the human's command—nothing more.
   may use the designated UBI 9 tag.
 - Preserve the simple `make build` and `make run` interface. Keep Make and
   PowerShell container workflows equivalent when container policy changes.
+
+## Public and corporate delivery
+
+- Treat public GitHub as the portable development and validation repository.
+  Routine GitHub pushes run focused Linux/Python 3.12 and frontend checks;
+  reserve cross-platform installation checks for tags or manual runs, and do
+  not publish corporate images, installers, endpoints, or credentials there.
+- Treat corporate GitLab as the release authority. Import public changes on a
+  branch, preserve the corporate configuration layer, and merge through a
+  reviewed GitLab merge request before creating a protected `vX.Y.Z` tag.
+- Corporate tags build from approved mirrors and an immutable RHEL/UBI base,
+  publish AMD64/ARM64 images to corporate Quay, publish `osii` to the internal
+  Python registry, and attach signed launcher installers to the GitLab Release.
+- Keep releases immutable and keep package, launcher, and image versions
+  aligned. Never reuse a published version or rebuild an existing release tag.
+- Preserve a simple non-developer path: install the signed launcher, choose a
+  source folder, pull tested images, and open the dashboard. Validate that path
+  on a clean workstation before announcing a release.
+- Keep `.github/workflows/ci.yml`, `.gitlab-ci.yml`, and
+  `docs/operations/corporate-deployment.md` consistent when release behavior
+  changes.
 
 ## Validation and handoff
 

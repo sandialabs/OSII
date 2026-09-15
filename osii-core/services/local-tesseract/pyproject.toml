@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Baseline page-by-page Tesseract OCR processor for OSII."
 requires-python = ">=3.11,<3.14"
 dependencies = [
-  "osii-processor-sdk",
+  "osii",
   "uvicorn[standard]>=0.35,<1",
   "PyMuPDF>=1.24",
 ]
@@ -17,7 +17,7 @@ dependencies = [
 dev = ["httpx>=0.27,<1", "pytest>=8,<9"]
 
 [tool.uv.sources]
-osii-processor-sdk = { path = "../../processor-sdk", editable = true }
+osii = { path = "../..", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
