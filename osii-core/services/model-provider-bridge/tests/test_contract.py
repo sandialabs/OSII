@@ -3,6 +3,8 @@ import pytest
 import requests
 
 from app.main import CLIENTS, app
+from osii.configuration import save_models_config
+from osii.model_gateway_tokens import issue_model_gateway_token
 from tests.fake_openai_server import app as fake_openai_app
 
 
@@ -265,3 +267,100 @@ def test_fake_openai_server_enforces_contract():
 
     assert models.status_code == 200
     assert chat.json()["choices"][0]["message"]["content"]
+
+
+def test_model_gateway_forwards_alias_to_configured_openai_model(monkeypatch, tmp_path):
+    monkeypatch.setenv("OSII_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("OSII_MODEL_GATEWAY_SECRET", "test-gateway-secret")
+    monkeypatch.setenv("OPENAI_API_KEY", "provider-secret")
+    save_models_config({
+        "version": 1,
+        "models": {
+            "top": {
+                "type": "openai-compatible",
+                "base_url": "https://models.example.test/v1",
+                "api_key_env": "OPENAI_API_KEY",
+                "model": "vendor/high-quality-instruct",
+                "capabilities": ["chat", "synthesis"],
+            }
+        },
+        "defaults": {"chat": "top", "synthesis": "top"},
+    })
+    seen = {}
+
+    class Response:
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return {
+                "id": "chatcmpl-upstream",
+                "object": "chat.completion",
+                "model": "vendor/high-quality-instruct",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "Grounded."}, "finish_reason": "stop"}],
+            }
+
+    def fake_request(method, url, **kwargs):
+        seen.update({"method": method, "url": url, **kwargs})
+        return Response()
+
+    monkeypatch.setattr(requests, "request", fake_request)
+    token = issue_model_gateway_token(
+        tool_id="readable-llm-wiki",
+        job_id="job-1",
+        bindings={"chat": "top"},
+        max_requests=3,
+    )
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"model": "top", "messages": [{"role": "user", "content": "hello"}]},
+    )
+
+    assert response.status_code == 200
+    assert seen["url"] == "https://models.example.test/v1/chat/completions"
+    assert seen["json"]["model"] == "vendor/high-quality-instruct"
+    assert seen["headers"]["Authorization"] == "Bearer provider-secret"
+    assert response.json()["osii"] == {"connection": "top", "provider_type": "openai-compatible"}
+
+
+def test_model_gateway_token_cannot_select_another_connection(monkeypatch, tmp_path):
+    monkeypatch.setenv("OSII_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("OSII_MODEL_GATEWAY_SECRET", "test-gateway-secret")
+    save_models_config({
+        "version": 1,
+        "models": {
+            "mid": {"type": "ollama-local", "base_url": "http://127.0.0.1:11434", "model": "model-mid", "capabilities": ["chat"]},
+            "top": {"type": "ollama-local", "base_url": "http://127.0.0.1:11434", "model": "model-top", "capabilities": ["chat"]},
+        },
+        "defaults": {"chat": "mid"},
+    })
+    token = issue_model_gateway_token(tool_id="concept-wiki", job_id="job-2", bindings={"chat": "mid"})
+
+    response = TestClient(app).post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"model": "top", "messages": [{"role": "user", "content": "hello"}]},
+    )
+
+    assert response.status_code == 403
+
+
+def test_model_gateway_token_stops_working_when_job_revokes_it(monkeypatch):
+    monkeypatch.setenv("OSII_MODEL_GATEWAY_SECRET", "test-gateway-secret")
+    token = issue_model_gateway_token(
+        tool_id="readable-llm-wiki",
+        job_id="completed-job",
+        bindings={"chat": "top"},
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    client = TestClient(app)
+
+    assert client.get("/v1/models", headers=headers).status_code == 200
+    assert client.post("/v1/tokens/revoke", headers=headers).status_code == 200
+    rejected = client.get("/v1/models", headers=headers)
+
+    assert rejected.status_code == 401
+    assert "no longer active" in rejected.json()["detail"]

@@ -40,7 +40,7 @@ def test_processor_api_preserves_region_geometry(monkeypatch) -> None:
         )
     )
 
-    assert response.processor.name == "toolchest.tesseract-opencv"
+    assert response.processor.name == "toolbox.tesseract-opencv"
     assert response.segments[0].id == "page-2-region-1"
     assert response.segments[0].source_origin == {
         "page": 2,

@@ -25,21 +25,16 @@ informally call them wiki extractors.
 
 ## Run from source
 
-First start normal OSII with `make dev` or `scripts\osii.ps1 dev`. Select an
-Ollama or OpenAI-compatible synthesis model in **Setup**. Then use two more
-terminals from this folder:
+First start normal OSII with `make dev` or `scripts\osii.ps1 dev`. In
+**Setup → Advanced & diagnostics → Local capability services**, start either
+wiki service. The equivalent direct commands from the repository root are:
 
 ```bash
-uv run --python 3.12 --extra dev python run.py readable --host 127.0.0.1
-uv run --python 3.12 --extra dev python run.py concept-entity --host 127.0.0.1
+uv run --project osii-toolbox/llm-wiki-enrichers python osii-toolbox/llm-wiki-enrichers/run.py readable --host 127.0.0.1
+uv run --project osii-toolbox/llm-wiki-enrichers python osii-toolbox/llm-wiki-enrichers/run.py concept-entity --host 127.0.0.1
 ```
 
-The default downstream synthesizer is OSII's Ollama adapter at
-`http://127.0.0.1:8095/ollama/synthesizer`. To use Shirty or another configured
-OpenAI-compatible provider, set the processor's **Processor API synthesizer
-URL** in Setup to `http://127.0.0.1:8095/openai/synthesizer`.
-
-Register these endpoints in **Setup → Custom Processor API services**:
+Register these endpoints in **Setup → Register running processor**:
 
 ```text
 http://127.0.0.1:8099
@@ -66,14 +61,16 @@ PowerShell:
 ```
 
 The image runs as two containers because each URL describes exactly one
-Processor API implementation. Override `OSII_WIKI_SYNTHESIZER_URL` when the
-synthesizer is not reachable through the host bridge at the default address.
+Processor API implementation. Both containers use the shared image, so it is
+downloaded only once. Core gives each operation short-lived access to the
+configured model connection through its internal Model Gateway; provider URLs
+and API keys are not passed into these containers.
 
 Run isolated tests without starting a model:
 
 ```bash
-uv run --python 3.12 --extra dev pytest
+uv run --python 3.12 --project osii-toolbox/llm-wiki-enrichers --extra dev pytest osii-toolbox/llm-wiki-enrichers/tests
 ```
 
-The tests inject a deterministic fake synthesizer; no model download or network
+The tests inject a normal OpenAI-compatible test client; no model download or network
 connection is required.

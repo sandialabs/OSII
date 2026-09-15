@@ -11,6 +11,14 @@ from pathlib import Path
 from osii.expert_context import resolve_expert_context
 from typing import Any
 
+from osii.configuration import (
+    configured_tools,
+    load_models_config,
+    model_connection,
+    tool_for_processor,
+)
+from osii.model_gateway_tokens import issue_model_gateway_token
+
 from osii.processor_sdk import (
     DocumentInput,
     EmbeddingInput,
@@ -53,6 +61,14 @@ def configured_processor_urls() -> list[str]:
     ]
     osii_root = os.getenv("OSII_ROOT")
     if osii_root:
+        root = Path(osii_root).expanduser()
+        for tool in configured_tools(root).values():
+            if not isinstance(tool, dict) or not tool.get("enabled", True):
+                continue
+            runtime = tool.get("runtime") or {}
+            endpoint = str(runtime.get("endpoint") or "").strip().rstrip("/")
+            if endpoint:
+                configured.append(endpoint)
         state_path = Path(osii_root).expanduser() / "state"
         registry_path = state_path / "processor_endpoints.json"
         try:
@@ -78,6 +94,57 @@ def configured_processor_urls() -> list[str]:
     return list(dict.fromkeys(configured))
 
 
+def _model_context(
+    *,
+    processor_name: str,
+    descriptor: dict[str, Any],
+    request_id: str,
+    osii_root: Path,
+) -> dict[str, Any] | None:
+    requirements = descriptor.get("model_requirements") or {}
+    if not requirements:
+        return None
+    configured = tool_for_processor(processor_name, osii_root)
+    tool_id, tool = configured if configured else (processor_name, {})
+    access = tool.get("model_access") or {}
+    if access.get("mode", "gateway") == "none":
+        required = [name for name, value in requirements.items() if value == "required"]
+        if required:
+            raise RuntimeError(
+                f"{processor_name} requires {', '.join(required)} model access, but the tool is configured as self-contained."
+            )
+        return None
+    bindings = dict(access.get("bindings") or {})
+    defaults = load_models_config(osii_root).get("defaults", {})
+    for capability, requirement in requirements.items():
+        alias = str(bindings.get(capability) or defaults.get(capability) or "")
+        if not alias:
+            if requirement == "required":
+                raise RuntimeError(
+                    f"Choose a {capability} model connection for {processor_name} in Setup."
+                )
+            continue
+        connection = model_connection(alias, osii_root)
+        if connection is None or capability not in connection.get("capabilities", []):
+            raise RuntimeError(
+                f"Model connection {alias!r} is unavailable or does not support {capability}."
+            )
+        bindings[capability] = alias
+    if not bindings:
+        return None
+    return {
+        "gateway_url": os.getenv(
+            "OSII_MODEL_GATEWAY_PUBLIC_URL", "http://127.0.0.1:8095/v1"
+        ).rstrip("/"),
+        "token": issue_model_gateway_token(
+            tool_id=tool_id,
+            job_id=request_id,
+            bindings=bindings,
+        ),
+        "bindings": bindings,
+    }
+
+
 def _request_json(url: str, *, payload: dict | None = None, timeout: float = 120.0) -> dict:
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
@@ -91,6 +158,28 @@ def _request_json(url: str, *, payload: dict | None = None, timeout: float = 120
             return json.load(response)
     except (urllib.error.URLError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"Processor request to {url} failed: {exc}") from exc
+
+
+def _revoke_model_context(context: dict[str, Any] | None) -> None:
+    """Best-effort revocation once the synchronous processor job has ended."""
+    if not context:
+        return
+    request = urllib.request.Request(
+        f"{str(context['gateway_url']).rstrip('/')}/tokens/revoke",
+        data=b"{}",
+        headers={
+            "Authorization": f"Bearer {context['token']}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=3):
+            pass
+    except (urllib.error.URLError, OSError):
+        # Expiration and request bounds still constrain a grant if a gateway
+        # disappears before Core can explicitly revoke it.
+        pass
 
 
 def discover_remote_processors(*, include_errors: bool = False) -> list[dict[str, Any]]:
@@ -111,6 +200,11 @@ def resolve_remote_processor(name: str, kind: str) -> dict[str, Any]:
     for descriptor in discover_remote_processors():
         if descriptor.get("name") == name and descriptor.get("kind") == kind:
             return descriptor
+        osii_root = os.getenv("OSII_ROOT")
+        if osii_root and descriptor.get("kind") == kind:
+            configured = tool_for_processor(name, Path(osii_root).expanduser())
+            if configured and configured[1].get("processor_id") == descriptor.get("name"):
+                return descriptor
     raise RuntimeError(f"Processor '{name}' ({kind}) is not registered or unavailable.")
 
 
@@ -152,6 +246,12 @@ class RemoteExtractor:
         }
         state = ExtractionState()
         request_id = str(uuid.uuid4())
+        model_context = _model_context(
+            processor_name=self.name,
+            descriptor=self._descriptor,
+            request_id=request_id,
+            osii_root=osii_store,
+        )
         try:
             response = self._client.extract(ExtractionRequest(
                 request_id=request_id,
@@ -164,9 +264,12 @@ class RemoteExtractor:
                 ),
                 expert_context=expert_context,
                 config=extractor_config or {},
+                model_context=model_context,
             ))
         except ProcessorClientError as exc:
             raise RemoteProcessorUnavailable(str(exc)) from exc
+        finally:
+            _revoke_model_context(model_context)
         initialize_bundle(osii_store=osii_store, doc_ctx=doc_ctx)
         update_provenance(
             osii_store=osii_store,
@@ -273,22 +376,32 @@ class RemoteSynthesizer:
         if preferred is None:
             raise RuntimeError(f"No preferred text is available for {file_id}.")
         request_id = str(uuid.uuid4())
-        response = self._client.synthesize(SynthesisRequest(
+        model_context = _model_context(
+            processor_name=self.name,
+            descriptor=self._descriptor,
             request_id=request_id,
-            scope=ScopeInput(
-                scope_type="object",
-                scope_id=file_id,
-                documents=[DocumentInput(
-                    file_id=file_id,
-                    filename=file_meta.get("filename") or file_id,
-                    media_type=file_meta.get("mime") or "text/plain",
-                    text=preferred.get("text") or "",
-                    metadata={"representation": preferred.get("name")},
-                )],
-            ),
-            expert_context=expert_context,
-            config=synthesizer_config or {},
-        ))
+            osii_root=osii_store,
+        )
+        try:
+            response = self._client.synthesize(SynthesisRequest(
+                request_id=request_id,
+                scope=ScopeInput(
+                    scope_type="object",
+                    scope_id=file_id,
+                    documents=[DocumentInput(
+                        file_id=file_id,
+                        filename=file_meta.get("filename") or file_id,
+                        media_type=file_meta.get("mime") or "text/plain",
+                        text=preferred.get("text") or "",
+                        metadata={"representation": preferred.get("name")},
+                    )],
+                ),
+                expert_context=expert_context,
+                config=synthesizer_config or {},
+                model_context=model_context,
+            ))
+        finally:
+            _revoke_model_context(model_context)
         if response.request_id != request_id:
             raise RuntimeError("Synthesizer returned a mismatched request_id.")
         path = write_synth_text(
@@ -333,22 +446,32 @@ class RemoteSynthesizer:
         texts, _ = collect_scope_texts(osii_store, scope)
         scope_id = str(scope.get("folder_id") or scope.get("collection_id") or "root")
         request_id = str(uuid.uuid4())
-        response = self._client.synthesize(SynthesisRequest(
+        model_context = _model_context(
+            processor_name=self.name,
+            descriptor=self._descriptor,
             request_id=request_id,
-            scope=ScopeInput(
-                scope_type=scope_type,
-                scope_id=scope_id,
-                documents=[DocumentInput(
-                    file_id=item["file_id"],
-                    filename=item.get("path") or item["file_id"],
-                    media_type="text/plain",
-                    text=item["text"],
-                    metadata={"representation": item.get("representation")},
-                ) for item in texts],
-            ),
-            expert_context=expert_context,
-            config=synthesizer_config or {},
-        ))
+            osii_root=osii_store,
+        )
+        try:
+            response = self._client.synthesize(SynthesisRequest(
+                request_id=request_id,
+                scope=ScopeInput(
+                    scope_type=scope_type,
+                    scope_id=scope_id,
+                    documents=[DocumentInput(
+                        file_id=item["file_id"],
+                        filename=item.get("path") or item["file_id"],
+                        media_type="text/plain",
+                        text=item["text"],
+                        metadata={"representation": item.get("representation")},
+                    ) for item in texts],
+                ),
+                expert_context=expert_context,
+                config=synthesizer_config or {},
+                model_context=model_context,
+            ))
+        finally:
+            _revoke_model_context(model_context)
         if response.request_id != request_id:
             raise RuntimeError("Synthesizer returned a mismatched request_id.")
         metadata = {
@@ -385,11 +508,21 @@ class ProcessorEmbeddingClient:
     def embed(self, *, model: str, texts) -> list[list[float]]:
         request_id = str(uuid.uuid4())
         identifiers = [f"input-{index}" for index in range(len(texts))]
-        response = self._client.embed(EmbeddingRequest(
+        model_context = _model_context(
+            processor_name=self.descriptor["name"],
+            descriptor=self.descriptor,
             request_id=request_id,
-            inputs=[EmbeddingInput(id=identifier, text=text) for identifier, text in zip(identifiers, texts)],
-            config={"model": model} if model else {},
-        ))
+            osii_root=Path(os.getenv("OSII_ROOT", "./osii-data/.osii")).expanduser(),
+        )
+        try:
+            response = self._client.embed(EmbeddingRequest(
+                request_id=request_id,
+                inputs=[EmbeddingInput(id=identifier, text=text) for identifier, text in zip(identifiers, texts)],
+                config={"model": model} if model else {},
+                model_context=model_context,
+            ))
+        finally:
+            _revoke_model_context(model_context)
         if response.request_id != request_id:
             raise RuntimeError("Embedder returned a mismatched request_id.")
         by_id = {item.id: item for item in response.vectors}
@@ -416,6 +549,7 @@ class RemoteEnricher:
         self.version = descriptor["version"]
         self.display_name = descriptor["display_name"]
         self.description = descriptor["description"]
+        self.model_requirements = descriptor.get("model_requirements") or {}
 
     def describe(self) -> dict[str, Any]:
         return dict(self._descriptor)
@@ -459,16 +593,27 @@ class RemoteEnricher:
             }
         }
 
-        response = _request_json(
-            f"{self.base_url}/v1/enrich",
-            payload={
-                "api_version": "v1",
-                "request_id": str(uuid.uuid4()),
-                **processor_input,
-                "expert_context": expert_context,
-                "config": enricher_config or {},
-            },
+        request_id = str(uuid.uuid4())
+        model_context = _model_context(
+            processor_name=self.name,
+            descriptor=self._descriptor,
+            request_id=request_id,
+            osii_root=osii_store,
         )
+        try:
+            response = _request_json(
+                f"{self.base_url}/v1/enrich",
+                payload={
+                    "api_version": "v1",
+                    "request_id": request_id,
+                    **processor_input,
+                    "expert_context": expert_context,
+                    "config": enricher_config or {},
+                    "model_context": model_context,
+                },
+            )
+        finally:
+            _revoke_model_context(model_context)
         artifacts = response.get("artifacts") or []
         if not artifacts:
             raise RuntimeError(f"Remote enricher '{self.name}' returned no artifacts")

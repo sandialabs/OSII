@@ -40,6 +40,9 @@ def test_configured_processor_urls_includes_enabled_admin_registry(tmp_path, mon
 
     assert remote.configured_processor_urls() == [
         "http://processor-a:8000",
+        "http://127.0.0.1:8099",
+        "http://127.0.0.1:8100",
+        "http://127.0.0.1:8081",
         "http://custom:8000",
     ]
 
@@ -57,10 +60,13 @@ def test_openai_provider_uses_standard_embedding_and_synthesis_adapters(tmp_path
     urls = remote.configured_processor_urls()
 
     assert urls == [
+        "http://127.0.0.1:8099",
+        "http://127.0.0.1:8100",
+        "http://127.0.0.1:8081",
         "http://model-bridge:8095/openai/embedder",
         "http://model-bridge:8095/openai/synthesizer",
     ]
-    assert not any("extractor" in url for url in urls)
+    assert not any(url.endswith("/extractor") for url in urls)
 
 
 def test_discovery_ignores_unavailable_processors(monkeypatch):

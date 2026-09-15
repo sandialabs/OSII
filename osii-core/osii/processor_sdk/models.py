@@ -35,6 +35,17 @@ class ProcessorDescriptor(BaseModel):
     kind: ProcessorKind
     capabilities: Capability = Field(default_factory=Capability)
     config_schema: dict[str, Any] = Field(default_factory=dict)
+    model_requirements: dict[
+        Literal["chat", "embedding"], Literal["required", "optional"]
+    ] = Field(default_factory=dict)
+
+
+class ModelContext(BaseModel):
+    """Short-lived access to OSII's OpenAI-compatible model gateway."""
+
+    gateway_url: str
+    token: str
+    bindings: dict[Literal["chat", "embedding"], str] = Field(default_factory=dict)
 
 
 class TextSegment(BaseModel):
@@ -199,6 +210,7 @@ class ExtractionRequest(BaseModel):
     document: DocumentInput
     expert_context: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
+    model_context: ModelContext | None = None
 
 
 class ExtractionResponse(BaseModel):
@@ -224,6 +236,7 @@ class SynthesisRequest(BaseModel):
     scope: ScopeInput
     expert_context: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
+    model_context: ModelContext | None = None
 
 
 class SynthesisResponse(BaseModel):
@@ -247,6 +260,7 @@ class EmbeddingRequest(BaseModel):
     request_id: str
     inputs: list[EmbeddingInput] = Field(min_length=1)
     config: dict[str, Any] = Field(default_factory=dict)
+    model_context: ModelContext | None = None
 
 
 class EmbeddingVector(BaseModel):
@@ -287,6 +301,7 @@ class EnrichmentRequest(BaseModel):
     scope: ScopeInput
     expert_context: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
+    model_context: ModelContext | None = None
 
 
 class EnrichmentResponse(BaseModel):

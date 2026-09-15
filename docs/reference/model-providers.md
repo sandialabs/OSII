@@ -9,8 +9,99 @@ OSII deliberately distinguishes model providers from Processor API services.
 - A **guaranteed local capability** needs neither of those.
 
 Do not register an OpenAI-compatible endpoint or Ollama as a custom Processor endpoint. Connect them
-through **Setup → Model connections**; the bundled bridge supplies the Processor API
-boundary internally.
+through **Setup → Model connections**. Model-backed processors then use OSII's
+OpenAI-compatible **Model Gateway**; provider credentials never enter their
+containers.
+
+## Where configuration lives
+
+Model and tool configuration is workstation state, not library content. It is
+kept outside `.osii` in the operating system's application-data directory:
+
+```text
+config/
+├── models.yml       # connection aliases, model names, and defaults
+├── tools.yml        # processor URLs/images and model bindings
+└── secrets.env      # API keys; never returned by the API
+```
+
+For source development this is `~/Library/Application Support/org.osii.launcher/config`
+on macOS, `%APPDATA%\org.osii.launcher\config` on Windows, and
+`$XDG_CONFIG_HOME/org.osii.launcher` on Linux. Set `OSII_CONFIG_DIR` to use a
+different location. The desktop launcher keeps a separate config directory per
+saved library profile and mounts it into the containers.
+
+`models.yml` names reusable connections such as `base`, `mid`, `top`, and
+`minilm`. `tools.yml` binds a processor capability to one of those aliases.
+Changing a binding takes effect on the next operation; the processor does not
+restart. Both files are re-read when used. If an edit contains invalid YAML,
+OSII keeps the last valid generation and reports the line and column in the
+Setup API.
+
+A practical `models.yml` can mix endpoints by cost or quality. Each key is a
+stable connection name, not a vendor name:
+
+```yaml
+version: 1
+models:
+  base:
+    type: openai-compatible
+    base_url: https://models.example.com/v1
+    api_key_env: OPENAI_BASE_API_KEY
+    model: vendor/small-instruct
+    capabilities: [chat, synthesis]
+  mid:
+    type: openai-compatible
+    base_url: https://models.example.com/v1
+    api_key_env: OPENAI_MID_API_KEY
+    model: vendor/general-instruct
+    capabilities: [chat, synthesis]
+  top:
+    type: openai-compatible
+    base_url: https://premium-models.example.com/v1
+    api_key_env: OPENAI_TOP_API_KEY
+    model: vendor/high-quality-instruct
+    capabilities: [chat, synthesis]
+  minilm:
+    type: ollama-local
+    base_url: http://127.0.0.1:11434
+    model: all-minilm
+    capabilities: [embedding]
+defaults: {chat: base, synthesis: base, embedding: minilm}
+```
+
+The corresponding `tools.yml` states whether a processor is self-contained or
+which connection it may use:
+
+```yaml
+version: 1
+profiles:
+  development:
+    tools:
+      readable-llm-wiki:
+        enabled: true
+        processor_id: toolbox.readable-wiki
+        runtime: {mode: external, endpoint: http://127.0.0.1:8099}
+        model_access: {mode: gateway, bindings: {chat: top}}
+      concept-entity-llm-wiki:
+        enabled: true
+        processor_id: toolbox.concept-entity-wiki
+        runtime: {mode: external, endpoint: http://127.0.0.1:8100}
+        model_access: {mode: gateway, bindings: {chat: mid}}
+      tesseract-opencv:
+        enabled: true
+        processor_id: toolbox.tesseract-opencv
+        runtime: {mode: external, endpoint: http://127.0.0.1:8081}
+        model_access: {mode: none}
+```
+
+You can create and bind all of this in Workbench Setup. The YAML is also a
+deliberately readable power-user interface for review, source-controlled
+deployment templates, and local processor development. Never put key values in
+either YAML file; Setup writes them to `secrets.env` under the declared
+environment-variable names. Setup has separate **Use as default** switches for
+language and embedding connections; adding a high-cost `top` connection does
+not silently make every ordinary chat request use it.
 
 ## Ollama
 
@@ -73,10 +164,10 @@ model,” which is the readiness condition Intake uses. For compatible servers
 that reject OpenAI's optional `encoding_format` field, the bridge retries using
 only the required `model` and `input` fields.
 
-Set `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_EMBEDDING_MODEL`,
-`OPENAI_SYNTHESIS_MODEL`, and `OPENAI_CHAT_MODEL`, or enter the same values in
-Setup. OSII stores only the configured environment-variable name in `.osii`; a
-locally saved value lives in the repository-root `.env`.
+Enter the endpoint, model, and credential in Setup. `models.yml` stores only
+the environment-variable name; a locally saved value lives in `secrets.env`.
+`OPENAI_API_KEY` is the conventional default name. Process environment values
+take precedence over the file.
 
 Extraction remains local through the Python extractor, Apache Tika, Tesseract,
 or a custom Processor API extractor. `make dev` automatically selects the
@@ -105,10 +196,33 @@ prompts and bounds through Processor API descriptors. Saved defaults apply to
 Intake, file actions, and direct enrichment jobs; an explicit request
 configuration overrides them.
 
+## Model Gateway for Toolbox processors
+
+The bridge also exposes the ordinary OpenAI client surface at
+`/v1/chat/completions`, `/v1/embeddings`, and `/v1/models`. Core supplies each
+model-backed processor with a short-lived job token and the gateway URL. The
+token is restricted to that tool, job, capability, connection alias, request
+count, and expiration. Core revokes it as soon as the synchronous processor
+operation returns; its short expiration remains the fallback if the gateway is
+temporarily unreachable during revocation. The gateway translates an alias
+such as `top` to the actual provider model and attaches the provider credential
+itself.
+
+This lets a processor use normal, directly testable code:
+
+```python
+response = client.chat.completions.create(
+    model=model,
+    messages=[{"role": "user", "content": "Create a grounded wiki."}],
+)
+```
+
+The processor receives neither the upstream base URL nor its API key.
+
 ## Secret handling
 
-Provider JSON stores no secret values. In host development, Setup may write a
-credential to the repository-root `.env`, which `.gitignore` excludes. The
+`models.yml` stores no secret values. In host development, Setup may write a
+credential to `secrets.env`. The
 backend and provider bridge reread that file, so no restart is required.
 Process environment values take precedence and cannot be replaced from the UI.
 Managed/container deployments disable file writes. OSII never writes

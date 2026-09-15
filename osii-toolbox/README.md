@@ -107,14 +107,11 @@ Open each service's `/health`, `/v1/descriptor`, and `/docs`, for example
 extraction accuracy; exercise one document in `/docs` or Intake before
 publishing.
 
-In **Setup**, register these as custom **Processor API** endpoints, test them,
-then select the extractor/routing or enrichment you want. Alternatively append
-the URLs to `OSII_PROCESSORS` in the ignored root `.env` and restart OSII:
-
-```dotenv
-# Preserve any existing URLs too; this is an example, not an append operation.
-OSII_PROCESSORS=http://127.0.0.1:8097,http://127.0.0.1:8098,http://127.0.0.1:8099,http://127.0.0.1:8100
-```
+In **Setup → Register running processor**, paste a service URL. OSII reads its
+descriptor and writes the registration to the active `tools.yml` profile. For
+model-backed tools, choose a named connection from `models.yml`; self-contained
+tools require no connection. Developers may edit `tools.yml` directly and the
+Workbench will reflect it without a restart.
 
 Do not mount `.osii` or your document directories into these containers. Core
 sends the selected bytes/text and saves returned artifacts. Container-to-container

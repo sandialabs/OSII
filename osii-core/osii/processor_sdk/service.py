@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
@@ -101,4 +103,84 @@ def create_processor_app(processor: Extractor | Synthesizer | Embedder | Enriche
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    return app
+
+
+def create_openai_processor_app(
+    *,
+    descriptor: ProcessorDescriptor,
+    handler: Callable[..., Any],
+    model_capability: str,
+) -> FastAPI:
+    """Expose a handler that receives a normal ``openai.OpenAI`` client.
+
+    Direct tests can call the same handler with their own client and actual
+    model name. Under OSII, this adapter constructs that client from the
+    request's short-lived Model Gateway context.
+    """
+
+    if model_capability not in {"chat", "embedding"}:
+        raise ValueError("model_capability must be 'chat' or 'embedding'")
+    requirement = descriptor.model_requirements.get(model_capability)
+    if requirement not in {"required", "optional"}:
+        raise ValueError(
+            f"descriptor must declare {model_capability!r} as a model requirement"
+        )
+
+    app = FastAPI(title=descriptor.display_name, version=descriptor.version)
+
+    @app.get("/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.get("/v1/descriptor", response_model=ProcessorDescriptor)
+    def get_descriptor() -> ProcessorDescriptor:
+        return descriptor
+
+    def invoke(request: Any) -> Any:
+        context = request.model_context
+        if context is None or model_capability not in context.bindings:
+            if requirement == "optional":
+                return handler(request, client=None, model="")
+            raise HTTPException(
+                status_code=422,
+                detail=f"This processor requires an OSII {model_capability} model connection.",
+            )
+        try:
+            from openai import OpenAI
+        except ImportError as exc:  # pragma: no cover - packaging guard
+            raise RuntimeError(
+                "Install the processor with the OSII OpenAI extra to use model-backed handlers."
+            ) from exc
+        client = OpenAI(
+            base_url=context.gateway_url.rstrip("/"),
+            api_key=context.token,
+        )
+        try:
+            return handler(
+                request,
+                client=client,
+                model=context.bindings[model_capability],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if descriptor.kind == ProcessorKind.EXTRACTOR:
+        @app.post("/v1/extract", response_model=ExtractionResponse)
+        def extract(request: ExtractionRequest) -> ExtractionResponse:
+            return invoke(request)
+    elif descriptor.kind == ProcessorKind.SYNTHESIZER:
+        @app.post("/v1/synthesize", response_model=SynthesisResponse)
+        def synthesize(request: SynthesisRequest) -> SynthesisResponse:
+            return invoke(request)
+    elif descriptor.kind == ProcessorKind.EMBEDDER:
+        @app.post("/v1/embed", response_model=EmbeddingResponse)
+        def embed(request: EmbeddingRequest) -> EmbeddingResponse:
+            return invoke(request)
+    elif descriptor.kind == ProcessorKind.ENRICHER:
+        @app.post("/v1/enrich", response_model=EnrichmentResponse)
+        def enrich(request: EnrichmentRequest) -> EnrichmentResponse:
+            return invoke(request)
+    else:  # pragma: no cover - ProcessorKind prevents this branch
+        raise ValueError(f"Unsupported processor kind: {descriptor.kind}")
     return app

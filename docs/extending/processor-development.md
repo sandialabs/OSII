@@ -75,6 +75,61 @@ The helper exposes `/health`, `/v1/descriptor`, and the kind-specific operation
 endpoint. See the [Processor API reference](../reference/processor-api/index.md)
 for exact payloads.
 
+## Use a language model without learning an OSII client
+
+Declare the capability in the descriptor and accept a normal OpenAI client in
+the handler. Install the optional dependency with `pip install 'osii[openai]'`.
+
+```python
+from openai import OpenAI
+from osii.processor_sdk import (
+    EnrichmentRequest, EnrichmentResponse, ProcessorDescriptor,
+    ProcessorKind, create_openai_processor_app,
+)
+
+DESCRIPTOR = ProcessorDescriptor(
+    name="my-team.grounded-wiki",
+    version="1.0.0",
+    display_name="Grounded Wiki",
+    description="Creates a cited wiki from extracted text.",
+    kind=ProcessorKind.ENRICHER,
+    model_requirements={"chat": "required"},
+)
+
+def create_wiki(
+    request: EnrichmentRequest, *, client: OpenAI, model: str
+) -> EnrichmentResponse:
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": "Summarize only the supplied source."}],
+    )
+    # Validate and return standard artifacts here.
+    ...
+
+app = create_openai_processor_app(
+    descriptor=DESCRIPTOR,
+    handler=create_wiki,
+    model_capability="chat",
+)
+```
+
+Test that exact function directly with any OpenAI-compatible endpoint:
+
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url=os.environ["OPENAI_BASE_URL"],
+    api_key=os.environ["OPENAI_API_KEY"],
+)
+result = create_wiki(request, client=client, model=os.environ["OPENAI_MODEL"])
+```
+
+When Core invokes it, the SDK constructs the same client against the internal
+Model Gateway using a short-lived token. Self-contained processors use
+`create_processor_app` and install no OpenAI dependency.
+
 ## Expose settings without dashboard code
 
 Setup renders `config_schema` as a generic settings form under **Advanced &
@@ -106,9 +161,10 @@ page region or visually mapping table columns.
 
 ## Register and verify
 
-Register the service base URL under **Setup → Advanced & diagnostics → Custom Processor API services**. **Health** verifies
-liveness. **Test** reads the descriptor, checks that its kind matches the
-registration, and sends a small contract-valid operation request.
+Use **Setup → Advanced & diagnostics → Register running processor** and paste
+only the service base URL. OSII reads the descriptor and shows its kind,
+scopes, outputs, and model requirements. Choose a model connection when one is
+required. **Health** verifies liveness and **Descriptor** checks the contract.
 
 External extractors, synthesizers, embedders, and enrichers use the same
 descriptor, settings, request, and core-owned commit flow.

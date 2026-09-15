@@ -24,6 +24,12 @@ All payloads include `api_version: "v1"` and a caller-generated `request_id`.
 Unknown fields are rejected where the SDK marks models as strict. Services must
 return the same request ID.
 
+A descriptor may declare `model_requirements` for `chat` or `embedding` as
+`required` or `optional`. Core then adds a short-lived `model_context` to the
+operation request. This context points to OSII's OpenAI-compatible Model
+Gateway; it never contains an upstream provider credential. Self-contained
+processors declare no model requirements.
+
 Detailed contracts:
 
 - [Extraction API](extraction.md)

@@ -147,7 +147,7 @@ when you are ready to build the three default OSII images for Podman. These
 commands choose the base image for this build only; they do not permanently
 change your shell or repository configuration.
 
-If the registry requires authentication, run `podman login quay.asdf.xyz`
+If the registry requires authentication, run `podman login quay.corp.example`
 first. Then copy and paste the command for your operating system from the
 repository root.
 
@@ -156,7 +156,7 @@ repository root.
 Normal inherited proxy behavior:
 
 ```bash
-make build OSII_BASE_IMAGE=quay.asdf.xyz/dice/rhel9
+make build OSII_BASE_IMAGE=quay.corp.example/dice/rhel9
 ```
 
 If HTTPS inspection requires local corporate certificates, export only the
@@ -164,7 +164,7 @@ public CA certificates to one PEM bundle outside the repository, then run:
 
 ```bash
 make build \
-  OSII_BASE_IMAGE=quay.asdf.xyz/dice/rhel9 \
+  OSII_BASE_IMAGE=quay.corp.example/dice/rhel9 \
   OSII_CA_BUNDLE=/absolute/path/to/corporate-roots.pem
 ```
 
@@ -173,7 +173,7 @@ HTTP, HTTPS, FTP, or ALL proxy settings:
 
 ```bash
 make build \
-  OSII_BASE_IMAGE=quay.asdf.xyz/dice/rhel9 \
+  OSII_BASE_IMAGE=quay.corp.example/dice/rhel9 \
   OSII_CA_BUNDLE=/absolute/path/to/corporate-roots.pem \
   DISABLE_CONTAINER_PROXIES=true
 ```
@@ -196,7 +196,7 @@ Normal inherited proxy behavior:
 
 ```powershell
 .\scripts\osii.ps1 build `
-  -BaseImage "quay.asdf.xyz/dice/rhel9"
+  -BaseImage "quay.corp.example/dice/rhel9"
 ```
 
 If HTTPS inspection requires local corporate certificates, export only the
@@ -204,7 +204,7 @@ public CA certificates to one PEM bundle outside the repository, then run:
 
 ```powershell
 .\scripts\osii.ps1 build `
-  -BaseImage "quay.asdf.xyz/dice/rhel9" `
+  -BaseImage "quay.corp.example/dice/rhel9" `
   -CaBundle "C:\secure\corporate-roots.pem"
 ```
 
@@ -212,7 +212,7 @@ Keep corporate certificates but disable inherited container proxies:
 
 ```powershell
 .\scripts\osii.ps1 build `
-  -BaseImage "quay.asdf.xyz/dice/rhel9" `
+  -BaseImage "quay.corp.example/dice/rhel9" `
   -CaBundle "C:\secure\corporate-roots.pem" `
   -DisableContainerProxies
 ```
@@ -260,6 +260,21 @@ keep the PEM under the repository root, use the ignored `.osii-certs/` folder.
 | Run packaged deployment images instead of editable source | [Publish and run images](docs/operations/publishing-images.md) |
 | Deploy or publish optional dataset and embedding tools, or inspect bundled OCR | [Toolbox: deployment and Quay commands](osii-toolbox/README.md) |
 | Find a REST route or schema | [REST API overview](docs/reference/api/index.md) and [OpenAPI schema](osii-core/docs/api/openapi.yaml) |
+
+## Launcher versus Workbench Setup
+
+The desktop **launcher** owns workstation concerns: the document/shared-drive
+folder, Quay release, optional Toolbox images, and starting or stopping the
+container stack. **Workbench Setup** owns processing choices: model endpoints,
+API keys, default models, running processor URLs, and which model connection a
+model-backed tool may use.
+
+That configuration is kept outside the library in the platform application-data
+directory as `models.yml`, `tools.yml`, and write-only `secrets.env`. It is not
+part of `.osii`, so sharing a library never shares credentials or workstation
+service addresses. Developers running `make dev` use the same files; manual
+YAML edits appear in Setup without restarting OSII. See
+[model connections and the Model Gateway](docs/reference/model-providers.md).
 
 ## How this repository is organized
 

@@ -91,8 +91,17 @@ def test_service_plan_uses_nested_components_without_concurrent_uv_sync():
     )
     assert by_name["ocr"].port == 8080
     for service in services:
-        if service.command[0] == "uv":
+        if service.command[0] == "uv" and service.start_automatically:
             assert "--no-sync" in service.command
+    assert by_name["readable-wiki"].start_automatically is False
+    assert by_name["readable-wiki"].working_directory == (
+        ROOT / "osii-toolbox" / "llm-wiki-enrichers"
+    )
+    assert by_name["concept-entity-wiki"].port == 8100
+    assert by_name["tesseract-opencv"].port == 8081
+    assert by_name["tesseract-opencv"].working_directory == (
+        ROOT / "osii-toolbox" / "osii-tesseract"
+    )
 
 
 def test_host_environment_uses_shared_python_default(monkeypatch):

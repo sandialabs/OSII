@@ -26,7 +26,7 @@ deployments run the same contracts as separate containers.
 
 The native extractor reads existing source text and cannot OCR a scanned PDF.
 Select `local.tesseract-page-ocr` for those files. It returns one segment per
-page; the optional `toolchest.tesseract-opencv` processor adds experimental
+page; the optional `toolbox.tesseract-opencv` processor adds experimental
 region detection and bounding boxes. Neither processor writes `.osii`: only
 Core validates and commits results.
 

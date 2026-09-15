@@ -76,10 +76,10 @@ Host Python 3.12 dependencies live in the ignored `osii-env/` directory. OSII us
 that visible name because current macOS Python releases can skip editable
 package path files beneath a hidden `.venv` directory.
 
-When `OPENAI_BASE_URL` is set in `.env`, normal `make dev` prefers that
-OpenAI-compatible endpoint. Otherwise it uses an available separately installed
-Ollama service. **OSII does not install or launch Ollama:** manage the separate
-application yourself when you use it, then open it or run `ollama serve`. In
+Normal `make dev` reads model connections from the platform application-data
+`config/models.yml` file. Add an OpenAI-compatible endpoint from **Setup**, or
+use a separately installed Ollama service. **OSII does not install or launch
+Ollama:** manage the separate application yourself when you use it, then open it or run `ollama serve`. In
 **Setup → Model connections**, OSII queries `/api/tags` and shows
 the installed models beside the endpoint configuration. The two approved US
 starter models are:
@@ -150,7 +150,7 @@ recovery confusing. Container deployments report capability health but disable
 local lifecycle controls.
 
 For host development, **Setup → AI model connections** can save an API key in the
-repository-root `.env`. The file is plaintext and excluded by `.gitignore`; it
+platform application-data `config/secrets.env`. The file is plaintext and kept outside the repository; it
 must not be copied or shared. Only the key's environment-variable name enters
 `.osii`. The backend and model-provider bridge reread the file as needed.
 Process environment values take precedence, and file writes are disabled in
@@ -232,7 +232,7 @@ only failed items and preserves files that already completed.
 
 LLM wiki generation is not implemented in Core. Start one or both optional
 wiki enrichers from `osii-toolbox`, register their Processor API endpoints in
-Setup, and select a model-backed synthesizer. Generate a wiki from a document,
+Setup, and assign a chat-model connection. Generate a wiki from a document,
 folder, collection, or the whole library. The operation runs in the background,
 records the processor and model provenance, and never substitutes the
 extractive preview while labeling the result as an LLM wiki. See the
@@ -243,11 +243,11 @@ lemmatized noun/adjective 2-, 3-, and 4-grams and a grounded list of named
 entity candidates. Both use standard Processor API artifact formats; see
 [Example keyword and entity enrichments](../tutorials/example-enrichments.md).
 
-When `OPENAI_BASE_URL` is configured, `make dev` registers OSII's HTTP-only
-OpenAI-compatible adapter for embeddings, synthesis, and chat. Extraction
-remains local through native Python, Tika, Tesseract, or a domain Processor API
-service. No provider-specific package is installed; the adapter calls
-documented bearer-authenticated OpenAI-compatible endpoints.
+Model connections created in Setup use OSII's HTTP-only adapter for embeddings,
+synthesis, and chat. Extraction remains local through native Python, Tika,
+Tesseract, or a domain Processor API service. No provider-specific package is
+installed; the adapter calls documented bearer-authenticated OpenAI-compatible
+endpoints.
 
 ## Failure behavior
 

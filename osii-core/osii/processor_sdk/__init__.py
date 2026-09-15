@@ -18,6 +18,7 @@ from .models import (
     KnowledgeGraphArtifactData,
     KnowledgeGraphEdge,
     KnowledgeGraphNode,
+    ModelContext,
     ProvenanceRef,
     ProcessorDescriptor,
     ProcessorKind,
@@ -29,7 +30,14 @@ from .models import (
     TextSegment,
     WikiMarkdownArtifactData,
 )
-from .service import Embedder, Enricher, Extractor, Synthesizer, create_processor_app
+from .service import (
+    Embedder,
+    Enricher,
+    Extractor,
+    Synthesizer,
+    create_openai_processor_app,
+    create_processor_app,
+)
 
 __all__ = [
     "Artifact",
@@ -51,6 +59,7 @@ __all__ = [
     "KnowledgeGraphArtifactData",
     "KnowledgeGraphEdge",
     "KnowledgeGraphNode",
+    "ModelContext",
     "ProcessorClient",
     "ProcessorClientError",
     "ProcessorDescriptor",
@@ -65,4 +74,5 @@ __all__ = [
     "TextSegment",
     "WikiMarkdownArtifactData",
     "create_processor_app",
+    "create_openai_processor_app",
 ]

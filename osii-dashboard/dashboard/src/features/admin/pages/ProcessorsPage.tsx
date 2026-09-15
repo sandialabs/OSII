@@ -15,10 +15,10 @@ import { useNavigate } from "react-router-dom";
 
 import {
   checkModelProvider, checkProcessorEndpoint, controlCapabilityService,
-  createModelProvider, createProcessorEndpoint, deleteModelProviderCredential,
+  createModelProvider, createProcessorEndpoint, deleteModelProvider, deleteModelProviderCredential, deleteProcessorEndpoint,
   getCapabilityServiceLogs, getOllamaPullStatus, getProcessorSettings,
   getSetupSummary, getExtractorRoutes, listModelProviders, listProcessorEndpoints, pullOllamaModel,
-  saveExtractorRoutes, saveModelProviderCredential, saveProcessorSettings,
+  saveExtractorRoutes, saveModelProviderCredential, saveProcessorSettings, updateProcessorEndpoint,
 } from "../../../api/queue";
 import type {
   CapabilityReadiness, ManagedCapabilityService, ModelProvider,
@@ -48,6 +48,7 @@ function blankProvider(type: ModelProvider["type"]): ModelProvider {
       id: "openai-compatible", type, base_url: "", enabled: true,
       priority: 10, embedding_model: "", synthesis_model: "",
       chat_model: "", credential_env: "OPENAI_API_KEY",
+      default_chat: false, default_embedding: false,
     };
   }
   if (type === "ollama") {
@@ -55,12 +56,13 @@ function blankProvider(type: ModelProvider["type"]): ModelProvider {
       id: "ollama-local", type, base_url: "http://127.0.0.1:11434", enabled: true,
       priority: 100, embedding_model: DEFAULT_EMBEDDING_MODEL,
       synthesis_model: DEFAULT_CHAT_MODEL, chat_model: DEFAULT_CHAT_MODEL, credential_env: "",
+      default_chat: false, default_embedding: false,
     };
   }
   return {
     id: "openai-compatible", type, base_url: "https://", enabled: true,
     priority: 50, embedding_model: "", synthesis_model: "", chat_model: "",
-    credential_env: "OSII_MODEL_API_KEY",
+    credential_env: "OSII_MODEL_API_KEY", default_chat: false, default_embedding: false,
   };
 }
 
@@ -134,8 +136,8 @@ export function ProcessorsPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const setup = useQuery({ queryKey: ["admin", "setup"], queryFn: getSetupSummary, refetchInterval: 5000 });
-  const providerData = useQuery({ queryKey: ["admin", "model-providers"], queryFn: listModelProviders });
-  const processors = useQuery({ queryKey: ["admin", "processors"], queryFn: listProcessorEndpoints });
+  const providerData = useQuery({ queryKey: ["admin", "model-providers"], queryFn: listModelProviders, refetchInterval: 5000 });
+  const processors = useQuery({ queryKey: ["admin", "processors"], queryFn: listProcessorEndpoints, refetchInterval: 5000 });
   const settings = useQuery({ queryKey: ["admin", "processor-settings"], queryFn: getProcessorSettings });
   const extractorRoutes = useQuery({ queryKey: ["admin", "extractor-routes"], queryFn: getExtractorRoutes });
 
@@ -143,6 +145,7 @@ export function ProcessorsPage() {
   const notify = (text: string, severity: AlertColor = "success") => setNotice({ text, severity, id: Date.now() });
   const [expandedCapability, setExpandedCapability] = useState<keyof typeof CAPABILITY_COPY | false>(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [providerForm, setProviderForm] = useState<ModelProvider>(blankProvider("openai"));
   const [apiKey, setApiKey] = useState("");
   const [providerHealth, setProviderHealth] = useState<Record<string, ModelProviderHealth>>({});
@@ -154,8 +157,8 @@ export function ProcessorsPage() {
   const [capabilityDraft, setCapabilityDraft] = useState<Record<string, unknown>>({});
   const [routeDraft, setRouteDraft] = useState<ExtractorRoute[] | null>(null);
   const [savingRoutes, setSavingRoutes] = useState(false);
-  const [processorForm, setProcessorForm] = useState<Omit<ProcessorEndpoint, "id"> & { id: string }>({
-    id: "", display_name: "", kind: "extractor", base_url: "http://", enabled: true,
+  const [processorForm, setProcessorForm] = useState({
+    base_url: "http://", model_connection: "",
   });
 
   useEffect(() => {
@@ -180,11 +183,13 @@ export function ProcessorsPage() {
   };
 
   const openNewConnection = (type: ModelProvider["type"]) => {
+    setEditingProviderId(null);
     setProviderForm(blankProvider(type));
     setApiKey("");
     setConnectionOpen(true);
   };
   const openExistingConnection = (provider: ModelProvider) => {
+    setEditingProviderId(provider.id);
     setProviderForm(provider);
     setApiKey("");
     setConnectionOpen(true);
@@ -241,6 +246,17 @@ export function ProcessorsPage() {
       await refreshSetup();
     } catch (error) {
       notify(error instanceof Error ? error.message : "Could not remove the saved key.", "error");
+    }
+  };
+
+  const removeConnection = async (provider: ModelProvider) => {
+    if (!window.confirm(`Remove model connection “${provider.id}”? Existing semantic indexes remain on disk but cannot be extended with this connection.`)) return;
+    try {
+      await deleteModelProvider(provider.id);
+      notify(`${provider.id} was removed.`);
+      await refreshSetup();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not remove the model connection.", "error");
     }
   };
 
@@ -328,11 +344,31 @@ export function ProcessorsPage() {
     event.preventDefault();
     try {
       await createProcessorEndpoint(processorForm);
-      setProcessorForm({ id: "", display_name: "", kind: "extractor", base_url: "http://", enabled: true });
-      notify("Custom processing service added.");
+      setProcessorForm({ base_url: "http://", model_connection: "" });
+      notify("Running processor discovered and registered.");
       await queryClient.invalidateQueries({ queryKey: ["admin", "processors"] });
     } catch (error) {
       notify(error instanceof Error ? error.message : "Could not add the service.", "error");
+    }
+  };
+
+  const removeProcessor = async (processor: ProcessorEndpoint) => {
+    try {
+      await deleteProcessorEndpoint(processor.id);
+      notify(`${processor.display_name}: registration removed.`);
+      await queryClient.invalidateQueries({ queryKey: ["admin", "processors"] });
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not remove the service.", "error");
+    }
+  };
+
+  const changeProcessorBinding = async (processor: ProcessorEndpoint, modelConnection: string) => {
+    try {
+      await updateProcessorEndpoint(processor.id, { model_connection: modelConnection });
+      notify(`${processor.display_name}: model connection changed to ${modelConnection}.`);
+      await queryClient.invalidateQueries({ queryKey: ["admin", "processors"] });
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not change the model connection.", "error");
     }
   };
 
@@ -409,6 +445,7 @@ export function ProcessorsPage() {
   };
 
   const data = setup.data;
+  const configurationErrors = Object.entries(data?.configuration?.errors ?? {});
   const discoveredModels = providerHealth[providerForm.id]?.models ?? [];
 
   const capabilityMethods = (kind: keyof typeof CAPABILITY_COPY): CapabilityReadiness[] => {
@@ -531,6 +568,7 @@ export function ProcessorsPage() {
 
     {!connectionOpen && !serviceLogs ? renderNotice() : null}
     {setup.isError ? <Alert severity="error"><strong>OSII&apos;s backend is not responding.</strong> Keep the development launcher running and refresh this page.</Alert> : null}
+    {configurationErrors.map(([file, detail]) => <Alert key={file} severity="error"><strong>{file}.yml was not loaded.</strong> {detail} OSII is continuing with the last valid configuration.</Alert>)}
 
     <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, background: "linear-gradient(115deg, rgba(102,206,227,0.16), rgba(255,255,255,0.9))", borderColor: data?.overall_status === "action_required" ? "error.main" : "rgba(0,95,114,0.18)" }}>
       <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1.5} alignItems={{ md: "center" }}>
@@ -552,7 +590,7 @@ export function ProcessorsPage() {
         <Stack spacing={0.2}><Typography fontWeight={700}>AI model connections</Typography><Typography variant="body2" color="text.secondary">Use a shared endpoint or Ollama on this computer for chat, synthesis, and semantic search.</Typography></Stack>
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap><Button variant="contained" color="secondary" onClick={() => openNewConnection("openai")}>Add OpenAI-compatible</Button><Button variant="outlined" color="secondary" onClick={() => openNewConnection("ollama")}>Use Ollama</Button></Stack>
       </Stack>
-      {(data?.providers ?? []).filter((provider) => provider.enabled).map((provider) => <Stack key={provider.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1} alignItems={{ sm: "center" }}><Stack><Typography variant="body2" fontWeight={700}>{provider.type === "ollama" ? "Ollama" : "OpenAI-compatible"} · {provider.id}</Typography><Typography variant="caption" color="text.secondary">{provider.embedding_model ? `Embedding: ${provider.embedding_model}` : "Embedding: not selected"} · {provider.synthesis_model ? `Synthesis: ${provider.synthesis_model}` : "Synthesis: not selected"}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => openExistingConnection(provider)}>Configure</Button><Button size="small" onClick={() => void checkConnection(provider)}>Test</Button></Stack></Stack>)}
+      {(data?.providers ?? []).filter((provider) => provider.enabled).map((provider) => <Stack key={provider.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1} alignItems={{ sm: "center" }}><Stack><Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap><Typography variant="body2" fontWeight={700}>{provider.type === "ollama" ? "Ollama" : "OpenAI-compatible"} · {provider.id}</Typography>{provider.default_chat ? <Chip size="small" label="Default language" /> : null}{provider.default_embedding ? <Chip size="small" label="Default embedding" /> : null}</Stack><Typography variant="caption" color="text.secondary">{provider.embedding_model ? `Embedding: ${provider.embedding_model}` : "Embedding: not selected"} · {provider.synthesis_model ? `Synthesis: ${provider.synthesis_model}` : "Synthesis: not selected"}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => openExistingConnection(provider)}>Configure</Button><Button size="small" onClick={() => void checkConnection(provider)}>Test</Button></Stack></Stack>)}
     </Stack></Paper>
 
     <Stack spacing={1.25}>
@@ -574,13 +612,18 @@ export function ProcessorsPage() {
 
         <Accordion variant="outlined" disableGutters><AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>AI connections</Typography></AccordionSummary><AccordionDetails><Stack spacing={1.25}>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1}><Button variant="outlined" onClick={() => openNewConnection("openai")}>Add OpenAI-compatible</Button><Button variant="outlined" onClick={() => openNewConnection("ollama")}>Add Ollama</Button></Stack>
-          {(data?.providers ?? []).map((provider) => <Paper key={provider.id} variant="outlined" sx={{ p: 1.5 }}><Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}><Stack><Typography variant="body2" fontWeight={700}>{provider.id}</Typography><Typography variant="caption" color="text.secondary">{provider.base_url} · priority {provider.priority} · {provider.enabled ? "enabled" : "disabled"}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => openExistingConnection(provider)}>Edit</Button><Button size="small" onClick={() => void checkConnection(provider)}>Test</Button>{provider.credential_present && provider.credential_source === "repo_env" ? <Button size="small" color="error" onClick={() => void forgetCredential(provider)}>Forget key</Button> : null}</Stack></Stack></Paper>)}
+          {(data?.providers ?? []).map((provider) => <Paper key={provider.id} variant="outlined" sx={{ p: 1.5 }}><Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}><Stack><Typography variant="body2" fontWeight={700}>{provider.id}</Typography><Typography variant="caption" color="text.secondary">{provider.base_url} · priority {provider.priority} · {provider.enabled ? "enabled" : "disabled"}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => openExistingConnection(provider)}>Edit</Button><Button size="small" onClick={() => void checkConnection(provider)}>Test</Button>{provider.credential_present && provider.credential_source === "repo_env" ? <Button size="small" color="error" onClick={() => void forgetCredential(provider)}>Forget key</Button> : null}<Button size="small" color="error" onClick={() => void removeConnection(provider)}>Remove</Button></Stack></Stack></Paper>)}
         </Stack></AccordionDetails></Accordion>
 
         <Accordion variant="outlined" disableGutters><AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>Custom Processor API services</Typography></AccordionSummary><AccordionDetails><Stack spacing={1.5}>
-          <Typography variant="body2" color="text.secondary">Connect an SME&apos;s extractor, synthesizer, embedder, or enricher. Enter its base address; OSII discovers its descriptor and settings.</Typography>
-          <Box component="form" onSubmit={(event) => void addProcessor(event)}><Stack spacing={1}><Stack direction={{ xs: "column", md: "row" }} spacing={1}><TextField size="small" label="ID" required value={processorForm.id} onChange={(event) => setProcessorForm({ ...processorForm, id: event.target.value })} /><TextField size="small" label="Display name" required fullWidth value={processorForm.display_name} onChange={(event) => setProcessorForm({ ...processorForm, display_name: event.target.value })} /><TextField size="small" select label="Kind" value={processorForm.kind} onChange={(event) => setProcessorForm({ ...processorForm, kind: event.target.value as ProcessorEndpoint["kind"] })}>{["extractor", "synthesizer", "embedder", "enricher"].map((kind) => <MenuItem key={kind} value={kind}>{kind}</MenuItem>)}</TextField></Stack><TextField size="small" label="Base URL" required value={processorForm.base_url} onChange={(event) => setProcessorForm({ ...processorForm, base_url: event.target.value })} /><Button type="submit" variant="contained" sx={{ alignSelf: "flex-start" }}>Add service</Button></Stack></Box>
-          {(processors.data?.processors ?? []).map((processor) => <Stack key={processor.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}><Stack><Typography variant="body2" fontWeight={700}>{processor.display_name}</Typography><Typography variant="caption" color="text.secondary">{processor.kind} · {processor.base_url}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => void testProcessor(processor, false)}>Health</Button><Button size="small" variant="outlined" onClick={() => void testProcessor(processor, true)}>Test</Button></Stack></Stack>)}
+          <Typography variant="body2" color="text.secondary">Paste a running service&apos;s base address. OSII reads its descriptor and learns its name, capability, scopes, outputs, and model needs automatically.</Typography>
+          <Box component="form" onSubmit={(event) => void addProcessor(event)}><Stack spacing={1}><TextField size="small" label="Running processor URL" required value={processorForm.base_url} onChange={(event) => setProcessorForm({ ...processorForm, base_url: event.target.value })} helperText="For example, http://127.0.0.1:8099" /><TextField size="small" select label="Language-model connection (when required)" value={processorForm.model_connection} onChange={(event) => setProcessorForm({ ...processorForm, model_connection: event.target.value })}><MenuItem value="">Use the default connection</MenuItem>{(providerData.data?.providers ?? []).filter((provider) => provider.chat_model).map((provider) => <MenuItem key={provider.id} value={provider.id}>{provider.id} · {provider.chat_model}</MenuItem>)}</TextField><Button type="submit" variant="contained" sx={{ alignSelf: "flex-start" }}>Discover and register</Button></Stack></Box>
+          {(processors.data?.processors ?? []).map((processor) => {
+            const binding = processor.model_access?.mode === "gateway" ? Object.values(processor.model_access.bindings ?? {})[0] : null;
+            const languageConnections = (providerData.data?.providers ?? []).filter((provider) => provider.chat_model);
+            const bindingExists = languageConnections.some((provider) => provider.id === binding);
+            return <Stack key={processor.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}><Stack><Typography variant="body2" fontWeight={700}>{processor.display_name}</Typography><Typography variant="caption" color="text.secondary">{processor.kind} · {processor.base_url} · {binding ? `Language model: ${binding}` : "Self-contained"}</Typography>{processor.model_requirements?.chat ? <TextField size="small" select label="Language model" value={binding ?? ""} onChange={(event) => void changeProcessorBinding(processor, event.target.value)} sx={{ mt: 1, minWidth: 240 }}>{binding && !bindingExists ? <MenuItem value={binding}>{binding} · not configured</MenuItem> : null}{languageConnections.map((provider) => <MenuItem key={provider.id} value={provider.id}>{provider.id} · {provider.chat_model}</MenuItem>)}</TextField> : null}</Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => void testProcessor(processor, false)}>Health</Button><Button size="small" variant="outlined" onClick={() => void testProcessor(processor, true)}>Descriptor</Button><Button size="small" color="error" onClick={() => void removeProcessor(processor)}>Remove</Button></Stack></Stack>;
+          })}
         </Stack></AccordionDetails></Accordion>
       </Stack></AccordionDetails>
     </Accordion></Paper>
@@ -590,10 +633,13 @@ export function ProcessorsPage() {
       {connectionOpen && !serviceLogs ? renderNotice() : null}
       <Stack spacing={1.5} sx={{ pt: 0.5 }}>
         <TextField select label="Connection" value={providerForm.type} onChange={(event) => setProviderForm(blankProvider(event.target.value as ModelProvider["type"]))}><MenuItem value="ollama">Ollama on this computer</MenuItem><MenuItem value="openai">OpenAI-compatible endpoint</MenuItem></TextField>
+        <TextField label="Connection name" required disabled={Boolean(editingProviderId)} value={providerForm.id} onChange={(event) => setProviderForm({ ...providerForm, id: event.target.value.trim().toLowerCase() })} helperText="A reusable name such as base, mid, or top. Tools refer to this name, so it stays fixed after creation." />
         <TextField label="Endpoint URL" required value={providerForm.base_url} onChange={(event) => setProviderForm({ ...providerForm, base_url: event.target.value })} helperText={providerForm.type === "ollama" ? "Ollama is installed and started separately. Use its local address here." : "Use the OpenAI-compatible /v1 base address."} />
-        {providerForm.type !== "ollama" ? <TextField type="password" label={providerForm.credential_present ? "Replace saved API key (optional)" : "API key"} value={apiKey} onChange={(event) => setApiKey(event.target.value)} helperText={providerForm.credential_source === "environment" ? "Managed by the process environment; it cannot be replaced here." : "Saved as plaintext in the repository-root .env, which Git ignores."} disabled={providerForm.credential_source === "environment"} /> : <Alert severity="info" icon={false}>Install and start Ollama yourself. OSII can inspect installed models and download the approved starters; use the Ollama CLI for other models and advanced options.</Alert>}
+        {providerForm.type !== "ollama" ? <TextField type="password" label={providerForm.credential_present ? "Replace saved API key (optional)" : "API key"} value={apiKey} onChange={(event) => setApiKey(event.target.value)} helperText={providerForm.credential_source === "environment" ? "Managed by the process environment; it cannot be replaced here." : "Saved locally in config/secrets.env. It is never stored in a library or sent to Toolbox processors."} disabled={providerForm.credential_source === "environment"} /> : <Alert severity="info" icon={false}>Install and start Ollama yourself. OSII can inspect installed models and download the approved starters; use the Ollama CLI for other models and advanced options.</Alert>}
         <TextField label="Language model" value={providerForm.chat_model} onChange={(event) => setProviderForm({ ...providerForm, chat_model: event.target.value, synthesis_model: event.target.value })} helperText="Used for chat, summaries, and wiki generation." inputProps={{ list: "osii-model-options" }} />
+        <FormControlLabel control={<Switch checked={Boolean(providerForm.default_chat)} disabled={!providerForm.chat_model} onChange={(event) => setProviderForm({ ...providerForm, default_chat: event.target.checked })} />} label="Use this connection by default for chat and synthesis" />
         <TextField label="Embedding model" value={providerForm.embedding_model} onChange={(event) => setProviderForm({ ...providerForm, embedding_model: event.target.value })} helperText="Powers semantic search. If this connection has no embedding model, configure one on another connection; BM25 is the keyword fallback." inputProps={{ list: "osii-model-options" }} />
+        <FormControlLabel control={<Switch checked={Boolean(providerForm.default_embedding)} disabled={!providerForm.embedding_model} onChange={(event) => setProviderForm({ ...providerForm, default_embedding: event.target.checked })} />} label="Use this connection by default for semantic embeddings" />
         <datalist id="osii-model-options">{discoveredModels.map((model) => <option key={model} value={model} />)}</datalist>
         {providerHealth[providerForm.id] ? <Alert severity={!providerHealth[providerForm.id].ok || (providerHealth[providerForm.id].capabilities?.embedding?.configured && !providerHealth[providerForm.id].capabilities?.embedding?.ok) ? "error" : "success"}>
           {!providerHealth[providerForm.id].ok
