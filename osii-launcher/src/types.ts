@@ -26,7 +26,6 @@ export interface ProfileDraft {
 
 export interface Profile extends ProfileDraft {
   id: string;
-  apiKeyPresent: boolean;
 }
 
 export interface SourceCheck {

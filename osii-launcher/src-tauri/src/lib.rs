@@ -23,7 +23,6 @@ const BASELINE_SERVICES: &[&str] = &[
     "worker",
     "dashboard",
 ];
-const OPENAI_KEYRING_SERVICE: &str = "org.osii.launcher.openai";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,7 +67,6 @@ struct Profile {
     openai_base_url: String,
     openai_embedding_model: String,
     openai_chat_model: String,
-    api_key_present: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -444,25 +442,9 @@ fn canonical_source(source_dir: &str) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
-fn keyring_entry(profile_id: &str) -> Result<keyring::Entry, String> {
-    validate_profile_id(profile_id)?;
-    keyring::Entry::new(OPENAI_KEYRING_SERVICE, profile_id)
-        .map_err(|error| format!("Could not access the operating-system credential store: {error}"))
-}
-
-fn key_is_present(profile_id: &str) -> bool {
-    keyring_entry(profile_id)
-        .and_then(|entry| entry.get_password().map_err(|error| error.to_string()))
-        .is_ok_and(|value| !value.is_empty())
-}
-
 #[tauri::command]
 fn list_profiles(app: AppHandle) -> Result<Vec<Profile>, String> {
-    let mut profiles = read_profiles(&app)?;
-    for profile in &mut profiles {
-        profile.api_key_present = key_is_present(&profile.id);
-    }
-    Ok(profiles)
+    read_profiles(&app)
 }
 
 #[tauri::command]
@@ -506,7 +488,6 @@ fn save_profile(
         openai_base_url,
         openai_embedding_model: draft.openai_embedding_model.trim().to_string(),
         openai_chat_model: draft.openai_chat_model.trim().to_string(),
-        api_key_present: key_is_present(&id),
     };
     let mut profiles = read_profiles(&app)?;
     profiles.retain(|item| item.id != id);
@@ -517,39 +498,14 @@ fn save_profile(
     Ok(profile)
 }
 
-#[tauri::command]
-fn store_api_key(profile_id: String, api_key: String) -> Result<(), String> {
-    if api_key.is_empty() || api_key.contains(['\n', '\r']) {
-        return Err("The API key is empty or contains a line break.".to_string());
-    }
-    keyring_entry(&profile_id)?
-        .set_password(&api_key)
-        .map_err(|error| format!("Could not store the API key securely: {error}"))
-}
-
-#[tauri::command]
-fn forget_api_key(profile_id: String) -> Result<(), String> {
-    match keyring_entry(&profile_id)?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(error) => Err(format!("Could not remove the stored API key: {error}")),
-    }
-}
-
-fn discovery_api_key(api_key: &str, profile_id: Option<&str>) -> Result<Option<String>, String> {
+fn discovery_api_key(api_key: &str) -> Result<String, String> {
     if api_key.contains(['\n', '\r']) {
         return Err("The API key contains a line break.".to_string());
     }
-    if !api_key.is_empty() {
-        return Ok(Some(api_key.to_string()));
+    if api_key.is_empty() {
+        return Err("Paste the model API key before checking available models.".to_string());
     }
-    let Some(profile_id) = profile_id else {
-        return Ok(None);
-    };
-    match keyring_entry(profile_id)?.get_password() {
-        Ok(value) if !value.is_empty() => Ok(Some(value)),
-        Ok(_) | Err(keyring::Error::NoEntry) => Ok(None),
-        Err(error) => Err(format!("Could not read the stored API key: {error}")),
-    }
+    Ok(api_key.to_string())
 }
 
 fn model_ids(payload: &Value) -> Vec<String> {
@@ -598,18 +554,12 @@ fn model_http_client() -> Result<reqwest::blocking::Client, String> {
 }
 
 #[tauri::command]
-fn discover_models(
-    base_url: String,
-    api_key: String,
-    profile_id: Option<String>,
-) -> Result<ModelDiscovery, String> {
+fn discover_models(base_url: String, api_key: String) -> Result<ModelDiscovery, String> {
     let base_url = validated_model_base_url(&base_url)?;
-    let key = discovery_api_key(&api_key, profile_id.as_deref())?;
-    let mut request = model_http_client()?.get(format!("{base_url}/models"));
-    if let Some(key) = key {
-        request = request.bearer_auth(key);
-    }
-    let response = request
+    let key = discovery_api_key(&api_key)?;
+    let response = model_http_client()?
+        .get(format!("{base_url}/models"))
+        .bearer_auth(key)
         .send()
         .map_err(|error| format!("Could not reach the model API: {error}"))?;
     let status = response.status();
@@ -911,17 +861,21 @@ fn profile_images(profile: &Profile) -> [String; 3] {
     ]
 }
 
-fn create_runtime_secret(profile: &Profile) -> Result<bool, String> {
-    let key = match keyring_entry(&profile.id)?.get_password() {
-        Ok(value) if !value.is_empty() => value,
-        Ok(_) | Err(keyring::Error::NoEntry) => return Ok(false),
-        Err(error) => return Err(format!("Could not read the stored API key: {error}")),
-    };
+fn create_runtime_secret(profile: &Profile, api_key: &str) -> Result<bool, String> {
+    if profile.openai_base_url.is_empty() {
+        return Ok(false);
+    }
+    if api_key.is_empty() {
+        return Err("Paste the model API key before starting OSII.".to_string());
+    }
+    if api_key.contains(['\n', '\r']) {
+        return Err("The API key contains a line break.".to_string());
+    }
     let name = secret_name(&profile.id)?;
     run_with_stdin(
         "podman",
         &["secret", "create", "--replace", &name, "-"],
-        &key,
+        api_key,
     )?;
     Ok(true)
 }
@@ -991,7 +945,7 @@ fn stop_profile_inner(app: &AppHandle, profile_id: &str) -> Result<DeploymentSta
     let provider =
         compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
     let compose = compose_file(app)?;
-    let override_file = profile_override(app, &profile, key_is_present(profile_id))?;
+    let override_file = profile_override(app, &profile, false)?;
     compose_checked(
         provider,
         &compose,
@@ -1019,7 +973,11 @@ fn stop_profile(app: AppHandle, profile_id: String) -> Result<DeploymentStatus, 
 }
 
 #[tauri::command]
-fn start_profile(app: AppHandle, profile_id: String) -> Result<DeploymentStatus, String> {
+fn start_profile(
+    app: AppHandle,
+    profile_id: String,
+    api_key: String,
+) -> Result<DeploymentStatus, String> {
     let status = podman_status();
     if !status.engine_ready || !status.compose_ready {
         return Err(status.message);
@@ -1036,7 +994,7 @@ fn start_profile(app: AppHandle, profile_id: String) -> Result<DeploymentStatus,
     for image in profile_images(&profile) {
         run_checked("podman", &["pull", &image])?;
     }
-    let has_key = create_runtime_secret(&profile)?;
+    let has_key = create_runtime_secret(&profile, &api_key)?;
     let override_file = profile_override(&app, &profile, has_key)?;
     let compose = compose_file(&app)?;
     let provider =
@@ -1071,7 +1029,7 @@ fn start_profile(app: AppHandle, profile_id: String) -> Result<DeploymentStatus,
 fn profile_logs(app: AppHandle, profile_id: String) -> Result<String, String> {
     let profile = find_profile(&app, &profile_id)?;
     let compose = compose_file(&app)?;
-    let override_file = profile_override(&app, &profile, key_is_present(&profile_id))?;
+    let override_file = profile_override(&app, &profile, false)?;
     let provider =
         compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
     let output = compose_checked(
@@ -1160,8 +1118,6 @@ pub fn run() {
             discover_models,
             list_profiles,
             save_profile,
-            store_api_key,
-            forget_api_key,
             start_profile,
             stop_profile,
             deployment_status,

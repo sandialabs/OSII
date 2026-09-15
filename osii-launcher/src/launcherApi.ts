@@ -23,19 +23,16 @@ export const launcherApi = {
   },
   validateSource: (sourceDir: string, probeImage: string) =>
     invoke<SourceCheck>("validate_source", { sourceDir, probeImage }),
-  discoverModels: (baseUrl: string, apiKey: string, profileId?: string) =>
+  discoverModels: (baseUrl: string, apiKey: string) =>
     invoke<ModelDiscovery>("discover_models", {
       baseUrl,
       apiKey,
-      profileId: profileId ?? null,
     }),
   listProfiles: () => invoke<Profile[]>("list_profiles"),
   saveProfile: (draft: ProfileDraft, profileId?: string) =>
     invoke<Profile>("save_profile", { draft, profileId: profileId ?? null }),
-  storeApiKey: (profileId: string, apiKey: string) =>
-    invoke<void>("store_api_key", { profileId, apiKey }),
-  forgetApiKey: (profileId: string) => invoke<void>("forget_api_key", { profileId }),
-  startProfile: (profileId: string) => invoke<DeploymentStatus>("start_profile", { profileId }),
+  startProfile: (profileId: string, apiKey: string) =>
+    invoke<DeploymentStatus>("start_profile", { profileId, apiKey }),
   stopProfile: (profileId: string) => invoke<DeploymentStatus>("stop_profile", { profileId }),
   deploymentStatus: () => invoke<DeploymentStatus>("deployment_status"),
   logs: (profileId: string) => invoke<string>("profile_logs", { profileId }),

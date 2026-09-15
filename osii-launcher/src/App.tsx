@@ -154,12 +154,6 @@ function App() {
     }
     const saved = await run("Saving library", () => launcherApi.saveProfile(draft, selectedId ?? undefined));
     if (!saved) return;
-    if (apiKey.trim()) {
-      const stored = await run("Storing API key", () => launcherApi.storeApiKey(saved.id, apiKey.trim()));
-      if (stored === null) return;
-      saved.apiKeyPresent = true;
-      setApiKey("");
-    }
     setSelectedId(saved.id);
     setProfiles((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
     setDraft(saved);
@@ -222,9 +216,14 @@ function App() {
       setModelCheckState("failed");
       return;
     }
+    if (!apiKey) {
+      setProblem("Paste the model API key before checking available models.");
+      setModelCheckState("failed");
+      return;
+    }
     setModelCheckState("checking");
     const result = await run("Checking model API", () =>
-      launcherApi.discoverModels(draft.openaiBaseUrl, apiKey, selectedId ?? undefined),
+      launcherApi.discoverModels(draft.openaiBaseUrl, apiKey),
     );
     if (!result) {
       setModelCheckState("failed");
@@ -250,7 +249,11 @@ function App() {
       setProblem("Save this library before starting OSII.");
       return;
     }
-    const result = await run("Starting OSII", () => launcherApi.startProfile(selectedId));
+    if (selected?.openaiBaseUrl && !apiKey) {
+      setProblem("Paste the model API key before starting OSII.");
+      return;
+    }
+    const result = await run("Starting OSII", () => launcherApi.startProfile(selectedId, apiKey));
     if (result) {
       setDeployment(result);
       setNotice(result.message);
@@ -400,24 +403,18 @@ function App() {
                 <datalist id="available-models">
                   {modelDiscovery?.models.map((model) => <option value={model} key={model} />)}
                 </datalist>
-                <label className="wide">API key<input type="password" value={apiKey} onChange={(event) => {
+                <label className="wide">API key — session only<input type="password" value={apiKey} onChange={(event) => {
                   setApiKey(event.target.value);
                   setModelDiscovery(null);
                   setModelCheckState("idle");
-                }} autoComplete="new-password" placeholder={selected?.apiKeyPresent ? "Stored securely — enter only to replace" : "Optional if the endpoint does not require one"} /></label>
+                }} autoComplete="off" placeholder="Paste again each time you open the launcher" /></label>
               </div>
               <div className="button-row">
-                <button className="secondary" disabled={Boolean(busy) || !draft.openaiBaseUrl.trim()} onClick={() => void discoverModels()}>{busy === "Checking model API" ? "Checking…" : "Find available models"}</button>
+                <button className="secondary" disabled={Boolean(busy) || !draft.openaiBaseUrl.trim() || !apiKey} onClick={() => void discoverModels()}>{busy === "Checking model API" ? "Checking…" : "Find available models"}</button>
                 <button disabled={Boolean(busy)} onClick={() => void save()}>{busy === "Saving library" ? "Saving…" : "Save library"}</button>
-                {selected?.apiKeyPresent && <button className="text-button danger" disabled={Boolean(busy)} onClick={() => void run("Removing API key", async () => {
-                  await launcherApi.forgetApiKey(selected.id);
-                  const updated = { ...selected, apiKeyPresent: false };
-                  setProfiles((current) => current.map((item) => item.id === updated.id ? updated : item));
-                  return true;
-                })}>Forget stored key</button>}
               </div>
               {modelDiscovery && <p className="check-detail ok">{modelDiscovery.message}</p>}
-              {selected?.apiKeyPresent && <p className="secure-note">API key stored securely in the operating-system credential store.</p>}
+              <p className="secure-note">The launcher keeps this key only in memory for the current session. It is not saved in the profile or operating-system credential store.</p>
               {saveAttempted && validation && <div className="form-error" role="alert"><strong>Library not saved.</strong> {validation}</div>}
             </div>
           </section>

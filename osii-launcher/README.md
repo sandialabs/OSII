@@ -8,8 +8,8 @@ The launcher is a Tauri 2 application with a React interface and a deliberately
 small Rust host boundary. It checks Podman, prepares the Podman machine on
 Windows and macOS, authenticates Podman to Quay without retaining the registry
 password, validates a selected source folder from inside a container, stores
-model API keys in the operating-system credential store, and starts the fixed
-OSII Compose bundle for one saved library profile.
+non-secret library profiles, and starts the fixed OSII Compose bundle. Model API
+keys are pasted for each launcher session and are never persisted by OSII.
 
 ## Security and ownership boundary
 
@@ -20,9 +20,10 @@ socket, and optional processors must not mount the user's source or OSII state.
 
 Frontend code can invoke only registered, typed launcher commands. There is no
 generic shell command. Quay credentials are passed to `podman login` on standard
-input and then owned by Podman. Model API keys are stored under a profile ID in
-Keychain, Windows Credential Manager, or Linux Secret Service and are never
-returned to the webview.
+input and then owned by Podman. Model API keys remain only in application memory
+for the current session. When OSII starts, the key is passed on standard input
+to a temporary Podman secret mounted into the relevant containers; that runtime
+secret is removed when OSII stops.
 
 ## Development
 
@@ -67,15 +68,21 @@ rejects `latest`.
 Run `npm run tauri -- dev` to test those defaults or
 `npm run tauri -- build` to compile them into the installer. `VITE_` values are
 visible in the compiled frontend, so they are suitable only for non-secret
-defaults. **Never put an API key or registry password in this file.** Users enter
-those in the launcher; model keys go to the operating-system credential store
-and Quay credentials go directly to Podman.
+defaults. **Never put an API key or registry password in this file.** Users paste
+the model key each time they open the launcher, and Quay credentials go directly
+to Podman.
 
 In step 3, **Find available models** calls the endpoint's standard `/models`
-route. It uses the API key currently entered in the form, or the stored key when
-editing an existing profile. The launcher suggests a model containing `MiniLM`
-for embeddings and `Gemma 4` for chat. Exact corporate defaults in `.env.local`
-take precedence when supplied.
+route using the API key currently entered in the form. The launcher suggests a
+model containing `MiniLM` for embeddings and `Gemma 4` for chat. Exact corporate
+defaults in `.env.local` take precedence when supplied. The key remains available
+only until the launcher exits, so users paste it again for the next session.
+
+Launcher builds from before this policy change may have created Keychain entries
+with service name `org.osii.launcher.openai`. The current launcher neither reads
+nor deletes them. A user who tested an earlier build can remove those entries in
+macOS Keychain Access; removing them is optional and does not affect saved OSII
+profiles.
 
 If the corporate model endpoint needs a private certificate authority during
 development, start the launcher from a terminal with `OSII_CA_BUNDLE` set to the
