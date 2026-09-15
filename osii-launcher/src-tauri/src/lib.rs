@@ -51,9 +51,6 @@ struct ProfileDraft {
     source_dir: String,
     image_prefix: String,
     image_tag: String,
-    openai_base_url: String,
-    openai_embedding_model: String,
-    openai_chat_model: String,
     #[serde(default)]
     readable_wiki: bool,
     #[serde(default)]
@@ -70,9 +67,6 @@ struct Profile {
     source_dir: String,
     image_prefix: String,
     image_tag: String,
-    openai_base_url: String,
-    openai_embedding_model: String,
-    openai_chat_model: String,
     #[serde(default)]
     readable_wiki: bool,
     #[serde(default)]
@@ -87,13 +81,6 @@ struct SourceCheck {
     ok: bool,
     canonical_path: String,
     container_visible: bool,
-    message: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ModelDiscovery {
-    models: Vec<String>,
     message: String,
 }
 
@@ -431,9 +418,6 @@ fn same_profile_settings(left: &Profile, right: &Profile) -> bool {
         && left.source_dir == right.source_dir
         && left.image_prefix == right.image_prefix
         && left.image_tag == right.image_tag
-        && left.openai_base_url == right.openai_base_url
-        && left.openai_embedding_model == right.openai_embedding_model
-        && left.openai_chat_model == right.openai_chat_model
         && left.readable_wiki == right.readable_wiki
         && left.concept_entity_wiki == right.concept_entity_wiki
         && left.tesseract_open_cv == right.tesseract_open_cv
@@ -464,24 +448,6 @@ fn validate_image_part(value: &str, label: &str, allow_slash: bool) -> Result<St
     } else {
         Ok(value.to_string())
     }
-}
-
-fn validated_model_base_url(value: &str) -> Result<String, String> {
-    let value = value.trim().trim_end_matches('/');
-    let parsed = reqwest::Url::parse(value)
-        .map_err(|_| "Enter a valid OpenAI-compatible HTTP or HTTPS endpoint.".to_string())?;
-    if !matches!(parsed.scheme(), "http" | "https")
-        || !parsed.username().is_empty()
-        || parsed.password().is_some()
-        || parsed.query().is_some()
-        || parsed.fragment().is_some()
-    {
-        return Err(
-            "Enter an HTTP or HTTPS endpoint without credentials, a query, or a fragment."
-                .to_string(),
-        );
-    }
-    Ok(value.to_string())
 }
 
 fn is_network_source_path(source_dir: &str) -> bool {
@@ -585,20 +551,6 @@ fn save_profile(
     if image_tag.eq_ignore_ascii_case("latest") {
         return Err("Choose a pinned release tag instead of latest.".to_string());
     }
-    let openai_base_url = if draft.openai_base_url.trim().is_empty() {
-        String::new()
-    } else {
-        let value = validated_model_base_url(&draft.openai_base_url)?;
-        if draft.openai_embedding_model.trim().is_empty() {
-            return Err(
-                "Find or select an embedding model for the corporate endpoint.".to_string(),
-            );
-        }
-        if draft.openai_chat_model.trim().is_empty() {
-            return Err("Find or select a chat model for the corporate endpoint.".to_string());
-        }
-        value
-    };
     let mut profiles = deduplicate_profiles(read_profiles(&app)?);
     let id = match profile_id {
         Some(id) => id,
@@ -615,9 +567,6 @@ fn save_profile(
         source_dir,
         image_prefix,
         image_tag,
-        openai_base_url,
-        openai_embedding_model: draft.openai_embedding_model.trim().to_string(),
-        openai_chat_model: draft.openai_chat_model.trim().to_string(),
         readable_wiki: draft.readable_wiki,
         concept_entity_wiki: draft.concept_entity_wiki,
         tesseract_open_cv: draft.tesseract_open_cv,
@@ -645,91 +594,6 @@ fn delete_profile(app: AppHandle, profile_id: String) -> Result<Vec<Profile>, St
     profiles = deduplicate_profiles(profiles);
     write_profiles(&app, &profiles)?;
     Ok(profiles)
-}
-
-fn discovery_api_key(api_key: &str) -> Result<String, String> {
-    if api_key.contains(['\n', '\r']) {
-        return Err("The API key contains a line break.".to_string());
-    }
-    if api_key.is_empty() {
-        return Err("Paste the model API key before checking available models.".to_string());
-    }
-    Ok(api_key.to_string())
-}
-
-fn model_ids(payload: &Value) -> Vec<String> {
-    let rows = payload
-        .get("data")
-        .and_then(Value::as_array)
-        .or_else(|| payload.get("models").and_then(Value::as_array));
-    let mut models: Vec<String> = rows
-        .into_iter()
-        .flatten()
-        .filter_map(|row| {
-            row.get("id")
-                .or_else(|| row.get("name"))
-                .or_else(|| row.get("model"))
-                .and_then(Value::as_str)
-        })
-        .map(str::trim)
-        .filter(|value| !value.is_empty() && value.len() <= 256)
-        .take(500)
-        .map(str::to_string)
-        .collect();
-    models.sort_unstable();
-    models.dedup();
-    models
-}
-
-fn model_http_client() -> Result<reqwest::blocking::Client, String> {
-    let mut builder = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(20))
-        .user_agent("OSII Launcher/0.1");
-    if let Some(path) = env::var_os("OSII_CA_BUNDLE").filter(|value| !value.is_empty()) {
-        let pem =
-            fs::read(&path).map_err(|error| format!("Could not read OSII_CA_BUNDLE: {error}"))?;
-        let certificates = reqwest::Certificate::from_pem_bundle(&pem)
-            .map_err(|error| format!("OSII_CA_BUNDLE is not a valid PEM bundle: {error}"))?;
-        if certificates.is_empty() {
-            return Err("OSII_CA_BUNDLE contains no PEM certificates.".to_string());
-        }
-        for certificate in certificates {
-            builder = builder.add_root_certificate(certificate);
-        }
-    }
-    builder
-        .build()
-        .map_err(|error| format!("Could not prepare the model API connection: {error}"))
-}
-
-#[tauri::command]
-fn discover_models(base_url: String, api_key: String) -> Result<ModelDiscovery, String> {
-    let base_url = validated_model_base_url(&base_url)?;
-    let key = discovery_api_key(&api_key)?;
-    let response = model_http_client()?
-        .get(format!("{base_url}/models"))
-        .bearer_auth(key)
-        .send()
-        .map_err(|error| format!("Could not reach the model API: {error}"))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(if matches!(status.as_u16(), 401 | 403) {
-            format!("The model API returned {status}. Check the API key and try again.")
-        } else {
-            format!("The model API returned {status} from its /models endpoint.")
-        });
-    }
-    let payload: Value = response
-        .json()
-        .map_err(|error| format!("The model API returned invalid JSON: {error}"))?;
-    let models = model_ids(&payload);
-    if models.is_empty() {
-        return Err("The model API returned no named models.".to_string());
-    }
-    Ok(ModelDiscovery {
-        message: format!("Found {} available models.", models.len()),
-        models,
-    })
 }
 
 #[tauri::command]
@@ -861,14 +725,6 @@ fn project_name(profile_id: &str) -> Result<String, String> {
     ))
 }
 
-fn secret_name(profile_id: &str) -> Result<String, String> {
-    validate_profile_id(profile_id)?;
-    Ok(format!(
-        "osii_openai_{}",
-        profile_id.replace('-', "").to_lowercase()
-    ))
-}
-
 fn compose_command(
     provider: ComposeProvider,
     compose: &Path,
@@ -965,7 +821,6 @@ fn profile_override_document(
     profile: &Profile,
     data_dir: &Path,
     config_dir: &Path,
-    _has_key: bool,
 ) -> Result<Value, String> {
     let data_mount = format!("{}:/data", data_dir.to_string_lossy());
     let data_mount_read_only = format!("{}:/data:ro", data_dir.to_string_lossy());
@@ -976,7 +831,6 @@ fn profile_override_document(
     shared_environment.insert("OSII_CONFIG_DIR".into(), json!("/config"));
     shared_environment.insert("OSII_ENV_FILE".into(), json!("/config/secrets.env"));
     shared_environment.insert("OSII_ACTIVE_PROFILE".into(), json!("development"));
-    shared_environment.insert("OSII_ALLOW_LOCAL_CONFIG_WRITES".into(), json!("true"));
     shared_environment.insert("OSII_MODEL_GATEWAY_PUBLIC_URL".into(), json!("http://model-provider-bridge:8095/v1"));
     shared_environment.insert("OSII_MODEL_GATEWAY_SECRET".into(), json!(format!("launcher-{}", profile.id)));
 
@@ -990,7 +844,14 @@ fn profile_override_document(
         service.insert("volumes".into(), json!([mount, config]));
         service.insert(
             "environment".into(),
-            Value::Object(shared_environment.clone()),
+            Value::Object({
+                let mut environment = shared_environment.clone();
+                environment.insert(
+                    "OSII_ALLOW_LOCAL_CONFIG_WRITES".into(),
+                    json!(if name == "api" { "true" } else { "false" }),
+                );
+                environment
+            }),
         );
         services.insert(name.into(), Value::Object(service));
     }
@@ -1003,7 +864,6 @@ fn profile_override_document(
 fn deployment_files(
     app: &AppHandle,
     profile: &Profile,
-    has_key: bool,
 ) -> Result<DeploymentFiles, String> {
     let config_dir = profile_config_dir(app, &profile.id)?;
     let data_dir = profile_data_dir(app, &profile.id)?;
@@ -1019,14 +879,50 @@ fn deployment_files(
             "version: 1\nmodels:\n  base:\n    type: ollama-local\n    base_url: http://host.containers.internal:11434\n    model: llama3.2:1b\n    capabilities: [chat, synthesis]\n  minilm:\n    type: ollama-local\n    base_url: http://host.containers.internal:11434\n    model: all-minilm\n    capabilities: [embedding]\ndefaults:\n  chat: base\n  synthesis: base\n  embedding: minilm\n",
         ).map_err(|error| format!("Could not create model configuration: {error}"))?;
     }
-    let tools = format!(
-        "version: 1\nprofiles:\n  development:\n    tools:\n      readable-llm-wiki:\n        enabled: {}\n        processor_id: toolbox.readable-wiki\n        display_name: Readable LLM Wiki\n        kind: enricher\n        runtime: {{mode: external, endpoint: http://readable-wiki-enricher:8099}}\n        model_access: {{mode: gateway, bindings: {{chat: base}}}}\n      concept-entity-llm-wiki:\n        enabled: {}\n        processor_id: toolbox.concept-entity-wiki\n        display_name: Concept and Entity LLM Wiki\n        kind: enricher\n        runtime: {{mode: external, endpoint: http://concept-entity-wiki-enricher:8100}}\n        model_access: {{mode: gateway, bindings: {{chat: base}}}}\n      tesseract-opencv:\n        enabled: {}\n        processor_id: toolbox.tesseract-opencv\n        aliases: [toolchest.tesseract-opencv]\n        display_name: Tesseract OCR with OpenCV regions\n        kind: extractor\n        runtime: {{mode: external, endpoint: http://tesseract-opencv:8080}}\n        model_access: {{mode: none}}\n",
-        profile.readable_wiki,
-        profile.concept_entity_wiki,
-        profile.tesseract_open_cv,
-    );
-    fs::write(config_dir.join("tools.yml"), tools)
-        .map_err(|error| format!("Could not save tool configuration: {error}"))?;
+    let tools_path = config_dir.join("tools.yml");
+    if !tools_path.exists() {
+        let tools = r#"version: 1
+profiles:
+  development:
+    tools:
+      readable-llm-wiki:
+        enabled: true
+        processor_id: toolbox.readable-wiki
+        display_name: Readable LLM Wiki
+        kind: enricher
+        model_requirements: {chat: required}
+        capabilities:
+          scope_types: [object, folder, collection, root]
+          output_kinds: [wiki_markdown]
+        runtime: {mode: external, endpoint: http://readable-wiki-enricher:8099}
+        model_access: {mode: gateway, bindings: {chat: base}}
+      concept-entity-llm-wiki:
+        enabled: true
+        processor_id: toolbox.concept-entity-wiki
+        display_name: Concept and Entity LLM Wiki
+        kind: enricher
+        model_requirements: {chat: required}
+        capabilities:
+          scope_types: [object, folder, collection, root]
+          output_kinds: [wiki_markdown, entity_list, table]
+        runtime: {mode: external, endpoint: http://concept-entity-wiki-enricher:8100}
+        model_access: {mode: gateway, bindings: {chat: base}}
+      tesseract-opencv:
+        enabled: true
+        processor_id: toolbox.tesseract-opencv
+        aliases: [toolchest.tesseract-opencv]
+        display_name: Tesseract OCR with OpenCV regions
+        kind: extractor
+        model_requirements: {}
+        capabilities:
+          scope_types: [object]
+          input_media_types: [application/pdf, image/*]
+        runtime: {mode: external, endpoint: http://tesseract-opencv:8080}
+        model_access: {mode: none}
+"#;
+        fs::write(&tools_path, tools)
+            .map_err(|error| format!("Could not create tool configuration: {error}"))?;
+    }
     let secrets_path = config_dir.join("secrets.env");
     if !secrets_path.exists() {
         fs::write(&secrets_path, "# API keys saved from Workbench Setup appear here.\n")
@@ -1040,7 +936,7 @@ fn deployment_files(
 
     let override_path = config_dir.join("compose.override.json");
     let compose_override =
-        serde_json::to_string_pretty(&profile_override_document(profile, &data_dir, &config_dir, has_key)?)
+        serde_json::to_string_pretty(&profile_override_document(profile, &data_dir, &config_dir)?)
             .map_err(|error| format!("Could not generate deployment configuration: {error}"))?;
     fs::write(&override_path, format!("{compose_override}\n"))
         .map_err(|error| format!("Could not save deployment configuration: {error}"))?;
@@ -1108,12 +1004,10 @@ fn display_command(program: &Path, arguments: &[String]) -> String {
 fn deployment_preview(
     app: AppHandle,
     profile_id: String,
-    has_api_key: bool,
 ) -> Result<DeploymentPreview, String> {
     let profile = find_profile(&app, &profile_id)?;
     let compose = compose_file(&app)?;
-    let needs_key = false;
-    let files = deployment_files(&app, &profile, needs_key)?;
+    let files = deployment_files(&app, &profile)?;
     let provider =
         compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
     let project = project_name(&profile_id)?;
@@ -1126,26 +1020,6 @@ fn deployment_preview(
             )
         })
         .collect::<Vec<_>>();
-    if needs_key {
-        commands.push(format!(
-            "{}  # stdin: {}",
-            display_command(
-                &program_path("podman"),
-                &[
-                    "secret".to_string(),
-                    "create".to_string(),
-                    "--replace".to_string(),
-                    secret_name(&profile_id)?,
-                    "-".to_string(),
-                ],
-            ),
-            if has_api_key {
-                "<redacted session key>"
-            } else {
-                "<API key required>"
-            }
-        ));
-    }
     let mut start_args = vec!["up", "-d", "--no-build"];
     let selected = selected_services(&profile);
     start_args.extend(selected.iter().copied());
@@ -1166,31 +1040,6 @@ fn deployment_preview(
         compose_override: files.compose_override,
         commands,
     })
-}
-
-fn create_runtime_secret(profile: &Profile, api_key: &str) -> Result<bool, String> {
-    if profile.openai_base_url.is_empty() {
-        return Ok(false);
-    }
-    if api_key.is_empty() {
-        return Err("Paste the model API key before starting OSII.".to_string());
-    }
-    if api_key.contains(['\n', '\r']) {
-        return Err("The API key contains a line break.".to_string());
-    }
-    let name = secret_name(&profile.id)?;
-    run_with_stdin(
-        "podman",
-        &["secret", "create", "--replace", &name, "-"],
-        api_key,
-    )?;
-    Ok(true)
-}
-
-fn remove_runtime_secret(profile_id: &str) {
-    if let Ok(name) = secret_name(profile_id) {
-        let _ = run_output("podman", &["secret", "rm", &name]);
-    }
 }
 
 fn http_ready(port: u16, path: &str) -> bool {
@@ -1252,7 +1101,7 @@ fn stop_profile_inner(app: &AppHandle, profile_id: &str) -> Result<DeploymentSta
     let provider =
         compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
     let compose = compose_file(app)?;
-    let files = deployment_files(app, &profile, false)?;
+    let files = deployment_files(app, &profile)?;
     compose_checked(
         provider,
         &compose,
@@ -1262,7 +1111,6 @@ fn stop_profile_inner(app: &AppHandle, profile_id: &str) -> Result<DeploymentSta
         &profile,
         &["down", "--remove-orphans"],
     )?;
-    remove_runtime_secret(profile_id);
     if active_profile(app)?.as_deref() == Some(profile_id) {
         set_active_profile(app, None)?;
     }
@@ -1284,7 +1132,6 @@ fn stop_profile(app: AppHandle, profile_id: String) -> Result<DeploymentStatus, 
 fn start_profile(
     app: AppHandle,
     profile_id: String,
-    api_key: String,
 ) -> Result<DeploymentStatus, String> {
     let status = podman_status();
     if !status.engine_ready || !status.compose_ready {
@@ -1302,9 +1149,7 @@ fn start_profile(
     for image in profile_images(&profile) {
         run_checked("podman", &["pull", &image])?;
     }
-    let _ = api_key;
-    let has_key = false;
-    let files = deployment_files(&app, &profile, has_key)?;
+    let files = deployment_files(&app, &profile)?;
     let compose = compose_file(&app)?;
     let provider =
         compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
@@ -1320,7 +1165,6 @@ fn start_profile(
         &profile,
         &args,
     ) {
-        remove_runtime_secret(&profile_id);
         return Err(error);
     }
     set_active_profile(&app, Some(&profile_id))?;
@@ -1340,7 +1184,7 @@ fn start_profile(
 fn profile_logs(app: AppHandle, profile_id: String) -> Result<String, String> {
     let profile = find_profile(&app, &profile_id)?;
     let compose = compose_file(&app)?;
-    let files = deployment_files(&app, &profile, false)?;
+    let files = deployment_files(&app, &profile)?;
     let provider =
         compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
     let output = compose_checked(
@@ -1427,7 +1271,6 @@ pub fn run() {
             registry_status,
             login_registry,
             validate_source,
-            discover_models,
             list_profiles,
             save_profile,
             delete_profile,
@@ -1466,18 +1309,6 @@ mod tests {
     }
 
     #[test]
-    fn model_ids_accept_standard_and_compatible_payloads() {
-        assert_eq!(
-            model_ids(&json!({"data": [{"id": "gemma-4"}, {"id": "minilm"}]})),
-            vec!["gemma-4", "minilm"]
-        );
-        assert_eq!(
-            model_ids(&json!({"models": [{"name": "corp-chat"}]})),
-            vec!["corp-chat"]
-        );
-    }
-
-    #[test]
     fn workbench_config_is_mounted_without_provider_secrets() {
         let profile = Profile {
             id: "9a35f814-402d-4d33-8ded-19b12ffccb21".to_string(),
@@ -1485,9 +1316,6 @@ mod tests {
             source_dir: "/source".to_string(),
             image_prefix: "quay.example.test/team/osii".to_string(),
             image_tag: "2026.09.14".to_string(),
-            openai_base_url: "https://models.example.test/v1".to_string(),
-            openai_embedding_model: "minilm".to_string(),
-            openai_chat_model: "gemma-4".to_string(),
             readable_wiki: true,
             concept_entity_wiki: true,
             tesseract_open_cv: false,
@@ -1496,7 +1324,6 @@ mod tests {
             &profile,
             Path::new("/data"),
             Path::new("/config"),
-            false,
         ).expect("valid override");
 
         assert_eq!(
@@ -1515,9 +1342,6 @@ mod tests {
             source_dir: "/source".to_string(),
             image_prefix: "quay.example.test/team/osii".to_string(),
             image_tag: "2026.09.14".to_string(),
-            openai_base_url: String::new(),
-            openai_embedding_model: String::new(),
-            openai_chat_model: String::new(),
             readable_wiki: false,
             concept_entity_wiki: false,
             tesseract_open_cv: false,

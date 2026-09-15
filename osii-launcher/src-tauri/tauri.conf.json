@@ -28,6 +28,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
     "category": "Productivity",
     "shortDescription": "Run OSII on a workstation",
     "longDescription": "Configure Podman, approved OSII images, source folders, and model providers from a desktop application.",

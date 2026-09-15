@@ -19,9 +19,6 @@ export interface ProfileDraft {
   sourceDir: string;
   imagePrefix: string;
   imageTag: string;
-  openaiBaseUrl: string;
-  openaiEmbeddingModel: string;
-  openaiChatModel: string;
   readableWiki: boolean;
   conceptEntityWiki: boolean;
   tesseractOpenCv: boolean;
@@ -35,11 +32,6 @@ export interface SourceCheck {
   ok: boolean;
   canonicalPath: string;
   containerVisible: boolean;
-  message: string;
-}
-
-export interface ModelDiscovery {
-  models: string[];
   message: string;
 }
 

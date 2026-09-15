@@ -3,23 +3,19 @@ import { launcherApi } from "./launcherApi";
 import type {
   DeploymentPreview,
   DeploymentStatus,
-  ModelDiscovery,
   PodmanStatus,
   Profile,
   ProfileDraft,
   RegistryStatus,
   SourceCheck,
 } from "./types";
-import { coreImage, profileProblem, suggestedModels } from "./validation";
+import { coreImage, profileProblem } from "./validation";
 
 const emptyDraft: ProfileDraft = {
   name: "My OSII library",
   sourceDir: "",
   imagePrefix: import.meta.env.VITE_OSII_IMAGE_PREFIX ?? "",
   imageTag: import.meta.env.VITE_OSII_IMAGE_TAG ?? "",
-  openaiBaseUrl: import.meta.env.VITE_OSII_OPENAI_BASE_URL ?? "",
-  openaiEmbeddingModel: import.meta.env.VITE_OSII_OPENAI_EMBEDDING_MODEL ?? "",
-  openaiChatModel: import.meta.env.VITE_OSII_OPENAI_CHAT_MODEL ?? "",
   readableWiki: false,
   conceptEntityWiki: false,
   tesseractOpenCv: false,
@@ -63,11 +59,8 @@ function App() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ProfileDraft>(emptyDraft);
-  const [apiKey, setApiKey] = useState("");
   const [sourceCheck, setSourceCheck] = useState<SourceCheck | null>(null);
   const [sourceCheckState, setSourceCheckState] = useState<CheckState>("idle");
-  const [modelDiscovery, setModelDiscovery] = useState<ModelDiscovery | null>(null);
-  const [modelCheckState, setModelCheckState] = useState<CheckState>("idle");
   const [deployment, setDeployment] = useState<DeploymentStatus>(stopped);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [deploymentPreview, setDeploymentPreview] = useState<DeploymentPreview | null>(null);
@@ -81,14 +74,6 @@ function App() {
   const selected = useMemo(
     () => profiles.find((profile) => profile.id === selectedId) ?? null,
     [profiles, selectedId],
-  );
-  const modelOptions = useMemo(
-    () => Array.from(new Set([
-      draft.openaiEmbeddingModel,
-      draft.openaiChatModel,
-      ...(modelDiscovery?.models ?? []),
-    ].filter(Boolean))),
-    [draft.openaiChatModel, draft.openaiEmbeddingModel, modelDiscovery],
   );
   const validation = profileProblem(draft);
   const runningSelected = deployment.profileId === selectedId && deployment.state !== "stopped";
@@ -155,20 +140,13 @@ function App() {
       setSourceCheck(null);
       setSourceCheckState("idle");
     }
-    if (field === "openaiBaseUrl") {
-      setModelDiscovery(null);
-      setModelCheckState("idle");
-    }
   }
 
   function selectProfile(profile: Profile) {
     setSelectedId(profile.id);
     setDraft(profile);
-    setApiKey("");
     setSourceCheck(null);
     setSourceCheckState("idle");
-    setModelDiscovery(null);
-    setModelCheckState("idle");
     setSaveAttempted(false);
     setAdvancedOpen(false);
     setDeploymentPreview(null);
@@ -181,12 +159,12 @@ function App() {
       return;
     }
     try {
-      const preview = await launcherApi.deploymentPreview(selectedId, Boolean(apiKey));
+      const preview = await launcherApi.deploymentPreview(selectedId);
       setDeploymentPreview(preview);
     } catch (error) {
       setProblem(errorMessage(error));
     }
-  }, [apiKey, selectedId]);
+  }, [selectedId]);
 
   async function toggleAdvanced() {
     const opening = !advancedOpen;
@@ -225,7 +203,6 @@ function App() {
     const next = remaining[0] ?? null;
     setSelectedId(next?.id ?? null);
     setDraft(next ?? emptyDraft);
-    setApiKey("");
     setAdvancedOpen(false);
     setDeploymentPreview(null);
     setLogs("");
@@ -281,46 +258,12 @@ function App() {
     }
   }
 
-  async function discoverModels() {
-    if (!draft.openaiBaseUrl.trim()) {
-      setProblem("Enter the corporate OpenAI-compatible endpoint first.");
-      setModelCheckState("failed");
-      return;
-    }
-    if (!apiKey) {
-      setProblem("Paste the model API key before checking available models.");
-      setModelCheckState("failed");
-      return;
-    }
-    setModelCheckState("checking");
-    const result = await run("Checking model API", () =>
-      launcherApi.discoverModels(draft.openaiBaseUrl, apiKey),
-    );
-    if (!result) {
-      setModelCheckState("failed");
-      return;
-    }
-    const defaults = suggestedModels(
-      result.models,
-      draft.openaiEmbeddingModel,
-      draft.openaiChatModel,
-    );
-    setDraft((current) => ({
-      ...current,
-      openaiEmbeddingModel: defaults.embedding,
-      openaiChatModel: defaults.chat,
-    }));
-    setModelDiscovery(result);
-    setModelCheckState("verified");
-    setNotice(result.message);
-  }
-
   async function start() {
     if (!selectedId) {
       setProblem("Save this library before starting OSII.");
       return;
     }
-    const result = await run("Starting OSII", () => launcherApi.startProfile(selectedId, ""));
+    const result = await run("Starting OSII", () => launcherApi.startProfile(selectedId));
     if (result) {
       setDeployment(result);
       setNotice(result.message);
@@ -378,11 +321,8 @@ function App() {
             <button className="icon-button" title="New library" onClick={() => {
               setSelectedId(null);
               setDraft(emptyDraft);
-              setApiKey("");
               setSourceCheck(null);
               setSourceCheckState("idle");
-              setModelDiscovery(null);
-              setModelCheckState("idle");
               setSaveAttempted(false);
               setAdvancedOpen(false);
               setDeploymentPreview(null);
@@ -527,7 +467,7 @@ function App() {
                   </section>
                   {selected && <section>
                     <h3>If a Quay pull fails</h3>
-                    <p className="technical-note">On Windows, open PowerShell and run these commands in order. <code>podman login</code> prompts for your Quay credentials. After every displayed pull succeeds, return here and select <strong>Start OSII</strong>; do not run Compose directly because the launcher creates this library's configuration and temporary model secret.</p>
+                    <p className="technical-note">On Windows, open PowerShell and run these commands in order. <code>podman login</code> prompts for your Quay credentials. After every displayed pull succeeds, return here and select <strong>Start OSII</strong>; do not run Compose directly because the launcher creates this library&apos;s mounts and configuration.</p>
                     <pre>{imageRecoveryCommands}</pre>
                   </section>}
                   <section>

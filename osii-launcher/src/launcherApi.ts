@@ -3,7 +3,6 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type {
   DeploymentStatus,
   DeploymentPreview,
-  ModelDiscovery,
   PodmanStatus,
   Profile,
   ProfileDraft,
@@ -24,21 +23,16 @@ export const launcherApi = {
   },
   validateSource: (sourceDir: string, probeImage: string) =>
     invoke<SourceCheck>("validate_source", { sourceDir, probeImage }),
-  discoverModels: (baseUrl: string, apiKey: string) =>
-    invoke<ModelDiscovery>("discover_models", {
-      baseUrl,
-      apiKey,
-    }),
   listProfiles: () => invoke<Profile[]>("list_profiles"),
   saveProfile: (draft: ProfileDraft, profileId?: string) =>
     invoke<Profile>("save_profile", { draft, profileId: profileId ?? null }),
   deleteProfile: (profileId: string) => invoke<Profile[]>("delete_profile", { profileId }),
-  startProfile: (profileId: string, apiKey: string) =>
-    invoke<DeploymentStatus>("start_profile", { profileId, apiKey }),
+  startProfile: (profileId: string) =>
+    invoke<DeploymentStatus>("start_profile", { profileId }),
   stopProfile: (profileId: string) => invoke<DeploymentStatus>("stop_profile", { profileId }),
   deploymentStatus: () => invoke<DeploymentStatus>("deployment_status"),
-  deploymentPreview: (profileId: string, hasApiKey: boolean) =>
-    invoke<DeploymentPreview>("deployment_preview", { profileId, hasApiKey }),
+  deploymentPreview: (profileId: string) =>
+    invoke<DeploymentPreview>("deployment_preview", { profileId }),
   logs: (profileId: string) => invoke<string>("profile_logs", { profileId }),
   openDashboard: () => invoke<void>("open_dashboard"),
 };

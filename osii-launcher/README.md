@@ -8,8 +8,9 @@ The launcher is a Tauri 2 application with a React interface and a deliberately
 small Rust host boundary. It checks Podman, prepares the Podman machine on
 Windows and macOS, authenticates Podman to Quay without retaining the registry
 password, validates a selected source folder from inside a container, stores
-non-secret library profiles, and starts the fixed OSII Compose bundle. Model API
-keys are pasted for each launcher session and are never persisted by OSII.
+non-secret library profiles, lets a user choose optional Toolbox images, and
+starts the resulting OSII Compose bundle. Model endpoints and credentials are
+configured after launch in Workbench **Setup**, not in the launcher.
 
 ## Security and ownership boundary
 
@@ -46,10 +47,9 @@ deployment details.
 
 Frontend code can invoke only registered, typed launcher commands. There is no
 generic shell command. Quay credentials are passed to `podman login` on standard
-input and then owned by Podman. Model API keys remain only in application memory
-for the current session. When OSII starts, the key is passed on standard input
-to a temporary Podman secret mounted into the relevant containers; that runtime
-secret is removed when OSII stops.
+input and then owned by Podman. Provider keys entered in Workbench are written
+only to that library profile's `config/secrets.env`; they are never stored in
+the launcher profile, `.osii`, or a Toolbox container.
 
 ## Development
 
@@ -75,9 +75,8 @@ Get-ChildItem .\src-tauri\target\release\bundle -Recurse -File |
 
 ## Corporate defaults
 
-Use a git-ignored `.env.local` to prefill the corporate registry, image release,
-and OpenAI-compatible endpoint without putting internal names in the public
-repository. On macOS or Linux:
+Use a git-ignored `.env.local` to prefill the registry and image release without
+putting internal names in the public repository. On macOS or Linux:
 
 ```bash
 cp .env.example .env.local
@@ -95,9 +94,6 @@ Edit `.env.local`:
 VITE_OSII_REGISTRY=quay.corp.example
 VITE_OSII_IMAGE_PREFIX=quay.corp.example/team/osii
 VITE_OSII_IMAGE_TAG=2026.09.14
-VITE_OSII_OPENAI_BASE_URL=https://models.corp.example/v1
-VITE_OSII_OPENAI_EMBEDDING_MODEL=
-VITE_OSII_OPENAI_CHAT_MODEL=
 ```
 
 The image prefix is the shared part before `-core`, `-dashboard`, and
@@ -107,18 +103,15 @@ rejects `latest`.
 Run `npm run tauri -- dev` to test those defaults or
 `npm run tauri -- build` to compile them into the installer. `VITE_` values are
 visible in the compiled frontend, so they are suitable only for non-secret
-defaults. **Never put an API key or registry password in this file.** Users paste
-the model key each time they open the launcher, and Quay credentials go directly
-to Podman.
+defaults. **Never put an API key or registry password in this file.** Quay
+credentials go directly to Podman; model credentials belong in Workbench Setup.
 
-In step 3, **Find available models** calls the endpoint's standard `/models`
-route using the API key currently entered in the form. The launcher suggests a
-model containing `MiniLM` for embeddings and `Gemma 4` for chat. Both selections
-are dropdowns containing every model name returned by the connected endpoint;
-the endpoint does not declare which models support each operation, so the user
-can choose any returned model in either list. Exact corporate defaults in
-`.env.local` take precedence when supplied. The key remains available only until
-the launcher exits, so users paste it again for the next session.
+Step 3 selects optional Toolbox services. The two wiki services share one image,
+so choosing both performs one pull. Tesseract/OpenCV uses its own image. The
+launcher seeds registrations for all three in the profile's `config/tools.yml`
+so unavailable services remain visible as optional and stopped. The selection
+controls which images are pulled and which services are started. Workbench reads
+the file immediately. The same directory contains `models.yml` and `secrets.env`.
 
 Launcher builds from before this policy change may have created Keychain entries
 with service name `org.osii.launcher.openai`. The current launcher neither reads
@@ -139,11 +132,6 @@ The launcher collapses exact historical duplicates when it loads this file and
 reuses a profile when the same library name and canonical source folder are saved
 again. **Remove selected** deletes only the saved profile record. It does not
 delete the source folder or the launcher's indexed library-data directory.
-
-If the corporate model endpoint needs a private certificate authority during
-development, start the launcher from a terminal with `OSII_CA_BUNDLE` set to the
-approved PEM bundle. Production installers should rely on the certificate
-authority installed in the workstation's operating-system trust store.
 
 Frontend-only checks do not require Rust or Podman:
 
@@ -202,18 +190,15 @@ After saving a library, select **Advanced view** beside the deployment controls.
 The panel shows the exact generated `compose.env`, the generated Compose override,
 their full workstation paths, and the ordered commands used to pull and start the
 bundle. It opens automatically when a start command fails and includes the latest
-error output. API keys and registry passwords are never included; secret standard
-input is displayed only as `<redacted session key>`.
+error output. API keys and registry passwords are never included.
 
 The launcher uses the generated `compose.env` with both supported Compose
-providers. External Podman secrets use the same name in the secret store, Compose
-configuration, and container mount path. This avoids the unsupported external
-secret alias behavior in `podman-compose` 1.6.x.
+providers and mounts the library profile's configuration directory into Core.
 
 ## If a Quay image pull fails
 
 **Start OSII** pulls Core, the dashboard, and baseline processors before it
-starts Compose. It also pulls the optional Toolbox image for each service chosen
+starts Compose. It also pulls each distinct optional Toolbox image chosen
 in the library profile. If a pull fails, open **Advanced view**. It shows the
 exact recovery commands for the selected library profile.
 
@@ -221,7 +206,7 @@ On Windows, open PowerShell and run the displayed `podman login` command, then
 the three `podman pull` commands in order. `podman login` prompts for your Quay
 credentials. When every displayed pull succeeds, return to the launcher and select
 **Start OSII** again. Do not start Compose directly: the launcher generates the
-library-specific configuration and passes the temporary model API-key secret.
+library-specific mounts and model/tool configuration.
 
 For a manual example, replace these three values with the registry, image
 prefix, and pinned tag shown in the launcher:
