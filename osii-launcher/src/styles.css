@@ -15,12 +15,13 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 780px; min-height: 100vh; background: #fff; }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 button { border: 0; border-radius: 9px; background: var(--turquoise); color: white; padding: 0.7rem 1rem; font-weight: 700; cursor: pointer; transition: transform 120ms ease, opacity 120ms ease, background 120ms ease; }
 button:hover:not(:disabled) { transform: translateY(-1px); background: var(--turquoise-dark); }
 button:disabled { cursor: not-allowed; opacity: 0.45; }
-input { width: 100%; margin-top: 0.42rem; border: 1px solid var(--border); border-radius: 8px; padding: 0.72rem 0.78rem; color: var(--ink); background: #fff; outline: none; }
-input:focus { border-color: var(--turquoise); box-shadow: 0 0 0 3px rgba(0, 143, 145, 0.13); }
+input, select { width: 100%; margin-top: 0.42rem; border: 1px solid var(--border); border-radius: 8px; padding: 0.72rem 0.78rem; color: var(--ink); background: #fff; outline: none; }
+input:focus, select:focus { border-color: var(--turquoise); box-shadow: 0 0 0 3px rgba(0, 143, 145, 0.13); }
+select:disabled { cursor: not-allowed; opacity: 0.55; }
 label { color: #47565d; font-size: 0.82rem; font-weight: 700; }
 h1, h2, p { margin-top: 0; }
 h1 { max-width: 720px; margin-bottom: 0.75rem; color: var(--ink); font-family: Georgia, "Times New Roman", serif; font-size: clamp(2.2rem, 4vw, 3.8rem); font-weight: 500; letter-spacing: -0.045em; line-height: 0.98; }

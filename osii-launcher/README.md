@@ -100,9 +100,12 @@ to Podman.
 
 In step 3, **Find available models** calls the endpoint's standard `/models`
 route using the API key currently entered in the form. The launcher suggests a
-model containing `MiniLM` for embeddings and `Gemma 4` for chat. Exact corporate
-defaults in `.env.local` take precedence when supplied. The key remains available
-only until the launcher exits, so users paste it again for the next session.
+model containing `MiniLM` for embeddings and `Gemma 4` for chat. Both selections
+are dropdowns containing every model name returned by the connected endpoint;
+the endpoint does not declare which models support each operation, so the user
+can choose any returned model in either list. Exact corporate defaults in
+`.env.local` take precedence when supplied. The key remains available only until
+the launcher exits, so users paste it again for the next session.
 
 Launcher builds from before this policy change may have created Keychain entries
 with service name `org.osii.launcher.openai`. The current launcher neither reads

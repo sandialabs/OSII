@@ -79,6 +79,14 @@ function App() {
     () => profiles.find((profile) => profile.id === selectedId) ?? null,
     [profiles, selectedId],
   );
+  const modelOptions = useMemo(
+    () => Array.from(new Set([
+      draft.openaiEmbeddingModel,
+      draft.openaiChatModel,
+      ...(modelDiscovery?.models ?? []),
+    ].filter(Boolean))),
+    [draft.openaiChatModel, draft.openaiEmbeddingModel, modelDiscovery],
+  );
   const validation = profileProblem(draft);
   const runningSelected = deployment.profileId === selectedId && deployment.state !== "stopped";
 
@@ -459,11 +467,14 @@ function App() {
               <p className="section-copy">Enter the endpoint and key, then let OSII list the available models. It prefers a MiniLM embedding model and Gemma 4 for chat when those names are available. Leave the endpoint blank for local Ollama only.</p>
               <div className="form-grid">
                 <label className="wide">OpenAI-compatible endpoint<input value={draft.openaiBaseUrl} onChange={(event) => update("openaiBaseUrl", event.target.value)} placeholder="https://models.corp.example/v1" /></label>
-                <label>Embedding model<input list="available-models" value={draft.openaiEmbeddingModel} onChange={(event) => update("openaiEmbeddingModel", event.target.value)} placeholder="Selected after model check" /></label>
-                <label>Chat model<input list="available-models" value={draft.openaiChatModel} onChange={(event) => update("openaiChatModel", event.target.value)} placeholder="Selected after model check" /></label>
-                <datalist id="available-models">
-                  {modelDiscovery?.models.map((model) => <option value={model} key={model} />)}
-                </datalist>
+                <label>Embedding model<select value={draft.openaiEmbeddingModel} onChange={(event) => update("openaiEmbeddingModel", event.target.value)} disabled={!draft.openaiBaseUrl.trim()}>
+                  <option value="">Find available models to choose</option>
+                  {modelOptions.map((model) => <option value={model} key={`embedding-${model}`}>{model}</option>)}
+                </select></label>
+                <label>Chat model<select value={draft.openaiChatModel} onChange={(event) => update("openaiChatModel", event.target.value)} disabled={!draft.openaiBaseUrl.trim()}>
+                  <option value="">Find available models to choose</option>
+                  {modelOptions.map((model) => <option value={model} key={`chat-${model}`}>{model}</option>)}
+                </select></label>
                 <label className="wide">API key — session only<input type="password" value={apiKey} onChange={(event) => {
                   setApiKey(event.target.value);
                   setModelDiscovery(null);
