@@ -1,5 +1,3 @@
-from osii.enrichment.llm_wiki import LlmWikiEnricher
-from osii.enrichment.llm_wiki_stub import LlmWikiStubEnricher
 from osii.enrichment.linguistic_examples import (
     EntityCandidateEnricher,
     NounAdjectiveNgramEnricher,
@@ -11,8 +9,6 @@ from osii.processors.remote import RemoteEnricher, discover_remote_processors
 def get_enrichers():
     local = [
         StatsKeywordsEnricher(),
-        LlmWikiEnricher(),
-        LlmWikiStubEnricher(),
         NounAdjectiveNgramEnricher(),
         EntityCandidateEnricher(),
     ]

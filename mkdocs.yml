@@ -54,6 +54,7 @@ nav:
           - Synthesis: reference/processor-api/synthesis.md
           - Embedding: reference/processor-api/embedding.md
           - Enrichment: reference/processor-api/enrichment.md
+          - Canonical outputs: reference/processor-api/canonical-outputs.md
           - Standard artifacts: reference/processor-api/standard-artifacts.md
   - Operate offline:
       - Local-first operation: operations/local-first.md

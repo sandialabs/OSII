@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 TOOLS = (
     "osii-tesseract",
     "tabular-dataset-processors",
+    "llm-wiki-enrichers",
 )
 
 PYTHON_DOCKERFILES = (
@@ -25,6 +26,7 @@ PYTHON_DOCKERFILES = (
     "osii-mcp/Dockerfile",
     "osii-toolbox/osii-tesseract/Dockerfile",
     "osii-toolbox/tabular-dataset-processors/Dockerfile",
+    "osii-toolbox/llm-wiki-enrichers/Dockerfile",
 )
 
 

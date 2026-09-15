@@ -280,7 +280,9 @@ are intentional and reflected directly in the root names:
   and application-lifecycle workflows without moving those concerns into Core.
 - **`osii-toolbox/`** contains the optional OpenCV/Tesseract region extractor
   plus dataset and model-backed tools whose dependencies do not belong in
-  Core. Ordinary full-page Tesseract lives with the baseline processors.
+  Core. The two LLM wiki implementations are Processor API enrichers here,
+  rather than ad-hoc Core functions. Ordinary full-page Tesseract lives with
+  the baseline processors.
 - **`osii-demo-notebooks/`**, **`docs/`**, and **`scripts/`** provide learning,
   reference, and cross-platform operating support.
 

@@ -9,7 +9,6 @@ from typing import Any
 import requests
 from osii.domain.catalog_db import list_semantic_indexes
 from osii.domain.model_provider_config import processor_model, selected_processor
-from osii.enrichment.llm_wiki import LlmWikiEnricher
 from osii.indexing.common import embeddings_meta_path
 from osii.processors.remote import discover_remote_processors
 
@@ -352,22 +351,6 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
         if item["id"] not in known_embedder_ids
     )
 
-    selected_synthesizer = selected_processor("synthesizer", osii_root=osii_root)
-    selected_synthesizer_status = next(
-        (
-            item
-            for item in remote_by_kind["synthesizer"]
-            if item["id"] == selected_synthesizer
-        ),
-        None,
-    )
-    llm_wiki_available = bool(
-        selected_synthesizer_status
-        and selected_synthesizer_status.get("available")
-        and selected_synthesizer
-        not in {"local.extractive-preview", "firstN", "recursive"}
-    )
-
     compatibility_enrichers = [
         {
             "id": "stats_keywords",
@@ -395,20 +378,6 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
             "available": True,
             "detail": "Bundled local capitalized-name and acronym candidates with grounded mentions.",
             "bundled": True,
-        },
-        {
-            "id": "llm_wiki",
-            "display_name": "LLM Wiki",
-            "kind": "enricher",
-            "description": "Uses the selected model-backed synthesizer to create a cited Markdown knowledge page for a document or collection.",
-            "available": llm_wiki_available,
-            "detail": (
-                f"Uses the selected model-backed synthesizer: {selected_synthesizer}."
-                if llm_wiki_available
-                else "Select and test an Ollama or OpenAI-compatible synthesis model first."
-            ),
-            "bundled": False,
-            "config_schema": LlmWikiEnricher.config_schema,
         },
     ]
     if any(

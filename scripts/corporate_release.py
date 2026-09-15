@@ -215,7 +215,8 @@ def deployment_files(release_version: str) -> None:
             "podman compose pull\npodman compose up -d --no-build\n"
             "Open http://localhost:5173\n"
             "Optional tools: podman compose --profile toolbox up -d --no-build --pull missing "
-            "tesseract-opencv tabular-extractor tabular-enricher\n"
+            "tesseract-opencv tabular-extractor tabular-enricher "
+            "readable-wiki-enricher concept-entity-wiki-enricher\n"
             "Register optional Processor API endpoints in dashboard Setup.\n")
 
 

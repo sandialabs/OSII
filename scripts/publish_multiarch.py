@@ -20,6 +20,7 @@ RELEASE_IMAGES = (
 TOOLBOX_IMAGES = (
     ("tesseract-opencv", "osii-toolbox/osii-tesseract/Dockerfile", "."),
     ("tabular", "osii-toolbox/tabular-dataset-processors/Dockerfile", "."),
+    ("llm-wikis", "osii-toolbox/llm-wiki-enrichers/Dockerfile", "."),
 )
 PROXY_NAMES = (
     "HTTP_PROXY", "HTTPS_PROXY", "FTP_PROXY", "ALL_PROXY",

@@ -294,10 +294,13 @@ Collection scope example:
 ```powershell
 python -m osii.enrich_scope `
   --osii-root ".\osii-data\.osii" `
-  --enricher llm_wiki_stub `
+  --enricher toolbox.readable-wiki `
   --scope-type collection `
   --collection-id "col-abc123"
 ```
+
+This requires the optional readable-wiki service to be running and registered;
+use `.\scripts\osii.ps1 toolbox-run -Tool llm-wikis` first.
 
 ## Apply a rescan
 

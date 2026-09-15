@@ -38,13 +38,21 @@ def _list_enrichment_dir(path: Path, rel_prefix: str) -> list[dict]:
                 }
             )
         else:
-            items.append(
-                {
-                    "name": child.name,
-                    "kind": "file",
-                    "relpath": f"{rel_prefix}/{child.name}",
-                }
-            )
+            item = {
+                "name": child.name,
+                "kind": "file",
+                "relpath": f"{rel_prefix}/{child.name}",
+            }
+            if child.suffix == ".json" and not child.name.endswith(".meta.json"):
+                payload = _read_json_if_exists(child)
+                if isinstance(payload, dict):
+                    artifact_type = payload.get("artifact_type")
+                    title = payload.get("title")
+                    if isinstance(artifact_type, str):
+                        item["artifact_type"] = artifact_type
+                    if isinstance(title, str):
+                        item["title"] = title
+            items.append(item)
 
     return items
 

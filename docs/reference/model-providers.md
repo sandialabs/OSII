@@ -100,9 +100,10 @@ story is BM25.
 
 The same groups expose schema-driven processor settings. Ollama and generic
 OpenAI-compatible synthesizers publish their grounded synthesis prompt,
-temperature, and output-token limit. The LLM Wiki enricher publishes its wiki
-prompt and input/output bounds. Saved defaults apply to Intake, file actions,
-and direct enrichment jobs; an explicit request configuration overrides them.
+temperature, and output-token limit. Optional wiki enrichers publish their own
+prompts and bounds through Processor API descriptors. Saved defaults apply to
+Intake, file actions, and direct enrichment jobs; an explicit request
+configuration overrides them.
 
 ## Secret handling
 

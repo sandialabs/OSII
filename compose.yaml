@@ -179,6 +179,32 @@ services:
     ports: ["${OSII_TABULAR_ENRICHER_PORT:-8098}:8098"]
     profiles: ["toolbox"]
 
+  readable-wiki-enricher:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-llm-wikis:${OSII_IMAGE_TAG:-latest}"
+    build:
+      context: .
+      dockerfile: osii-toolbox/llm-wiki-enrichers/Dockerfile
+      args: &llm-wiki-build-args
+        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
+        OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
+    command: ["readable"]
+    environment:
+      OSII_WIKI_SYNTHESIZER_URL: ${OSII_WIKI_SYNTHESIZER_URL:-http://host.containers.internal:8095/ollama/synthesizer}
+    ports: ["${OSII_READABLE_WIKI_PORT:-8099}:8099"]
+    profiles: ["toolbox"]
+
+  concept-entity-wiki-enricher:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-llm-wikis:${OSII_IMAGE_TAG:-latest}"
+    build:
+      context: .
+      dockerfile: osii-toolbox/llm-wiki-enrichers/Dockerfile
+      args: *llm-wiki-build-args
+    command: ["concept-entity"]
+    environment:
+      OSII_WIKI_SYNTHESIZER_URL: ${OSII_WIKI_SYNTHESIZER_URL:-http://host.containers.internal:8095/ollama/synthesizer}
+    ports: ["${OSII_CONCEPT_ENTITY_WIKI_PORT:-8100}:8100"]
+    profiles: ["toolbox"]
+
   tika:
     image: apache/tika:3.2.3.0-full
     ports:

@@ -474,6 +474,10 @@ class RemoteEnricher:
             raise RuntimeError(f"Remote enricher '{self.name}' returned no artifacts")
 
         results = []
+        kind_counts: dict[str, int] = {}
+        for artifact in artifacts:
+            artifact_kind = str(artifact.get("kind") or "enrichment")
+            kind_counts[artifact_kind] = kind_counts.get(artifact_kind, 0) + 1
         for artifact in artifacts:
             payload = artifact.get("standard_data")
             if payload is None:
@@ -482,6 +486,7 @@ class RemoteEnricher:
                 payload = {"text": artifact.get("text")}
             kind = artifact.get("kind") or "enrichment"
             metadata = {
+                **(response.get("metadata") or {}),
                 **(artifact.get("metadata") or {}),
                 "artifact_id": artifact.get("id"),
                 "expert_context_supplied": bool(expert_context),
@@ -497,7 +502,7 @@ class RemoteEnricher:
                     kind=kind,
                     method=(
                         self.name
-                        if len(artifacts) == 1
+                        if kind_counts[str(kind)] == 1
                         else f"{self.name}.{artifact.get('id') or len(results) + 1}"
                     ),
                     payload=payload,

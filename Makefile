@@ -55,12 +55,12 @@ define validate_shared_drive
 endef
 
 define validate_tool
-	@if [ -z "$(TOOL)" ]; then echo "Set TOOL to tesseract-opencv or tabular."; exit 2; fi
-	@case "$(TOOL)" in tesseract-opencv|tabular) ;; *) echo "Unknown TOOL=$(TOOL). Choose tesseract-opencv or tabular."; exit 2 ;; esac
+	@if [ -z "$(TOOL)" ]; then echo "Set TOOL to tesseract-opencv, tabular, or llm-wikis."; exit 2; fi
+	@case "$(TOOL)" in tesseract-opencv|tabular|llm-wikis) ;; *) echo "Unknown TOOL=$(TOOL). Choose tesseract-opencv, tabular, or llm-wikis."; exit 2 ;; esac
 endef
 
-TOOLBOX_BUILD_SERVICE = $(if $(filter tesseract-opencv,$(TOOL)),tesseract-opencv,tabular-extractor)
-TOOLBOX_RUN_SERVICES = $(if $(filter tabular,$(TOOL)),tabular-extractor tabular-enricher,$(TOOLBOX_BUILD_SERVICE))
+TOOLBOX_BUILD_SERVICE = $(if $(filter tesseract-opencv,$(TOOL)),tesseract-opencv,$(if $(filter tabular,$(TOOL)),tabular-extractor,readable-wiki-enricher))
+TOOLBOX_RUN_SERVICES = $(if $(filter tabular,$(TOOL)),tabular-extractor tabular-enricher,$(if $(filter llm-wikis,$(TOOL)),readable-wiki-enricher concept-entity-wiki-enricher,$(TOOLBOX_BUILD_SERVICE)))
 
 .PHONY: help dev dev-shared demo demo-data run run-shared build push-release publish-multiarch toolbox-list toolbox-build toolbox-push toolbox-run toolbox-stop toolbox-publish-multiarch down logs test docs doctor
 
@@ -158,6 +158,7 @@ publish-multiarch:
 toolbox-list:
 	@echo "tesseract-opencv  Experimental OpenCV region OCR       http://localhost:8081"
 	@echo "tabular    CSV extractor + collection table enricher  http://localhost:8097 and :8098"
+	@echo "llm-wikis  Readable + concept/entity wiki enrichers   http://localhost:8099 and :8100"
 
 toolbox-build:
 	$(validate_tool)

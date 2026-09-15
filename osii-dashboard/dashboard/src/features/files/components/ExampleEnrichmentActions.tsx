@@ -16,7 +16,8 @@ export function ExampleEnrichmentActions({ scope }: { scope: ScopeDescribeReques
   const [selectedEnricher, setSelectedEnricher] = useState("");
   const additionalEnrichers = (readiness.data?.enrichers ?? []).filter(
     (item, index, items) => item.available
-      && !["noun_adjective_ngrams", "entity_candidates", "llm_wiki"].includes(item.id)
+      && !["noun_adjective_ngrams", "entity_candidates"].includes(item.id)
+      && !item.descriptor?.capabilities?.output_kinds?.includes("wiki_markdown")
       && items.findIndex((candidate) => candidate.id === item.id) === index,
   );
 

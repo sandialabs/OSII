@@ -1,6 +1,6 @@
 # Enrichment API
 
-Core's remote adapter and LLM Wiki enricher reuse saved
+Core's remote adapter reuses saved
 [expert context](../osii-store.md#expert-context) for the requested scope when
 no new guidance is supplied. Context is passed explicitly to the service;
 domain processors do not read sidecars themselves.
@@ -64,3 +64,8 @@ immediately usable in the dashboard and by agents. The dashboard retains a
 generic JSON view only for legacy artifacts created before this contract.
 
 See `osii-core/processor-sdk/examples/enricher.py`.
+
+Two model-backed wiki examples live outside Core in
+`osii-toolbox/llm-wiki-enrichers`. They demonstrate that a knowledge product
+can compose a separately deployed synthesizer while still returning only typed
+Processor API artifacts.

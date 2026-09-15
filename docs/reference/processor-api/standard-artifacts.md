@@ -1,7 +1,12 @@
 # Standard enrichment artifact formats
 
-The discriminator is always `artifact_type`. Version 1 defines four formats.
+These are canonical **enrichment** outputs, not extractor categories. The
+discriminator is always `artifact_type`. Version 1 defines four formats.
 SDK validation rejects undocumented fields so formats evolve deliberately.
+
+The dashboard chooses a view from this discriminator rather than from a
+processor name or filename. A newly registered SME enricher therefore receives
+the appropriate standard view without custom frontend code.
 
 ## Table
 
@@ -49,6 +54,8 @@ Fields: `title`, `markdown`, and optional citations. Markdown may use GFM,
 mathematics, tables, and headings. Raw HTML is not part of the contract.
 
 The dashboard renders sanitized Markdown using its existing Markdown stack.
+Multiple processors—and multiple Wiki Markdown artifacts returned by one
+processor—may coexist in the same scope.
 
 ## Provenance
 

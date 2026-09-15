@@ -192,7 +192,9 @@ def test_toolbox_images_are_optional_and_have_cross_platform_helpers() -> None:
     assert '"toolbox-push"' in launcher
     assert '"toolbox-run"' in launcher
     assert '"toolbox-publish-multiarch"' in launcher
-    assert compose.count('profiles: ["toolbox"]') == 3
+    assert compose.count('profiles: ["toolbox"]') == 5
+    assert "readable-wiki-enricher" in compose
+    assert "concept-entity-wiki-enricher" in compose
 
     make_run = _make_command("run", disable_proxies=False)
     assert " tesseract " in make_run

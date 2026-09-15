@@ -145,8 +145,9 @@ missing context with an actionable validation message. The legacy Nemotron
 layout parser remains image-only; it is not a context-aware image-description
 processor merely because it uses a vision model.
 
-Remote synthesis/enrichment adapters, the LLM Wiki enricher, and context-aware
-in-process synthesizers reuse saved guidance. A processor receiving context is
+Remote synthesis/enrichment adapters and context-aware in-process synthesizers
+reuse saved guidance. Optional wiki enrichers receive it through the same
+Processor API field. A processor receiving context is
 not proof it used it: extraction provenance distinguishes supplied guidance from
 the `expert_context_used = false` of context-free built-in parsers. Extraction
 versions keep their own `expert-context.md` snapshot; promoting an older

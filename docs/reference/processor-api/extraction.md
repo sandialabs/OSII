@@ -64,4 +64,10 @@ Segment IDs must be unique within the response. `source_origin` should contain
 enough page/region information for the core to preserve grounding. Extraction
 artifacts are source-derived images or structured data, not summaries.
 
+There is no closed list of extractor implementations or `segment_type` values.
+The stable contract is the grounded `ExtractionResponse`. Tables, knowledge
+graphs, entity lists, and Wiki Markdown are the four standard **enrichment**
+artifact types; generated wikis do not belong in extraction. See
+[canonical Processor API outputs](canonical-outputs.md).
+
 See `examples/extractor.py`.

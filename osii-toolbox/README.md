@@ -14,8 +14,9 @@ The shared Processor SDK is included in `osii` as `osii.processor_sdk`.
 |---|---|---|---|---|
 | [osii-tesseract](osii-tesseract/README.md) / `-tesseract-opencv` | Experimental | OpenCV region detection + Tesseract OCR; text and page bounding boxes | Processor API extractor | 8081 |
 | [tabular-dataset-processors](tabular-dataset-processors/README.md) / `-tabular` | Optional | CSV rows as standard tables; collection tables retaining row provenance | Processor API extractor and enricher; **one image, two processes** | 8097 / 8098 |
+| [llm-wiki-enrichers](llm-wiki-enrichers/README.md) / `-llm-wikis` | Optional | Traditional readable wiki plus concept/entity wiki adapted from `dev-aditya` | Processor API enrichers; **one image, two processes** | 8099 / 8100 |
 
-That is **two possible images, three containers if you run every capability**.
+That is **three possible images, five containers if you run every capability**.
 You need not publish or run all of them. Apache Tika is an upstream image and
 Ollama is a separately managed provider; neither is copied into this Toolbox.
 Core and its normal model connections remain unchanged.
@@ -71,8 +72,9 @@ make toolbox-run TOOL=tesseract-opencv \
   OSII_IMAGE_TAG=0.1.0
 ```
 
-Use `TOOL=tabular` for the tabular image.
-The tabular command starts its extractor and enricher processes together. Stop
+Use `TOOL=tabular` for the tabular image or `TOOL=llm-wikis` for both wiki
+enrichers. The tabular and wiki commands each start their two Processor API
+processes together. Stop
 the selected tool with `make toolbox-stop TOOL=tesseract-opencv`.
 
 PowerShell uses the same command names and `-Tool`:
@@ -86,7 +88,7 @@ PowerShell uses the same command names and `-Tool`:
   -ImagePrefix quay.io/your-namespace/osii -ImageTag 0.1.0
 ```
 
-To build and publish both Toolbox images for both Linux architectures:
+To build and publish all Toolbox images for both Linux architectures:
 
 ```bash
 make toolbox-publish-multiarch \
@@ -111,7 +113,7 @@ the URLs to `OSII_PROCESSORS` in the ignored root `.env` and restart OSII:
 
 ```dotenv
 # Preserve any existing URLs too; this is an example, not an append operation.
-OSII_PROCESSORS=http://127.0.0.1:8097,http://127.0.0.1:8098
+OSII_PROCESSORS=http://127.0.0.1:8097,http://127.0.0.1:8098,http://127.0.0.1:8099,http://127.0.0.1:8100
 ```
 
 Do not mount `.osii` or your document directories into these containers. Core
@@ -123,7 +125,8 @@ network, access control, and TLS gateway.
 
 Inspect running services with `podman-compose ps` and failures with
 `podman-compose logs SERVICE`. The service names are `tesseract-opencv`,
-`tabular-extractor`, and `tabular-enricher`.
+`tabular-extractor`, `tabular-enricher`, `readable-wiki-enricher`, and
+`concept-entity-wiki-enricher`.
 
 Before a real release, review licenses, scan images/dependencies, and record
 image digests. Existing dependency pins are carried over from the Tool Chest,

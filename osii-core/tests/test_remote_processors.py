@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import tomllib
 
 from osii.processor_sdk import (
@@ -155,3 +156,73 @@ def test_remote_extractor_receives_saved_context_in_standard_field(tmp_path):
     provenance = tomllib.loads((store / "objects" / file_id / "provenance.toml").read_text(encoding="utf-8"))
     assert provenance["config"]["expert_context"] == "SEM, microns."
     assert provenance["config"]["expert_context_supplied"] is True
+
+
+def test_remote_enricher_commits_multiple_standard_artifacts_by_kind(
+    temp_osii_root: Path,
+    sample_osii_object: dict,
+    monkeypatch,
+):
+    descriptor = ProcessorDescriptor(
+        name="toolbox.concept-entity-wiki",
+        version="1.0.0",
+        display_name="Concept and entity LLM wiki",
+        description="Test enricher",
+        kind=ProcessorKind.ENRICHER,
+        capabilities=Capability(
+            scope_types=["object"],
+            output_kinds=["wiki_markdown", "entity_list", "table"],
+        ),
+    ).model_dump(mode="json")
+    enricher = remote.RemoteEnricher(
+        {**descriptor, "base_url": "http://wiki.test"}
+    )
+
+    def fake_request(url, *, payload=None, timeout=120.0):
+        assert url == "http://wiki.test/v1/enrich"
+        assert payload["scope"]["documents"][0]["text"] == "Thermal calibration drift was reduced."
+        return {
+            "request_id": payload["request_id"],
+            "processor": descriptor,
+            "metadata": {"model": "test-model", "provider": "test"},
+            "artifacts": [
+                {
+                    "id": "concept-entity-wiki", "kind": "wiki",
+                    "standard_data": {
+                        "artifact_type": "wiki_markdown", "title": "Wiki",
+                        "markdown": "# Wiki", "citations": [],
+                    },
+                },
+                {
+                    "id": "entities", "kind": "entities",
+                    "standard_data": {
+                        "artifact_type": "entity_list", "title": "Entities",
+                        "entities": [],
+                    },
+                },
+                {
+                    "id": "concepts", "kind": "table",
+                    "standard_data": {
+                        "artifact_type": "table", "title": "Concepts",
+                        "columns": [], "rows": [], "row_provenance": [],
+                    },
+                },
+            ],
+        }
+
+    monkeypatch.setattr(remote, "_request_json", fake_request)
+    result = enricher.enrich(
+        osii_store=temp_osii_root,
+        scope={"scope_type": "object", "file_id": sample_osii_object["file_id"]},
+    )
+
+    assert len(result["artifacts"]) == 3
+    directory = temp_osii_root / "objects" / sample_osii_object["file_id"] / "enrichments"
+    assert (directory / "wiki--toolbox.concept-entity-wiki.json").is_file()
+    assert (directory / "entities--toolbox.concept-entity-wiki.json").is_file()
+    assert (directory / "table--toolbox.concept-entity-wiki.json").is_file()
+    metadata = json.loads(
+        (directory / "wiki--toolbox.concept-entity-wiki.meta.json").read_text()
+    )
+    assert metadata["model"] == "test-model"
+    assert metadata["provider"] == "test"

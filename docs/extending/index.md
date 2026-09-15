@@ -16,7 +16,9 @@ standard artifact. It never writes directly to the OSII store.
 Use an extractor when your parser defines what the source fundamentally says.
 Use an enricher when it adds a specialist interpretation alongside canonical
 text. For example, recovering text from a laboratory PDF is extraction;
-turning that recovered text into an experiment-results table is enrichment.
+turning that recovered text into an experiment-results table or LLM wiki is
+enrichment. The exact output boundary is summarized in
+[canonical Processor API outputs](../reference/processor-api/canonical-outputs.md).
 
 ## The extension path
 
@@ -50,10 +52,6 @@ building a production processor, then use the
 [Processor API reference](../reference/processor-api/index.md) for exact
 payloads.
 
-## Current limitation
-
-Remote enrichers are the first fully integrated extension type. External
-extractors, synthesizers, and embedders can implement, expose, register, and
-contract-test the v1 API today, but OSII does not yet commit their returned
-results into the canonical store. Keep those services experimental until the
-corresponding core adapters land.
+Core has commit adapters for all four Processor API kinds. External processors
+remain bounded services: they receive explicit data, return a typed response,
+and never mount or write the OSII store.

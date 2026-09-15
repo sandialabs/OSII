@@ -180,8 +180,10 @@ Enrichments are optional derived outputs associated with scopes or objects.
 Current examples include:
 
 - keyword extraction outputs
-- grounded LLM wiki Markdown for document and collection scopes
-- model-free wiki artifact templates
+- optional grounded Wiki Markdown returned by a conforming enricher for any
+  supported scope
+- structured tables, entity lists, and knowledge graphs returned by conforming
+  enrichers
 - future analytical outputs
 
 Enrichments are:

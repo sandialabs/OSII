@@ -21,6 +21,9 @@ def test_list_object_enrichments_api(client, temp_osii_root, sample_osii_object)
     data = response.json()
     assert "enrichments" in data
     assert len(data["enrichments"]) >= 1
+    artifact = next(item for item in data["enrichments"] if item["name"] == "keywords--stats_keywords.json")
+    assert artifact["artifact_type"] == "table"
+    assert artifact["title"] == "Keyword frequencies"
 
 
 def test_get_object_enrichment_payload_api(client, temp_osii_root, sample_osii_object):
@@ -70,8 +73,8 @@ def test_delete_collection_wiki_removes_only_artifact_and_metadata(client, temp_
         temp_osii_root,
         collection["id"],
         kind="wiki",
-        method="llm_wiki",
-        payload={"artifact_type": "wiki_markdown", "markdown": "# Demo"},
+        method="toolbox.readable-wiki",
+        payload={"artifact_type": "wiki_markdown", "title": "Demo", "markdown": "# Demo"},
         metadata={"provider": "test"},
     )
     response = client.request(
@@ -79,7 +82,7 @@ def test_delete_collection_wiki_removes_only_artifact_and_metadata(client, temp_
         "/api/enrichments/payload",
         json={
             "scope": {"scope_type": "collection", "collection_id": collection["id"]},
-            "filename": "wiki--llm_wiki.json",
+            "filename": "wiki--toolbox.readable-wiki.json",
         },
     )
     assert response.status_code == 200
@@ -92,7 +95,7 @@ def test_delete_collection_wiki_removes_only_artifact_and_metadata(client, temp_
         "/api/enrichments/payload",
         json={
             "scope": {"scope_type": "collection", "collection_id": collection["id"]},
-            "filename": "wiki--llm_wiki.json",
+            "filename": "wiki--toolbox.readable-wiki.json",
         },
     )
     assert second.status_code == 404

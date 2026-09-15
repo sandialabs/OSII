@@ -206,6 +206,8 @@ export type EnrichmentListEntryFile = {
   name: string;
   kind: "file";
   relpath: string;
+  artifact_type?: "table" | "knowledge_graph" | "entity_list" | "wiki_markdown";
+  title?: string;
 };
 
 export type EnrichmentListEntryBundle = {
@@ -590,6 +592,11 @@ export type CapabilityReadiness = {
   config_schema?: ProcessorConfigSchema;
   descriptor?: {
     config_schema?: ProcessorConfigSchema;
+    capabilities?: {
+      output_kinds?: string[];
+      scope_types?: string[];
+      [key: string]: unknown;
+    };
     [key: string]: unknown;
   } | null;
 };

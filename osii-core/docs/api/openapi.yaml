@@ -478,13 +478,11 @@ paths:
                           - name: collection_firstn.txt
                             relpath: collections/col-abc123def456/syntheses/collection_firstn.txt
                         enrichments:
-                          - name: wiki--llm_wiki_stub
-                            kind: bundle
-                            relpath: collections/col-abc123def456/enrichments/wiki--llm_wiki_stub
-                            files:
-                              - name: index.md
-                                relpath: collections/col-abc123def456/enrichments/wiki--llm_wiki_stub/index.md
-                                is_dir: false
+                          - name: wiki--toolbox.readable-wiki.json
+                            kind: file
+                            relpath: collections/col-abc123def456/enrichments/wiki--toolbox.readable-wiki.json
+                            artifact_type: wiki_markdown
+                            title: Calibration Wiki
                       actions:
                         can_synthesize: true
                         can_enrich: true
@@ -690,13 +688,11 @@ paths:
                         - name: collection_firstn.txt
                           relpath: collections/col-abc123def456/syntheses/collection_firstn.txt
                       enrichments:
-                        - name: wiki--llm_wiki_stub
-                          kind: bundle
-                          relpath: collections/col-abc123def456/enrichments/wiki--llm_wiki_stub
-                          files:
-                            - name: index.md
-                              relpath: collections/col-abc123def456/enrichments/wiki--llm_wiki_stub/index.md
-                              is_dir: false
+                        - name: wiki--toolbox.readable-wiki.json
+                          kind: file
+                          relpath: collections/col-abc123def456/enrichments/wiki--toolbox.readable-wiki.json
+                          artifact_type: wiki_markdown
+                          title: Calibration Wiki
                     actions:
                       can_synthesize: true
                       can_enrich: true
@@ -1424,13 +1420,11 @@ paths:
                       - name: keywords--stats_keywords.json
                         kind: file
                         relpath: objects/sha256-test123/enrichments/keywords--stats_keywords.json
-                      - name: wiki--llm_wiki_stub
-                        kind: bundle
-                        relpath: collections/col-abc123def456/enrichments/wiki--llm_wiki_stub
-                        files:
-                          - name: index.md
-                            relpath: collections/col-abc123def456/enrichments/wiki--llm_wiki_stub/index.md
-                            is_dir: false
+                      - name: wiki--toolbox.readable-wiki.json
+                        kind: file
+                        relpath: collections/col-abc123def456/enrichments/wiki--toolbox.readable-wiki.json
+                        artifact_type: wiki_markdown
+                        title: Calibration Wiki
         default:
           $ref: '#/components/responses/GenericError'
 
@@ -1801,7 +1795,7 @@ paths:
                     top_k: 10
               collection_scope:
                 value:
-                  enricher_name: llm_wiki_stub
+                  enricher_name: toolbox.readable-wiki
                   scope:
                     scope_type: collection
                     collection_id: col-abc123def456
@@ -3174,7 +3168,7 @@ components:
           example: index.md
         relpath:
           type: string
-          example: collections/col-abc123def456/enrichments/wiki--llm_wiki_stub/index.md
+          example: collections/col-abc123def456/enrichments/legacy-report-bundle/index.md
         is_dir:
           type: boolean
           example: false
@@ -3196,6 +3190,13 @@ components:
         relpath:
           type: string
           example: objects/sha256-test123/enrichments/keywords--stats_keywords.json
+        artifact_type:
+          type: string
+          enum: [table, knowledge_graph, entity_list, wiki_markdown]
+          description: Present when the JSON payload uses a canonical standard artifact format.
+        title:
+          type: string
+          description: Present when the standard artifact declares a title.
       additionalProperties: false
 
     EnrichmentListEntryBundle:
@@ -3208,13 +3209,13 @@ components:
       properties:
         name:
           type: string
-          example: wiki--llm_wiki_stub
+          example: legacy-report-bundle
         kind:
           type: string
           const: bundle
         relpath:
           type: string
-          example: collections/col-abc123def456/enrichments/wiki--llm_wiki_stub
+          example: collections/col-abc123def456/enrichments/legacy-report-bundle
         files:
           type: array
           items:

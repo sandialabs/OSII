@@ -202,7 +202,7 @@ def main() -> int:
         print(f"- {path.relative_to(destination.resolve())}")
     print("\nExample data is ready.")
     print("If OSII is not running, use `make dev` or `.\\scripts\\osii.ps1 dev`, then open Intake.")
-    print("To process CSV tables, configure the optional tabular Processor API service from the OSII Model Tool Chest.")
+    print("To process CSV tables, configure the optional tabular Processor API service from osii-toolbox.")
     return 0
 
 

@@ -9,7 +9,7 @@ credential, or model cache.
 | Synthesis | cited extractive Markdown preview | selected Ollama, OpenAI-compatible, or OpenAI-compatible chat model |
 | Embedding | none required; lexical hashing remains an advanced compatibility method | selected OpenAI-compatible, Ollama, or OpenAI-compatible embedding model |
 | Search | BM25 | provider/model-specific semantic FAISS index |
-| Enrichment | statistics and keywords table | LLM wiki through the selected model-backed synthesizer; domain Processor API service |
+| Enrichment | statistics and keywords table | optional Toolbox wiki enrichers; domain Processor API service |
 | Chat | grounded extractive answer | selected model provider |
 | Browse/API/MCP | local dashboard, backend, and MCP | same contracts |
 
@@ -230,12 +230,13 @@ only failed items and preserves files that already completed.
 
 ## Generate an LLM wiki
 
-With a model-backed synthesizer selected in Setup, OSII can compose that
-capability into a standard wiki-Markdown enrichment. Generate a document wiki
-from the document's **Wiki** tab or a collection wiki from the collection view.
-The operation runs in the background, records the actual provider and model,
-and never substitutes the extractive preview while labeling the result as an
-LLM wiki. See the [LLM wiki walkthrough](../tutorials/llm-wiki.md).
+LLM wiki generation is not implemented in Core. Start one or both optional
+wiki enrichers from `osii-toolbox`, register their Processor API endpoints in
+Setup, and select a model-backed synthesizer. Generate a wiki from a document,
+folder, collection, or the whole library. The operation runs in the background,
+records the processor and model provenance, and never substitutes the
+extractive preview while labeling the result as an LLM wiki. See the
+[LLM wiki walkthrough](../tutorials/llm-wiki.md).
 
 Two additional dependency-free examples produce a frequency-ranked table of
 lemmatized noun/adjective 2-, 3-, and 4-grams and a grounded list of named

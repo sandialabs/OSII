@@ -341,12 +341,14 @@ try {
         "toolbox-list" {
             Write-Host "tesseract-opencv  Experimental OpenCV region OCR       http://localhost:8081"
             Write-Host "tabular    CSV extractor + collection table enricher  http://localhost:8097 and :8098"
+            Write-Host "llm-wikis  Readable + concept/entity wiki enrichers   http://localhost:8099 and :8100"
         }
         { $_ -in @("toolbox-build", "toolbox-push", "toolbox-run", "toolbox-stop") } {
             $ToolServices = switch ($Tool) {
                 "tesseract-opencv" { @("tesseract-opencv") }
                 "tabular" { @("tabular-extractor", "tabular-enricher") }
-                default { throw "Set -Tool to tesseract-opencv or tabular." }
+                "llm-wikis" { @("readable-wiki-enricher", "concept-entity-wiki-enricher") }
+                default { throw "Set -Tool to tesseract-opencv, tabular, or llm-wikis." }
             }
             $BuildService = $ToolServices[0]
             switch ($Command) {

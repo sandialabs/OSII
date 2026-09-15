@@ -102,38 +102,3 @@ def test_failed_extractor_does_not_lose_saved_context(tmp_path):
     contexts = list((store / "objects").glob("*/expert-context.md"))
     assert len(contexts) == 1
     assert contexts[0].read_text(encoding="utf-8").strip() == "SEM images, scale in microns."
-
-
-@pytest.mark.parametrize("kind", ["root", "object"])
-def test_llm_wiki_reuses_context_without_treating_it_as_source_text(
-    temp_osii_root, sample_osii_object, monkeypatch, kind,
-):
-    import json
-    from osii.enrichment import llm_wiki
-    from osii.processor_sdk import Capability, ProcessorDescriptor, ProcessorKind, SynthesisResponse
-
-    scope = {"scope_type": kind}
-    if kind == "object":
-        scope["file_id"] = sample_osii_object["file_id"]
-    context = "Expert guidance: readings are in kelvin."
-    save_expert_context(temp_osii_root, scope, context)
-    descriptor = ProcessorDescriptor(
-        name="example.synthesis", version="1.0.0", display_name="Example LLM",
-        description="Test", kind=ProcessorKind.SYNTHESIZER,
-        capabilities=Capability(scope_types=["root", "object"]),
-    )
-
-    class FakeClient:
-        def synthesize(self, request):
-            assert context in request.expert_context
-            assert all(context not in (document.text or "") for document in request.scope.documents)
-            return SynthesisResponse(request_id=request.request_id, processor=descriptor, markdown="# Wiki\n\nSource overview.")
-
-    monkeypatch.setattr(llm_wiki, "ProcessorClient", lambda url: FakeClient())
-    monkeypatch.setattr(llm_wiki, "resolve_remote_processor", lambda *args: {"base_url": "http://test"})
-    result = llm_wiki.LlmWikiEnricher().enrich(
-        osii_store=temp_osii_root, scope=scope,
-        enricher_config={"synthesizer_name": "example.synthesis"},
-    )
-    metadata = json.loads((temp_osii_root / result["result"]["metadata_path"]).read_text(encoding="utf-8"))
-    assert metadata["expert_context"] == context
