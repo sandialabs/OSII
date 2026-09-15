@@ -2,22 +2,23 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { launcherApi } from "./launcherApi";
 import type {
   DeploymentStatus,
+  ModelDiscovery,
   PodmanStatus,
   Profile,
   ProfileDraft,
   RegistryStatus,
   SourceCheck,
 } from "./types";
-import { coreImage, profileProblem } from "./validation";
+import { coreImage, profileProblem, suggestedModels } from "./validation";
 
 const emptyDraft: ProfileDraft = {
   name: "My OSII library",
   sourceDir: "",
   imagePrefix: import.meta.env.VITE_OSII_IMAGE_PREFIX ?? "",
   imageTag: import.meta.env.VITE_OSII_IMAGE_TAG ?? "",
-  openaiBaseUrl: "",
-  openaiEmbeddingModel: "",
-  openaiChatModel: "",
+  openaiBaseUrl: import.meta.env.VITE_OSII_OPENAI_BASE_URL ?? "",
+  openaiEmbeddingModel: import.meta.env.VITE_OSII_OPENAI_EMBEDDING_MODEL ?? "",
+  openaiChatModel: import.meta.env.VITE_OSII_OPENAI_CHAT_MODEL ?? "",
 };
 
 const stopped: DeploymentStatus = {
@@ -36,10 +37,23 @@ function StatusDot({ ok }: { ok: boolean }) {
   return <span className={`status-dot ${ok ? "good" : "waiting"}`} aria-hidden="true" />;
 }
 
+type CheckState = "idle" | "checking" | "verified" | "failed";
+
+function StepStatus({ state, verifiedText }: { state: CheckState; verifiedText: string }) {
+  const label = {
+    idle: "Not checked",
+    checking: "Checking…",
+    verified: verifiedText,
+    failed: "Check failed",
+  }[state];
+  return <span className={`pill ${state}`}>{label}</span>;
+}
+
 function App() {
   const [podman, setPodman] = useState<PodmanStatus | null>(null);
   const [registryHost, setRegistryHost] = useState(import.meta.env.VITE_OSII_REGISTRY ?? "quay.io");
   const [registry, setRegistry] = useState<RegistryStatus | null>(null);
+  const [registryCheckState, setRegistryCheckState] = useState<CheckState>("idle");
   const [registryUsername, setRegistryUsername] = useState("");
   const [registryPassword, setRegistryPassword] = useState("");
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -47,11 +61,15 @@ function App() {
   const [draft, setDraft] = useState<ProfileDraft>(emptyDraft);
   const [apiKey, setApiKey] = useState("");
   const [sourceCheck, setSourceCheck] = useState<SourceCheck | null>(null);
+  const [sourceCheckState, setSourceCheckState] = useState<CheckState>("idle");
+  const [modelDiscovery, setModelDiscovery] = useState<ModelDiscovery | null>(null);
+  const [modelCheckState, setModelCheckState] = useState<CheckState>("idle");
   const [deployment, setDeployment] = useState<DeploymentStatus>(stopped);
   const [logs, setLogs] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState("Checking this workstation…");
   const [problem, setProblem] = useState<string | null>(null);
+  const [saveAttempted, setSaveAttempted] = useState(false);
 
   const selected = useMemo(
     () => profiles.find((profile) => profile.id === selectedId) ?? null,
@@ -108,6 +126,11 @@ function App() {
     setDraft((current) => ({ ...current, [field]: value }));
     if (field === "sourceDir" || field === "imagePrefix" || field === "imageTag") {
       setSourceCheck(null);
+      setSourceCheckState("idle");
+    }
+    if (field === "openaiBaseUrl") {
+      setModelDiscovery(null);
+      setModelCheckState("idle");
     }
   }
 
@@ -116,10 +139,15 @@ function App() {
     setDraft(profile);
     setApiKey("");
     setSourceCheck(null);
+    setSourceCheckState("idle");
+    setModelDiscovery(null);
+    setModelCheckState("idle");
+    setSaveAttempted(false);
     setLogs("");
   }
 
   async function save() {
+    setSaveAttempted(true);
     if (validation) {
       setProblem(validation);
       return;
@@ -135,6 +163,7 @@ function App() {
     setSelectedId(saved.id);
     setProfiles((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
     setDraft(saved);
+    setSaveAttempted(false);
     setNotice("Library settings saved.");
   }
 
@@ -146,15 +175,74 @@ function App() {
   async function checkSource() {
     if (!draft.sourceDir.trim()) {
       setProblem("Choose a source folder first.");
+      setSourceCheckState("failed");
       return;
     }
+    setSourceCheckState("checking");
     const result = await run("Checking folder access", () =>
       launcherApi.validateSource(draft.sourceDir, coreImage(draft)),
     );
     if (result) {
       setSourceCheck(result);
+      setSourceCheckState(result.ok ? "verified" : "failed");
       setNotice(result.message);
+    } else {
+      setSourceCheckState("failed");
     }
+  }
+
+  async function checkRegistry() {
+    setRegistryCheckState("checking");
+    const result = await run("Checking Quay login", () => launcherApi.registryStatus(registryHost));
+    if (result) {
+      setRegistry(result);
+      setRegistryCheckState(result.loggedIn ? "verified" : "failed");
+    } else {
+      setRegistryCheckState("failed");
+    }
+  }
+
+  async function loginRegistry() {
+    setRegistryCheckState("checking");
+    const result = await run("Logging into Quay", () =>
+      launcherApi.loginRegistry(registryHost, registryUsername, registryPassword),
+    );
+    setRegistryPassword("");
+    if (result) {
+      setRegistry(result);
+      setRegistryCheckState(result.loggedIn ? "verified" : "failed");
+    } else {
+      setRegistryCheckState("failed");
+    }
+  }
+
+  async function discoverModels() {
+    if (!draft.openaiBaseUrl.trim()) {
+      setProblem("Enter the corporate OpenAI-compatible endpoint first.");
+      setModelCheckState("failed");
+      return;
+    }
+    setModelCheckState("checking");
+    const result = await run("Checking model API", () =>
+      launcherApi.discoverModels(draft.openaiBaseUrl, apiKey, selectedId ?? undefined),
+    );
+    if (!result) {
+      setModelCheckState("failed");
+      return;
+    }
+    const defaults = suggestedModels(
+      result.models,
+      draft.openaiEmbeddingModel,
+      draft.openaiChatModel,
+    );
+    setDraft((current) => ({
+      ...current,
+      openaiEmbeddingModel: defaults.embedding,
+      openaiChatModel: defaults.chat,
+    }));
+    setModelDiscovery(result);
+    setModelCheckState("verified");
+    setNotice(result.message);
   }
 
   async function start() {
@@ -185,16 +273,18 @@ function App() {
   }
 
   const workstationReady = Boolean(podman?.engineReady && podman.composeReady);
-
   return (
     <main>
       <header className="hero">
-        <div>
-          <p className="eyebrow">OSII workstation</p>
-          <h1>Your research library, ready locally.</h1>
-          <p className="lede">
-            Connect a folder, choose the approved container release, and let OSII manage the services.
-          </p>
+        <div className="brand-lockup">
+          <div className="brand-mark" role="img" aria-label="Corporate logo placeholder">🔍</div>
+          <div>
+            <p className="eyebrow">OSII workstation</p>
+            <h1>OSII: the on store intelligence index</h1>
+            <p className="lede">
+              Your research library, ready locally. Connect a folder, choose the approved container release, and let OSII manage the services.
+            </p>
+          </div>
         </div>
         <div className={`overall-status ${deployment.state}`}>
           <StatusDot ok={deployment.state === "running"} />
@@ -216,6 +306,10 @@ function App() {
               setDraft(emptyDraft);
               setApiKey("");
               setSourceCheck(null);
+              setSourceCheckState("idle");
+              setModelDiscovery(null);
+              setModelCheckState("idle");
+              setSaveAttempted(false);
             }}>+</button>
           </div>
           <div className="profile-list">
@@ -259,25 +353,20 @@ function App() {
           <section className="panel section-card">
             <div className="section-number">1</div>
             <div className="section-body">
-              <div className="section-title"><div><p className="step-label">Approved images</p><h2>Connect to Quay</h2></div>{registry?.loggedIn && <span className="pill">Connected as {registry.username}</span>}</div>
+              <div className="section-title"><div><p className="step-label">Approved images</p><h2>Connect to Quay</h2></div><StepStatus state={registryCheckState} verifiedText={registry?.username ? `Connected as ${registry.username}` : "Connected"} /></div>
               <p className="section-copy">The launcher passes this credential directly to Podman. It never stores or reads the registry password.</p>
               <div className="form-grid registry-grid">
-                <label>Registry<input value={registryHost} onChange={(event) => setRegistryHost(event.target.value)} placeholder="quay.corp.example" /></label>
+                <label>Registry<input value={registryHost} onChange={(event) => {
+                  setRegistryHost(event.target.value);
+                  setRegistry(null);
+                  setRegistryCheckState("idle");
+                }} placeholder="quay.corp.example" /></label>
                 <label>Username<input value={registryUsername} onChange={(event) => setRegistryUsername(event.target.value)} autoComplete="username" /></label>
                 <label>Robot token or password<input type="password" value={registryPassword} onChange={(event) => setRegistryPassword(event.target.value)} autoComplete="current-password" /></label>
               </div>
               <div className="button-row">
-                <button className="secondary" disabled={Boolean(busy) || !registryHost.trim()} onClick={() => void run("Checking Quay login", async () => {
-                  const result = await launcherApi.registryStatus(registryHost);
-                  setRegistry(result);
-                  return result;
-                })}>Check login</button>
-                <button disabled={Boolean(busy) || !registryHost.trim() || !registryUsername.trim() || !registryPassword} onClick={() => void run("Logging into Quay", async () => {
-                  const result = await launcherApi.loginRegistry(registryHost, registryUsername, registryPassword);
-                  setRegistryPassword("");
-                  setRegistry(result);
-                  return result;
-                })}>Log in</button>
+                <button className="secondary" disabled={Boolean(busy) || !registryHost.trim()} onClick={() => void checkRegistry()}>Check login</button>
+                <button disabled={Boolean(busy) || !registryHost.trim() || !registryUsername.trim() || !registryPassword} onClick={() => void loginRegistry()}>Log in</button>
               </div>
             </div>
           </section>
@@ -285,7 +374,7 @@ function App() {
           <section className="panel section-card">
             <div className="section-number">2</div>
             <div className="section-body">
-              <div className="section-title"><div><p className="step-label">Library profile</p><h2>Choose what OSII may read</h2></div></div>
+              <div className="section-title"><div><p className="step-label">Library profile</p><h2>Choose what OSII may read</h2></div><StepStatus state={sourceCheckState} verifiedText="Folder verified" /></div>
               <div className="form-grid">
                 <label>Library name<input value={draft.name} onChange={(event) => update("name", event.target.value)} /></label>
                 <label className="wide">Shared-drive or local folder<div className="input-action"><input value={draft.sourceDir} onChange={(event) => update("sourceDir", event.target.value)} placeholder="Choose a folder" /><button className="secondary" onClick={() => void chooseSource()}>Browse</button></div></label>
@@ -294,32 +383,42 @@ function App() {
               </div>
               <div className="button-row">
                 <button className="secondary" disabled={Boolean(busy) || !workstationReady} onClick={() => void checkSource()}>Test container access</button>
-                {sourceCheck && <span className={`inline-status ${sourceCheck.ok ? "ok" : "bad"}`}>{sourceCheck.message}</span>}
               </div>
+              {sourceCheck && <p className={`check-detail ${sourceCheck.ok ? "ok" : "bad"}`}>{sourceCheck.message}</p>}
             </div>
           </section>
 
           <section className="panel section-card">
             <div className="section-number">3</div>
             <div className="section-body">
-              <div className="section-title"><div><p className="step-label">Models</p><h2>Corporate models first, Ollama as fallback</h2></div>{selected?.apiKeyPresent && <span className="pill">API key stored securely</span>}</div>
-              <p className="section-copy">Leave these blank for local Ollama only. API keys go to the operating-system credential store, not a project file.</p>
+              <div className="section-title"><div><p className="step-label">Models</p><h2>Corporate models first, Ollama as fallback</h2></div><StepStatus state={modelCheckState} verifiedText="Models verified" /></div>
+              <p className="section-copy">Enter the endpoint and key, then let OSII list the available models. It prefers a MiniLM embedding model and Gemma 4 for chat when those names are available. Leave the endpoint blank for local Ollama only.</p>
               <div className="form-grid">
                 <label className="wide">OpenAI-compatible endpoint<input value={draft.openaiBaseUrl} onChange={(event) => update("openaiBaseUrl", event.target.value)} placeholder="https://models.corp.example/v1" /></label>
-                <label>Embedding model<input value={draft.openaiEmbeddingModel} onChange={(event) => update("openaiEmbeddingModel", event.target.value)} placeholder="approved embedding model" /></label>
-                <label>Chat model<input value={draft.openaiChatModel} onChange={(event) => update("openaiChatModel", event.target.value)} placeholder="approved chat model" /></label>
-                <label className="wide">API key<input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="new-password" placeholder={selected?.apiKeyPresent ? "Stored — enter a replacement only" : "Optional"} /></label>
+                <label>Embedding model<input list="available-models" value={draft.openaiEmbeddingModel} onChange={(event) => update("openaiEmbeddingModel", event.target.value)} placeholder="Selected after model check" /></label>
+                <label>Chat model<input list="available-models" value={draft.openaiChatModel} onChange={(event) => update("openaiChatModel", event.target.value)} placeholder="Selected after model check" /></label>
+                <datalist id="available-models">
+                  {modelDiscovery?.models.map((model) => <option value={model} key={model} />)}
+                </datalist>
+                <label className="wide">API key<input type="password" value={apiKey} onChange={(event) => {
+                  setApiKey(event.target.value);
+                  setModelDiscovery(null);
+                  setModelCheckState("idle");
+                }} autoComplete="new-password" placeholder={selected?.apiKeyPresent ? "Stored securely — enter only to replace" : "Optional if the endpoint does not require one"} /></label>
               </div>
               <div className="button-row">
-                <button disabled={Boolean(busy) || Boolean(validation)} onClick={() => void save()}>{busy === "Saving library" ? "Saving…" : "Save library"}</button>
+                <button className="secondary" disabled={Boolean(busy) || !draft.openaiBaseUrl.trim()} onClick={() => void discoverModels()}>{busy === "Checking model API" ? "Checking…" : "Find available models"}</button>
+                <button disabled={Boolean(busy)} onClick={() => void save()}>{busy === "Saving library" ? "Saving…" : "Save library"}</button>
                 {selected?.apiKeyPresent && <button className="text-button danger" disabled={Boolean(busy)} onClick={() => void run("Removing API key", async () => {
                   await launcherApi.forgetApiKey(selected.id);
                   const updated = { ...selected, apiKeyPresent: false };
                   setProfiles((current) => current.map((item) => item.id === updated.id ? updated : item));
                   return true;
                 })}>Forget stored key</button>}
-                {validation && <span className="inline-status bad">{validation}</span>}
               </div>
+              {modelDiscovery && <p className="check-detail ok">{modelDiscovery.message}</p>}
+              {selected?.apiKeyPresent && <p className="secure-note">API key stored securely in the operating-system credential store.</p>}
+              {saveAttempted && validation && <div className="form-error" role="alert"><strong>Library not saved.</strong> {validation}</div>}
             </div>
           </section>
 

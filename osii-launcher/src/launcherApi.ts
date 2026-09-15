@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
   DeploymentStatus,
+  ModelDiscovery,
   PodmanStatus,
   Profile,
   ProfileDraft,
@@ -22,6 +23,12 @@ export const launcherApi = {
   },
   validateSource: (sourceDir: string, probeImage: string) =>
     invoke<SourceCheck>("validate_source", { sourceDir, probeImage }),
+  discoverModels: (baseUrl: string, apiKey: string, profileId?: string) =>
+    invoke<ModelDiscovery>("discover_models", {
+      baseUrl,
+      apiKey,
+      profileId: profileId ?? null,
+    }),
   listProfiles: () => invoke<Profile[]>("list_profiles"),
   saveProfile: (draft: ProfileDraft, profileId?: string) =>
     invoke<Profile>("save_profile", { draft, profileId: profileId ?? null }),

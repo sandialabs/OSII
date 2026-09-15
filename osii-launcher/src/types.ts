@@ -36,6 +36,11 @@ export interface SourceCheck {
   message: string;
 }
 
+export interface ModelDiscovery {
+  models: string[];
+  message: string;
+}
+
 export interface DeploymentStatus {
   profileId: string | null;
   state: "stopped" | "starting" | "running" | "degraded";

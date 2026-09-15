@@ -43,6 +43,7 @@ COMPONENTS: dict[str, tuple[ExportEntry, ...]] = {
     ),
     "osii-launcher": (
         ExportEntry("osii-launcher", "."),
+        ExportEntry("osii-launcher/.env.example", ".env.example"),
         ExportEntry("compose.yaml", "compose.yaml"),
     ),
     "osii-mcp": (

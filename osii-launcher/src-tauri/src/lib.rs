@@ -82,6 +82,13 @@ struct SourceCheck {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ModelDiscovery {
+    models: Vec<String>,
+    message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct DeploymentStatus {
     profile_id: Option<String>,
     state: String,
@@ -406,6 +413,24 @@ fn validate_image_part(value: &str, label: &str, allow_slash: bool) -> Result<St
     }
 }
 
+fn validated_model_base_url(value: &str) -> Result<String, String> {
+    let value = value.trim().trim_end_matches('/');
+    let parsed = reqwest::Url::parse(value)
+        .map_err(|_| "Enter a valid OpenAI-compatible HTTP or HTTPS endpoint.".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(
+            "Enter an HTTP or HTTPS endpoint without credentials, a query, or a fragment."
+                .to_string(),
+        );
+    }
+    Ok(value.to_string())
+}
+
 fn canonical_source(source_dir: &str) -> Result<PathBuf, String> {
     let source = Path::new(source_dir.trim());
     let canonical = source
@@ -453,6 +478,23 @@ fn save_profile(
     let source = canonical_source(&draft.source_dir)?;
     let image_prefix = validate_image_part(&draft.image_prefix, "image prefix", true)?;
     let image_tag = validate_image_part(&draft.image_tag, "image tag", false)?;
+    if image_tag.eq_ignore_ascii_case("latest") {
+        return Err("Choose a pinned release tag instead of latest.".to_string());
+    }
+    let openai_base_url = if draft.openai_base_url.trim().is_empty() {
+        String::new()
+    } else {
+        let value = validated_model_base_url(&draft.openai_base_url)?;
+        if draft.openai_embedding_model.trim().is_empty() {
+            return Err(
+                "Find or select an embedding model for the corporate endpoint.".to_string(),
+            );
+        }
+        if draft.openai_chat_model.trim().is_empty() {
+            return Err("Find or select a chat model for the corporate endpoint.".to_string());
+        }
+        value
+    };
     let id = profile_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     validate_profile_id(&id)?;
     let profile = Profile {
@@ -461,11 +503,7 @@ fn save_profile(
         source_dir: source.to_string_lossy().to_string(),
         image_prefix,
         image_tag,
-        openai_base_url: draft
-            .openai_base_url
-            .trim()
-            .trim_end_matches('/')
-            .to_string(),
+        openai_base_url,
         openai_embedding_model: draft.openai_embedding_model.trim().to_string(),
         openai_chat_model: draft.openai_chat_model.trim().to_string(),
         api_key_present: key_is_present(&id),
@@ -495,6 +533,104 @@ fn forget_api_key(profile_id: String) -> Result<(), String> {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(error) => Err(format!("Could not remove the stored API key: {error}")),
     }
+}
+
+fn discovery_api_key(api_key: &str, profile_id: Option<&str>) -> Result<Option<String>, String> {
+    if api_key.contains(['\n', '\r']) {
+        return Err("The API key contains a line break.".to_string());
+    }
+    if !api_key.is_empty() {
+        return Ok(Some(api_key.to_string()));
+    }
+    let Some(profile_id) = profile_id else {
+        return Ok(None);
+    };
+    match keyring_entry(profile_id)?.get_password() {
+        Ok(value) if !value.is_empty() => Ok(Some(value)),
+        Ok(_) | Err(keyring::Error::NoEntry) => Ok(None),
+        Err(error) => Err(format!("Could not read the stored API key: {error}")),
+    }
+}
+
+fn model_ids(payload: &Value) -> Vec<String> {
+    let rows = payload
+        .get("data")
+        .and_then(Value::as_array)
+        .or_else(|| payload.get("models").and_then(Value::as_array));
+    let mut models: Vec<String> = rows
+        .into_iter()
+        .flatten()
+        .filter_map(|row| {
+            row.get("id")
+                .or_else(|| row.get("name"))
+                .or_else(|| row.get("model"))
+                .and_then(Value::as_str)
+        })
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && value.len() <= 256)
+        .take(500)
+        .map(str::to_string)
+        .collect();
+    models.sort_unstable();
+    models.dedup();
+    models
+}
+
+fn model_http_client() -> Result<reqwest::blocking::Client, String> {
+    let mut builder = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .user_agent("OSII Launcher/0.1");
+    if let Some(path) = env::var_os("OSII_CA_BUNDLE").filter(|value| !value.is_empty()) {
+        let pem =
+            fs::read(&path).map_err(|error| format!("Could not read OSII_CA_BUNDLE: {error}"))?;
+        let certificates = reqwest::Certificate::from_pem_bundle(&pem)
+            .map_err(|error| format!("OSII_CA_BUNDLE is not a valid PEM bundle: {error}"))?;
+        if certificates.is_empty() {
+            return Err("OSII_CA_BUNDLE contains no PEM certificates.".to_string());
+        }
+        for certificate in certificates {
+            builder = builder.add_root_certificate(certificate);
+        }
+    }
+    builder
+        .build()
+        .map_err(|error| format!("Could not prepare the model API connection: {error}"))
+}
+
+#[tauri::command]
+fn discover_models(
+    base_url: String,
+    api_key: String,
+    profile_id: Option<String>,
+) -> Result<ModelDiscovery, String> {
+    let base_url = validated_model_base_url(&base_url)?;
+    let key = discovery_api_key(&api_key, profile_id.as_deref())?;
+    let mut request = model_http_client()?.get(format!("{base_url}/models"));
+    if let Some(key) = key {
+        request = request.bearer_auth(key);
+    }
+    let response = request
+        .send()
+        .map_err(|error| format!("Could not reach the model API: {error}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(if matches!(status.as_u16(), 401 | 403) {
+            format!("The model API returned {status}. Check the API key and try again.")
+        } else {
+            format!("The model API returned {status} from its /models endpoint.")
+        });
+    }
+    let payload: Value = response
+        .json()
+        .map_err(|error| format!("The model API returned invalid JSON: {error}"))?;
+    let models = model_ids(&payload);
+    if models.is_empty() {
+        return Err("The model API returned no named models.".to_string());
+    }
+    Ok(ModelDiscovery {
+        message: format!("Found {} available models.", models.len()),
+        models,
+    })
 }
 
 #[tauri::command]
@@ -1021,6 +1157,7 @@ pub fn run() {
             registry_status,
             login_registry,
             validate_source,
+            discover_models,
             list_profiles,
             save_profile,
             store_api_key,
@@ -1056,5 +1193,17 @@ mod tests {
     fn profile_ids_are_safe_for_paths_and_project_names() {
         assert!(validate_profile_id("9a35f814-402d-4d33-8ded-19b12ffccb21").is_ok());
         assert!(validate_profile_id("../../outside").is_err());
+    }
+
+    #[test]
+    fn model_ids_accept_standard_and_compatible_payloads() {
+        assert_eq!(
+            model_ids(&json!({"data": [{"id": "gemma-4"}, {"id": "minilm"}]})),
+            vec!["gemma-4", "minilm"]
+        );
+        assert_eq!(
+            model_ids(&json!({"models": [{"name": "corp-chat"}]})),
+            vec!["corp-chat"]
+        );
     }
 }
