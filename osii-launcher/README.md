@@ -110,6 +110,46 @@ npm test
 npm run build
 ```
 
+## Theme colors
+
+The launcher theme is controlled by the custom properties at the top of
+`src/styles.css`:
+
+```css
+:root {
+  --ink: #25343b;
+  --muted: #68757b;
+  --border: #d9e0e2;
+  --turquoise: #008f91;
+  --turquoise-dark: #006f71;
+  --orange: #e76513;
+  --orange-dark: #bc4800;
+}
+```
+
+Replace these values with the approved corporate style-guide colors. `--ink`,
+`--muted`, and `--border` control neutral text and outlines. `--turquoise` and
+`--turquoise-dark` control connection states, ordinary buttons, links, and focus
+indicators. `--orange` and `--orange-dark` control step markers, warnings,
+selection accents, and the primary deployment action. Keep the page, panels,
+inputs, logs, and diagnostic output white unless the corporate guidelines require
+otherwise.
+
+Use each darker variant for text and hover states, and verify that text, controls,
+focus indicators, and status states retain accessible contrast. Theme values are
+ordinary frontend CSS and contain no corporate configuration or credentials.
+
+To preview only the interface without Rust, Podman, or a Tauri build:
+
+```bash
+npm run dev
+```
+
+Open `http://127.0.0.1:1420`, edit `src/styles.css`, and use the live preview to
+apply the corporate guidelines. Deployment actions are unavailable in this
+browser-only preview. Run `npm test` and `npm run build` after finalizing the
+palette.
+
 The Tauri build bundles the repository's packaged `compose.yaml` as a resource.
 The component export script rewrites that resource path for the launcher's
 standalone corporate repository.
