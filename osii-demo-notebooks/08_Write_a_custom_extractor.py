@@ -78,8 +78,13 @@ class DelimitedObservationExtractor(Extractor):
 
     def extract(self, request: ExtractionRequest) -> ExtractionResponse:
         encoded = request.document.content_base64 or ""
-        source_text = base64.b64decode(encoded).decode("utf-8")
+        try:
+            source_text = base64.b64decode(encoded, validate=True).decode("utf-8")
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ValueError("document.content_base64 must contain UTF-8 text") from exc
         delimiter = request.config.get("delimiter", "|")
+        if not isinstance(delimiter, str) or not delimiter:
+            raise ValueError("delimiter must be a non-empty string")
 
         segments = []
         for line_number, line in enumerate(source_text.splitlines(), start=1):

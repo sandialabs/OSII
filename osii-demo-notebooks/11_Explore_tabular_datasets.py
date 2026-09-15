@@ -15,14 +15,23 @@
 # make demo-data
 # ```
 #
-# Then start the optional `osii-toolbox/tabular-dataset-processors` image from this
-# repository (see `osii-toolbox/README.md`) and configure its two URLs in
-# OSII's `OSII_PROCESSORS` setting.
+# Then start the optional tabular processors. This notebook directly calls the
+# extractor on port 8097; start both services when you also want the dashboard
+# collection-table workflow.
+#
+# ```bash
+# make toolbox-run TOOL=tabular
+# ```
 # On Windows PowerShell, import the files with:
 #
 # ```powershell
 # .\scripts\osii.ps1 demo-data
+# .\scripts\osii.ps1 toolbox-run -Tool tabular
 # ```
+#
+# Wait for <http://127.0.0.1:8097/health> to return `{"status":"ok"}`.
+# For dashboard use, register both processor URLs in **Setup** or add them to
+# `OSII_PROCESSORS` before starting OSII.
 #
 # The Iris and Wine data are bundled with scikit-learn. The import step creates
 # temporary ZIP archives and unpacks ordinary CSV partitions beneath
@@ -33,10 +42,23 @@ from pathlib import Path
 import base64
 import hashlib
 
-from osii.processor_sdk import DocumentInput, ExtractionRequest, ProcessorClient
+from osii.processor_sdk import (
+    DocumentInput,
+    ExtractionRequest,
+    ProcessorClient,
+    ProcessorClientError,
+)
 
 
-IRIS_CSV = Path("../osii-data/source/example-datasets/iris/data/setosa.csv")
+def repository_root() -> Path:
+    """Find the checkout from Jupyter, an IDE, or a terminal."""
+    for candidate in (Path.cwd(), *Path.cwd().parents):
+        if (candidate / "osii-core").is_dir() and (candidate / "osii-toolbox").is_dir():
+            return candidate
+    raise RuntimeError("Open this notebook from inside an OSII repository checkout.")
+
+
+IRIS_CSV = repository_root() / "osii-data/source/example-datasets/iris/data/setosa.csv"
 EXTRACTOR_URL = "http://127.0.0.1:8097"
 
 if not IRIS_CSV.is_file():
@@ -53,11 +75,19 @@ print("Bytes:", IRIS_CSV.stat().st_size)
 
 # %%
 client = ProcessorClient(EXTRACTOR_URL)
-descriptor = client.descriptor()
+try:
+    descriptor = client.descriptor()
+except ProcessorClientError:
+    descriptor = None
+    print(
+        "CSV extractor is offline. Run `make toolbox-run TOOL=tabular` "
+        "or `.\\scripts\\osii.ps1 toolbox-run -Tool tabular`, then rerun this cell."
+    )
 
-print(descriptor.display_name)
-print(descriptor.description)
-print("Outputs:", descriptor.capabilities.output_kinds)
+if descriptor:
+    print(descriptor.display_name)
+    print(descriptor.description)
+    print("Outputs:", descriptor.capabilities.output_kinds)
 
 # %% [markdown]
 # ## Extract one CSV source
@@ -69,31 +99,35 @@ print("Outputs:", descriptor.capabilities.output_kinds)
 # %%
 source_bytes = IRIS_CSV.read_bytes()
 file_id = "sha256-" + hashlib.sha256(source_bytes).hexdigest()
-response = client.extract(
-    ExtractionRequest(
-        request_id="dataset-demo-1",
-        document=DocumentInput(
-            file_id=file_id,
-            filename=IRIS_CSV.name,
-            media_type="text/csv",
-            content_base64=base64.b64encode(source_bytes).decode("ascii"),
-        ),
-        expert_context="Iris measurements use centimeters; retain the target class.",
+response = None
+if descriptor:
+    response = client.extract(
+        ExtractionRequest(
+            request_id="dataset-demo-1",
+            document=DocumentInput(
+                file_id=file_id,
+                filename=IRIS_CSV.name,
+                media_type="text/csv",
+                content_base64=base64.b64encode(source_bytes).decode("ascii"),
+            ),
+            expert_context="Iris measurements use centimeters; retain the target class.",
+        )
     )
-)
 
-table = response.artifacts[0].standard_data
-print(f"Grounded rows: {len(response.segments)}")
-print(f"Table columns: {[column.label for column in table.columns]}")
+if response:
+    table = response.artifacts[0].standard_data
+    print(f"Grounded rows: {len(response.segments)}")
+    print(f"Table columns: {[column.label for column in table.columns]}")
 
 # %% [markdown]
 # Every table row has provenance back to the CSV source line. The first five
 # rows below are the same standard artifact shape rendered by the dashboard.
 
 # %%
-for row, provenance in zip(table.rows[:5], table.row_provenance[:5], strict=True):
-    print(row)
-    print("  source:", provenance[0].source_origin)
+if response:
+    for row, provenance in zip(table.rows[:5], table.row_provenance[:5], strict=True):
+        print(row)
+        print("  source:", provenance[0].source_origin)
 
 # %% [markdown]
 # ## See the same product in OSII

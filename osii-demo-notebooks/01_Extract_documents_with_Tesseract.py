@@ -26,13 +26,15 @@
 # not authorize the extractor to invent a summary or scientific conclusion.
 
 # %%
+import os
+
 from osii.domain.catalog_db import rebuild_catalog
 from osii.domain.processing.folder_rebuild import build_folder_artifacts
 from osii.domain.read.catalog import load_files_catalog
 from osii.domain.storage.folders import get_or_create_folder_id
 from osii.extraction.dispatcher import dispatch_extract
 
-from _demo_support import demo_paths, get_json, heading, require_path
+from _demo_support import demo_paths, heading, processor_descriptor, require_path
 
 # %%
 paths = demo_paths()
@@ -46,16 +48,23 @@ for source_file in source_files:
 # %% [markdown]
 # ## Start OCR only for sources that need it
 #
-# The bundled PDF is scanned, so its useful text is in pixels. OSII-Tesseract is
-# a separate service because OCR has different system dependencies and can be
-# replaced independently of the store.
+# The bundled PDF is scanned, so its useful text is in pixels. The normal OSII
+# stack includes a separate, full-page Tesseract service. It has different
+# system dependencies from the store and can be replaced independently.
 #
-# From the repository root, run `make dev`, then select **Start** beside
-# **Tesseract OCR** in **Setup**.
+# From the repository root, start the normal stack:
 #
 # ```bash
 # make dev
 # ```
+#
+# On Windows PowerShell:
+#
+# ```powershell
+# .\scripts\osii.ps1 dev
+# ```
+#
+# Wait for <http://127.0.0.1:8080/health> to return `{"status":"ok"}`.
 #
 # Keeping OCR outside the notebook is intentional. A production extractor may
 # run on a workstation, an isolated server, or specialized hardware while the
@@ -63,12 +72,29 @@ for source_file in source_files:
 
 # %%
 OCR_URL = "http://127.0.0.1:8080"
+OCR_PROCESSOR = "local.tesseract-page-ocr"
 pdf_files = [path for path in source_files if path.suffix.lower() == ".pdf"]
-ocr_health = get_json(f"{OCR_URL}/health") if pdf_files else {"status": "not-needed"}
-ocr_ready = not pdf_files or ocr_health is not None
+ocr_descriptor = processor_descriptor(OCR_URL) if pdf_files else None
+ocr_ready = not pdf_files or (
+    ocr_descriptor is not None and ocr_descriptor.get("name") == OCR_PROCESSOR
+)
 
 print("PDFs requiring OCR:", len(pdf_files))
-print("OCR status:", ocr_health or "offline")
+print("OCR processor:", (ocr_descriptor or {}).get("name", "offline"))
+
+if pdf_files and ocr_descriptor and ocr_descriptor.get("name") != OCR_PROCESSOR:
+    print(f"Expected {OCR_PROCESSOR}; check the service running on {OCR_URL}.")
+
+if ocr_ready and ocr_descriptor:
+    # The notebook process is separate from the application containers. Add
+    # the discovered endpoint explicitly so the dispatcher can select it.
+    os.environ["OSII_ROOT"] = str(paths.osii_root)
+    processor_urls = [
+        url for url in os.environ.get("OSII_PROCESSORS", "").split(",") if url
+    ]
+    if OCR_URL not in processor_urls:
+        processor_urls.append(OCR_URL)
+    os.environ["OSII_PROCESSORS"] = ",".join(processor_urls)
 
 # %% [markdown]
 # ## Plan before executing
@@ -81,7 +107,7 @@ print("OCR status:", ocr_health or "offline")
 # %%
 def extractor_for(source_file):
     if source_file.suffix.lower() == ".pdf":
-        return "toolchest.tesseract-opencv", {"language": "en"}
+        return OCR_PROCESSOR, {"language": "eng"}
     return "native_text", {"chunk_chars": 4000}
 
 
@@ -134,7 +160,7 @@ def extract_one(source_file, extractor_name, extractor_config):
 results = []
 
 if not ocr_ready:
-    print("Extraction paused: start OSII-Tesseract, then rerun from the health check.")
+    print("Extraction paused: start the Tesseract service, then rerun from discovery.")
 else:
     for source_file, extractor_name, extractor_config in extraction_plan:
         result = extract_one(source_file, extractor_name, extractor_config)

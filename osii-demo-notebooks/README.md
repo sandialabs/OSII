@@ -126,9 +126,10 @@ Then use the extension track as copyable starting points:
 | `10_Write_a_custom_enricher` | Existing text to a standard entity-list artifact |
 | `11_Explore_tabular_datasets` | CSV rows to source and collection table artifacts |
 
-Each extension example runs the processor directly in Python before wrapping it
-as an HTTP app. This keeps domain logic easy to test: the network boundary is
-an adapter, not the place where the research algorithm has to live.
+Examples 08–10 run the processor directly in Python before wrapping it as an
+HTTP app. This keeps domain logic easy to test: the network boundary is an
+adapter, not the place where the research algorithm has to live. Example 11
+then shows how a notebook consumes an independently deployed processor.
 
 The dataset example uses the optional tabular processor in this repository's
 [`osii-toolbox/`](../osii-toolbox/README.md). From the Core repository, run `make demo-data` or
@@ -141,18 +142,19 @@ Put files in `demo-workspace/documents/`, beside the bundled `purcell.pdf`.
 Additional files there are ignored by Git. OSII reads the originals in place
 and writes all derived data under `demo-workspace/.osii/`.
 
-The bundled PDF is scanned. To run the public OCR path, start the
-OpenCV/Tesseract Processor API service from this repository's
-[Toolbox](../osii-toolbox/README.md), then
-configure its URL in `OSII_PROCESSORS` before starting OSII:
+The bundled PDF is scanned. The normal OSII stack includes the baseline
+full-page Tesseract Processor API service. From the repository root, start it
+with the rest of the local services:
 
 ```bash
-podman run --rm -p 8080:8080 osii-tesseract
+make dev
 ```
 
-Wait until <http://127.0.0.1:8080/health> returns `{"status":"ok"}`. The
-notebook checks the service and skips extraction with a readable message if it
-is unavailable.
+On Windows PowerShell, run `.\scripts\osii.ps1 dev`. Wait until
+<http://127.0.0.1:8080/health> returns `{"status":"ok"}`. The extraction
+notebook discovers and registers this endpoint for its own Python process. The
+experimental OpenCV region-OCR processor remains an optional
+[Toolbox](../osii-toolbox/README.md) deployment.
 
 For an OpenAI-compatible model endpoint, set the endpoint and credential in
 `.env`, then start the normal stack. It provides model-backed synthesis,

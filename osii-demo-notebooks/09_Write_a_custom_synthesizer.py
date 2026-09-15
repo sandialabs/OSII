@@ -61,16 +61,17 @@ class FirstSentenceSynthesizer(Synthesizer):
         citations = []
 
         for document in request.scope.documents:
-            text = (document.text or "").strip()
-            sentence = text.split(".", maxsplit=1)[0].strip()
+            text = document.text or ""
+            sentence_end = text.find(".")
+            source_excerpt = text if sentence_end == -1 else text[: sentence_end + 1]
+            sentence = source_excerpt.strip()
             if sentence:
-                sentence += "."
                 sections.append(f"## {document.filename}\n\n{sentence}")
                 citations.append(
                     ProvenanceRef(
                         file_id=document.file_id,
-                        char_start=0,
-                        char_end=len(sentence),
+                        char_start=len(text) - len(text.lstrip()),
+                        char_end=len(source_excerpt),
                     )
                 )
 

@@ -42,6 +42,9 @@ require_path(paths.osii_root / "objects", "Run the extraction example first.")
 documents = load_files_catalog(paths.osii_root)
 folders = load_folders_catalog(paths.osii_root)
 
+if not documents:
+    raise RuntimeError("No extracted objects found. Run 01_Extract_documents_with_Tesseract first.")
+
 print(f"Objects: {len(documents)}")
 print(f"Folders: {len(folders)}")
 
