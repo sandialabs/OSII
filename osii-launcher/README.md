@@ -199,7 +199,9 @@ secret alias behavior in `podman-compose` 1.6.x.
 
 ## Release shape
 
-The intended signed artifacts are an MSI and setup EXE on Windows, a notarized
-DMG on macOS, and an RPM plus AppImage on Linux. Installer signing, the bundled
-Compose-provider sidecar, the signed Quay catalog, and dashboard-native app
-management are the next release layer after this feasibility implementation.
+With the required corporate runners and signing credentials configured, the
+current release pipeline produces a signed setup EXE for Windows and notarized
+DMGs for Intel and Apple-silicon macOS. MSI, RPM, and AppImage packages remain
+future distribution options. A bundled Compose-provider sidecar, signed Quay
+catalog, and dashboard-native app management are also planned release
+enhancements.
