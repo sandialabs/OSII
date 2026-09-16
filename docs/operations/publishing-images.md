@@ -439,7 +439,7 @@ works on both `amd64` and `arm64` before declaring the version released.
 
 ## Run a corporate pilot
 
-The release owner supplies an immutable version tag. Copy `.env.example` to
+The release owner supplies an immutable version tag. Copy `.env.containers.example` to
 `.env`, set the registry prefix, image tag, and source folder, then start the
 bundle:
 

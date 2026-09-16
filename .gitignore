@@ -3,6 +3,7 @@
 .osii-certs/
 .env.*
 !.env.example
+!.env.containers.example
 !.env.commercial.example
 *.pem
 *.key

@@ -111,6 +111,10 @@ To use a source folder elsewhere on your computer, copy `.env.example` to
 layout. See [local-first operation](docs/operations/local-first.md) for the
 cross-platform details and optional capabilities.
 
+For `make build` and `make run`, copy `.env.containers.example` instead. It
+uses the container-reachable Ollama address and makes the Setup credential
+write policy and host configuration mount explicit.
+
 ### Use a shared drive or Samba share
 
 First connect the share through Windows, Finder, or your Linux desktop so it
