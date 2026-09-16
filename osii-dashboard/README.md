@@ -6,6 +6,8 @@ OSII Dashboard is a local browser-based workbench for exploring personal or proj
 
 The dashboard is intentionally modular. It is a standalone frontend that talks to an existing OSII backend API, so it can be used when you want a rich browser experience without forcing every OSII workflow to go through a UI.
 
+In packaged OSII, the **launcher** chooses the source folder, image release, and optional services, then starts the library. **Setup** in the dashboard is optional: it manages model connections and processing rules, not deployment. **Intake** selects files, processing steps, and starts a reviewed run. Informational source and service status is shown as context; controls that require a decision stay in the corresponding step. Local development uses `make dev` or `scripts/osii.ps1 dev` in place of the launcher.
+
 ---
 
 ## What you can do
@@ -136,8 +138,9 @@ The backend should already expose the dashboard-facing endpoints used by this UI
 
 For the normal repository workflow, run `make dev` on macOS/Linux or
 `.\scripts\osii.ps1 dev` on Windows from the repository root, then open
-<http://localhost:5173>. Use **Setup** to connect AI models and configure processing
-services. Bundled model-free services keep basic work available during outages.
+<http://localhost:5173>. Use **Intake** for the first run; open **Setup** when
+you need a model connection or a different processing rule. Bundled model-free
+methods keep basic work available without AI.
 
 The commands below are only for running this frontend independently against an
 already-running OSII backend.

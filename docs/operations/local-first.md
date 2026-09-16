@@ -121,8 +121,9 @@ Enrichers**. These drawers start closed; open one at a time to inspect its full
 inventory and descriptor-defined settings. Each closed header keeps the selected
 method and availability count visible. **AI model connections** sit above the
 drawers because one OpenAI-compatible or Ollama connection can supply both a
-synthesizer and an embedder. Connecting AI is the normal setup path; bundled
-model-free services are fallback capabilities when those services are unavailable.
+synthesizer and an embedder. AI is optional; bundled model-free methods support
+the first Intake without a model connection. In packaged deployments, the
+launcher selects optional services and Setup configures how to use them.
 
 Inside the **Extractors** drawer, **Extraction routing** assigns extension groups
 to a primary extractor and ordered fallbacks. A worker tries the primary first and records
