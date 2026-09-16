@@ -7,6 +7,8 @@
     "dev": "vite --port 1420",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
+    "prepare-icons": "node scripts/ensure-icons.mjs",
+    "pretauri": "npm run prepare-icons",
     "tauri": "tauri"
   },
   "dependencies": {
