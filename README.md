@@ -12,18 +12,56 @@ extracted content, provenance, and rebuildable search data in a neighboring
 `.osii` sidecar. You can inspect, move, or rebuild that sidecar without changing
 the source material.
 
+## What happens when you use OSII Launcher
+
+Open the launcher and choose a folder of documents. It checks that OSII can
+read that folder, helps you connect to the image registry, and lets you select
+optional tools. When you press **Start OSII**, it starts a local stack; you can
+then open the dashboard from the launcher. You can return to the same library
+later without rebuilding the app or repeating the setup.
+
+The launcher handles the workstation; OSII handles the knowledge. Your files
+remain untouched and are mounted read-only. OSII extracts text and tables,
+records where each result came from, and writes derived artifacts to a separate
+`.osii` sidecar. Search indexes can be rebuilt from those artifacts. The
+dashboard lets you inspect the results, search, and ask grounded questions.
+An AI model is optional, not a prerequisite for understanding your files.
+
+```text
+Choose a folder in Launcher
+         |
+         +--> original files (read-only)
+         |
+         +--> OSII's .osii sidecar (derived content + provenance)
+                         |
+                         +--> dashboard, Python, REST, MCP, and custom tools
+```
+
+This design reflects four ideas:
+
+- **Grounding before generation.** A model may help interpret material, but
+  it is not the source of truth.
+- **Canonical files before indexes.** Search indexes and caches make OSII
+  fast; they can be rebuilt from inspectable artifacts.
+- **Replaceable computation.** You can add or swap extractors, synthesizers,
+  embedders, and enrichers without changing your originals.
+- **One shared vocabulary.** People, scripts, the dashboard, REST clients,
+  and agents use the same objects, scopes, artifacts, and provenance.
+
 ## Start here: choose your path
 
-| What you want | Start with | Best for |
-| --- | --- | --- |
-| **A desktop app** | [Build the Tauri launcher](osii-launcher/README.md#development) | Choosing a library folder, optional tools, and a pinned container release in a graphical app; then starting and stopping OSII repeatably. |
-| **A bare-metal development run** | `make demo` on macOS/Linux or `.\scripts\osii.ps1 demo` on Windows | Learning OSII or changing its Python and dashboard code without building containers. |
-| **Direct containers** | `make build` then `make run`, or the [PowerShell equivalents](docs/operations/runbook-development.md#direct-compose-development) | Building and testing the packaged stack yourself. |
+| Path | Best for |
+| --- | --- |
+| [Desktop app: build the launcher](#desktop-app-build-the-launcher) | The primary graphical path for choosing a library, optional tools, and a pinned container version. |
+| [Bare-metal demo](#bare-metal-demo) | Learning OSII or changing Python and dashboard code without building containers. |
+| [Direct containers](#direct-containers) | Building and testing the packaged stack yourself. |
 
-The launcher is the primary desktop experience. Build it once, then open the
-resulting app when you want to use OSII. It needs Podman, a Compose provider,
-and accessible OSII images at a pinned tag; **building the launcher does not
-build the images**. From `osii-launcher/`, after installing its [development
+### Desktop app: build the launcher
+
+Build the launcher once, then open the resulting app whenever you want to use
+OSII. It needs Podman, a Compose provider, and accessible OSII images at a
+pinned tag. **Building the launcher does not build the images.** From
+`osii-launcher/`, after installing its [development
 prerequisites](osii-launcher/README.md#development):
 
 ```bash
@@ -32,10 +70,10 @@ npm run tauri -- build
 ```
 
 The [launcher guide](osii-launcher/README.md) explains image defaults and where
-to find the built app. In the app, choose a document folder, connect to the
-image registry, select optional tools, and start OSII. Configure model
-connections later in dashboard **Setup**; model keys do not belong in the
-launcher.
+to find the built app. Configure model connections later in dashboard
+**Setup**; model keys do not belong in the launcher.
+
+### Bare-metal demo
 
 For the shortest source-based introduction, install [uv](https://docs.astral.sh/uv/)
 and Node.js/npm, then run the demo from the repository root. OSII requests its
@@ -58,35 +96,13 @@ In **Intake**, process the included example files; then explore **Files**,
 files later, use `make dev` or `.\scripts\osii.ps1 dev` and follow the
 [host-Python runbook](docs/operations/runbook-development.md#host-python-development).
 
-For direct containers, start with the
-[Compose runbook](docs/operations/runbook-development.md#direct-compose-development).
-It covers the container `.env`, Podman setup, architecture checks, and the
-equivalent Windows commands. The [deployment chooser](docs/operations/runbooks.md)
-also covers desktop use, releases, updates, and rollback.
+### Direct containers
 
-## What happens when you use OSII
-
-```text
-Your files                         OSII's portable sidecar
-----------                         -----------------------
-reports, PDFs, CSVs, notes  --->   extracted text and source locations
-                                   tables, enrichments, and provenance
-                                   rebuildable search indexes
-                                         |
-                                         +--> dashboard, Python, REST, MCP,
-                                              and custom processors
-```
-
-Four ideas guide the project:
-
-- **Grounding before generation.** A model may help interpret material, but
-  it is not the source of truth.
-- **Canonical files before indexes.** Search indexes and caches make OSII
-  fast; they can be rebuilt from inspectable artifacts.
-- **Replaceable computation.** You can add or swap extractors, synthesizers,
-  embedders, and enrichers without changing your originals.
-- **One shared vocabulary.** People, scripts, the dashboard, REST clients,
-  and agents use the same objects, scopes, artifacts, and provenance.
+Use `make build` and `make run` from the repository root on macOS/Linux, or
+the [equivalent PowerShell commands](docs/operations/runbook-development.md#direct-compose-development)
+on Windows. The [Compose runbook](docs/operations/runbook-development.md#direct-compose-development)
+covers the container `.env`, Podman setup, and architecture checks. The
+[deployment chooser](docs/operations/runbooks.md) covers other operating tasks.
 
 ## Where to go next
 
