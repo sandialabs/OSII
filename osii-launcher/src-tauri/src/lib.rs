@@ -24,6 +24,9 @@ const BASELINE_SERVICES: &[&str] = &[
     "dashboard",
 ];
 
+const DEMO_PROFILE_ID: &str = "osii-demo";
+const DEMO_PROFILE_NAME: &str = "OSII built-in demo";
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PodmanStatus {
@@ -548,6 +551,14 @@ fn save_profile(
     draft: ProfileDraft,
     profile_id: Option<String>,
 ) -> Result<Profile, String> {
+    save_profile_inner(&app, draft, profile_id)
+}
+
+fn save_profile_inner(
+    app: &AppHandle,
+    draft: ProfileDraft,
+    profile_id: Option<String>,
+) -> Result<Profile, String> {
     let name = draft.name.trim();
     if name.is_empty() {
         return Err("Give this library a name.".to_string());
@@ -559,7 +570,7 @@ fn save_profile(
     if image_tag.eq_ignore_ascii_case("latest") {
         return Err("Choose a pinned release tag instead of latest.".to_string());
     }
-    let mut profiles = deduplicate_profiles(read_profiles(&app)?);
+    let mut profiles = deduplicate_profiles(read_profiles(app)?);
     let id = match profile_id {
         Some(id) => id,
         None => profiles
@@ -585,14 +596,85 @@ fn save_profile(
             || old.concept_entity_wiki != profile.concept_entity_wiki
             || old.tesseract_open_cv != profile.tesseract_open_cv
     }) {
-        sync_selected_tools(&app, &profile)?;
+        sync_selected_tools(app, &profile)?;
     }
     profiles.retain(|item| item.id != id && !same_profile_settings(item, &profile));
     profiles.insert(0, profile.clone());
-    write_profiles(&app, &profiles)?;
-    fs::create_dir_all(profile_data_dir(&app, &id)?)
+    write_profiles(app, &profiles)?;
+    fs::create_dir_all(profile_data_dir(app, &id)?)
         .map_err(|error| format!("Could not create the library state directory: {error}"))?;
     Ok(profile)
+}
+
+fn bundled_demo_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let development = Path::new(env!("CARGO_MANIFEST_DIR")).join("../demo-assets");
+    if development.is_dir() {
+        return development
+            .canonicalize()
+            .map_err(|error| format!("Could not locate the bundled demo files: {error}"));
+    }
+    let packaged = app
+        .path()
+        .resolve("demo", BaseDirectory::Resource)
+        .map_err(|error| format!("Could not locate the packaged demo files: {error}"))?;
+    if packaged.is_dir() {
+        Ok(packaged)
+    } else {
+        Err("The built-in demo files are missing. Reinstall the OSII Launcher.".to_string())
+    }
+}
+
+fn copy_missing_demo_files(source: &Path, destination: &Path) -> Result<(), String> {
+    for entry in fs::read_dir(source)
+        .map_err(|error| format!("Could not read a bundled demo folder: {error}"))?
+    {
+        let entry =
+            entry.map_err(|error| format!("Could not read a bundled demo file: {error}"))?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("Could not inspect a bundled demo file: {error}"))?;
+        if file_type.is_symlink() {
+            return Err("The built-in demo contains an unsupported symbolic link.".to_string());
+        }
+        if file_type.is_dir() {
+            fs::create_dir_all(&destination_path)
+                .map_err(|error| format!("Could not create the demo library folder: {error}"))?;
+            copy_missing_demo_files(&source_path, &destination_path)?;
+        } else if file_type.is_file() && !destination_path.exists() {
+            fs::copy(&source_path, &destination_path)
+                .map_err(|error| format!("Could not install a demo file: {error}"))?;
+        } else if !file_type.is_file() {
+            return Err("The built-in demo contains an unsupported file type.".to_string());
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn prepare_demo_profile(
+    app: AppHandle,
+    image_prefix: String,
+    image_tag: String,
+) -> Result<Profile, String> {
+    let source_dir = launcher_data_dir(&app)?.join("demo").join("source");
+    fs::create_dir_all(&source_dir)
+        .map_err(|error| format!("Could not create the demo library folder: {error}"))?;
+    copy_missing_demo_files(&bundled_demo_dir(&app)?, &source_dir)?;
+    save_profile_inner(
+        &app,
+        ProfileDraft {
+            name: DEMO_PROFILE_NAME.to_string(),
+            source_dir: source_dir.to_string_lossy().to_string(),
+            image_prefix,
+            image_tag,
+            readable_wiki: false,
+            concept_entity_wiki: false,
+            tesseract_open_cv: false,
+        },
+        Some(DEMO_PROFILE_ID.to_string()),
+    )
 }
 
 #[tauri::command]
@@ -1486,6 +1568,7 @@ pub fn run() {
             validate_source,
             list_profiles,
             save_profile,
+            prepare_demo_profile,
             export_profile,
             import_profile,
             delete_profile,
@@ -1521,6 +1604,29 @@ mod tests {
     fn profile_ids_are_safe_for_paths_and_project_names() {
         assert!(validate_profile_id("9a35f814-402d-4d33-8ded-19b12ffccb21").is_ok());
         assert!(validate_profile_id("../../outside").is_err());
+    }
+
+    #[test]
+    fn built_in_demo_has_a_stable_safe_profile_id() {
+        assert_eq!(DEMO_PROFILE_ID, "osii-demo");
+        assert!(validate_profile_id(DEMO_PROFILE_ID).is_ok());
+    }
+
+    #[test]
+    fn demo_copy_installs_missing_files_without_overwriting_existing_ones() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../demo-assets");
+        let destination = std::env::temp_dir().join(format!("osii-demo-copy-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&destination).expect("create test destination");
+        copy_missing_demo_files(&source, &destination).expect("install packaged demo");
+        let purcell = destination.join("example-documents/purcell.pdf");
+        assert!(purcell.is_file());
+        assert!(destination.join("example-datasets/iris/dataset.json").is_file());
+        assert!(destination.join("example-datasets/wine/dataset.json").is_file());
+
+        fs::write(&purcell, b"user keeps this file").expect("edit demo file");
+        copy_missing_demo_files(&source, &destination).expect("reinstall packaged demo");
+        assert_eq!(fs::read(&purcell).expect("read retained file"), b"user keeps this file");
+        fs::remove_dir_all(&destination).expect("remove test destination");
     }
 
     #[test]

@@ -232,6 +232,20 @@ function App() {
     if (path) update("sourceDir", path);
   }
 
+  async function prepareDemo() {
+    if (!draft.imagePrefix.trim() || !draft.imageTag.trim()) {
+      setProblem("Set the Quay image prefix and pinned release tag before loading the built-in demo.");
+      return;
+    }
+    const profile = await run("Preparing built-in demo", () =>
+      launcherApi.prepareDemoProfile(draft.imagePrefix, draft.imageTag),
+    );
+    if (!profile) return;
+    setProfiles((current) => [profile, ...current.filter((item) => item.id !== profile.id)]);
+    selectProfile(profile);
+    setNotice("Built-in demo is ready. Log into Quay, then select Start OSII.");
+  }
+
   async function checkSource() {
     if (!draft.sourceDir.trim()) {
       setProblem("Choose a source folder first.");
@@ -431,6 +445,13 @@ function App() {
                 <button className="secondary" disabled={Boolean(busy) || !workstationReady} onClick={() => void checkSource()}>Test container access</button>
               </div>
               {sourceCheck && <p className={`check-detail ${sourceCheck.ok ? "ok" : "bad"}`}>{sourceCheck.message}</p>}
+              <div className="demo-callout">
+                <div>
+                  <strong>Try the built-in demo</strong>
+                  <p>Creates a separate local library with the Purcell PDF and bundled Iris and Wine scikit-learn sample datasets. It never changes your shared drive.</p>
+                </div>
+                <button className="secondary" disabled={Boolean(busy)} onClick={() => void prepareDemo()}>{busy === "Preparing built-in demo" ? "Preparing…" : "Load built-in demo"}</button>
+              </div>
             </div>
           </section>
 

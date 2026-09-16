@@ -26,6 +26,8 @@ export const launcherApi = {
   listProfiles: () => invoke<Profile[]>("list_profiles"),
   saveProfile: (draft: ProfileDraft, profileId?: string) =>
     invoke<Profile>("save_profile", { draft, profileId: profileId ?? null }),
+  prepareDemoProfile: (imagePrefix: string, imageTag: string) =>
+    invoke<Profile>("prepare_demo_profile", { imagePrefix, imageTag }),
   deleteProfile: (profileId: string) => invoke<Profile[]>("delete_profile", { profileId }),
   chooseProfileExport: (name: string) => save({ title: "Export OSII profile", defaultPath: `${name}.osii-profile.toml`, filters: [{ name: "OSII profile", extensions: ["toml"] }] }),
   chooseProfileImport: () => open({ title: "Import OSII profile", multiple: false, filters: [{ name: "OSII profile", extensions: ["toml"] }] }),

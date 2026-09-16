@@ -37,7 +37,8 @@
     "shortDescription": "Run OSII on a workstation",
     "longDescription": "Configure Podman, approved OSII images, source folders, and model providers from a desktop application.",
     "resources": {
-      "../../compose.yaml": "deployment/compose.yaml"
+      "../../compose.yaml": "deployment/compose.yaml",
+      "../demo-assets": "demo"
     }
   }
 }

@@ -197,6 +197,19 @@ The Tauri build bundles the repository's packaged `compose.yaml` as a resource.
 The component export script rewrites that resource path for the launcher's
 standalone corporate repository.
 
+## Built-in demo
+
+Select **Load built-in demo** in step 2 to create and select an `OSII built-in
+demo` profile. It copies the already-packaged Purcell PDF plus the Iris and Wine
+sample datasets exported from scikit-learn into the launcher's application-data
+directory. It does not need Python, scikit-learn, a source checkout, or a shared
+drive, and it never modifies a user-selected library folder.
+
+The demo uses the image prefix and pinned tag currently shown in step 2. Log in
+to Quay if necessary, then select **Start OSII** as usual. The launcher still
+pulls the approved images and starts only the bundled baseline services. Loading
+the demo again preserves any files already present in its local source folder.
+
 ## Advanced deployment view
 
 After saving a library, select **Advanced view** beside the deployment controls.
