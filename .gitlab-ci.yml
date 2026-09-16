@@ -10,7 +10,7 @@ workflow:
     - if: '$CI_PIPELINE_SOURCE == "web"'
     - when: never
 
-stages: [verify, approve, build, publish, promote]
+stages: [verify, approve, build, publish, catalog, promote]
 
 default:
   tags: [osii-linux-amd64]
@@ -122,6 +122,14 @@ publish-release:
     name: corporate-release
   script:
     - uv run --no-project --python 3.12 --with twine --with PyYAML python scripts/corporate_release.py publish
+
+update-launcher-catalog:
+  extends: .release
+  stage: catalog
+  needs: [publish-release]
+  resource_group: corporate-release
+  script:
+    - uv run --no-project --python 3.12 python scripts/corporate_release.py catalog
 
 promote-latest:
   extends: .release

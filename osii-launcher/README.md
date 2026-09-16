@@ -121,13 +121,22 @@ exact missing Stack image and returns the user to the image step. This also
 supports an airgapped workstation after `podman load` of a verified image
 collection.
 
-The catalog is static JSON owned by the corporate configuration/release
-repository. A publisher pushes the Quay image first, then updates the reviewed
-catalog entry with its display version and immutable digest. See
-[`catalog.example.json`](catalog.example.json) for the required shape. The
-launcher accepts only HTTPS catalogs, the configured registry,
-`ai-ready-everything/osii-*` names, and SHA-256 digest references. It caches
-the last valid catalog locally and reports its age if the network is unavailable.
+The catalog is static, pretty-printed JSON owned by the corporate
+configuration/release repository. After a protected OSII release has published
+its Quay images, GitLab resolves their manifest digests and opens a reviewed
+catalog merge request. It never asks the launcher to enumerate Quay tags or use
+`:latest`. See [`catalog.example.json`](catalog.example.json) for the required
+shape. The launcher accepts only HTTPS catalogs, the configured registry,
+`ai-ready-everything/osii-*` names, and lowercase SHA-256 digest references. It
+caches the last valid catalog locally and reports its age if the network is
+unavailable.
+
+Read the catalog from top to bottom: `stacks` are complete, compatible OSII
+releases; `tools` are optional Processor API services with their own version
+history; `images` are intentionally visible but not automatically wired into
+OSII. Older Stack and tool-version entries remain so a workstation can keep a
+reproducible profile. The catalog job refuses incomplete Stacks, tags in place
+of digests, changed published tool digests, credentials, and malformed JSON.
 Set `OSII_CA_BUNDLE` to a corporate PEM bundle before starting the launcher when
 your internal HTTPS endpoint needs a private CA.
 

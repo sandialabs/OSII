@@ -218,9 +218,11 @@ def test_launcher_exports_as_an_independent_component(tmp_path):
     assert (launcher / "README.md").is_file()
     assert (launcher / ".env.example").is_file()
     assert (launcher / "compose.yaml").is_file()
+    assert (launcher / "demo-assets").is_dir()
     launcher_config = json.loads((launcher / "src-tauri" / "tauri.conf.json").read_text())
     assert launcher_config["bundle"]["resources"] == {
-        "../compose.yaml": "deployment/compose.yaml"
+        "../compose.yaml": "deployment/compose.yaml",
+        "../demo-assets": "demo",
     }
     assert not (launcher / "src-tauri" / "gen").exists()
     assert not (launcher / "osii-core").exists()

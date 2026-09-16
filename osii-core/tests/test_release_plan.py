@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from scripts.corporate_config import load_defaults, render_files
+from scripts.launcher_catalog import CatalogError, update_catalog, validate_catalog
 from scripts.release_plan import IMAGES, Plan, check_scope
 
 
@@ -78,18 +79,20 @@ def test_corporate_defaults_are_non_secret_and_generate_pinned_local_settings(tm
     config.write_text(
         "[defaults]\n"
         'OSII_QUAY_REGISTRY = "quay.corp.test"\n'
-        'OSII_IMAGE_PREFIX = "quay.corp.test/team/osii"\n'
+        'OSII_IMAGE_PREFIX = "quay.corp.test/ai-ready-everything/osii"\n'
         f'OSII_BASE_IMAGE = "quay.corp.test/ubi@sha256:{"a" * 64}"\n'
         'OSII_TESSERACT_SOURCE_URL = "https://artifacts.corp.test/tess.tar.gz"\n'
         'OSII_LEPTONICA_SOURCE_URL = "https://artifacts.corp.test/lep.tar.gz"\n'
         'OSII_TESSDATA_BASE_URL = "https://artifacts.corp.test/data"\n'
-        'OSII_MODEL_BASE_URL = "https://models.corp.test/v1"\n',
+        'OSII_MODEL_BASE_URL = "https://models.corp.test/v1"\n'
+        'OSII_CATALOG_URL = "https://gitlab.corp.test/osii/catalog/-/raw/main/catalog.json"\n',
         encoding="utf-8",
     )
     defaults = load_defaults(config)
     rendered = render_files(defaults, "1.2.3")
     launcher = next(value for path, value in rendered.items() if path.name == ".env.local")
     assert 'VITE_OSII_IMAGE_TAG="1.2.3"' in launcher
+    assert 'VITE_OSII_CATALOG_URL="https://gitlab.corp.test/osii/catalog/-/raw/main/catalog.json"' in launcher
     assert all("API_KEY=" not in value for value in rendered.values())
     with pytest.raises(ValueError, match="immutable"):
         render_files(defaults, "latest")
@@ -140,3 +143,70 @@ def test_multiarch_verification_rejects_missing_architecture(monkeypatch: pytest
     ]}).encode()
     with pytest.raises(ValueError, match="Incomplete multi-architecture"):
         release._verified_platforms(only_amd64, "quay.corp.test/team/osii-core:1.2.3")
+
+
+def test_launcher_catalog_adds_a_complete_stack_and_independent_optional_images() -> None:
+    registry = "quay.corp.test"
+    digest = lambda character: f"sha256:{character * 64}"
+    old = {
+        "version": 1,
+        "registry": registry,
+        "namespace": "ai-ready-everything",
+        "stacks": [{
+            "id": "1.2.2", "displayName": "OSII 1.2.2",
+            "images": {
+                "release": "1.2.2",
+                "core": f"{registry}/ai-ready-everything/osii-core@{digest('a')}",
+                "dashboard": f"{registry}/ai-ready-everything/osii-dashboard@{digest('a')}",
+                "baselineProcessors": f"{registry}/ai-ready-everything/osii-baseline-processors@{digest('a')}",
+            },
+        }],
+        "tools": [],
+        "images": [],
+    }
+    updated = update_catalog(
+        old,
+        release="1.2.3",
+        image_digests={
+            "core": digest("b"), "dashboard": digest("c"), "baseline-processors": digest("d"),
+            "tesseract-opencv": digest("e"), "tabular": digest("f"), "llm-wikis": digest("0"),
+        },
+        published_images=("core", "dashboard", "baseline-processors", "tesseract-opencv", "tabular"),
+    )
+    assert [stack["id"] for stack in updated["stacks"]] == ["1.2.2", "1.2.3"]
+    assert updated["stacks"][-1]["images"]["baselineProcessors"].endswith("@" + digest("d"))
+    assert updated["tools"][0]["versions"] == [{
+        "label": "1.2.3",
+        "reference": f"{registry}/ai-ready-everything/osii-tesseract-opencv@{digest('e')}",
+    }]
+    assert updated["images"][0]["versions"] == [{
+        "label": "1.2.3",
+        "reference": f"{registry}/ai-ready-everything/osii-tabular@{digest('f')}",
+    }]
+    assert validate_catalog(updated, registry=registry) == updated
+    initial = {**old, "stacks": []}
+    stack_digests = {
+        "core": digest("b"), "dashboard": digest("c"), "baseline-processors": digest("d"),
+    }
+    bootstrapped = update_catalog(
+        initial, release="1.2.3", image_digests=stack_digests, published_images=(),
+    )
+    assert bootstrapped["stacks"][0]["images"]["core"].endswith("@" + stack_digests["core"])
+
+
+def test_launcher_catalog_rejects_tags_and_uppercase_digests() -> None:
+    catalog = {
+        "version": 1, "registry": "quay.corp.test", "namespace": "ai-ready-everything",
+        "stacks": [{
+            "id": "1.2.3", "displayName": "OSII 1.2.3",
+            "images": {
+                "release": "1.2.3",
+                "core": "quay.corp.test/ai-ready-everything/osii-core:1.2.3",
+                "dashboard": f"quay.corp.test/ai-ready-everything/osii-dashboard@sha256:{'A' * 64}",
+                "baselineProcessors": f"quay.corp.test/ai-ready-everything/osii-baseline-processors@sha256:{'a' * 64}",
+            },
+        }],
+        "tools": [], "images": [],
+    }
+    with pytest.raises(CatalogError, match="lowercase @sha256"):
+        validate_catalog(catalog, registry="quay.corp.test")

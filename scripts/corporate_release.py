@@ -20,6 +20,7 @@ import zipfile
 from pathlib import Path
 
 from corporate_config import apply_defaults
+from launcher_catalog import CatalogError, update_catalog, validate_catalog
 from publish_multiarch import RELEASE_IMAGES, TOOLBOX_IMAGES, require_new_tag
 from release_plan import Plan, load_plan
 from release_plan import check as check_release_plan
@@ -32,6 +33,39 @@ def required(name: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
         raise ValueError(f"Configure the corporate CI variable {name}.")
+    return value
+
+
+def catalog_url() -> str:
+    """Return the public-in-corporate-network URL compiled into the launcher."""
+    value = required("OSII_CATALOG_URL")
+    parsed = urllib.parse.urlparse(value)
+    if (parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password
+            or parsed.query or parsed.fragment):
+        raise ValueError("OSII_CATALOG_URL must be a credential-free HTTPS URL.")
+    return value
+
+
+def catalog_project() -> str:
+    """Return the separate GitLab project that owns the reviewed catalog."""
+    value = required("OSII_CATALOG_PROJECT")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+", value):
+        raise ValueError("OSII_CATALOG_PROJECT must be a GitLab group/project path.")
+    return value
+
+
+def catalog_path() -> str:
+    value = os.environ.get("OSII_CATALOG_PATH", "catalog.json").strip()
+    path = Path(value)
+    if not value or path.is_absolute() or ".." in path.parts:
+        raise ValueError("OSII_CATALOG_PATH must be a relative file path in the catalog project.")
+    return value
+
+
+def catalog_target_branch() -> str:
+    value = os.environ.get("OSII_CATALOG_TARGET_BRANCH", "main").strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", value) or ".." in value:
+        raise ValueError("OSII_CATALOG_TARGET_BRANCH must be a valid Git branch name.")
     return value
 
 
@@ -69,8 +103,9 @@ def preflight() -> str:
         raise ValueError("Release tags must point to a commit on the corporate default branch.")
     prefix = required("OSII_IMAGE_PREFIX")
     registry = required("OSII_QUAY_REGISTRY")
-    if not prefix.startswith(registry + "/") or registry in ("quay.io", "localhost"):
-        raise ValueError("OSII_IMAGE_PREFIX must belong to OSII_QUAY_REGISTRY (corporate Quay).")
+    if prefix != f"{registry}/ai-ready-everything/osii" or registry in ("quay.io", "localhost"):
+        raise ValueError("OSII_IMAGE_PREFIX must be the approved corporate Quay prefix ending in /ai-ready-everything/osii.")
+    catalog_url()
     if not re.search(r"@sha256:[0-9a-f]{64}$", required("OSII_BASE_IMAGE")):
         raise ValueError("OSII_BASE_IMAGE must be an approved RHEL/UBI digest reference.")
     for name in ("OSII_TESSERACT_SOURCE_URL", "OSII_LEPTONICA_SOURCE_URL", "OSII_TESSDATA_BASE_URL"):
@@ -152,6 +187,7 @@ def build_installer() -> None:
     env = os.environ.copy()
     env.update({
         "VITE_OSII_REGISTRY": required("OSII_QUAY_REGISTRY"),
+        "VITE_OSII_CATALOG_URL": catalog_url(),
         "VITE_OSII_IMAGE_PREFIX": required("OSII_IMAGE_PREFIX"),
         "VITE_OSII_IMAGE_TAG": release_version,
         "VITE_OSII_OPENAI_BASE_URL": os.environ.get("OSII_MODEL_BASE_URL", ""),
@@ -327,6 +363,147 @@ def publish() -> None:
     }).encode())
 
 
+def _release_image_digests(release_version: str) -> dict[str, str]:
+    """Resolve only known release tags; never enumerate mutable registry tags."""
+    prefix = required("OSII_IMAGE_PREFIX")
+    records: dict[str, str] = {}
+    for name, _, _ in IMAGES:
+        reference = f"{prefix}-{name}:{release_version}"
+        raw = subprocess.check_output(["skopeo", "inspect", "--raw", f"docker://{reference}"])
+        _verified_platforms(raw, reference)
+        digest = "sha256:" + hashlib.sha256(raw).hexdigest()
+        pinned = f"{prefix}-{name}@{digest}"
+        pinned_raw = subprocess.check_output(["skopeo", "inspect", "--raw", f"docker://{pinned}"])
+        _verified_platforms(pinned_raw, pinned)
+        if hashlib.sha256(pinned_raw).hexdigest() != digest.removeprefix("sha256:"):
+            raise ValueError(f"Digest verification did not round-trip for {reference}.")
+        records[name] = digest
+    return records
+
+
+def _verify_catalog_digest(reference: str) -> None:
+    raw = subprocess.check_output(["skopeo", "inspect", "--raw", f"docker://{reference}"])
+    _verified_platforms(raw, reference)
+    expected = reference.rsplit("@", 1)[1]
+    actual = "sha256:" + hashlib.sha256(raw).hexdigest()
+    if actual != expected:
+        raise ValueError(f"Quay returned a different digest for {reference}.")
+
+
+def _catalog_api_request(project: str, path: str, *, data: bytes) -> bytes:
+    url = f"{required('CI_API_V4_URL')}/projects/{urllib.parse.quote(project, safe='')}/{path}"
+    request = urllib.request.Request(url, data=data, method="POST", headers={
+        "JOB-TOKEN": required("CI_JOB_TOKEN"), "Content-Type": "application/json",
+    })
+    context = ssl.create_default_context(cafile=os.environ.get("OSII_CA_BUNDLE") or None)
+    with urllib.request.urlopen(request, context=context, timeout=120) as response:
+        return response.read()
+
+
+def _catalog_git_environment(directory: Path) -> dict[str, str]:
+    """Give Git a temporary Job Token credential without putting it in a command line."""
+    host = required("CI_SERVER_HOST")
+    credential = directory / "git-credentials"
+    token = urllib.parse.quote(required("CI_JOB_TOKEN"), safe="")
+    credential.write_text(f"https://gitlab-ci-token:{token}@{host}\n", encoding="utf-8")
+    credential.chmod(0o600)
+    environment = os.environ.copy()
+    environment.update({
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "credential.helper",
+        "GIT_CONFIG_VALUE_0": f"store --file={credential}",
+    })
+    return environment
+
+
+def _run_catalog_git(*command: str, cwd: Path | None, environment: dict[str, str]) -> None:
+    subprocess.run(["git", *command], cwd=cwd, env=environment, check=True)
+
+
+def update_launcher_catalog() -> None:
+    """Open a reviewed catalog merge request after a successful protected release."""
+    release_version = preflight()
+    plan = load_plan()
+    project = catalog_project()
+    target_branch = catalog_target_branch()
+    path = catalog_path()
+    branch = f"release/osii-catalog-v{release_version}"
+    with tempfile.TemporaryDirectory(prefix="osii-catalog-") as directory:
+        temporary = Path(directory)
+        registry_login(temporary)
+        digests = _release_image_digests(release_version)
+        checkout = temporary / "catalog"
+        environment = _catalog_git_environment(temporary)
+        clone_url = f"https://{required('CI_SERVER_HOST')}/{project}.git"
+        _run_catalog_git("clone", "--branch", target_branch, "--single-branch", clone_url, str(checkout),
+                         cwd=None, environment=environment)
+        _run_catalog_git("switch", "--create", branch, cwd=checkout, environment=environment)
+        catalog_file = checkout / path
+        try:
+            catalog = json.loads(catalog_file.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            catalog = {
+                "version": 1,
+                "registry": required("OSII_QUAY_REGISTRY"),
+                "namespace": "ai-ready-everything",
+                "stacks": [],
+                "tools": [],
+                "images": [],
+            }
+        except json.JSONDecodeError as error:
+            raise ValueError(f"{path} is not valid JSON: {error}.") from error
+        registry = required("OSII_QUAY_REGISTRY")
+        try:
+            validate_catalog(catalog, registry=registry, verify_digest=_verify_catalog_digest,
+                             allow_empty_stacks=True)
+            updated = update_catalog(
+                catalog, release=release_version, image_digests=digests,
+                published_images=plan.images_to_build,
+            )
+            validate_catalog(updated, registry=registry, verify_digest=_verify_catalog_digest)
+        except CatalogError as error:
+            raise ValueError(str(error)) from error
+        catalog_file.parent.mkdir(parents=True, exist_ok=True)
+        catalog_file.write_text(json.dumps(updated, indent=2) + "\n", encoding="utf-8")
+        changed = subprocess.run(["git", "diff", "--quiet", "--", path], cwd=checkout,
+                                 env=environment, check=False).returncode != 0
+        if not changed:
+            print("Catalog already contains this release; no merge request opened.")
+            return
+        _run_catalog_git("config", "user.name", "OSII Release Bot", cwd=checkout, environment=environment)
+        _run_catalog_git("config", "user.email", "osii-release-bot@invalid", cwd=checkout, environment=environment)
+        _run_catalog_git("add", "--", path, cwd=checkout, environment=environment)
+        _run_catalog_git("commit", "-m", f"release: add OSII {release_version} catalog", cwd=checkout,
+                         environment=environment)
+        _run_catalog_git("push", "origin", branch, cwd=checkout, environment=environment)
+    mapping = "\n".join(
+        f"| osii-{name} | `{required('OSII_QUAY_REGISTRY')}/ai-ready-everything/osii-{name}@{digest}` |"
+        for name, digest in sorted(digests.items())
+    )
+    description = (
+        f"## OSII {release_version} approved-image catalog\n\n"
+        f"Release tag: `{required('CI_COMMIT_TAG')}`\n\n"
+        "| Image | Immutable Quay reference |\n| --- | --- |\n"
+        f"{mapping}\n\n"
+        "Validation passed:\n"
+        "- `catalog.json` parses as JSON and keeps catalog version 1.\n"
+        "- every reference uses the configured corporate registry, `ai-ready-everything/osii-*`, "
+        "and a lowercase SHA-256 digest; no tags or credentials are present.\n"
+        "- every Stack has core, dashboard, and baselineProcessors from this release.\n"
+        "- every catalog digest was inspected in Quay and verified as an AMD64/ARM64 manifest.\n"
+    )
+    response = _catalog_api_request(project, "merge_requests", data=json.dumps({
+        "source_branch": branch,
+        "target_branch": target_branch,
+        "title": f"release: add OSII {release_version} catalog",
+        "description": description,
+        "remove_source_branch": True,
+    }).encode())
+    merge_request = json.loads(response)
+    print(f"Opened catalog merge request: {merge_request.get('web_url', branch)}")
+
+
 def promote_latest() -> None:
     release_version = preflight()
     tag = required("CI_COMMIT_TAG")
@@ -362,12 +539,15 @@ def _verified_platforms(raw: bytes, reference: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("version", "preflight", "images", "installer", "publish", "promote-latest"))
+    parser.add_argument(
+        "action",
+        choices=("version", "preflight", "images", "installer", "publish", "catalog", "promote-latest"),
+    )
     args = parser.parse_args()
     apply_defaults()
     actions = {"version": version, "preflight": preflight, "images": build_images,
                "installer": build_installer, "publish": publish,
-               "promote-latest": promote_latest}
+               "catalog": update_launcher_catalog, "promote-latest": promote_latest}
     result = actions[args.action]()
     if result:
         print(result)

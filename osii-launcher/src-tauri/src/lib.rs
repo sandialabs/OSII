@@ -660,7 +660,10 @@ fn validate_catalog_reference(
     if !reference.starts_with(&prefix)
         || !reference.contains("@sha256:")
         || reference.split("@sha256:").nth(1).is_none_or(|digest| {
-            digest.len() != 64 || !digest.chars().all(|value| value.is_ascii_hexdigit())
+            digest.len() != 64
+                || !digest
+                    .chars()
+                    .all(|value| value.is_ascii_digit() || matches!(value, 'a'..='f'))
         })
     {
         return Err(format!(

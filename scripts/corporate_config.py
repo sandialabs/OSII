@@ -7,6 +7,7 @@ import json
 import os
 import re
 import tomllib
+import urllib.parse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,7 +15,7 @@ DEFAULT_PATH = ROOT / "corporate/osii.toml"
 REQUIRED = {
     "OSII_QUAY_REGISTRY", "OSII_IMAGE_PREFIX", "OSII_BASE_IMAGE",
     "OSII_TESSERACT_SOURCE_URL", "OSII_LEPTONICA_SOURCE_URL",
-    "OSII_TESSDATA_BASE_URL", "OSII_MODEL_BASE_URL",
+    "OSII_TESSDATA_BASE_URL", "OSII_MODEL_BASE_URL", "OSII_CATALOG_URL",
 }
 OPTIONAL = {"OSII_EMBEDDING_MODEL", "OSII_CHAT_MODEL", "OSII_CA_BUNDLE"}
 ALLOWED = REQUIRED | OPTIONAL
@@ -39,16 +40,19 @@ def load_defaults(path: Path = DEFAULT_PATH) -> dict[str, str]:
         raise ValueError("Replace all illustrative domains and placeholders in corporate settings.")
     registry = defaults["OSII_QUAY_REGISTRY"].rstrip("/")
     prefix = defaults["OSII_IMAGE_PREFIX"].rstrip("/")
-    if "://" in registry or "/" in registry or not prefix.startswith(registry + "/"):
-        raise ValueError("OSII_IMAGE_PREFIX must be below the corporate Quay hostname.")
+    if "://" in registry or "/" in registry or prefix != f"{registry}/ai-ready-everything/osii":
+        raise ValueError("OSII_IMAGE_PREFIX must be the approved corporate Quay /ai-ready-everything/osii prefix.")
     if registry in {"quay.io", "localhost"}:
         raise ValueError("Use corporate Quay, not a public or local registry.")
     if not re.search(r"@sha256:[0-9a-f]{64}$", defaults["OSII_BASE_IMAGE"]):
         raise ValueError("OSII_BASE_IMAGE must be an approved immutable digest reference.")
     for name in REQUIRED & {"OSII_TESSERACT_SOURCE_URL", "OSII_LEPTONICA_SOURCE_URL",
-                            "OSII_TESSDATA_BASE_URL", "OSII_MODEL_BASE_URL"}:
+                            "OSII_TESSDATA_BASE_URL", "OSII_MODEL_BASE_URL", "OSII_CATALOG_URL"}:
         if not defaults[name].startswith("https://"):
             raise ValueError(f"{name} must use HTTPS.")
+    catalog = urllib.parse.urlparse(defaults["OSII_CATALOG_URL"])
+    if catalog.username or catalog.password or catalog.query or catalog.fragment:
+        raise ValueError("OSII_CATALOG_URL must not contain credentials or query parameters.")
     return {key: value.strip() for key, value in defaults.items()}
 
 
@@ -74,6 +78,7 @@ def render_files(defaults: dict[str, str], version: str) -> dict[Path, str]:
     }
     launcher = {
         "VITE_OSII_REGISTRY": defaults["OSII_QUAY_REGISTRY"],
+        "VITE_OSII_CATALOG_URL": defaults["OSII_CATALOG_URL"],
         "VITE_OSII_IMAGE_PREFIX": defaults["OSII_IMAGE_PREFIX"],
         "VITE_OSII_IMAGE_TAG": version,
         "VITE_OSII_OPENAI_BASE_URL": defaults["OSII_MODEL_BASE_URL"],

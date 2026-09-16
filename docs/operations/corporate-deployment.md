@@ -128,6 +128,9 @@ Set these protected or environment-scoped CI variables:
 | `OSII_TESSDATA_BASE_URL` | Approved mirror base for the pinned language data |
 | `OSII_MODEL_BASE_URL` | Non-secret default model endpoint compiled into the launcher |
 | `OSII_EMBEDDING_MODEL`, `OSII_CHAT_MODEL` | Optional approved model defaults |
+| `OSII_CATALOG_URL` | Credential-free HTTPS raw URL for the reviewed launcher `catalog.json` |
+| `OSII_CATALOG_PROJECT` | Protected GitLab `group/project` that owns that catalog; allow this release project's Job Token to create branches and merge requests there |
+| `OSII_CATALOG_PATH`, `OSII_CATALOG_TARGET_BRANCH` | Optional catalog path and protected target branch; defaults are `catalog.json` and `main` |
 | Windows signing variables | `OSII_WINDOWS_CERTIFICATE_THUMBPRINT`, `OSII_WINDOWS_TIMESTAMP_URL` |
 | Apple signing variables | `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` |
 
@@ -144,7 +147,7 @@ base image, mirror URLs, and model defaults are entered once. For example:
 ```toml
 [defaults]
 OSII_QUAY_REGISTRY = "quay.internal.invalid"
-OSII_IMAGE_PREFIX = "quay.internal.invalid/team/osii"
+OSII_IMAGE_PREFIX = "quay.internal.invalid/ai-ready-everything/osii"
 OSII_BASE_IMAGE = "quay.internal.invalid/approved/ubi9@sha256:REPLACE_WITH_64_HEX_DIGEST"
 OSII_TESSERACT_SOURCE_URL = "https://artifacts.internal.invalid/tesseract.tar.gz"
 OSII_LEPTONICA_SOURCE_URL = "https://artifacts.internal.invalid/leptonica.tar.gz"
@@ -152,12 +155,21 @@ OSII_TESSDATA_BASE_URL = "https://artifacts.internal.invalid/tessdata"
 OSII_MODEL_BASE_URL = "https://models.internal.invalid/v1"
 OSII_EMBEDDING_MODEL = ""
 OSII_CHAT_MODEL = ""
+OSII_CATALOG_URL = "https://gitlab.internal.invalid/osii/release-config/-/raw/main/catalog.json"
 ```
 
 Replace the illustrative values with approved real ones. The helper rejects
 unknown keys, placeholders, non-HTTPS endpoints, and unpinned base images.
-Do not put API keys, Quay passwords, signing credentials, or certificate
-contents in this file. CI variables override these defaults and hold secrets.
+Do not put API keys, Quay passwords, signing credentials, certificate contents,
+or GitLab project credentials in this file. CI variables override these defaults
+and hold secrets. `OSII_CATALOG_PROJECT` is intentionally a CI variable: its
+Job Token permission must be granted by the separate protected catalog project.
+The catalog **repository** stays protected for writes and merge requests, but
+the HTTPS URL compiled into the launcher must be readable by approved
+workstations without a GitLab personal token. Publish its reviewed raw file
+through an internal read-only endpoint if GitLab's raw-file permission would
+otherwise require interactive authentication; the launcher never embeds or
+sends a GitLab credential.
 On a workstation, validate and create ignored `.env` and launcher `.env.local`
 without overwriting any existing local files:
 
@@ -198,7 +210,19 @@ The protected tag pipeline validates the commit and pauses at
 5. assembles and verifies the multi-architecture image manifests;
 6. publishes `osii` to the GitLab Python package registry only when Core changes;
 7. creates a GitLab Release containing installers, `deployment.zip`, image
-   digests, and SHA-256 checksums.
+   digests, and SHA-256 checksums;
+8. resolves each known Quay release image to its immutable manifest digest,
+   validates every existing catalog reference, and opens a release-branch merge
+   request in the protected catalog project. The job never enumerates Quay tags
+   or writes `:latest` into the catalog.
+
+Review and merge that catalog merge request after confirming the exact image
+mapping. The launcher sees the new approved Stack only after this review; until
+then it continues to use its last valid cached catalog if the catalog endpoint
+or Quay is temporarily unavailable.
+For the first release, the same job creates `catalog.json` from an empty
+version-1 catalog and adds the first complete Stack; no hand-edited placeholder
+digest is required.
 
 Tags are immutable. If a release fails after publishing, fix the code and
 prepare a new version; never reuse the old tag or image version. After clean
