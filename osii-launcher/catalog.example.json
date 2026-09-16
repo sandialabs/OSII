@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "registry": "quay.corp.example",
+  "namespace": "ai-ready-everything",
+  "stacks": [
+    {
+      "id": "2026.09.14",
+      "displayName": "OSII 2026.09.14",
+      "images": {
+        "release": "2026.09.14",
+        "core": "quay.corp.example/ai-ready-everything/osii-core@sha256:REPLACE_WITH_64_HEX_DIGEST",
+        "dashboard": "quay.corp.example/ai-ready-everything/osii-dashboard@sha256:REPLACE_WITH_64_HEX_DIGEST",
+        "baselineProcessors": "quay.corp.example/ai-ready-everything/osii-baseline-processors@sha256:REPLACE_WITH_64_HEX_DIGEST"
+      }
+    }
+  ],
+  "tools": [
+    {
+      "id": "tesseract-opencv",
+      "displayName": "Tesseract OCR with OpenCV regions",
+      "description": "Processor API-compatible OCR with bounding boxes.",
+      "processorApi": true,
+      "versions": [
+        { "label": "1.0.0", "reference": "quay.corp.example/ai-ready-everything/osii-tesseract-opencv@sha256:REPLACE_WITH_64_HEX_DIGEST" }
+      ]
+    }
+  ],
+  "images": []
+}

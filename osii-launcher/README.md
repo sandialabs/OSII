@@ -5,11 +5,12 @@ running packaged OSII images. It is not part of Core, the dashboard, MCP, or the
 processor toolbox.
 
 The launcher is a Tauri 2 application with a React interface and a deliberately
-small Rust host boundary. It checks Podman, prepares the Podman machine on
-Windows and macOS, authenticates Podman to Quay without retaining the registry
-password, validates a selected source folder from inside a container, stores
-non-secret library profiles, lets a user choose optional Toolbox images, and
-starts the resulting OSII Compose bundle. Model endpoints and credentials are
+small Rust host boundary. It is the workstation control surface for Podman:
+it checks installation, engine, and Compose separately; optionally logs Podman
+into Quay without retaining the registry password; fetches the approved catalog;
+shows matching local images; pulls only on an explicit user action; validates a
+selected source folder with an already-local OSII image; and starts the resulting
+OSII Compose bundle with `--pull=never`. Model endpoints and credentials are
 configured after launch in Workbench **Setup**, not in the launcher.
 
 ## Security and ownership boundary
@@ -95,13 +96,16 @@ Edit `.env.local`:
 
 ```dotenv
 VITE_OSII_REGISTRY=quay.corp.example
+VITE_OSII_CATALOG_URL=https://catalog.corp.example/osii/catalog.json
 VITE_OSII_IMAGE_PREFIX=quay.corp.example/team/osii
 VITE_OSII_IMAGE_TAG=2026.09.14
 ```
 
-The image prefix is the shared part before `-core`, `-dashboard`, and
-`-baseline-processors`. The tag must identify a pinned release; the launcher
-rejects `latest`.
+`VITE_OSII_CATALOG_URL` is the non-secret, internal HTTPS URL for the reviewed
+catalog. It is the active source for current Stack and Toolbox choices. The
+older prefix/tag values remain build-time migration defaults for historic
+profiles; a new profile should select a catalog Stack, whose component images
+are immutable digest references.
 
 Run `npm run tauri -- dev` to test those defaults or
 `npm run tauri -- build` to compile them into the installer. `VITE_` values are
@@ -109,20 +113,23 @@ visible in the compiled frontend, so they are suitable only for non-secret
 defaults. **Never put an API key or registry password in this file.** Quay
 credentials go directly to Podman; model credentials belong in Workbench Setup.
 
-Step 3 selects optional Toolbox services. The two wiki services share one image,
-so choosing both performs one pull. Tesseract/OpenCV uses its own image. The
-launcher seeds registrations for selected services in the profile's `deployment/tools.toml`.
-Unselected services remain available to add later. The selection
-controls which images are pulled and which services are started. Workbench reads
-the file immediately. The same directory contains `models.toml` and `secrets.env`.
+The catalog separates compatible **Stack** releases (Core, dashboard, and
+baseline processors) from independently-versioned Toolbox services. Select a
+complete Stack, choose any supported Toolbox version, and use **Pull** or
+**Pull selected** to acquire images. **Start OSII never pulls**: it reports the
+exact missing Stack image and returns the user to the image step. This also
+supports an airgapped workstation after `podman load` of a verified image
+collection.
 
-The collapsed **Images pulled when OSII starts** panel in step 1 previews the
-exact pinned images for the current profile and optional-service selection.
-**Check login** only asks Podman whether it is already authenticated to Quay.
-**Start OSII** uses images already in local Podman storage and pulls only those
-that are missing. For an airgapped workstation, load an
-[offline image collection](../docs/operations/publishing-images.md#carry-images-to-an-airgapped-workstation)
-first; use the same image prefix and pinned tag in the profile.
+The catalog is static JSON owned by the corporate configuration/release
+repository. A publisher pushes the Quay image first, then updates the reviewed
+catalog entry with its display version and immutable digest. See
+[`catalog.example.json`](catalog.example.json) for the required shape. The
+launcher accepts only HTTPS catalogs, the configured registry,
+`ai-ready-everything/osii-*` names, and SHA-256 digest references. It caches
+the last valid catalog locally and reports its age if the network is unavailable.
+Set `OSII_CA_BUNDLE` to a corporate PEM bundle before starting the launcher when
+your internal HTTPS endpoint needs a private CA.
 
 Launcher builds from before this policy change may have created Keychain entries
 with service name `org.osii.launcher.openai`. The current launcher neither reads
@@ -213,31 +220,33 @@ sample datasets exported from scikit-learn into the launcher's application-data
 directory. It does not need Python, scikit-learn, a source checkout, or a shared
 drive, and it never modifies a user-selected library folder.
 
-The demo uses the image prefix and pinned tag currently shown in step 2. Log in
-to Quay if necessary, then select **Start OSII** as usual. The launcher still
-pulls the approved images and starts only the bundled baseline services. Loading
-the demo again preserves any files already present in its local source folder.
+The demo uses the selected complete Stack. Log in to Quay if necessary, pull the
+selected images in the catalog step, then select **Start OSII** as usual.
+Loading the demo again preserves any files already present in its local source
+folder.
 
 ## Advanced deployment view
 
 After saving a library, select **Advanced view** beside the deployment controls.
 The panel shows the exact generated `compose.env`, the generated Compose override,
-their full workstation paths, and the ordered commands used to pull and start the
-bundle. It opens automatically when a start command fails and includes the latest
-error output. API keys and registry passwords are never included.
+their full workstation paths, and the queued start command. Pull commands are
+never queued by Start; use the catalog step for those. API keys and registry
+passwords are never included.
 
 The launcher uses the generated `compose.env` with both supported Compose
 providers and mounts the library profile's configuration directory into Core.
 
 ## If a Quay image pull fails
 
-**Start OSII** pulls Core, the dashboard, and baseline processors before it
-starts Compose. It also pulls each distinct optional Toolbox image chosen
-in the library profile. If a pull fails, open **Advanced view**. It shows the
-exact recovery commands for the selected library profile.
+Use the **Activity** drawer. It records the exact command, timestamp, exit
+status, and redacted terminal output for catalog refreshes, pulls, source tests,
+Compose, and launcher-created containers. Each activity has a copy button and
+the bounded history is retained in launcher application data for support.
 
-On Windows, open PowerShell and run the displayed `podman login` command, then
-the three `podman pull` commands in order. `podman login` prompts for your Quay
+For a manual recovery, use the exact digest reference shown in the catalog:
+
+On Windows, open PowerShell and run `podman login` followed by the selected
+`podman pull` commands. `podman login` prompts for your Quay
 credentials. When every displayed pull succeeds, return to the launcher and select
 **Start OSII** again. Do not start Compose directly: the launcher generates the
 library-specific mounts and model/tool configuration.

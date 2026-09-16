@@ -30,7 +30,7 @@ const BASELINE_SERVICES: &[&str] = &[
 const DEMO_PROFILE_ID: &str = "osii-demo";
 const DEMO_PROFILE_NAME: &str = "OSII built-in demo";
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PodmanStatus {
     installed: bool,
@@ -77,7 +77,7 @@ struct ProfileSnapshot {
     tool_config: toml::Value,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct Profile {
     id: String,
@@ -156,7 +156,7 @@ struct Catalog {
     images: Vec<CatalogImage>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CatalogResponse {
     catalog: Catalog,
@@ -299,7 +299,11 @@ fn unix_timestamp() -> u64 {
 
 fn redact(value: &str, secrets: &[String]) -> String {
     secrets.iter().fold(value.to_string(), |text, secret| {
-        if secret.is_empty() { text } else { text.replace(secret, "[REDACTED]") }
+        if secret.is_empty() {
+            text
+        } else {
+            text.replace(secret, "[REDACTED]")
+        }
     })
 }
 
@@ -308,13 +312,18 @@ fn activity_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn append_activity(app: &AppHandle, record: &ActivityRecord) {
-    let path = match activity_path(app) { Ok(path) => path, Err(_) => return };
+    let path = match activity_path(app) {
+        Ok(path) => path,
+        Err(_) => return,
+    };
     let mut records: Vec<ActivityRecord> = fs::read_to_string(&path)
         .ok()
         .and_then(|value| serde_json::from_str(&value).ok())
         .unwrap_or_default();
     records.push(record.clone());
-    if records.len() > 120 { records.drain(..records.len() - 120); }
+    if records.len() > 120 {
+        records.drain(..records.len() - 120);
+    }
     if let Ok(value) = serde_json::to_string_pretty(&records) {
         let _ = fs::write(path, format!("{value}\n"));
     }
@@ -334,8 +343,13 @@ fn run_activity(
     let id = uuid::Uuid::new_v4().to_string();
     let command = redact(&display_command(&program_path(program), arguments), secrets);
     let started = ActivityRecord {
-        id: id.clone(), label: label.to_string(), command: command.clone(), timestamp: unix_timestamp(),
-        output: String::new(), exit_code: None, running: true,
+        id: id.clone(),
+        label: label.to_string(),
+        command: command.clone(),
+        timestamp: unix_timestamp(),
+        output: String::new(),
+        exit_code: None,
+        running: true,
     };
     emit_activity(app, &started);
     let mut child = process_command(program_path(program))
@@ -344,42 +358,74 @@ fn run_activity(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| format!("Could not run {program}: {error}"))?;
-    let stdout = child.stdout.take().ok_or_else(|| format!("Could not read {program} output"))?;
-    let stderr = child.stderr.take().ok_or_else(|| format!("Could not read {program} error output"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| format!("Could not read {program} output"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| format!("Could not read {program} error output"))?;
     let (sender, receiver) = mpsc::channel::<String>();
-    for stream in [stdout, stderr] {
+    let read_stream = |stream: Box<dyn Read + Send>| {
         let sender = sender.clone();
         thread::spawn(move || {
             for line in BufReader::new(stream).lines() {
-                if let Ok(line) = line { let _ = sender.send(format!("{line}\n")); }
+                if let Ok(line) = line {
+                    let _ = sender.send(format!("{line}\n"));
+                }
             }
-        });
-    }
+        })
+    };
+    let stdout_reader = read_stream(Box::new(stdout));
+    let stderr_reader = read_stream(Box::new(stderr));
     drop(sender);
     let mut output = String::new();
     for line in receiver {
         let line = redact(&line, secrets);
         output.push_str(&line);
-        emit_activity(app, &ActivityRecord {
-            id: id.clone(), label: label.to_string(), command: command.clone(), timestamp: unix_timestamp(),
-            output: line, exit_code: None, running: true,
-        });
+        emit_activity(
+            app,
+            &ActivityRecord {
+                id: id.clone(),
+                label: label.to_string(),
+                command: command.clone(),
+                timestamp: unix_timestamp(),
+                output: line,
+                exit_code: None,
+                running: true,
+            },
+        );
     }
-    let status = child.wait().map_err(|error| format!("Could not wait for {program}: {error}"))?;
+    let _ = stdout_reader.join();
+    let _ = stderr_reader.join();
+    let status = child
+        .wait()
+        .map_err(|error| format!("Could not wait for {program}: {error}"))?;
     let completed = ActivityRecord {
-        id, label: label.to_string(), command, timestamp: unix_timestamp(), output: output.clone(),
-        exit_code: status.code(), running: false,
+        id,
+        label: label.to_string(),
+        command,
+        timestamp: unix_timestamp(),
+        output: output.clone(),
+        exit_code: status.code(),
+        running: false,
     };
     emit_activity(app, &completed);
     append_activity(app, &completed);
-    Ok(Output { status, stdout: output.into_bytes(), stderr: Vec::new() })
+    Ok(Output {
+        status,
+        stdout: output.into_bytes(),
+        stderr: Vec::new(),
+    })
 }
 
 #[tauri::command]
 fn list_activity(app: AppHandle) -> Result<Vec<ActivityRecord>, String> {
     let path = activity_path(&app)?;
     match fs::read_to_string(path) {
-        Ok(content) => serde_json::from_str(&content).map_err(|error| format!("Could not read activity history: {error}")),
+        Ok(content) => serde_json::from_str(&content)
+            .map_err(|error| format!("Could not read activity history: {error}")),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
         Err(error) => Err(format!("Could not read activity history: {error}")),
     }
@@ -605,6 +651,283 @@ fn validate_registry(registry: &str) -> Result<String, String> {
     Ok(value)
 }
 
+fn validate_catalog_reference(
+    reference: &str,
+    registry: &str,
+    namespace: &str,
+) -> Result<(), String> {
+    let prefix = format!("{registry}/{namespace}/osii-");
+    if !reference.starts_with(&prefix)
+        || !reference.contains("@sha256:")
+        || reference.split("@sha256:").nth(1).is_none_or(|digest| {
+            digest.len() != 64 || !digest.chars().all(|value| value.is_ascii_hexdigit())
+        })
+    {
+        return Err(format!(
+            "Catalog image must be a digest-pinned {prefix}* reference."
+        ));
+    }
+    Ok(())
+}
+
+fn validate_catalog(catalog: &Catalog, requested_registry: &str) -> Result<(), String> {
+    if catalog.version != 1 {
+        return Err("This launcher supports catalog version 1.".to_string());
+    }
+    let registry = validate_registry(&catalog.registry)?;
+    if registry != validate_registry(requested_registry)? {
+        return Err("The catalog registry does not match the selected Quay host.".to_string());
+    }
+    if catalog.namespace != "ai-ready-everything" {
+        return Err("The catalog must use the approved ai-ready-everything namespace.".to_string());
+    }
+    if catalog.stacks.is_empty() {
+        return Err("The catalog has no complete OSII Stack releases.".to_string());
+    }
+    for stack in &catalog.stacks {
+        if stack.id.trim().is_empty() || stack.images.release.trim().is_empty() {
+            return Err("Catalog Stack entries need a release identifier.".to_string());
+        }
+        for reference in [
+            &stack.images.core,
+            &stack.images.dashboard,
+            &stack.images.baseline_processors,
+        ] {
+            validate_catalog_reference(reference, &registry, &catalog.namespace)?;
+        }
+    }
+    for image in catalog
+        .tools
+        .iter()
+        .flat_map(|tool| &tool.versions)
+        .chain(catalog.images.iter().flat_map(|image| &image.versions))
+    {
+        validate_catalog_reference(&image.reference, &registry, &catalog.namespace)?;
+    }
+    Ok(())
+}
+
+fn catalog_cache_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(launcher_data_dir(app)?.join("catalog-cache.json"))
+}
+
+fn catalog_client() -> Result<reqwest::blocking::Client, String> {
+    let mut builder = reqwest::blocking::Client::builder().timeout(Duration::from_secs(20));
+    if let Some(path) = env::var_os("OSII_CA_BUNDLE") {
+        let pem = fs::read(&path).map_err(|error| {
+            format!(
+                "Could not read OSII_CA_BUNDLE {}: {error}",
+                PathBuf::from(path).display()
+            )
+        })?;
+        let certificate = reqwest::Certificate::from_pem(&pem).map_err(|error| {
+            format!("OSII_CA_BUNDLE does not contain a usable PEM certificate: {error}")
+        })?;
+        builder = builder.add_root_certificate(certificate);
+    }
+    builder
+        .build()
+        .map_err(|error| format!("Could not configure the catalog connection: {error}"))
+}
+
+fn read_cached_catalog(app: &AppHandle, registry: &str) -> Result<CatalogResponse, String> {
+    let content = fs::read_to_string(catalog_cache_path(app)?)
+        .map_err(|error| format!("No cached catalog is available: {error}"))?;
+    let response: CatalogResponse = serde_json::from_str(&content)
+        .map_err(|error| format!("The cached catalog is invalid: {error}"))?;
+    validate_catalog(&response.catalog, registry)?;
+    Ok(response)
+}
+
+#[tauri::command]
+fn fetch_catalog(app: AppHandle, url: String, registry: String) -> Result<CatalogResponse, String> {
+    let url = url.trim();
+    if !url.starts_with("https://") {
+        return Err("The approved catalog URL must use HTTPS.".to_string());
+    }
+    let registry = validate_registry(&registry)?;
+    let action = ActivityRecord {
+        id: uuid::Uuid::new_v4().to_string(),
+        label: "Refresh approved image catalog".to_string(),
+        command: format!("GET {url}"),
+        timestamp: unix_timestamp(),
+        output: String::new(),
+        exit_code: None,
+        running: true,
+    };
+    emit_activity(&app, &action);
+    let result = (|| -> Result<CatalogResponse, String> {
+        let response = catalog_client()?
+            .get(url)
+            .send()
+            .map_err(|error| format!("Could not fetch the catalog: {error}"))?;
+        if !response.status().is_success() {
+            return Err(format!(
+                "Catalog request failed with HTTP {}.",
+                response.status()
+            ));
+        }
+        let body = response
+            .bytes()
+            .map_err(|error| format!("Could not read the catalog: {error}"))?;
+        if body.len() > 2_000_000 {
+            return Err("Catalog is too large.".to_string());
+        }
+        let catalog: Catalog = serde_json::from_slice(&body)
+            .map_err(|error| format!("Catalog JSON is invalid: {error}"))?;
+        validate_catalog(&catalog, &registry)?;
+        Ok(CatalogResponse {
+            catalog,
+            source: "network".to_string(),
+            fetched_at: unix_timestamp(),
+            cache_age_seconds: Some(0),
+            warning: None,
+        })
+    })();
+    match result {
+        Ok(response) => {
+            let cache = catalog_cache_path(&app)?;
+            let encoded = serde_json::to_string_pretty(&response)
+                .map_err(|error| format!("Could not cache catalog: {error}"))?;
+            fs::write(cache, format!("{encoded}\n"))
+                .map_err(|error| format!("Could not save catalog cache: {error}"))?;
+            let completed = ActivityRecord {
+                running: false,
+                exit_code: Some(0),
+                output: "Catalog refreshed.\n".to_string(),
+                ..action
+            };
+            emit_activity(&app, &completed);
+            append_activity(&app, &completed);
+            Ok(response)
+        }
+        Err(error) => {
+            if let Ok(mut cached) = read_cached_catalog(&app, &registry) {
+                cached.source = "cache".to_string();
+                cached.cache_age_seconds = Some(unix_timestamp().saturating_sub(cached.fetched_at));
+                cached.warning = Some(format!(
+                    "Refresh failed; using the cached approved catalog. {error}"
+                ));
+                let completed = ActivityRecord {
+                    running: false,
+                    exit_code: Some(1),
+                    output: format!("{error}\nUsing cache.\n"),
+                    ..action
+                };
+                emit_activity(&app, &completed);
+                append_activity(&app, &completed);
+                Ok(cached)
+            } else {
+                let completed = ActivityRecord {
+                    running: false,
+                    exit_code: Some(1),
+                    output: format!("{error}\n"),
+                    ..action
+                };
+                emit_activity(&app, &completed);
+                append_activity(&app, &completed);
+                Err(error)
+            }
+        }
+    }
+}
+
+fn image_metadata(reference: &str) -> Result<LocalImage, String> {
+    let output = run_output(
+        "podman",
+        &["image", "inspect", reference, "--format", "{{json .}}"],
+    )?;
+    if !output.status.success() {
+        return Ok(LocalImage {
+            reference: reference.to_string(),
+            present: false,
+            id: None,
+            digest: None,
+            size: None,
+        });
+    }
+    let value: Value = serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("Podman returned invalid image information: {error}"))?;
+    Ok(LocalImage {
+        reference: reference.to_string(),
+        present: true,
+        id: value.get("Id").and_then(Value::as_str).map(str::to_string),
+        digest: value
+            .get("Digest")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        size: value
+            .get("Size")
+            .and_then(Value::as_u64)
+            .map(|value| format!("{:.1} MB", value as f64 / 1_048_576.0)),
+    })
+}
+
+#[tauri::command]
+fn image_inventory(app: AppHandle, references: Vec<String>) -> Result<ImageInventory, String> {
+    let started = ActivityRecord {
+        id: uuid::Uuid::new_v4().to_string(),
+        label: "Inspect local images".to_string(),
+        command: format!(
+            "podman image inspect {} approved references",
+            references.len()
+        ),
+        timestamp: unix_timestamp(),
+        output: String::new(),
+        exit_code: None,
+        running: true,
+    };
+    emit_activity(&app, &started);
+    let result = ImageInventory {
+        images: references
+            .iter()
+            .map(|reference| image_metadata(reference))
+            .collect::<Result<_, _>>()?,
+    };
+    let completed = ActivityRecord {
+        running: false,
+        exit_code: Some(0),
+        output: format!(
+            "Inspected {} approved image references.\n",
+            result.images.len()
+        ),
+        ..started
+    };
+    emit_activity(&app, &completed);
+    append_activity(&app, &completed);
+    Ok(result)
+}
+
+#[tauri::command]
+fn pull_images(
+    app: AppHandle,
+    references: Vec<String>,
+    registry: String,
+) -> Result<ImageInventory, String> {
+    let registry = validate_registry(&registry)?;
+    if references.is_empty() {
+        return Err("Select one or more approved images to pull.".to_string());
+    }
+    for reference in &references {
+        validate_catalog_reference(reference, &registry, "ai-ready-everything")?;
+    }
+    for reference in &references {
+        let output = run_activity(
+            &app,
+            "Pull image",
+            "podman",
+            &["pull".to_string(), reference.clone()],
+            &[],
+        )?;
+        if !output.status.success() {
+            return Err(format!(
+                "Podman could not pull {reference}. Open Activity for the full output."
+            ));
+        }
+    }
+    image_inventory(app, references)
+}
+
 #[tauri::command]
 fn registry_status(registry: String) -> Result<RegistryStatus, String> {
     let registry = validate_registry(&registry)?;
@@ -692,9 +1015,40 @@ fn same_profile_settings(left: &Profile, right: &Profile) -> bool {
         && left.source_dir == right.source_dir
         && left.image_prefix == right.image_prefix
         && left.image_tag == right.image_tag
+        && left.stack_images == right.stack_images
+        && left.tool_images == right.tool_images
         && left.readable_wiki == right.readable_wiki
         && left.concept_entity_wiki == right.concept_entity_wiki
         && left.tesseract_open_cv == right.tesseract_open_cv
+}
+
+fn legacy_stack_images(prefix: &str, tag: &str) -> StackImages {
+    StackImages {
+        release: tag.to_string(),
+        core: format!("{prefix}-core:{tag}"),
+        dashboard: format!("{prefix}-dashboard:{tag}"),
+        baseline_processors: format!("{prefix}-baseline-processors:{tag}"),
+    }
+}
+
+fn resolved_stack_images(profile: &Profile) -> StackImages {
+    profile
+        .stack_images
+        .clone()
+        .unwrap_or_else(|| legacy_stack_images(&profile.image_prefix, &profile.image_tag))
+}
+
+fn validate_stack_images(stack: &StackImages, require_digest: bool) -> Result<StackImages, String> {
+    if stack.release.trim().is_empty() {
+        return Err("Select a complete Stack release from the approved catalog.".to_string());
+    }
+    for reference in [&stack.core, &stack.dashboard, &stack.baseline_processors] {
+        let value = validate_image_part(reference, "Stack image", true)?;
+        if require_digest && !value.contains("@sha256:") {
+            return Err("Stack images must use immutable digest references.".to_string());
+        }
+    }
+    Ok(stack.clone())
 }
 
 fn deduplicate_profiles(profiles: Vec<Profile>) -> Vec<Profile> {
@@ -799,10 +1153,18 @@ fn profile_source_path(source_dir: &str, canonical: &Path) -> Result<String, Str
 
 #[tauri::command]
 fn list_profiles(app: AppHandle) -> Result<Vec<Profile>, String> {
-    let profiles = read_profiles(&app)?;
-    let original_count = profiles.len();
+    let mut profiles = read_profiles(&app)?;
+    let original = profiles.clone();
+    for profile in &mut profiles {
+        if profile.stack_images.is_none() {
+            profile.stack_images = Some(legacy_stack_images(
+                &profile.image_prefix,
+                &profile.image_tag,
+            ));
+        }
+    }
     let profiles = deduplicate_profiles(profiles);
-    if profiles.len() != original_count {
+    if profiles != original {
         write_profiles(&app, &profiles)?;
     }
     Ok(profiles)
@@ -828,10 +1190,37 @@ fn save_profile_inner(
     }
     let source = canonical_source(&draft.source_dir)?;
     let source_dir = profile_source_path(&draft.source_dir, &source)?;
-    let image_prefix = validate_image_part(&draft.image_prefix, "image prefix", true)?;
-    let image_tag = validate_image_part(&draft.image_tag, "image tag", false)?;
+    let image_prefix = if draft.image_prefix.trim().is_empty() {
+        "catalog".to_string()
+    } else {
+        validate_image_part(&draft.image_prefix, "image prefix", true)?
+    };
+    let image_tag = if draft.image_tag.trim().is_empty() {
+        "catalog".to_string()
+    } else {
+        validate_image_part(&draft.image_tag, "image tag", false)?
+    };
     if image_tag.eq_ignore_ascii_case("latest") {
         return Err("Choose a pinned release tag instead of latest.".to_string());
+    }
+    let stack_images = draft
+        .stack_images
+        .as_ref()
+        .map(|stack| validate_stack_images(stack, image_prefix == "catalog"))
+        .transpose()?;
+    if stack_images.is_none() && (image_prefix == "catalog" || image_tag == "catalog") {
+        return Err("Select a complete Stack release from the approved catalog.".to_string());
+    }
+    let mut tool_images = BTreeMap::new();
+    for (tool, reference) in draft.tool_images {
+        if !["llm-wikis", "tesseract-opencv"].contains(&tool.as_str()) {
+            return Err("The selected Toolbox tool is not supported by OSII.".to_string());
+        }
+        let reference = validate_image_part(&reference, "Toolbox image", true)?;
+        if !reference.contains("@sha256:") {
+            return Err("Toolbox images must use immutable digest references.".to_string());
+        }
+        tool_images.insert(tool, reference);
     }
     let mut profiles = deduplicate_profiles(read_profiles(app)?);
     let id = match profile_id {
@@ -849,6 +1238,8 @@ fn save_profile_inner(
         source_dir,
         image_prefix,
         image_tag,
+        stack_images,
+        tool_images,
         readable_wiki: draft.readable_wiki,
         concept_entity_wiki: draft.concept_entity_wiki,
         tesseract_open_cv: draft.tesseract_open_cv,
@@ -916,25 +1307,21 @@ fn copy_missing_demo_files(source: &Path, destination: &Path) -> Result<(), Stri
 }
 
 #[tauri::command]
-fn prepare_demo_profile(
-    app: AppHandle,
-    image_prefix: String,
-    image_tag: String,
-) -> Result<Profile, String> {
+fn prepare_demo_profile(app: AppHandle, mut draft: ProfileDraft) -> Result<Profile, String> {
     let source_dir = launcher_data_dir(&app)?.join("demo").join("source");
     fs::create_dir_all(&source_dir)
         .map_err(|error| format!("Could not create the demo library folder: {error}"))?;
     copy_missing_demo_files(&bundled_demo_dir(&app)?, &source_dir)?;
     save_profile_inner(
         &app,
-        ProfileDraft {
-            name: DEMO_PROFILE_NAME.to_string(),
-            source_dir: source_dir.to_string_lossy().to_string(),
-            image_prefix,
-            image_tag,
-            readable_wiki: false,
-            concept_entity_wiki: false,
-            tesseract_open_cv: false,
+        {
+            draft.name = DEMO_PROFILE_NAME.to_string();
+            draft.source_dir = source_dir.to_string_lossy().to_string();
+            draft.readable_wiki = false;
+            draft.concept_entity_wiki = false;
+            draft.tesseract_open_cv = false;
+            draft.tool_images.clear();
+            draft
         },
         Some(DEMO_PROFILE_ID.to_string()),
     )
@@ -958,25 +1345,31 @@ fn delete_profile(app: AppHandle, profile_id: String) -> Result<Vec<Profile>, St
 }
 
 #[tauri::command]
-fn validate_source(source_dir: String, probe_image: String) -> Result<SourceCheck, String> {
+fn validate_source(
+    app: AppHandle,
+    source_dir: String,
+    probe_image: String,
+) -> Result<SourceCheck, String> {
     let source = canonical_source(&source_dir)?;
     let mount_source = profile_source_path(&source_dir, &source)?;
     let image = validate_image_part(&probe_image, "probe image", true)?;
     let mount = format!("{mount_source}:/source:ro");
-    let output = run_output(
-        "podman",
-        &[
-            "run",
-            "--rm",
-            "--pull=never",
-            "--volume",
-            &mount,
-            &image,
-            "/bin/sh",
-            "-c",
-            "test -r /source && find /source -mindepth 1 -maxdepth 1 -print -quit >/dev/null",
-        ],
-    )?;
+    if !image_is_local(&image)? {
+        return Err(format!("The selected probe image is not local: {image}. Pull an OSII image first, then test this folder."));
+    }
+    let arguments = vec![
+        "run".to_string(),
+        "--rm".to_string(),
+        "--pull=never".to_string(),
+        "--volume".to_string(),
+        mount.clone(),
+        image.clone(),
+        "/bin/sh".to_string(),
+        "-c".to_string(),
+        "test -r /source && find /source -mindepth 1 -maxdepth 1 -print -quit >/dev/null"
+            .to_string(),
+    ];
+    let output = run_activity(&app, "Test container access", "podman", &arguments, &[])?;
     let visible = output.status.success();
     Ok(SourceCheck {
         ok: visible,
@@ -1032,9 +1425,13 @@ fn sync_selected_tools(app: &AppHandle, profile: &Profile) -> Result<(), String>
     };
     let mut document: toml::Value = toml::from_str(&content)
         .map_err(|error| format!("Fix tools.toml before changing tool selection: {error}"))?;
-    let tools = document.as_table_mut().ok_or("tools.toml must be a table")?
-        .entry("tools").or_insert_with(|| toml::Value::Table(toml::Table::new()))
-        .as_table_mut().ok_or("[tools] must be a table")?;
+    let tools = document
+        .as_table_mut()
+        .ok_or("tools.toml must be a table")?
+        .entry("tools")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+        .as_table_mut()
+        .ok_or("[tools] must be a table")?;
     for (id, selected, endpoint, definition) in [
         ("readable-llm-wiki", profile.readable_wiki, "http://readable-wiki-enricher:8099", "enabled = true\nprocessor_id = 'toolbox.readable-wiki'\ndisplay_name = 'Readable LLM Wiki'\nkind = 'enricher'\nruntime = { mode = 'external', endpoint = 'http://readable-wiki-enricher:8099' }\nmodel_access = { mode = 'gateway', bindings = { chat = 'base' } }\n"),
         ("concept-entity-llm-wiki", profile.concept_entity_wiki, "http://concept-entity-wiki-enricher:8100", "enabled = true\nprocessor_id = 'toolbox.concept-entity-wiki'\ndisplay_name = 'Concept and Entity LLM Wiki'\nkind = 'enricher'\nruntime = { mode = 'external', endpoint = 'http://concept-entity-wiki-enricher:8100' }\nmodel_access = { mode = 'gateway', bindings = { chat = 'base' } }\n"),
@@ -1049,8 +1446,12 @@ fn sync_selected_tools(app: &AppHandle, profile: &Profile) -> Result<(), String>
             tools.insert(id.into(), toml::from_str(definition).map_err(|error| format!("Could not configure {id}: {error}"))?);
         }
     }
-    fs::write(&path, toml::to_string_pretty(&document).map_err(|error| format!("Could not serialize tools: {error}"))?)
-        .map_err(|error| format!("Could not update selected tools: {error}"))
+    fs::write(
+        &path,
+        toml::to_string_pretty(&document)
+            .map_err(|error| format!("Could not serialize tools: {error}"))?,
+    )
+    .map_err(|error| format!("Could not update selected tools: {error}"))
 }
 
 fn allowed_fields(value: &toml::Value, names: &[&str]) -> toml::Table {
@@ -1069,17 +1470,41 @@ fn safe_model_config(value: &toml::Value) -> toml::Value {
     let mut output = toml::Table::new();
     output.insert("version".into(), toml::Value::Integer(1));
     if let Some(defaults) = value.get("defaults") {
-        output.insert("defaults".into(), toml::Value::Table(allowed_fields(defaults, &["chat", "synthesis", "embedding"])));
+        output.insert(
+            "defaults".into(),
+            toml::Value::Table(allowed_fields(
+                defaults,
+                &["chat", "synthesis", "embedding"],
+            )),
+        );
     }
     let mut models = toml::Table::new();
     if let Some(entries) = value.get("models").and_then(toml::Value::as_table) {
         for (name, model) in entries {
-            let mut fields = allowed_fields(model, &[
-                "type", "base_url", "api_key_env", "model", "capabilities", "enabled", "priority",
-            ]);
-            if fields.get("api_key_env").and_then(toml::Value::as_str).is_some_and(|name| {
-                name.is_empty() || !name.chars().all(|character| character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_')
-            }) {
+            let mut fields = allowed_fields(
+                model,
+                &[
+                    "type",
+                    "base_url",
+                    "api_key_env",
+                    "model",
+                    "capabilities",
+                    "enabled",
+                    "priority",
+                ],
+            );
+            if fields
+                .get("api_key_env")
+                .and_then(toml::Value::as_str)
+                .is_some_and(|name| {
+                    name.is_empty()
+                        || !name.chars().all(|character| {
+                            character.is_ascii_uppercase()
+                                || character.is_ascii_digit()
+                                || character == '_'
+                        })
+                })
+            {
                 fields.remove("api_key_env");
             }
             models.insert(name.clone(), toml::Value::Table(fields));
@@ -1097,15 +1522,34 @@ fn snapshot_urls_are_safe(models: &toml::Value, tools: &toml::Value) -> bool {
         if value.contains('?') || value.contains('#') {
             return false;
         }
-        let authority = value.split_once("://").map(|(_, rest)| rest.split('/').next().unwrap_or(""));
+        let authority = value
+            .split_once("://")
+            .map(|(_, rest)| rest.split('/').next().unwrap_or(""));
         authority.is_some_and(|part| !part.contains('@'))
     };
-    let model_urls_safe = models.get("models").and_then(toml::Value::as_table).is_none_or(|entries| {
-        entries.values().all(|entry| entry.get("base_url").and_then(toml::Value::as_str).is_none_or(&safe_url))
-    });
-    let tool_urls_safe = tools.get("tools").and_then(toml::Value::as_table).is_none_or(|entries| {
-        entries.values().all(|entry| entry.get("runtime").and_then(|runtime| runtime.get("endpoint")).and_then(toml::Value::as_str).is_none_or(&safe_url))
-    });
+    let model_urls_safe = models
+        .get("models")
+        .and_then(toml::Value::as_table)
+        .is_none_or(|entries| {
+            entries.values().all(|entry| {
+                entry
+                    .get("base_url")
+                    .and_then(toml::Value::as_str)
+                    .is_none_or(&safe_url)
+            })
+        });
+    let tool_urls_safe = tools
+        .get("tools")
+        .and_then(toml::Value::as_table)
+        .is_none_or(|entries| {
+            entries.values().all(|entry| {
+                entry
+                    .get("runtime")
+                    .and_then(|runtime| runtime.get("endpoint"))
+                    .and_then(toml::Value::as_str)
+                    .is_none_or(&safe_url)
+            })
+        });
     model_urls_safe && tool_urls_safe
 }
 
@@ -1115,14 +1559,26 @@ fn safe_tool_config(value: &toml::Value) -> toml::Value {
     let mut tools = toml::Table::new();
     if let Some(entries) = value.get("tools").and_then(toml::Value::as_table) {
         for (name, tool) in entries {
-            let mut item = allowed_fields(tool, &["enabled", "processor_id", "display_name", "kind", "aliases"]);
+            let mut item = allowed_fields(
+                tool,
+                &["enabled", "processor_id", "display_name", "kind", "aliases"],
+            );
             if let Some(runtime) = tool.get("runtime") {
-                item.insert("runtime".into(), toml::Value::Table(allowed_fields(runtime, &["mode", "endpoint", "image"])));
+                item.insert(
+                    "runtime".into(),
+                    toml::Value::Table(allowed_fields(runtime, &["mode", "endpoint", "image"])),
+                );
             }
             if let Some(access) = tool.get("model_access") {
                 let mut selected = allowed_fields(access, &["mode"]);
                 if let Some(bindings) = access.get("bindings") {
-                    selected.insert("bindings".into(), toml::Value::Table(allowed_fields(bindings, &["chat", "synthesis", "embedding"])));
+                    selected.insert(
+                        "bindings".into(),
+                        toml::Value::Table(allowed_fields(
+                            bindings,
+                            &["chat", "synthesis", "embedding"],
+                        )),
+                    );
                 }
                 item.insert("model_access".into(), toml::Value::Table(selected));
             }
@@ -1132,10 +1588,32 @@ fn safe_tool_config(value: &toml::Value) -> toml::Value {
     output.insert("tools".into(), toml::Value::Table(tools));
     let mut routes = toml::Table::new();
     for kind in ["extractor", "object_synthesis", "folder_synthesis"] {
-        if let Some(items) = value.get("routes").and_then(|entry| entry.get(kind)).and_then(toml::Value::as_array) {
-            routes.insert(kind.into(), toml::Value::Array(items.iter().map(|item| {
-                toml::Value::Table(allowed_fields(item, &["name", "extractor", "fallbacks", "extensions", "synthesizer", "path_patterns"]))
-            }).collect()));
+        if let Some(items) = value
+            .get("routes")
+            .and_then(|entry| entry.get(kind))
+            .and_then(toml::Value::as_array)
+        {
+            routes.insert(
+                kind.into(),
+                toml::Value::Array(
+                    items
+                        .iter()
+                        .map(|item| {
+                            toml::Value::Table(allowed_fields(
+                                item,
+                                &[
+                                    "name",
+                                    "extractor",
+                                    "fallbacks",
+                                    "extensions",
+                                    "synthesizer",
+                                    "path_patterns",
+                                ],
+                            ))
+                        })
+                        .collect(),
+                ),
+            );
         }
     }
     if !routes.is_empty() {
@@ -1151,9 +1629,9 @@ fn export_profile(app: AppHandle, profile_id: String, destination: String) -> Re
     deployment_files(&app, &profile)?;
     let config_dir = profile_config_dir(&app, &profile_id)?;
     let read_config = |name: &str| -> Result<toml::Value, String> {
-        let text = fs::read_to_string(config_dir.join(name)).map_err(|error| format!(
-            "Could not read {name}; start this profile once to migrate older YAML: {error}"
-        ))?;
+        let text = fs::read_to_string(config_dir.join(name)).map_err(|error| {
+            format!("Could not read {name}; start this profile once to migrate older YAML: {error}")
+        })?;
         toml::from_str(&text).map_err(|error| format!("Invalid {name}: {error}"))
     };
     let raw_models = read_config("models.toml")?;
@@ -1164,9 +1642,14 @@ fn export_profile(app: AppHandle, profile_id: String, destination: String) -> Re
     let snapshot = ProfileSnapshot {
         version: 1,
         profile: ProfileDraft {
-            name: profile.name, source_dir: profile.source_dir,
-            image_prefix: profile.image_prefix, image_tag: profile.image_tag,
-            readable_wiki: profile.readable_wiki, concept_entity_wiki: profile.concept_entity_wiki,
+            name: profile.name,
+            source_dir: profile.source_dir,
+            image_prefix: profile.image_prefix,
+            image_tag: profile.image_tag,
+            stack_images: profile.stack_images,
+            tool_images: profile.tool_images,
+            readable_wiki: profile.readable_wiki,
+            concept_entity_wiki: profile.concept_entity_wiki,
             tesseract_open_cv: profile.tesseract_open_cv,
         },
         model_config: safe_model_config(&raw_models),
@@ -1179,39 +1662,61 @@ fn export_profile(app: AppHandle, profile_id: String, destination: String) -> Re
 
 #[tauri::command]
 fn import_profile(app: AppHandle, source: String) -> Result<Profile, String> {
-    let content = fs::read_to_string(source).map_err(|error| format!("Could not read profile: {error}"))?;
+    let content =
+        fs::read_to_string(source).map_err(|error| format!("Could not read profile: {error}"))?;
     if content.len() > 1024 * 1024 {
         return Err("Profile export exceeds the 1 MiB limit.".into());
     }
-    let snapshot: ProfileSnapshot = toml::from_str(&content)
-        .map_err(|error| format!("Invalid profile TOML: {error}"))?;
+    let snapshot: ProfileSnapshot =
+        toml::from_str(&content).map_err(|error| format!("Invalid profile TOML: {error}"))?;
     if snapshot.version != 1 {
         return Err(format!("Unsupported profile version: {}", snapshot.version));
     }
     if !snapshot_urls_are_safe(&snapshot.model_config, &snapshot.tool_config) {
-        return Err("Imported profile URLs must not contain credentials or query parameters.".into());
+        return Err(
+            "Imported profile URLs must not contain credentials or query parameters.".into(),
+        );
     }
     let draft = snapshot.profile;
     if draft.name.trim().is_empty() || draft.source_dir.trim().is_empty() {
         return Err("Profile needs a name and original source path.".into());
     }
-    let image_prefix = validate_image_part(&draft.image_prefix, "image prefix", true)?;
-    let image_tag = validate_image_part(&draft.image_tag, "image tag", false)?;
+    let image_prefix = if draft.image_prefix.trim().is_empty() {
+        "catalog".to_string()
+    } else {
+        validate_image_part(&draft.image_prefix, "image prefix", true)?
+    };
+    let image_tag = if draft.image_tag.trim().is_empty() {
+        "catalog".to_string()
+    } else {
+        validate_image_part(&draft.image_tag, "image tag", false)?
+    };
     let id = uuid::Uuid::new_v4().to_string();
     let profile = Profile {
-        id: id.clone(), name: draft.name, source_dir: draft.source_dir,
-        image_prefix, image_tag, readable_wiki: draft.readable_wiki,
-        concept_entity_wiki: draft.concept_entity_wiki, tesseract_open_cv: draft.tesseract_open_cv,
+        id: id.clone(),
+        name: draft.name,
+        source_dir: draft.source_dir,
+        image_prefix,
+        image_tag,
+        stack_images: draft.stack_images,
+        tool_images: draft.tool_images,
+        readable_wiki: draft.readable_wiki,
+        concept_entity_wiki: draft.concept_entity_wiki,
+        tesseract_open_cv: draft.tesseract_open_cv,
     };
     let config_dir = profile_config_dir(&app, &id)?;
-    fs::create_dir_all(&config_dir).map_err(|error| format!("Could not create imported profile: {error}"))?;
+    fs::create_dir_all(&config_dir)
+        .map_err(|error| format!("Could not create imported profile: {error}"))?;
     let models = toml::to_string_pretty(&safe_model_config(&snapshot.model_config))
         .map_err(|error| format!("Could not import models: {error}"))?;
     let tools = toml::to_string_pretty(&safe_tool_config(&snapshot.tool_config))
         .map_err(|error| format!("Could not import tools: {error}"))?;
-    fs::write(config_dir.join("models.toml"), models).map_err(|error| format!("Could not save models: {error}"))?;
-    fs::write(config_dir.join("tools.toml"), tools).map_err(|error| format!("Could not save tools: {error}"))?;
-    fs::create_dir_all(profile_data_dir(&app, &id)?).map_err(|error| format!("Could not create library state: {error}"))?;
+    fs::write(config_dir.join("models.toml"), models)
+        .map_err(|error| format!("Could not save models: {error}"))?;
+    fs::write(config_dir.join("tools.toml"), tools)
+        .map_err(|error| format!("Could not save tools: {error}"))?;
+    fs::create_dir_all(profile_data_dir(&app, &id)?)
+        .map_err(|error| format!("Could not create library state: {error}"))?;
     let mut profiles = read_profiles(&app)?;
     profiles.insert(0, profile.clone());
     write_profiles(&app, &profiles)?;
@@ -1281,15 +1786,16 @@ fn project_name(profile_id: &str) -> Result<String, String> {
     ))
 }
 
-fn compose_command(
+fn compose_checked_activity(
+    app: &AppHandle,
+    label: &str,
     provider: ComposeProvider,
     compose: &Path,
     environment_file: &Path,
     override_file: &Path,
     project: &str,
-    profile: &Profile,
     args: &[&str],
-) -> Result<Output, String> {
+) -> Result<String, String> {
     let (program, arguments) = compose_invocation(
         provider,
         compose,
@@ -1298,38 +1804,12 @@ fn compose_command(
         project,
         args,
     );
-    let mut command = process_command(program);
-    command
-        .args(arguments)
-        .env("OSII_SOURCE_DIR", &profile.source_dir)
-        .env("OSII_IMAGE_PREFIX", &profile.image_prefix)
-        .env("OSII_IMAGE_TAG", &profile.image_tag)
-        .output()
-        .map_err(|error| format!("Could not run the Compose provider: {error}"))
-}
-
-fn compose_checked(
-    provider: ComposeProvider,
-    compose: &Path,
-    environment_file: &Path,
-    override_file: &Path,
-    project: &str,
-    profile: &Profile,
-    args: &[&str],
-) -> Result<String, String> {
-    let output = compose_command(
-        provider,
-        compose,
-        environment_file,
-        override_file,
-        project,
-        profile,
-        args,
-    )?;
+    let program_name = program.to_string_lossy().to_string();
+    let output = run_activity(app, label, &program_name, &arguments, &[])?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
-        Err(format!("Compose failed: {}", output_text(&output)))
+        Err("Compose failed. Open Activity for the full command output.".to_string())
     }
 }
 
@@ -1387,14 +1867,28 @@ fn profile_override_document(
     shared_environment.insert("OSII_CONFIG_DIR".into(), json!("/config"));
     shared_environment.insert("OSII_ENV_FILE".into(), json!("/config/secrets.env"));
     shared_environment.insert("OSII_ACTIVE_PROFILE".into(), json!("launcher"));
-    shared_environment.insert("OSII_MODEL_GATEWAY_PUBLIC_URL".into(), json!("http://model-provider-bridge:8095/v1"));
-    shared_environment.insert("OSII_MODEL_GATEWAY_SECRET".into(), json!(format!("launcher-{}", profile.id)));
+    shared_environment.insert(
+        "OSII_MODEL_GATEWAY_PUBLIC_URL".into(),
+        json!("http://model-provider-bridge:8095/v1"),
+    );
+    shared_environment.insert(
+        "OSII_MODEL_GATEWAY_SECRET".into(),
+        json!(format!("launcher-{}", profile.id)),
+    );
 
     let mut services = serde_json::Map::new();
     for (name, mount, config) in [
         ("api", data_mount.as_str(), config_mount.as_str()),
-        ("worker", data_mount.as_str(), config_mount_read_only.as_str()),
-        ("model-provider-bridge", data_mount_read_only.as_str(), config_mount_read_only.as_str()),
+        (
+            "worker",
+            data_mount.as_str(),
+            config_mount_read_only.as_str(),
+        ),
+        (
+            "model-provider-bridge",
+            data_mount_read_only.as_str(),
+            config_mount_read_only.as_str(),
+        ),
     ] {
         let mut service = serde_json::Map::new();
         service.insert("volumes".into(), json!([mount, config]));
@@ -1412,15 +1906,47 @@ fn profile_override_document(
         services.insert(name.into(), Value::Object(service));
     }
 
+    let stack = resolved_stack_images(profile);
+    let mut set_image = |service_name: &str, image: &str| {
+        let service = services
+            .entry(service_name.to_string())
+            .or_insert_with(|| Value::Object(serde_json::Map::new()));
+        if let Some(service) = service.as_object_mut() {
+            service.insert("image".to_string(), json!(image));
+        }
+    };
+    for service in ["api", "worker"] {
+        set_image(service, &stack.core);
+    }
+    set_image("dashboard", &stack.dashboard);
+    for service in [
+        "tesseract",
+        "local-extractor",
+        "local-synthesizer",
+        "local-embedder",
+        "local-enricher",
+        "model-provider-bridge",
+    ] {
+        set_image(service, &stack.baseline_processors);
+    }
+    if profile.readable_wiki || profile.concept_entity_wiki {
+        if let Some(image) = profile.tool_images.get("llm-wikis") {
+            set_image("readable-wiki-enricher", image);
+            set_image("concept-entity-wiki-enricher", image);
+        }
+    }
+    if profile.tesseract_open_cv {
+        if let Some(image) = profile.tool_images.get("tesseract-opencv") {
+            set_image("tesseract-opencv", image);
+        }
+    }
+
     let mut root = serde_json::Map::new();
     root.insert("services".into(), Value::Object(services));
     Ok(Value::Object(root))
 }
 
-fn deployment_files(
-    app: &AppHandle,
-    profile: &Profile,
-) -> Result<DeploymentFiles, String> {
+fn deployment_files(app: &AppHandle, profile: &Profile) -> Result<DeploymentFiles, String> {
     let config_dir = profile_config_dir(app, &profile.id)?;
     let data_dir = profile_data_dir(app, &profile.id)?;
     fs::create_dir_all(&config_dir)
@@ -1483,8 +2009,11 @@ fn deployment_files(
     }
     let secrets_path = config_dir.join("secrets.env");
     if !secrets_path.exists() {
-        fs::write(&secrets_path, "# API keys saved from Workbench Setup appear here.\n")
-            .map_err(|error| format!("Could not create secrets configuration: {error}"))?;
+        fs::write(
+            &secrets_path,
+            "# API keys saved from Workbench Setup appear here.\n",
+        )
+        .map_err(|error| format!("Could not create secrets configuration: {error}"))?;
     }
 
     let environment_path = config_dir.join("compose.env");
@@ -1507,19 +2036,32 @@ fn deployment_files(
 }
 
 fn profile_images(profile: &Profile) -> Vec<String> {
-    let mut images = vec![
-        format!("{}-core:{}", profile.image_prefix, profile.image_tag),
-        format!("{}-dashboard:{}", profile.image_prefix, profile.image_tag),
-        format!(
-            "{}-baseline-processors:{}",
-            profile.image_prefix, profile.image_tag
-        ),
-    ];
+    let stack = resolved_stack_images(profile);
+    let mut images = vec![stack.core, stack.dashboard, stack.baseline_processors];
     if profile.readable_wiki || profile.concept_entity_wiki {
-        images.push(format!("{}-llm-wikis:{}", profile.image_prefix, profile.image_tag));
+        images.push(
+            profile
+                .tool_images
+                .get("llm-wikis")
+                .cloned()
+                .unwrap_or_else(|| {
+                    format!("{}-llm-wikis:{}", profile.image_prefix, profile.image_tag)
+                }),
+        );
     }
     if profile.tesseract_open_cv {
-        images.push(format!("{}-tesseract-opencv:{}", profile.image_prefix, profile.image_tag));
+        images.push(
+            profile
+                .tool_images
+                .get("tesseract-opencv")
+                .cloned()
+                .unwrap_or_else(|| {
+                    format!(
+                        "{}-tesseract-opencv:{}",
+                        profile.image_prefix, profile.image_tag
+                    )
+                }),
+        );
     }
     images
 }
@@ -1529,7 +2071,10 @@ fn image_is_local(image: &str) -> Result<bool, String> {
     match result.status.code() {
         Some(0) => Ok(true),
         Some(1) => Ok(false),
-        _ => Err(format!("Could not check local image {image}: {}", output_text(&result))),
+        _ => Err(format!(
+            "Could not check local image {image}: {}",
+            output_text(&result)
+        )),
     }
 }
 
@@ -1568,10 +2113,7 @@ fn display_command(program: &Path, arguments: &[String]) -> String {
 }
 
 #[tauri::command]
-fn deployment_preview(
-    app: AppHandle,
-    profile_id: String,
-) -> Result<DeploymentPreview, String> {
+fn deployment_preview(app: AppHandle, profile_id: String) -> Result<DeploymentPreview, String> {
     let profile = find_profile(&app, &profile_id)?;
     let compose = compose_file(&app)?;
     let files = deployment_files(&app, &profile)?;
@@ -1579,14 +2121,6 @@ fn deployment_preview(
         compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
     let project = project_name(&profile_id)?;
     let mut commands = Vec::new();
-    for image in profile_images(&profile) {
-        if !image_is_local(&image)? {
-            commands.push(display_command(
-                &program_path("podman"),
-                &["pull".to_string(), image],
-            ));
-        }
-    }
     let mut start_args = vec!["up", "-d", "--no-build"];
     let selected = selected_services(&profile);
     start_args.extend(selected.iter().copied());
@@ -1669,13 +2203,14 @@ fn stop_profile_inner(app: &AppHandle, profile_id: &str) -> Result<DeploymentSta
         compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
     let compose = compose_file(app)?;
     let files = deployment_files(app, &profile)?;
-    compose_checked(
+    compose_checked_activity(
+        app,
+        "Stop OSII",
         provider,
         &compose,
         &files.environment_path,
         &files.override_path,
         &project_name(profile_id)?,
-        &profile,
         &["down", "--remove-orphans"],
     )?;
     if active_profile(app)?.as_deref() == Some(profile_id) {
@@ -1696,10 +2231,7 @@ fn stop_profile(app: AppHandle, profile_id: String) -> Result<DeploymentStatus, 
 }
 
 #[tauri::command]
-fn start_profile(
-    app: AppHandle,
-    profile_id: String,
-) -> Result<DeploymentStatus, String> {
+fn start_profile(app: AppHandle, profile_id: String) -> Result<DeploymentStatus, String> {
     let status = podman_status();
     if !status.engine_ready || !status.compose_ready {
         return Err(status.message);
@@ -1713,10 +2245,16 @@ fn start_profile(
         }
     }
 
-    for image in profile_images(&profile) {
-        if !image_is_local(&image)? {
-            run_checked("podman", &["pull", &image])?;
-        }
+    let missing = profile_images(&profile)
+        .into_iter()
+        .filter_map(|image| match image_is_local(&image) {
+            Ok(true) => None,
+            Ok(false) => Some(Ok(image)),
+            Err(error) => Some(Err(error)),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if !missing.is_empty() {
+        return Err(format!("Required selected images are not local: {}. Go to Images and pull them before starting. Start never pulls images.", missing.join(", ")));
     }
     let files = deployment_files(&app, &profile)?;
     let compose = compose_file(&app)?;
@@ -1725,13 +2263,14 @@ fn start_profile(
     let mut args = vec!["up", "-d", "--no-build"];
     let selected = selected_services(&profile);
     args.extend(selected.iter().copied());
-    if let Err(error) = compose_checked(
+    if let Err(error) = compose_checked_activity(
+        &app,
+        "Start OSII",
         provider,
         &compose,
         &files.environment_path,
         &files.override_path,
         &project_name(&profile_id)?,
-        &profile,
         &args,
     ) {
         return Err(error);
@@ -1756,13 +2295,14 @@ fn profile_logs(app: AppHandle, profile_id: String) -> Result<String, String> {
     let files = deployment_files(&app, &profile)?;
     let provider =
         compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
-    let output = compose_checked(
+    let output = compose_checked_activity(
+        &app,
+        "Read OSII logs",
         provider,
         &compose,
         &files.environment_path,
         &files.override_path,
         &project_name(&profile_id)?,
-        &profile,
         &["logs", "--no-color", "--tail", "250"],
     )?;
     let mut start = output.len().saturating_sub(65_536);
@@ -1770,6 +2310,368 @@ fn profile_logs(app: AppHandle, profile_id: String) -> Result<String, String> {
         start += 1;
     }
     Ok(output[start..].to_string())
+}
+
+fn custom_containers_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let path = launcher_data_dir(app)?.join("custom-containers");
+    fs::create_dir_all(&path)
+        .map_err(|error| format!("Could not create custom container settings: {error}"))?;
+    Ok(path.join("containers.json"))
+}
+
+fn custom_secrets_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let path = launcher_data_dir(app)?.join("custom-containers");
+    fs::create_dir_all(&path)
+        .map_err(|error| format!("Could not create custom container settings: {error}"))?;
+    Ok(path.join("secrets.env"))
+}
+
+fn read_custom_containers(app: &AppHandle) -> Result<Vec<CustomContainerDraft>, String> {
+    match fs::read_to_string(custom_containers_path(app)?) {
+        Ok(value) => serde_json::from_str(&value)
+            .map_err(|error| format!("Could not read custom containers: {error}")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(error) => Err(format!("Could not read custom containers: {error}")),
+    }
+}
+
+fn write_custom_containers(app: &AppHandle, values: &[CustomContainerDraft]) -> Result<(), String> {
+    let path = custom_containers_path(app)?;
+    let value = serde_json::to_string_pretty(values)
+        .map_err(|error| format!("Could not save custom containers: {error}"))?;
+    fs::write(path, format!("{value}\n"))
+        .map_err(|error| format!("Could not save custom containers: {error}"))
+}
+
+fn valid_env_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.chars().enumerate().all(|(index, character)| {
+            (character.is_ascii_alphabetic() || character == '_')
+                || (index > 0 && character.is_ascii_digit())
+        })
+}
+
+fn validate_custom_container(draft: &CustomContainerDraft) -> Result<(), String> {
+    if draft.name.is_empty()
+        || draft.name.len() > 63
+        || !draft
+            .name
+            .chars()
+            .all(|value| value.is_ascii_alphanumeric() || "._-".contains(value))
+    {
+        return Err(
+            "Container name may use letters, numbers, dot, dash, and underscore only.".to_string(),
+        );
+    }
+    validate_image_part(&draft.image, "container image", true)?;
+    if draft.network == "host" {
+        return Err("Host networking is not available in the launcher.".to_string());
+    }
+    if !draft.network.is_empty()
+        && !draft
+            .network
+            .chars()
+            .all(|value| value.is_ascii_alphanumeric() || "_.-".contains(value))
+    {
+        return Err("Network name contains unsupported characters.".to_string());
+    }
+    if !draft.restart_policy.is_empty()
+        && !["no", "on-failure", "always", "unless-stopped"]
+            .contains(&draft.restart_policy.as_str())
+    {
+        return Err("Choose a supported restart policy.".to_string());
+    }
+    for key in draft
+        .environment
+        .keys()
+        .chain(draft.secret_environment.keys())
+    {
+        if !valid_env_name(key) {
+            return Err(format!("Environment name {key} is not valid."));
+        }
+    }
+    for port in &draft.ports {
+        let pieces: Vec<_> = port.split(':').collect();
+        if !(pieces.len() == 2 || pieces.len() == 3)
+            || !pieces.iter().all(|value| {
+                !value.is_empty()
+                    && value
+                        .chars()
+                        .all(|character| character.is_ascii_digit() || character == '/')
+            })
+        {
+            return Err(format!(
+                "Port mapping {port} is not valid. Use host:container."
+            ));
+        }
+    }
+    for mount in &draft.mounts {
+        if mount.destination.is_empty() || !mount.destination.starts_with('/') {
+            return Err("Container mount destinations must be absolute paths.".to_string());
+        }
+        canonical_source(&mount.source)?;
+    }
+    Ok(())
+}
+
+fn save_custom_secrets(app: &AppHandle, custom: &[CustomContainerDraft]) -> Result<(), String> {
+    let mut content = String::from(
+        "# Device-local secrets for OSII Launcher custom containers. Do not commit this file.\n",
+    );
+    for container in custom {
+        for (key, value) in &container.secret_environment {
+            content.push_str(&format!(
+                "{}__{}={}\n",
+                container.id,
+                key,
+                value.replace('\n', "")
+            ));
+        }
+    }
+    fs::write(custom_secrets_path(app)?, content)
+        .map_err(|error| format!("Could not save custom container secrets: {error}"))
+}
+
+fn read_custom_secrets(
+    app: &AppHandle,
+) -> Result<BTreeMap<String, BTreeMap<String, String>>, String> {
+    let mut secrets = BTreeMap::new();
+    let content = match fs::read_to_string(custom_secrets_path(app)?) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(secrets),
+        Err(error) => return Err(format!("Could not read custom container secrets: {error}")),
+    };
+    for line in content
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+    {
+        let Some((name, value)) = line.split_once('=') else {
+            continue;
+        };
+        let Some((id, key)) = name.rsplit_once("__") else {
+            continue;
+        };
+        secrets
+            .entry(id.to_string())
+            .or_insert_with(BTreeMap::new)
+            .insert(key.to_string(), value.to_string());
+    }
+    Ok(secrets)
+}
+
+#[tauri::command]
+fn list_custom_containers(app: AppHandle) -> Result<Vec<CustomContainerDraft>, String> {
+    read_custom_containers(&app)
+}
+
+#[tauri::command]
+fn save_custom_container(
+    app: AppHandle,
+    mut draft: CustomContainerDraft,
+) -> Result<CustomContainerDraft, String> {
+    if draft.id.is_empty() {
+        draft.id = uuid::Uuid::new_v4().to_string();
+    }
+    validate_custom_container(&draft)?;
+    let mut values = read_custom_containers(&app)?;
+    values.retain(|value| value.id != draft.id && value.name != draft.name);
+    let mut visible = draft.clone();
+    visible.secret_environment.clear();
+    values.insert(0, visible.clone());
+    write_custom_containers(&app, &values)?;
+    let existing_secrets = read_custom_secrets(&app)?;
+    let mut with_secrets = values;
+    for value in &mut with_secrets {
+        value.secret_environment = existing_secrets.get(&value.id).cloned().unwrap_or_default();
+    }
+    with_secrets[0].secret_environment = draft.secret_environment;
+    save_custom_secrets(&app, &with_secrets)?;
+    Ok(visible)
+}
+
+#[tauri::command]
+fn managed_containers() -> Result<Vec<ManagedContainer>, String> {
+    let output = run_output(
+        "podman",
+        &[
+            "ps",
+            "-a",
+            "--filter",
+            "label=io.osii.launcher=true",
+            "--format",
+            "{{json .}}",
+        ],
+    )?;
+    if !output.status.success() {
+        return Err(format!(
+            "Could not list launcher containers: {}",
+            output_text(&output)
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .map(|value| ManagedContainer {
+            id: value
+                .get("ID")
+                .or_else(|| value.get("Id"))
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            name: value
+                .get("Names")
+                .or_else(|| value.get("Name"))
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            image: value
+                .get("Image")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            state: value
+                .get("State")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            status: value
+                .get("Status")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+        })
+        .collect())
+}
+
+fn custom_with_secrets(app: &AppHandle, id: &str) -> Result<CustomContainerDraft, String> {
+    let mut value = read_custom_containers(app)?
+        .into_iter()
+        .find(|value| value.id == id)
+        .ok_or_else(|| "Custom container settings were not found.".to_string())?;
+    value.secret_environment = read_custom_secrets(app)?.remove(id).unwrap_or_default();
+    Ok(value)
+}
+
+#[tauri::command]
+fn run_custom_container(app: AppHandle, custom_id: String) -> Result<ManagedContainer, String> {
+    let draft = custom_with_secrets(&app, &custom_id)?;
+    validate_custom_container(&draft)?;
+    if !image_is_local(&draft.image)? {
+        return Err(format!(
+            "{} is not local. Pull it explicitly from Images before running this container.",
+            draft.image
+        ));
+    }
+    let mut args = vec![
+        "run".to_string(),
+        "-d".to_string(),
+        "--pull=never".to_string(),
+        "--name".to_string(),
+        draft.name.clone(),
+        "--label".to_string(),
+        "io.osii.launcher=true".to_string(),
+        "--label".to_string(),
+        "io.osii.kind=custom".to_string(),
+    ];
+    if !draft.restart_policy.is_empty() && draft.restart_policy != "no" {
+        args.extend(["--restart".to_string(), draft.restart_policy.clone()]);
+    }
+    if !draft.network.is_empty() {
+        args.extend(["--network".to_string(), draft.network.clone()]);
+    }
+    for port in &draft.ports {
+        args.extend(["--publish".to_string(), port.clone()]);
+    }
+    for mount in &draft.mounts {
+        args.extend([
+            "--volume".to_string(),
+            format!(
+                "{}:{}{}",
+                canonical_source(&mount.source)?.display(),
+                mount.destination,
+                if mount.read_only { ":ro" } else { "" }
+            ),
+        ]);
+    }
+    for (key, value) in &draft.environment {
+        args.extend(["--env".to_string(), format!("{key}={value}")]);
+    }
+    for (key, value) in &draft.secret_environment {
+        args.extend(["--env".to_string(), format!("{key}={value}")]);
+    }
+    args.push(draft.image.clone());
+    if !draft.command.is_empty() {
+        args.push(draft.command.clone());
+    }
+    args.extend(draft.arguments.clone());
+    let secrets = draft
+        .secret_environment
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    let output = run_activity(&app, "Run custom container", "podman", &args, &secrets)?;
+    if !output.status.success() {
+        return Err(
+            "Custom container did not start. Open Activity for the full output.".to_string(),
+        );
+    }
+    managed_containers()?
+        .into_iter()
+        .find(|value| value.name == draft.name)
+        .ok_or_else(|| {
+            "Podman started the container but did not return its inventory entry yet.".to_string()
+        })
+}
+
+#[tauri::command]
+fn manage_container(
+    app: AppHandle,
+    name: String,
+    action: String,
+    confirmed: bool,
+) -> Result<String, String> {
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|value| value.is_ascii_alphanumeric() || "_.-".contains(value))
+    {
+        return Err("Invalid launcher container name.".to_string());
+    }
+    let action_args: Vec<String> = match action.as_str() {
+        "start" | "stop" | "inspect" | "logs" => vec![action.clone(), name.clone()],
+        "remove" if confirmed => vec!["rm".to_string(), "--force".to_string(), name.clone()],
+        "remove" => return Err("Confirm removal before deleting a launcher container.".to_string()),
+        _ => return Err("Unsupported container action.".to_string()),
+    };
+    let exists = run_output(
+        "podman",
+        &[
+            "ps",
+            "-a",
+            "--filter",
+            &format!("name=^{name}$"),
+            "--filter",
+            "label=io.osii.launcher=true",
+            "--format",
+            "{{.Names}}",
+        ],
+    )?;
+    if !exists.status.success() || String::from_utf8_lossy(&exists.stdout).trim() != name {
+        return Err("The launcher may manage only its own labeled containers.".to_string());
+    }
+    let output = run_activity(
+        &app,
+        &format!("Container {action}"),
+        "podman",
+        &action_args,
+        &[],
+    )?;
+    if !output.status.success() {
+        return Err(format!(
+            "Container {action} failed. Open Activity for the full output."
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 #[tauri::command]
@@ -1839,6 +2741,10 @@ pub fn run() {
             prepare_podman_machine,
             registry_status,
             login_registry,
+            fetch_catalog,
+            image_inventory,
+            pull_images,
+            list_activity,
             validate_source,
             list_profiles,
             save_profile,
@@ -1851,6 +2757,11 @@ pub fn run() {
             deployment_status,
             deployment_preview,
             profile_logs,
+            list_custom_containers,
+            save_custom_container,
+            managed_containers,
+            run_custom_container,
+            manage_container,
             open_dashboard,
         ])
         .run(tauri::generate_context!())
@@ -1875,6 +2786,48 @@ mod tests {
     }
 
     #[test]
+    fn catalog_requires_approved_digest_references() {
+        let digest = "a".repeat(64);
+        let stack = StackImages {
+            release: "2026.09.14".into(),
+            core: format!("quay.example.test/ai-ready-everything/osii-core@sha256:{digest}"),
+            dashboard: format!(
+                "quay.example.test/ai-ready-everything/osii-dashboard@sha256:{digest}"
+            ),
+            baseline_processors: format!(
+                "quay.example.test/ai-ready-everything/osii-baseline-processors@sha256:{digest}"
+            ),
+        };
+        let catalog = Catalog {
+            version: 1,
+            registry: "quay.example.test".into(),
+            namespace: "ai-ready-everything".into(),
+            stacks: vec![CatalogStack {
+                id: "2026.09.14".into(),
+                display_name: "Test".into(),
+                images: stack,
+            }],
+            tools: Vec::new(),
+            images: Vec::new(),
+        };
+        assert!(validate_catalog(&catalog, "quay.example.test").is_ok());
+        assert!(validate_catalog_reference(
+            "quay.example.test/ai-ready-everything/osii-core:latest",
+            "quay.example.test",
+            "ai-ready-everything"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn activity_redaction_removes_known_secret_values() {
+        assert_eq!(
+            redact("token=very-secret", &["very-secret".into()]),
+            "token=[REDACTED]"
+        );
+    }
+
+    #[test]
     fn profile_ids_are_safe_for_paths_and_project_names() {
         assert!(validate_profile_id("9a35f814-402d-4d33-8ded-19b12ffccb21").is_ok());
         assert!(validate_profile_id("../../outside").is_err());
@@ -1889,17 +2842,25 @@ mod tests {
     #[test]
     fn demo_copy_installs_missing_files_without_overwriting_existing_ones() {
         let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../demo-assets");
-        let destination = std::env::temp_dir().join(format!("osii-demo-copy-{}", uuid::Uuid::new_v4()));
+        let destination =
+            std::env::temp_dir().join(format!("osii-demo-copy-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&destination).expect("create test destination");
         copy_missing_demo_files(&source, &destination).expect("install packaged demo");
         let purcell = destination.join("example-documents/purcell.pdf");
         assert!(purcell.is_file());
-        assert!(destination.join("example-datasets/iris/dataset.json").is_file());
-        assert!(destination.join("example-datasets/wine/dataset.json").is_file());
+        assert!(destination
+            .join("example-datasets/iris/dataset.json")
+            .is_file());
+        assert!(destination
+            .join("example-datasets/wine/dataset.json")
+            .is_file());
 
         fs::write(&purcell, b"user keeps this file").expect("edit demo file");
         copy_missing_demo_files(&source, &destination).expect("reinstall packaged demo");
-        assert_eq!(fs::read(&purcell).expect("read retained file"), b"user keeps this file");
+        assert_eq!(
+            fs::read(&purcell).expect("read retained file"),
+            b"user keeps this file"
+        );
         fs::remove_dir_all(&destination).expect("remove test destination");
     }
 
@@ -1911,22 +2872,28 @@ mod tests {
             source_dir: "/source".to_string(),
             image_prefix: "quay.example.test/team/osii".to_string(),
             image_tag: "2026.09.14".to_string(),
+            stack_images: None,
+            tool_images: BTreeMap::new(),
             readable_wiki: true,
             concept_entity_wiki: true,
             tesseract_open_cv: false,
         };
-        let document = profile_override_document(
-            &profile,
-            Path::new("/data"),
-            Path::new("/config"),
-        ).expect("valid override");
+        let document =
+            profile_override_document(&profile, Path::new("/data"), Path::new("/config"))
+                .expect("valid override");
 
         assert_eq!(
             document.pointer("/services/api/environment/OSII_CONFIG_DIR"),
             Some(&json!("/config"))
         );
         assert!(document.pointer("/secrets").is_none());
-        assert_eq!(profile_images(&profile).iter().filter(|image| image.contains("llm-wikis")).count(), 1);
+        assert_eq!(
+            profile_images(&profile)
+                .iter()
+                .filter(|image| image.contains("llm-wikis"))
+                .count(),
+            1
+        );
     }
 
     #[test]
@@ -1937,6 +2904,8 @@ mod tests {
             source_dir: "/source".to_string(),
             image_prefix: "quay.example.test/team/osii".to_string(),
             image_tag: "2026.09.14".to_string(),
+            stack_images: None,
+            tool_images: BTreeMap::new(),
             readable_wiki: false,
             concept_entity_wiki: false,
             tesseract_open_cv: false,
@@ -1989,6 +2958,8 @@ mod tests {
                 source_dir: r"\\server\share\experiments".into(),
                 image_prefix: "quay.example/team/osii".into(),
                 image_tag: "2026.09.16".into(),
+                stack_images: None,
+                tool_images: BTreeMap::new(),
                 readable_wiki: true,
                 concept_entity_wiki: false,
                 tesseract_open_cv: true,
@@ -2002,10 +2973,14 @@ mod tests {
         assert!(serialized.contains("https://internal.example/v1"));
         let imported: ProfileSnapshot = toml::from_str(&serialized).unwrap();
         assert_eq!(imported.profile.source_dir, r"\\server\share\experiments");
-        assert_eq!(imported.tool_config["routes"]["extractor"][0]["extractor"].as_str(), Some("toolbox.tesseract-opencv"));
+        assert_eq!(
+            imported.tool_config["routes"]["extractor"][0]["extractor"].as_str(),
+            Some("toolbox.tesseract-opencv")
+        );
         let unsafe_models: toml::Value = toml::from_str(
             "[models.private]\nbase_url = 'https://user:secret@internal.example/v1'\n",
-        ).unwrap();
+        )
+        .unwrap();
         assert!(!snapshot_urls_are_safe(&unsafe_models, &tools));
     }
 }
