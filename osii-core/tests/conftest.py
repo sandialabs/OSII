@@ -17,7 +17,7 @@ from osii.domain.storage.store import ensure_osii_store_layout
 
 @pytest.fixture(autouse=True)
 def isolated_application_config(tmp_path: Path, monkeypatch):
-    """Keep models.yml, tools.yml, and secrets.env inside each test sandbox."""
+    """Keep models.toml, tools.toml, and secrets.env inside each test sandbox."""
     monkeypatch.setenv("OSII_CONFIG_DIR", str(tmp_path / "app-config"))
     monkeypatch.setenv("OSII_ENV_FILE", str(tmp_path / "app-config" / "secrets.env"))
     monkeypatch.setenv("OSII_ACTIVE_PROFILE", "development")

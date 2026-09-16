@@ -122,6 +122,9 @@ def test_shared_drive_environment_keeps_artifacts_in_separate_local_root(monkeyp
     monkeypatch.setattr(DEV_STACK, "load_dotenv", lambda _path: {})
     monkeypatch.setenv("OSII_SOURCE_DIR", str(source))
     monkeypatch.setenv("OSII_RUNTIME_DIR", str(runtime))
+    profile_config = tmp_path / "profiles" / "development" / "deployment"
+    monkeypatch.setenv("OSII_CONFIG_DIR_HOST", str(profile_config))
+    monkeypatch.delenv("OSII_CONFIG_DIR", raising=False)
     monkeypatch.setenv("OSII_SOURCE_KIND", "shared")
     monkeypatch.delenv("OSII_ROOT", raising=False)
     monkeypatch.delenv("UPLOAD_ORIGINALS_ROOT", raising=False)
@@ -132,6 +135,8 @@ def test_shared_drive_environment_keeps_artifacts_in_separate_local_root(monkeyp
     assert env["OSII_ROOT"] == str((runtime / ".osii").resolve())
     assert env["UPLOAD_ORIGINALS_ROOT"] == str((runtime / "uploads").resolve())
     assert env["OSII_SOURCE_KIND"] == "shared"
+    assert env["OSII_CONFIG_DIR"] == str(profile_config.resolve())
+    assert env["OSII_ENV_FILE"] == str(profile_config.resolve() / "secrets.env")
     assert not (source / ".osii").exists()
 
 

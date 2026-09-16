@@ -1,4 +1,5 @@
 import tomllib
+from osii.configuration import load_tools_config
 from pathlib import Path
 
 
@@ -11,20 +12,35 @@ def folder_synth_routes_path() -> Path:
 
 
 def load_object_synth_routes(config_path: Path | None = None) -> list[dict]:
-    path = config_path or object_synth_routes_path()
-    if not path.exists():
-        return []
+    if config_path is None:
+        routes = load_tools_config().get("routes", {}).get("object_synthesis")
+        if isinstance(routes, list):
+            return routes
+        return [
+            {"name": "reports-describe", "synthesizer": "describe", "extensions": [".pdf", ".docx"]},
+            {"name": "generic-describe", "synthesizer": "describe", "extensions": ["*"]},
+        ]
 
-    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    if not config_path.exists():
+        return load_object_synth_routes()
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     return data.get("routes", [])
 
 
 def load_folder_synth_routes(config_path: Path | None = None) -> list[dict]:
-    path = config_path or folder_synth_routes_path()
-    if not path.exists():
-        return []
+    if config_path is None:
+        routes = load_tools_config().get("routes", {}).get("folder_synthesis")
+        if isinstance(routes, list):
+            return routes
+        return [
+            {"name": "experiments-recursive", "synthesizer": "recursive_folder", "path_patterns": ["experiments/**", "runs/**", "reports/**", "analysis/**"]},
+            {"name": "simulation-folders-recursive", "synthesizer": "recursive_folder", "path_patterns": ["simulation/**", "simulations/**", "thermal/**"]},
+            {"name": "catchall-describe", "synthesizer": "describe_folder", "path_patterns": ["*"]},
+        ]
 
-    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    if not config_path.exists():
+        return load_folder_synth_routes()
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     return data.get("routes", [])
 
 

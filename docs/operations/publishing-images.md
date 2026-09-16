@@ -457,6 +457,12 @@ make run
 .\scripts\osii.ps1 run
 ```
 
+These wrappers mount the local `development/deployment` profile directory as
+`/config`; no configuration is written beside the source documents. If you
+invoke Compose directly instead, set `OSII_CONFIG_DIR_HOST` to the absolute
+path of that profile's `deployment/` directory before `up`. See
+[profile configuration](../reference/model-providers.md#where-configuration-lives).
+
 Compose uses the shared core image for API and worker and the shared baseline
 image for all five capability processes. `make run` pulls missing tagged images
 but passes `--no-build`, so a pilot host never quietly builds from source.

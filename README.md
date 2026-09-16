@@ -273,11 +273,12 @@ container stack. **Workbench Setup** owns processing choices: model endpoints,
 API keys, default models, running processor URLs, and which model connection a
 model-backed tool may use.
 
-That configuration is kept outside the library in the platform application-data
-directory as `models.yml`, `tools.yml`, and write-only `secrets.env`. It is not
+That configuration is kept outside the library in its local launcher profile's
+`deployment/` directory as `models.toml`, `tools.toml`, and write-only `secrets.env`. It is not
 part of `.osii`, so sharing a library never shares credentials or workstation
-service addresses. Developers running `make dev` use the same files; manual
-YAML edits appear in Setup without restarting OSII. See
+service addresses. Developers running `make dev` use a `development` profile;
+manual TOML edits appear in Setup without restarting OSII. The launcher can
+export or import a secret-free profile snapshot. See
 [model connections and the Model Gateway](docs/reference/model-providers.md).
 
 ## How this repository is organized

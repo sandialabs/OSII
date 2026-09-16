@@ -3,6 +3,7 @@ import threading
 from pathlib import Path
 
 from osii.api import runs_routes
+from osii.configuration import tools_path
 from osii.domain.processing.jobs import create_run_record, get_run, save_run
 from osii.domain.scopes.collections import create_collection, list_collection_documents
 from osii.domain.scopes.membership import list_scope_file_ids
@@ -48,11 +49,7 @@ def test_completed_document_is_browsable_while_next_document_runs(
         return original_dispatch(**kwargs)
 
     monkeypatch.setattr(runs_routes, "dispatch_extract", staged_dispatch)
-    routes_path = (
-        Path(__file__).resolve().parents[1]
-        / "config"
-        / "extractor_routes_native.toml"
-    )
+    routes_path = tools_path()
 
     worker = threading.Thread(
         target=runs_routes.run_worker,
@@ -186,7 +183,7 @@ def test_intake_worker_adds_successfully_processed_documents_to_its_collection(
         return original_dispatch(**kwargs)
 
     monkeypatch.setattr(runs_routes, "dispatch_extract", native_text_dispatch)
-    routes_path = Path(__file__).resolve().parents[1] / "config" / "extractor_routes_native.toml"
+    routes_path = tools_path()
 
     runs_routes.run_worker(
         run_id=run["id"],
@@ -235,7 +232,7 @@ def test_run_pauses_between_files_and_records_file_timings(
         return original_dispatch(**kwargs)
 
     monkeypatch.setattr(runs_routes, "dispatch_extract", staged_dispatch)
-    routes_path = Path(__file__).resolve().parents[1] / "config" / "extractor_routes_native.toml"
+    routes_path = tools_path()
     worker_kwargs = {
         "run_id": run["id"],
         "resolved_files": files,

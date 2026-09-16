@@ -38,7 +38,6 @@ WORKDIR /app
 COPY osii-core/pyproject.toml osii-core/README.md ./
 COPY osii-core/osii ./osii
 COPY osii-core/osii_processor_sdk ./osii_processor_sdk
-COPY osii-core/config ./config
 RUN "${VIRTUAL_ENV}/bin/python" -m pip install --no-cache-dir .
 
 RUN mkdir -p /data/.osii /data/source /data/uploads && \

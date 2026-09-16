@@ -182,7 +182,6 @@ def adapt_container_files(component: str, component_root: Path) -> None:
         content = content.replace("COPY osii-core/osii_processor_sdk ./osii_processor_sdk", "COPY osii_processor_sdk ./osii_processor_sdk")
         content = content.replace("COPY osii-core/pyproject.toml osii-core/README.md ./", "COPY pyproject.toml README.md ./")
         content = content.replace("COPY osii-core/osii ./osii", "COPY osii ./osii")
-        content = content.replace("COPY osii-core/config ./config", "COPY config ./config")
         dockerfile.write_text(content, encoding="utf-8")
     if component == "osii-mcp" and dockerfile.exists():
         dockerfile.write_text(

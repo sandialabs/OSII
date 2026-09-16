@@ -404,7 +404,7 @@ Example:
 python -m osii.build_all `
   --data-root ".\osii-data\source" `
   --osii-root ".\osii-data\.osii" `
-  --collection-file ".\config\my_collection.toml" `
+  --collection-file ".\my_collection.toml" `
   --enricher stats_keywords `
   --build-embeddings
 ```

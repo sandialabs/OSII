@@ -140,15 +140,29 @@ def build_environment(core_only: bool) -> dict[str, str]:
     for path in (osii_root, uploads_root):
         path.mkdir(parents=True, exist_ok=True)
 
-    configured_directory = env.get("OSII_CONFIG_DIR", "").strip()
+    configured_directory = (env.get("OSII_CONFIG_DIR", "") or env.get("OSII_CONFIG_DIR_HOST", "")).strip()
+    previous_configuration_root = None
     if configured_directory:
         configuration_root = Path(configured_directory).expanduser()
+        if configuration_root.parts[-3:] == ("profiles", "development", "deployment"):
+            application_root = configuration_root.parents[2]
+            previous_configuration_root = (
+                Path(env.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "org.osii.launcher"
+                if sys.platform not in {"darwin", "win32"}
+                else application_root / "config"
+            )
     elif sys.platform == "darwin":
-        configuration_root = Path.home() / "Library" / "Application Support" / "org.osii.launcher" / "config"
+        application_root = Path.home() / "Library" / "Application Support" / "org.osii.launcher"
+        previous_configuration_root = application_root / "config"
+        configuration_root = application_root / "profiles" / "development" / "deployment"
     elif os.name == "nt":
-        configuration_root = Path(env.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "org.osii.launcher" / "config"
+        application_root = Path(env.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "org.osii.launcher"
+        previous_configuration_root = application_root / "config"
+        configuration_root = application_root / "profiles" / "development" / "deployment"
     else:
-        configuration_root = Path(env.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "org.osii.launcher"
+        application_root = Path(env.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "org.osii.launcher"
+        previous_configuration_root = Path(env.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "org.osii.launcher"
+        configuration_root = application_root / "profiles" / "development" / "deployment"
     configuration_root = configuration_root.resolve()
     configuration_root.mkdir(parents=True, exist_ok=True)
 
@@ -199,9 +213,8 @@ def build_environment(core_only: bool) -> dict[str, str]:
             "OSII_MODEL_GATEWAY_PUBLIC_URL": f"http://127.0.0.1:{env.get('OSII_MODEL_BRIDGE_PORT', '8095')}/v1",
         }
     )
-    env["OSII_EXTRACTOR_ROUTES_PATH"] = str(
-        (REPOSITORY_ROOT / "osii-core" / "config" / "extractor_routes_native.toml").resolve()
-    )
+    if previous_configuration_root is not None:
+        env["OSII_LEGACY_CONFIG_DIR"] = str(previous_configuration_root)
     provider_profile = "openai" if env.get("OPENAI_BASE_URL", "").strip() else "ollama"
     if not core_only:
         ollama_embedding_model = env.get("OLLAMA_EMBEDDING_MODEL", "").strip() or "all-minilm"

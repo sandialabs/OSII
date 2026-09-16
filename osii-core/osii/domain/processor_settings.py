@@ -4,24 +4,35 @@ import json
 from pathlib import Path
 from typing import Any
 
+from osii.configuration import load_tools_config, save_tools_config
+
 
 def processor_settings_path(osii_root: Path) -> Path:
     return osii_root / "state" / "processor_settings.json"
 
 
 def load_processor_settings(osii_root: Path) -> dict[str, dict[str, Any]]:
+    configured = load_tools_config(osii_root).get("processor_settings", {})
+    current = (
+        {
+            str(name): dict(settings)
+            for name, settings in configured.items()
+            if isinstance(settings, dict)
+        }
+        if isinstance(configured, dict) else {}
+    )
+    # One-release fallback for records containing JSON null, which TOML cannot encode.
     path = processor_settings_path(osii_root)
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {}
+        return current
     if not isinstance(payload, dict):
-        return {}
-    return {
-        str(name): dict(config)
-        for name, config in payload.items()
-        if isinstance(config, dict)
-    }
+        return current
+    for name, config in payload.items():
+        if isinstance(config, dict):
+            current.setdefault(str(name), dict(config))
+    return current
 
 
 def processor_settings(osii_root: Path, processor_name: str) -> dict[str, Any]:
@@ -33,17 +44,10 @@ def save_processor_settings(
     processor_name: str,
     config: dict[str, Any],
 ) -> dict[str, Any]:
-    path = processor_settings_path(osii_root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    settings = load_processor_settings(osii_root)
-    settings[processor_name] = dict(config)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(
-        json.dumps(settings, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    temporary.replace(path)
-    return dict(settings[processor_name])
+    configuration = load_tools_config(osii_root)
+    configuration.setdefault("processor_settings", {})[processor_name] = dict(config)
+    save_tools_config(configuration)
+    return dict(config)
 
 
 def merged_processor_settings(

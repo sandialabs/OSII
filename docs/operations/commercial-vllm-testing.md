@@ -29,8 +29,8 @@ failed experiment cannot leave expensive workers running.
 
 Start OSII, open **Setup**, and add an **OpenAI-compatible endpoint**. Enter
 the `/v1` base URL, served model name, and personal API key there. OSII stores
-the non-secret connection in the platform application-data `config/models.yml`
-file and the key in its adjacent `config/secrets.env`; neither file is part of
+the non-secret connection in the platform application-data `profiles/development/deployment/models.toml`
+file and the key in its adjacent `secrets.env`; neither file is part of
 a library or repository.
 
 The commercial profile makes the remote endpoint the preferred chat and

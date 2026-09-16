@@ -44,7 +44,7 @@ struct RegistryStatus {
     username: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProfileDraft {
     name: String,
@@ -57,6 +57,14 @@ struct ProfileDraft {
     concept_entity_wiki: bool,
     #[serde(default)]
     tesseract_open_cv: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ProfileSnapshot {
+    version: u32,
+    profile: ProfileDraft,
+    model_config: toml::Value,
+    tool_config: toml::Value,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -571,6 +579,14 @@ fn save_profile(
         concept_entity_wiki: draft.concept_entity_wiki,
         tesseract_open_cv: draft.tesseract_open_cv,
     };
+    let previous = profiles.iter().find(|item| item.id == id).cloned();
+    if previous.as_ref().is_some_and(|old| {
+        old.readable_wiki != profile.readable_wiki
+            || old.concept_entity_wiki != profile.concept_entity_wiki
+            || old.tesseract_open_cv != profile.tesseract_open_cv
+    }) {
+        sync_selected_tools(&app, &profile)?;
+    }
     profiles.retain(|item| item.id != id && !same_profile_settings(item, &profile));
     profiles.insert(0, profile.clone());
     write_profiles(&app, &profiles)?;
@@ -660,6 +676,201 @@ fn profile_config_dir(app: &AppHandle, profile_id: &str) -> Result<PathBuf, Stri
         .join("profiles")
         .join(profile_id)
         .join("deployment"))
+}
+
+fn sync_selected_tools(app: &AppHandle, profile: &Profile) -> Result<(), String> {
+    let path = profile_config_dir(app, &profile.id)?.join("tools.toml");
+    let content = match fs::read_to_string(&path) {
+        Ok(value) => value,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(format!("Could not read selected tools: {error}")),
+    };
+    let mut document: toml::Value = toml::from_str(&content)
+        .map_err(|error| format!("Fix tools.toml before changing tool selection: {error}"))?;
+    let tools = document.as_table_mut().ok_or("tools.toml must be a table")?
+        .entry("tools").or_insert_with(|| toml::Value::Table(toml::Table::new()))
+        .as_table_mut().ok_or("[tools] must be a table")?;
+    for (id, selected, endpoint, definition) in [
+        ("readable-llm-wiki", profile.readable_wiki, "http://readable-wiki-enricher:8099", "enabled = true\nprocessor_id = 'toolbox.readable-wiki'\ndisplay_name = 'Readable LLM Wiki'\nkind = 'enricher'\nruntime = { mode = 'external', endpoint = 'http://readable-wiki-enricher:8099' }\nmodel_access = { mode = 'gateway', bindings = { chat = 'base' } }\n"),
+        ("concept-entity-llm-wiki", profile.concept_entity_wiki, "http://concept-entity-wiki-enricher:8100", "enabled = true\nprocessor_id = 'toolbox.concept-entity-wiki'\ndisplay_name = 'Concept and Entity LLM Wiki'\nkind = 'enricher'\nruntime = { mode = 'external', endpoint = 'http://concept-entity-wiki-enricher:8100' }\nmodel_access = { mode = 'gateway', bindings = { chat = 'base' } }\n"),
+        ("tesseract-opencv", profile.tesseract_open_cv, "http://tesseract-opencv:8080", "enabled = true\nprocessor_id = 'toolbox.tesseract-opencv'\naliases = ['toolchest.tesseract-opencv']\ndisplay_name = 'Tesseract OCR with OpenCV regions'\nkind = 'extractor'\nruntime = { mode = 'external', endpoint = 'http://tesseract-opencv:8080' }\nmodel_access = { mode = 'none' }\n"),
+    ] {
+        if let Some(existing) = tools.get_mut(id) {
+            if existing.get("runtime").and_then(|runtime| runtime.get("endpoint")).and_then(toml::Value::as_str) == Some(endpoint) {
+                existing.as_table_mut().ok_or("Tool entry must be a table")?
+                    .insert("enabled".into(), toml::Value::Boolean(selected));
+            }
+        } else if selected {
+            tools.insert(id.into(), toml::from_str(definition).map_err(|error| format!("Could not configure {id}: {error}"))?);
+        }
+    }
+    fs::write(&path, toml::to_string_pretty(&document).map_err(|error| format!("Could not serialize tools: {error}"))?)
+        .map_err(|error| format!("Could not update selected tools: {error}"))
+}
+
+fn allowed_fields(value: &toml::Value, names: &[&str]) -> toml::Table {
+    let mut output = toml::Table::new();
+    if let Some(table) = value.as_table() {
+        for name in names {
+            if let Some(item) = table.get(*name) {
+                output.insert((*name).to_string(), item.clone());
+            }
+        }
+    }
+    output
+}
+
+fn safe_model_config(value: &toml::Value) -> toml::Value {
+    let mut output = toml::Table::new();
+    output.insert("version".into(), toml::Value::Integer(1));
+    if let Some(defaults) = value.get("defaults") {
+        output.insert("defaults".into(), toml::Value::Table(allowed_fields(defaults, &["chat", "synthesis", "embedding"])));
+    }
+    let mut models = toml::Table::new();
+    if let Some(entries) = value.get("models").and_then(toml::Value::as_table) {
+        for (name, model) in entries {
+            let mut fields = allowed_fields(model, &[
+                "type", "base_url", "api_key_env", "model", "capabilities", "enabled", "priority",
+            ]);
+            if fields.get("api_key_env").and_then(toml::Value::as_str).is_some_and(|name| {
+                name.is_empty() || !name.chars().all(|character| character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_')
+            }) {
+                fields.remove("api_key_env");
+            }
+            models.insert(name.clone(), toml::Value::Table(fields));
+        }
+    }
+    output.insert("models".into(), toml::Value::Table(models));
+    toml::Value::Table(output)
+}
+
+fn snapshot_urls_are_safe(models: &toml::Value, tools: &toml::Value) -> bool {
+    let safe_url = |value: &str| {
+        if value.is_empty() {
+            return true;
+        }
+        if value.contains('?') || value.contains('#') {
+            return false;
+        }
+        let authority = value.split_once("://").map(|(_, rest)| rest.split('/').next().unwrap_or(""));
+        authority.is_some_and(|part| !part.contains('@'))
+    };
+    let model_urls_safe = models.get("models").and_then(toml::Value::as_table).is_none_or(|entries| {
+        entries.values().all(|entry| entry.get("base_url").and_then(toml::Value::as_str).is_none_or(&safe_url))
+    });
+    let tool_urls_safe = tools.get("tools").and_then(toml::Value::as_table).is_none_or(|entries| {
+        entries.values().all(|entry| entry.get("runtime").and_then(|runtime| runtime.get("endpoint")).and_then(toml::Value::as_str).is_none_or(&safe_url))
+    });
+    model_urls_safe && tool_urls_safe
+}
+
+fn safe_tool_config(value: &toml::Value) -> toml::Value {
+    let mut output = toml::Table::new();
+    output.insert("version".into(), toml::Value::Integer(1));
+    let mut tools = toml::Table::new();
+    if let Some(entries) = value.get("tools").and_then(toml::Value::as_table) {
+        for (name, tool) in entries {
+            let mut item = allowed_fields(tool, &["enabled", "processor_id", "display_name", "kind", "aliases"]);
+            if let Some(runtime) = tool.get("runtime") {
+                item.insert("runtime".into(), toml::Value::Table(allowed_fields(runtime, &["mode", "endpoint", "image"])));
+            }
+            if let Some(access) = tool.get("model_access") {
+                let mut selected = allowed_fields(access, &["mode"]);
+                if let Some(bindings) = access.get("bindings") {
+                    selected.insert("bindings".into(), toml::Value::Table(allowed_fields(bindings, &["chat", "synthesis", "embedding"])));
+                }
+                item.insert("model_access".into(), toml::Value::Table(selected));
+            }
+            tools.insert(name.clone(), toml::Value::Table(item));
+        }
+    }
+    output.insert("tools".into(), toml::Value::Table(tools));
+    let mut routes = toml::Table::new();
+    for kind in ["extractor", "object_synthesis", "folder_synthesis"] {
+        if let Some(items) = value.get("routes").and_then(|entry| entry.get(kind)).and_then(toml::Value::as_array) {
+            routes.insert(kind.into(), toml::Value::Array(items.iter().map(|item| {
+                toml::Value::Table(allowed_fields(item, &["name", "extractor", "fallbacks", "extensions", "synthesizer", "path_patterns"]))
+            }).collect()));
+        }
+    }
+    if !routes.is_empty() {
+        output.insert("routes".into(), toml::Value::Table(routes));
+    }
+    toml::Value::Table(output)
+}
+
+#[tauri::command]
+fn export_profile(app: AppHandle, profile_id: String, destination: String) -> Result<(), String> {
+    let profile = find_profile(&app, &profile_id)?;
+    // A newly saved profile has not generated deployment files yet.
+    deployment_files(&app, &profile)?;
+    let config_dir = profile_config_dir(&app, &profile_id)?;
+    let read_config = |name: &str| -> Result<toml::Value, String> {
+        let text = fs::read_to_string(config_dir.join(name)).map_err(|error| format!(
+            "Could not read {name}; start this profile once to migrate older YAML: {error}"
+        ))?;
+        toml::from_str(&text).map_err(|error| format!("Invalid {name}: {error}"))
+    };
+    let raw_models = read_config("models.toml")?;
+    let raw_tools = read_config("tools.toml")?;
+    if !snapshot_urls_are_safe(&raw_models, &raw_tools) {
+        return Err("Remove credentials or query parameters from model and processor URLs before exporting.".into());
+    }
+    let snapshot = ProfileSnapshot {
+        version: 1,
+        profile: ProfileDraft {
+            name: profile.name, source_dir: profile.source_dir,
+            image_prefix: profile.image_prefix, image_tag: profile.image_tag,
+            readable_wiki: profile.readable_wiki, concept_entity_wiki: profile.concept_entity_wiki,
+            tesseract_open_cv: profile.tesseract_open_cv,
+        },
+        model_config: safe_model_config(&raw_models),
+        tool_config: safe_tool_config(&raw_tools),
+    };
+    let content = toml::to_string_pretty(&snapshot)
+        .map_err(|error| format!("Could not serialize profile: {error}"))?;
+    fs::write(destination, content).map_err(|error| format!("Could not export profile: {error}"))
+}
+
+#[tauri::command]
+fn import_profile(app: AppHandle, source: String) -> Result<Profile, String> {
+    let content = fs::read_to_string(source).map_err(|error| format!("Could not read profile: {error}"))?;
+    if content.len() > 1024 * 1024 {
+        return Err("Profile export exceeds the 1 MiB limit.".into());
+    }
+    let snapshot: ProfileSnapshot = toml::from_str(&content)
+        .map_err(|error| format!("Invalid profile TOML: {error}"))?;
+    if snapshot.version != 1 {
+        return Err(format!("Unsupported profile version: {}", snapshot.version));
+    }
+    if !snapshot_urls_are_safe(&snapshot.model_config, &snapshot.tool_config) {
+        return Err("Imported profile URLs must not contain credentials or query parameters.".into());
+    }
+    let draft = snapshot.profile;
+    if draft.name.trim().is_empty() || draft.source_dir.trim().is_empty() {
+        return Err("Profile needs a name and original source path.".into());
+    }
+    let image_prefix = validate_image_part(&draft.image_prefix, "image prefix", true)?;
+    let image_tag = validate_image_part(&draft.image_tag, "image tag", false)?;
+    let id = uuid::Uuid::new_v4().to_string();
+    let profile = Profile {
+        id: id.clone(), name: draft.name, source_dir: draft.source_dir,
+        image_prefix, image_tag, readable_wiki: draft.readable_wiki,
+        concept_entity_wiki: draft.concept_entity_wiki, tesseract_open_cv: draft.tesseract_open_cv,
+    };
+    let config_dir = profile_config_dir(&app, &id)?;
+    fs::create_dir_all(&config_dir).map_err(|error| format!("Could not create imported profile: {error}"))?;
+    let models = toml::to_string_pretty(&safe_model_config(&snapshot.model_config))
+        .map_err(|error| format!("Could not import models: {error}"))?;
+    let tools = toml::to_string_pretty(&safe_tool_config(&snapshot.tool_config))
+        .map_err(|error| format!("Could not import tools: {error}"))?;
+    fs::write(config_dir.join("models.toml"), models).map_err(|error| format!("Could not save models: {error}"))?;
+    fs::write(config_dir.join("tools.toml"), tools).map_err(|error| format!("Could not save tools: {error}"))?;
+    fs::create_dir_all(profile_data_dir(&app, &id)?).map_err(|error| format!("Could not create library state: {error}"))?;
+    let mut profiles = read_profiles(&app)?;
+    profiles.insert(0, profile.clone());
+    write_profiles(&app, &profiles)?;
+    Ok(profile)
 }
 
 fn active_profile_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -830,7 +1041,7 @@ fn profile_override_document(
     let mut shared_environment = serde_json::Map::new();
     shared_environment.insert("OSII_CONFIG_DIR".into(), json!("/config"));
     shared_environment.insert("OSII_ENV_FILE".into(), json!("/config/secrets.env"));
-    shared_environment.insert("OSII_ACTIVE_PROFILE".into(), json!("development"));
+    shared_environment.insert("OSII_ACTIVE_PROFILE".into(), json!("launcher"));
     shared_environment.insert("OSII_MODEL_GATEWAY_PUBLIC_URL".into(), json!("http://model-provider-bridge:8095/v1"));
     shared_environment.insert("OSII_MODEL_GATEWAY_SECRET".into(), json!(format!("launcher-{}", profile.id)));
 
@@ -872,54 +1083,56 @@ fn deployment_files(
     fs::create_dir_all(&data_dir)
         .map_err(|error| format!("Could not create library state: {error}"))?;
 
-    let models_path = config_dir.join("models.yml");
-    if !models_path.exists() {
+    // The former installation-wide files are read once by Core and converted to
+    // TOML in this profile. Never replace a profile's existing configuration.
+    if !config_dir.join("models.toml").exists()
+        && !config_dir.join("tools.toml").exists()
+        && !config_dir.join("models.yml").exists()
+        && !config_dir.join("tools.yml").exists()
+    {
+        let application_dir = launcher_data_dir(app)?;
+        let previous_dir = if cfg!(target_os = "linux") {
+            std::env::var_os("XDG_CONFIG_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    std::env::var_os("HOME")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| application_dir.clone())
+                        .join(".config")
+                })
+                .join("org.osii.launcher")
+        } else {
+            application_dir.join("config")
+        };
+        for name in ["models.yml", "tools.yml", "secrets.env"] {
+            let old_path = previous_dir.join(name);
+            let new_path = config_dir.join(name);
+            if old_path.is_file() && !new_path.exists() {
+                fs::copy(&old_path, &new_path)
+                    .map_err(|error| format!("Could not migrate old {name}: {error}"))?;
+            }
+        }
+    }
+
+    let models_path = config_dir.join("models.toml");
+    if !models_path.exists() && !config_dir.join("models.yml").exists() {
         fs::write(
             &models_path,
-            "version: 1\nmodels:\n  base:\n    type: ollama-local\n    base_url: http://host.containers.internal:11434\n    model: llama3.2:1b\n    capabilities: [chat, synthesis]\n  minilm:\n    type: ollama-local\n    base_url: http://host.containers.internal:11434\n    model: all-minilm\n    capabilities: [embedding]\ndefaults:\n  chat: base\n  synthesis: base\n  embedding: minilm\n",
+            "version = 1\n\n[defaults]\nchat = 'base'\nsynthesis = 'base'\nembedding = 'minilm'\n\n[models.base]\ntype = 'ollama-local'\nbase_url = 'http://host.containers.internal:11434'\nmodel = 'llama3.2:1b'\ncapabilities = ['chat', 'synthesis']\n\n[models.minilm]\ntype = 'ollama-local'\nbase_url = 'http://host.containers.internal:11434'\nmodel = 'all-minilm'\ncapabilities = ['embedding']\n",
         ).map_err(|error| format!("Could not create model configuration: {error}"))?;
     }
-    let tools_path = config_dir.join("tools.yml");
-    if !tools_path.exists() {
-        let tools = r#"version: 1
-profiles:
-  development:
-    tools:
-      readable-llm-wiki:
-        enabled: true
-        processor_id: toolbox.readable-wiki
-        display_name: Readable LLM Wiki
-        kind: enricher
-        model_requirements: {chat: required}
-        capabilities:
-          scope_types: [object, folder, collection, root]
-          output_kinds: [wiki_markdown]
-        runtime: {mode: external, endpoint: http://readable-wiki-enricher:8099}
-        model_access: {mode: gateway, bindings: {chat: base}}
-      concept-entity-llm-wiki:
-        enabled: true
-        processor_id: toolbox.concept-entity-wiki
-        display_name: Concept and Entity LLM Wiki
-        kind: enricher
-        model_requirements: {chat: required}
-        capabilities:
-          scope_types: [object, folder, collection, root]
-          output_kinds: [wiki_markdown, entity_list, table]
-        runtime: {mode: external, endpoint: http://concept-entity-wiki-enricher:8100}
-        model_access: {mode: gateway, bindings: {chat: base}}
-      tesseract-opencv:
-        enabled: true
-        processor_id: toolbox.tesseract-opencv
-        aliases: [toolchest.tesseract-opencv]
-        display_name: Tesseract OCR with OpenCV regions
-        kind: extractor
-        model_requirements: {}
-        capabilities:
-          scope_types: [object]
-          input_media_types: [application/pdf, image/*]
-        runtime: {mode: external, endpoint: http://tesseract-opencv:8080}
-        model_access: {mode: none}
-"#;
+    let tools_path = config_dir.join("tools.toml");
+    if !tools_path.exists() && !config_dir.join("tools.yml").exists() {
+        let mut tools = String::from("version = 1\n");
+        if profile.readable_wiki {
+            tools.push_str("\n[tools.readable-llm-wiki]\nenabled = true\nprocessor_id = 'toolbox.readable-wiki'\ndisplay_name = 'Readable LLM Wiki'\nkind = 'enricher'\nruntime = { mode = 'external', endpoint = 'http://readable-wiki-enricher:8099' }\nmodel_access = { mode = 'gateway', bindings = { chat = 'base' } }\n");
+        }
+        if profile.concept_entity_wiki {
+            tools.push_str("\n[tools.concept-entity-llm-wiki]\nenabled = true\nprocessor_id = 'toolbox.concept-entity-wiki'\ndisplay_name = 'Concept and Entity LLM Wiki'\nkind = 'enricher'\nruntime = { mode = 'external', endpoint = 'http://concept-entity-wiki-enricher:8100' }\nmodel_access = { mode = 'gateway', bindings = { chat = 'base' } }\n");
+        }
+        if profile.tesseract_open_cv {
+            tools.push_str("\n[tools.tesseract-opencv]\nenabled = true\nprocessor_id = 'toolbox.tesseract-opencv'\naliases = ['toolchest.tesseract-opencv']\ndisplay_name = 'Tesseract OCR with OpenCV regions'\nkind = 'extractor'\nruntime = { mode = 'external', endpoint = 'http://tesseract-opencv:8080' }\nmodel_access = { mode = 'none' }\n");
+        }
         fs::write(&tools_path, tools)
             .map_err(|error| format!("Could not create tool configuration: {error}"))?;
     }
@@ -1273,6 +1486,8 @@ pub fn run() {
             validate_source,
             list_profiles,
             save_profile,
+            export_profile,
+            import_profile,
             delete_profile,
             start_profile,
             stop_profile,
@@ -1377,5 +1592,40 @@ mod tests {
             remove_windows_extended_path_prefix("/Volumes/documents"),
             "/Volumes/documents"
         );
+    }
+
+    #[test]
+    fn profile_snapshot_keeps_exact_paths_but_excludes_secret_fields() {
+        let models: toml::Value = toml::from_str(
+            "version = 1\n[models.mid]\ntype = 'openai-compatible'\nbase_url = 'https://internal.example/v1'\nmodel = 'model-x'\napi_key_env = 'OPENAI_API_KEY'\napi_key = 'do-not-export'\n[defaults]\nchat = 'mid'\n",
+        ).unwrap();
+        let tools: toml::Value = toml::from_str(
+            "version = 1\n[tools.wiki]\nprocessor_id = 'toolbox.readable-wiki'\nsecret = 'do-not-export'\nruntime = { mode = 'external', endpoint = 'http://internal.example:8099' }\n[processor_settings.wiki]\npassword = 'do-not-export'\n[[routes.extractor]]\nname = 'pdf'\nextractor = 'toolbox.tesseract-opencv'\nextensions = ['.pdf']\n",
+        ).unwrap();
+        let snapshot = ProfileSnapshot {
+            version: 1,
+            profile: ProfileDraft {
+                name: "Shared drive".into(),
+                source_dir: r"\\server\share\experiments".into(),
+                image_prefix: "quay.example/team/osii".into(),
+                image_tag: "2026.09.16".into(),
+                readable_wiki: true,
+                concept_entity_wiki: false,
+                tesseract_open_cv: true,
+            },
+            model_config: safe_model_config(&models),
+            tool_config: safe_tool_config(&tools),
+        };
+        let serialized = toml::to_string_pretty(&snapshot).unwrap();
+        assert!(!serialized.contains("do-not-export"));
+        assert!(!serialized.contains("processor_settings"));
+        assert!(serialized.contains("https://internal.example/v1"));
+        let imported: ProfileSnapshot = toml::from_str(&serialized).unwrap();
+        assert_eq!(imported.profile.source_dir, r"\\server\share\experiments");
+        assert_eq!(imported.tool_config["routes"]["extractor"][0]["extractor"].as_str(), Some("toolbox.tesseract-opencv"));
+        let unsafe_models: toml::Value = toml::from_str(
+            "[models.private]\nbase_url = 'https://user:secret@internal.example/v1'\n",
+        ).unwrap();
+        assert!(!snapshot_urls_are_safe(&unsafe_models, &tools));
     }
 }

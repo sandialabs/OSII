@@ -56,6 +56,14 @@ $env:OSII_IMAGE_PREFIX = $ImagePrefix
 $env:OSII_IMAGE_TAG = $ImageTag
 $env:OSII_BASE_IMAGE = $BaseImage
 $env:OSII_PYTHON_VERSION = $PythonVersion
+if (-not $env:OSII_CONFIG_DIR_HOST) {
+    if ($env:OSII_CONFIG_DIR) {
+        $env:OSII_CONFIG_DIR_HOST = $env:OSII_CONFIG_DIR
+    } else {
+        $ApplicationConfigRoot = if ($env:APPDATA) { $env:APPDATA } else { Join-Path $HOME "AppData\Roaming" }
+        $env:OSII_CONFIG_DIR_HOST = Join-Path $ApplicationConfigRoot "org.osii.launcher\profiles\development\deployment"
+    }
+}
 
 if ($Runtime -eq "Docker") {
     $ComposeExecutable = "docker"

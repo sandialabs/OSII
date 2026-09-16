@@ -48,7 +48,7 @@ PULL_JOBS_LOCK = threading.Lock()
 
 
 def _load(osii_root) -> list[dict[str, Any]]:
-    """Present connection-oriented models.yml through the legacy provider UI shape."""
+    """Present connection-oriented models.toml through the legacy provider UI shape."""
     config = load_models_config(osii_root)
     defaults = config.get("defaults") or {}
     records = []

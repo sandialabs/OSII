@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import type {
   DeploymentStatus,
   DeploymentPreview,
@@ -27,6 +27,10 @@ export const launcherApi = {
   saveProfile: (draft: ProfileDraft, profileId?: string) =>
     invoke<Profile>("save_profile", { draft, profileId: profileId ?? null }),
   deleteProfile: (profileId: string) => invoke<Profile[]>("delete_profile", { profileId }),
+  chooseProfileExport: (name: string) => save({ title: "Export OSII profile", defaultPath: `${name}.osii-profile.toml`, filters: [{ name: "OSII profile", extensions: ["toml"] }] }),
+  chooseProfileImport: () => open({ title: "Import OSII profile", multiple: false, filters: [{ name: "OSII profile", extensions: ["toml"] }] }),
+  exportProfile: (profileId: string, destination: string) => invoke<void>("export_profile", { profileId, destination }),
+  importProfile: (source: string) => invoke<Profile>("import_profile", { source }),
   startProfile: (profileId: string) =>
     invoke<DeploymentStatus>("start_profile", { profileId }),
   stopProfile: (profileId: string) => invoke<DeploymentStatus>("stop_profile", { profileId }),

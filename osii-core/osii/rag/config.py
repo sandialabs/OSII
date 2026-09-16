@@ -43,7 +43,7 @@ def get_chat_settings(osii_root: Path) -> ChatSettings:
         chain = ("extractive",)
 
     # Explicit deployment overrides remain available for one release. Ordinary
-    # Setup and launcher workflows use models.yml instead.
+    # Setup and launcher workflows use models.toml instead.
     configured_chain = os.getenv("CHAT_PROVIDER_CHAIN", "").strip()
     configured_primary = os.getenv("CHAT_PROVIDER", "").strip()
     if (configured_chain or configured_primary) and configuration.get("models"):

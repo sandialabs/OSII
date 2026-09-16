@@ -15,93 +15,92 @@ containers.
 
 ## Where configuration lives
 
-Model and tool configuration is workstation state, not library content. It is
-kept outside `.osii` in the operating system's application-data directory:
+Model and tool configuration belongs to the active library profile, not the
+source documents or portable `.osii` sidecar. The launcher keeps an existing
+`profiles/<profile-id>/deployment/` directory beside its local `data/` directory:
 
 ```text
-config/
-├── models.yml       # connection aliases, model names, and defaults
-├── tools.yml        # processor URLs/images and model bindings
+deployment/
+├── models.toml      # connection aliases, model names, and defaults
+├── tools.toml       # processors, bindings, routing, and setting overrides
 └── secrets.env      # API keys; never returned by the API
 ```
 
-For source development this is `~/Library/Application Support/org.osii.launcher/config`
-on macOS, `%APPDATA%\org.osii.launcher\config` on Windows, and
-`$XDG_CONFIG_HOME/org.osii.launcher` on Linux. Set `OSII_CONFIG_DIR` to use a
-different location. The desktop launcher keeps a separate config directory per
-saved library profile and mounts it into the containers.
+For `make dev`, the profile is named `development`: on macOS its path is
+`~/Library/Application Support/org.osii.launcher/profiles/development/deployment`,
+on Windows `%APPDATA%\org.osii.launcher\profiles\development\deployment`, and
+on Linux `${XDG_DATA_HOME:-~/.local/share}/org.osii.launcher/profiles/development/deployment`.
+Set `OSII_CONFIG_DIR` to use a different directory. The selected source may be
+on a read-only shared drive; all three configuration files remain local.
 
-`models.yml` names reusable connections such as `base`, `mid`, `top`, and
-`minilm`. `tools.yml` binds a processor capability to one of those aliases.
+`models.toml` names reusable connections such as `base`, `mid`, `top`, and
+`minilm`. `tools.toml` binds a processor capability to one of those aliases.
 Changing a binding takes effect on the next operation; the processor does not
-restart. Both files are re-read when used. If an edit contains invalid YAML,
+restart. Both files are re-read when used. If an edit contains invalid TOML,
 OSII keeps the last valid generation and reports the line and column in the
 Setup API.
 
-A practical `models.yml` can mix endpoints by cost or quality. Each key is a
+A practical `models.toml` can mix endpoints by cost or quality. Each key is a
 stable connection name, not a vendor name:
 
-```yaml
-version: 1
-models:
-  base:
-    type: openai-compatible
-    base_url: https://models.example.com/v1
-    api_key_env: OPENAI_BASE_API_KEY
-    model: vendor/small-instruct
-    capabilities: [chat, synthesis]
-  mid:
-    type: openai-compatible
-    base_url: https://models.example.com/v1
-    api_key_env: OPENAI_MID_API_KEY
-    model: vendor/general-instruct
-    capabilities: [chat, synthesis]
-  top:
-    type: openai-compatible
-    base_url: https://premium-models.example.com/v1
-    api_key_env: OPENAI_TOP_API_KEY
-    model: vendor/high-quality-instruct
-    capabilities: [chat, synthesis]
-  minilm:
-    type: ollama-local
-    base_url: http://127.0.0.1:11434
-    model: all-minilm
-    capabilities: [embedding]
-defaults: {chat: base, synthesis: base, embedding: minilm}
+```toml
+version = 1
+
+[defaults]
+chat = "base"
+synthesis = "base"
+embedding = "minilm"
+
+[models.base]
+type = "openai-compatible"
+base_url = "https://models.example.com/v1"
+api_key_env = "OPENAI_BASE_API_KEY"
+model = "vendor/small-instruct"
+capabilities = ["chat", "synthesis"]
+
+[models.minilm]
+type = "ollama-local"
+base_url = "http://127.0.0.1:11434"
+model = "all-minilm"
+capabilities = ["embedding"]
 ```
 
-The corresponding `tools.yml` states whether a processor is self-contained or
+The corresponding `tools.toml` states whether a processor is self-contained or
 which connection it may use:
 
-```yaml
-version: 1
-profiles:
-  development:
-    tools:
-      readable-llm-wiki:
-        enabled: true
-        processor_id: toolbox.readable-wiki
-        runtime: {mode: external, endpoint: http://127.0.0.1:8099}
-        model_access: {mode: gateway, bindings: {chat: top}}
-      concept-entity-llm-wiki:
-        enabled: true
-        processor_id: toolbox.concept-entity-wiki
-        runtime: {mode: external, endpoint: http://127.0.0.1:8100}
-        model_access: {mode: gateway, bindings: {chat: mid}}
-      tesseract-opencv:
-        enabled: true
-        processor_id: toolbox.tesseract-opencv
-        runtime: {mode: external, endpoint: http://127.0.0.1:8081}
-        model_access: {mode: none}
+```toml
+version = 1
+
+[tools.readable-llm-wiki]
+enabled = true
+processor_id = "toolbox.readable-wiki"
+runtime = { mode = "external", endpoint = "http://127.0.0.1:8099" }
+model_access = { mode = "gateway", bindings = { chat = "top" } }
+
+[[routes.extractor]]
+name = "pdf-with-ocr"
+extractor = "toolbox.tesseract-opencv"
+fallbacks = ["local.native-text"]
+extensions = [".pdf"]
 ```
 
-You can create and bind all of this in Workbench Setup. The YAML is also a
+You can create and bind all of this in Workbench Setup. TOML is also a
 deliberately readable power-user interface for review, source-controlled
 deployment templates, and local processor development. Never put key values in
-either YAML file; Setup writes them to `secrets.env` under the declared
+either TOML file; Setup writes them to `secrets.env` under the declared
 environment-variable names. Setup has separate **Use as default** switches for
 language and embedding connections; adding a high-cost `top` connection does
 not silently make every ordinary chat request use it.
+
+The launcher can **Export profile** to one versioned TOML snapshot and **Import
+profile** as a new library. It preserves exact source paths and service URLs,
+which may reveal internal locations; inspect the file before sharing. It never
+exports credentials, original documents, `.osii` artifacts, or caches. An
+imported profile needs its credentials re-entered and any unreachable source or
+endpoint remapped before it can run. Free-form processor setting overrides
+(which can contain sensitive prompt text) are deliberately not exported.
+Older YAML/JSON settings are imported on
+first use; new edits go only to TOML.
 
 ## Ollama
 
@@ -164,7 +163,7 @@ model,” which is the readiness condition Intake uses. For compatible servers
 that reject OpenAI's optional `encoding_format` field, the bridge retries using
 only the required `model` and `input` fields.
 
-Enter the endpoint, model, and credential in Setup. `models.yml` stores only
+Enter the endpoint, model, and credential in Setup. `models.toml` stores only
 the environment-variable name; a locally saved value lives in `secrets.env`.
 `OPENAI_API_KEY` is the conventional default name. Process environment values
 take precedence over the file.
@@ -221,7 +220,7 @@ The processor receives neither the upstream base URL nor its API key.
 
 ## Secret handling
 
-`models.yml` stores no secret values. In host development, Setup may write a
+`models.toml` stores no secret values. In host development, Setup may write a
 credential to `secrets.env`. The
 backend and provider bridge reread that file, so no restart is required.
 Process environment values take precedence and cannot be replaced from the UI.

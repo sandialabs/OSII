@@ -53,8 +53,8 @@ def test_browse_and_preview_report_processed_files(
     assert preview.json()["preview"]["extractor_plan"] == [
         {
             "extension": ".pdf",
-            "extractor": "tika",
-            "fallbacks": [],
+            "extractor": "local.native-text",
+            "fallbacks": ["tika"],
             "count": 1,
             "sample": ["finished.PDF"],
         }

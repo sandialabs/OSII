@@ -48,7 +48,7 @@ deployment details.
 Frontend code can invoke only registered, typed launcher commands. There is no
 generic shell command. Quay credentials are passed to `podman login` on standard
 input and then owned by Podman. Provider keys entered in Workbench are written
-only to that library profile's `config/secrets.env`; they are never stored in
+only to that library profile's `deployment/secrets.env`; they are never stored in
 the launcher profile, `.osii`, or a Toolbox container.
 
 ## Development
@@ -64,6 +64,9 @@ npm run tauri -- dev
 
 After `npm run tauri -- build` on Windows, the NSIS installer is normally at
 `src-tauri\target\release\bundle\nsis\OSII Launcher_<version>_x64-setup.exe`.
+The build recreates its required Windows `.ico` from the tracked
+`src-tauri/icons/icon-source.svg` when it is absent; a fresh launcher checkout
+needs no manually created icon files.
 To locate every Windows installer that the build produced, run this from the
 `osii-launcher` directory:
 
@@ -108,10 +111,10 @@ credentials go directly to Podman; model credentials belong in Workbench Setup.
 
 Step 3 selects optional Toolbox services. The two wiki services share one image,
 so choosing both performs one pull. Tesseract/OpenCV uses its own image. The
-launcher seeds registrations for all three in the profile's `config/tools.yml`
-so unavailable services remain visible as optional and stopped. The selection
+launcher seeds registrations for selected services in the profile's `deployment/tools.toml`.
+Unselected services remain available to add later. The selection
 controls which images are pulled and which services are started. Workbench reads
-the file immediately. The same directory contains `models.yml` and `secrets.env`.
+the file immediately. The same directory contains `models.toml` and `secrets.env`.
 
 Launcher builds from before this policy change may have created Keychain entries
 with service name `org.osii.launcher.openai`. The current launcher neither reads
@@ -123,6 +126,16 @@ profiles.
 
 Profiles contain non-secret launcher settings and are stored outside the source
 repository in the operating system's application-data directory:
+
+Each profile has sibling `data/` (writable `.osii` state) and `deployment/`
+(editable TOML and local secrets) directories. The original source folder can
+be elsewhere, including a read-only shared drive. **Export profile** saves a
+single TOML settings snapshot; **Import profile** creates a new profile. The
+snapshot includes exact source paths and service URLs, so inspect it before
+sharing. It excludes keys, original files, and `.osii` data. Enter credentials
+again after importing; an unavailable source can be remapped before launch.
+Free-form processor setting overrides are not exported because they may contain
+sensitive prompt text.
 
 - macOS: `~/Library/Application Support/org.osii.launcher/profiles.json`
 - Windows: `%APPDATA%\org.osii.launcher\profiles.json`

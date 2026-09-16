@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,7 @@ import requests
 from fastapi import APIRouter, HTTPException, Request
 
 from osii.configuration import (
-    active_profile,
+    builtin_tools_config,
     configured_tools,
     load_models_config,
     load_tools_config,
@@ -19,6 +20,7 @@ from osii.configuration import (
 
 router = APIRouter(prefix="/api/admin/processors", tags=["processor-administration"])
 VALID_KINDS = {"extractor", "synthesizer", "embedder", "enricher"}
+_DESCRIPTOR_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 def _headers(token: str | None) -> dict[str, str]:
@@ -44,6 +46,23 @@ def _descriptor(base_url: str, token: str | None = None) -> dict[str, Any]:
     return data
 
 
+def _cached_descriptor(base_url: str) -> dict[str, Any]:
+    now = time.monotonic()
+    cached = _DESCRIPTOR_CACHE.get(base_url)
+    if cached and cached[0] > now:
+        return cached[1]
+    try:
+        response = requests.get(f"{base_url}/v1/descriptor", timeout=0.5)
+        response.raise_for_status()
+        descriptor = response.json()
+        if not isinstance(descriptor, dict) or descriptor.get("kind") not in VALID_KINDS:
+            descriptor = {}
+    except (requests.RequestException, ValueError):
+        descriptor = {}
+    _DESCRIPTOR_CACHE[base_url] = (now + 30, descriptor)
+    return descriptor
+
+
 def _records(osii_root: Path) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for tool_id, tool in configured_tools(osii_root).items():
@@ -53,6 +72,7 @@ def _records(osii_root: Path) -> list[dict[str, Any]]:
         endpoint = str(runtime.get("endpoint") or "").rstrip("/")
         if not endpoint:
             continue
+        descriptor = _cached_descriptor(endpoint)
         records.append({
             "id": tool_id,
             "processor_id": str(tool.get("processor_id") or tool_id),
@@ -62,8 +82,8 @@ def _records(osii_root: Path) -> list[dict[str, Any]]:
             "enabled": bool(tool.get("enabled", True)),
             "runtime": runtime,
             "model_access": tool.get("model_access") or {"mode": "none"},
-            "model_requirements": tool.get("model_requirements") or {},
-            "capabilities": tool.get("capabilities") or {},
+            "model_requirements": descriptor.get("model_requirements") or tool.get("model_requirements") or {},
+            "capabilities": descriptor.get("capabilities") or tool.get("capabilities") or {},
             "aliases": tool.get("aliases") or [],
         })
     return records
@@ -71,13 +91,12 @@ def _records(osii_root: Path) -> list[dict[str, Any]]:
 
 def _save_tool(osii_root: Path, tool_id: str, tool: dict[str, Any] | None) -> None:
     config = load_tools_config(osii_root)
-    tools = (
-        config.setdefault("profiles", {})
-        .setdefault(active_profile(), {})
-        .setdefault("tools", {})
-    )
+    tools = config.setdefault("tools", {})
     if tool is None:
-        tools.pop(tool_id, None)
+        if tool_id in builtin_tools_config()["tools"]:
+            tools[tool_id] = {**builtin_tools_config()["tools"][tool_id], "enabled": False}
+        else:
+            tools.pop(tool_id, None)
     else:
         tools[tool_id] = tool
     save_tools_config(config)
@@ -127,8 +146,6 @@ def _tool_from_descriptor(
         "kind": str(descriptor["kind"]),
         "runtime": {"mode": "external", "endpoint": base_url},
         "model_access": _model_access(payload, descriptor, osii_root),
-        "model_requirements": descriptor.get("model_requirements") or {},
-        "capabilities": descriptor.get("capabilities") or {},
     }
 
 

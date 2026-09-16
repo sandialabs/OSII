@@ -71,10 +71,10 @@ def test_model_provider_configuration_never_persists_secret(client, temp_osii_ro
     })
     assert response.status_code == 200
     assert response.json()["provider"]["credential_present"] is True
-    raw = (Path(os.environ["OSII_CONFIG_DIR"]) / "models.yml").read_text()
+    raw = (Path(os.environ["OSII_CONFIG_DIR"]) / "models.toml").read_text()
     assert "super-secret-value" not in raw
     assert "MY_CORPORATE_KEY" in raw
-    assert "model: embed-v1" in raw
+    assert 'model = "embed-v1"' in raw
     assert selected_processor("embedder", osii_root=temp_osii_root) == "openai.embedder"
     assert selected_processor("synthesizer", osii_root=temp_osii_root) == "openai.synthesizer"
 
@@ -132,7 +132,7 @@ def test_local_env_credential_is_write_only_and_used_for_health(client, temp_osi
     assert "saved-secret" not in response.text
     assert "UNCHANGED=value" in env_file.read_text(encoding="utf-8")
     assert 'OPENAI_API_KEY="saved-secret"' in env_file.read_text(encoding="utf-8")
-    assert "saved-secret" not in (Path(os.environ["OSII_CONFIG_DIR"]) / "models.yml").read_text()
+    assert "saved-secret" not in (Path(os.environ["OSII_CONFIG_DIR"]) / "models.toml").read_text()
 
     seen = {}
 

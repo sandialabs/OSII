@@ -209,6 +209,24 @@ function App() {
     setNotice("Saved profile removed. Library files were preserved.");
   }
 
+  async function exportSelectedProfile() {
+    if (!selected) return;
+    const destination = await launcherApi.chooseProfileExport(selected.name.replace(/[^a-z0-9-]+/gi, "-").toLowerCase());
+    if (!destination) return;
+    const done = await run("Exporting profile", () => launcherApi.exportProfile(selected.id, destination));
+    if (done !== null) setNotice("Profile exported without API keys or library data. The file contains source paths and service URLs.");
+  }
+
+  async function importSavedProfile() {
+    const source = await launcherApi.chooseProfileImport();
+    if (typeof source !== "string") return;
+    const imported = await run("Importing profile", () => launcherApi.importProfile(source));
+    if (!imported) return;
+    setProfiles((current) => [imported, ...current]);
+    selectProfile(imported);
+    setNotice("Profile imported. Confirm the source path and service connections; API keys were not imported.");
+  }
+
   async function chooseSource() {
     const path = await run("Choosing source folder", launcherApi.chooseSource);
     if (path) update("sourceDir", path);
@@ -345,6 +363,11 @@ function App() {
                 Remove selected
               </button>
             )}
+            <div className="button-row">
+              <button className="secondary" disabled={Boolean(busy)} onClick={() => void importSavedProfile()}>Import profile</button>
+              {selected && <button className="secondary" disabled={Boolean(busy)} onClick={() => void exportSelectedProfile()}>Export profile</button>}
+            </div>
+            <p className="technical-note">Exports omit keys and library data, but include exact source paths and service URLs.</p>
           </div>
 
           <div className="readiness">

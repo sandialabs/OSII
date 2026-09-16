@@ -28,13 +28,9 @@ def parse_patterns(values: list[str] | None) -> list[str]:
 
 
 def load_parser_routes(config_path: Path) -> list[dict]:
-    import tomllib
+    from osii.domain.processing.extractor_selection import load_extractor_routes
 
-    if not config_path.exists():
-        return [{"name": "default-tika", "extractor": "tika", "extensions": ["*"]}]
-
-    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    return data.get("routes", [])
+    return load_extractor_routes()
 
 
 def choose_parser(path: Path, routes: list[dict]) -> str:

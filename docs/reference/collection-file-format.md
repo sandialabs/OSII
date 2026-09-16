@@ -6,7 +6,9 @@ Collections are first-class backend scopes. A collection definition file provide
 
 ## Format
 
-The current collection definition format is TOML.
+The current collection definition format is TOML. Save the example below as
+`my_collection.toml` wherever you keep your own collection definitions; Core
+does not ship or edit a collection file in its package directory.
 
 ## Example
 
@@ -59,7 +61,7 @@ Collections are logical scopes. They are independent of folder hierarchy and may
 ```powershell
 python -m osii.create_collection `
   --osii-root ".\osii-data\.osii" `
-  --file ".\config\my_collection.toml"
+  --file ".\my_collection.toml"
 ```
 
 To update an existing collection with the same name:
@@ -67,6 +69,6 @@ To update an existing collection with the same name:
 ```powershell
 python -m osii.create_collection `
   --osii-root ".\osii-data\.osii" `
-  --file ".\config\my_collection.toml" `
+  --file ".\my_collection.toml" `
   --update-if-exists
 ```

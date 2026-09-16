@@ -108,9 +108,9 @@ extraction accuracy; exercise one document in `/docs` or Intake before
 publishing.
 
 In **Setup → Register running processor**, paste a service URL. OSII reads its
-descriptor and writes the registration to the active `tools.yml` profile. For
-model-backed tools, choose a named connection from `models.yml`; self-contained
-tools require no connection. Developers may edit `tools.yml` directly and the
+descriptor and writes the registration to the active `tools.toml` profile. For
+model-backed tools, choose a named connection from `models.toml`; self-contained
+tools require no connection. Developers may edit `tools.toml` directly and the
 Workbench will reflect it without a restart.
 
 Do not mount `.osii` or your document directories into these containers. Core
