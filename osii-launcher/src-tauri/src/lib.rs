@@ -173,8 +173,24 @@ fn program_path(program: &str) -> PathBuf {
     PathBuf::from(program)
 }
 
+#[cfg(target_os = "windows")]
+fn process_command(program: PathBuf) -> Command {
+    let mut command = Command::new(program);
+    use std::os::windows::process::CommandExt;
+    // Podman and Compose are console programs. Their output is captured by
+    // the launcher, so creating a transient PowerShell/console window only
+    // distracts from the native launcher workflow.
+    command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    command
+}
+
+#[cfg(not(target_os = "windows"))]
+fn process_command(program: PathBuf) -> Command {
+    Command::new(program)
+}
+
 fn run_output(program: &str, args: &[&str]) -> Result<Output, String> {
-    Command::new(program_path(program))
+    process_command(program_path(program))
         .args(args)
         .output()
         .map_err(|error| format!("Could not run {program}: {error}"))
@@ -190,7 +206,7 @@ fn run_checked(program: &str, args: &[&str]) -> Result<String, String> {
 }
 
 fn run_with_stdin(program: &str, args: &[&str], value: &str) -> Result<(), String> {
-    let mut child = Command::new(program_path(program))
+    let mut child = process_command(program_path(program))
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -1035,7 +1051,7 @@ fn compose_command(
         project,
         args,
     );
-    let mut command = Command::new(program);
+    let mut command = process_command(program);
     command
         .args(arguments)
         .env("OSII_SOURCE_DIR", &profile.source_dir)

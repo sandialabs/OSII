@@ -14,10 +14,10 @@
       {
         "label": "main",
         "title": "OSII Launcher",
-        "width": 1120,
-        "height": 760,
-        "minWidth": 900,
-        "minHeight": 640,
+        "width": 980,
+        "height": 680,
+        "minWidth": 780,
+        "minHeight": 560,
         "resizable": true
       }
     ],

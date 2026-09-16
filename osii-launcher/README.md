@@ -116,6 +116,12 @@ Unselected services remain available to add later. The selection
 controls which images are pulled and which services are started. Workbench reads
 the file immediately. The same directory contains `models.toml` and `secrets.env`.
 
+The collapsed **Images pulled when OSII starts** panel in step 1 previews the
+exact pinned images for the current profile and optional-service selection.
+**Check login** only asks Podman whether it is already authenticated to Quay.
+**Start OSII** runs `podman pull` for every listed image before starting Compose;
+Podman reuses already-downloaded layers.
+
 Launcher builds from before this policy change may have created Keychain entries
 with service name `org.osii.launcher.openai`. The current launcher neither reads
 nor deletes them. A user who tested an earlier build can remove those entries in

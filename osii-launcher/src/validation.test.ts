@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { coreImage, profileProblem } from "./validation";
+import { coreImage, profileImages, profileProblem } from "./validation";
 import type { ProfileDraft } from "./types";
 
 const valid: ProfileDraft = {
@@ -23,5 +23,15 @@ describe("profile validation", () => {
 
   it("builds the core image from the shared prefix and immutable tag", () => {
     expect(coreImage(valid)).toBe("quay.corp.example/osii/osii-core:2026.09.14");
+  });
+
+  it("lists baseline images and each selected optional image once", () => {
+    expect(profileImages({ ...valid, readableWiki: true, conceptEntityWiki: true, tesseractOpenCv: true })).toEqual([
+      "quay.corp.example/osii/osii-core:2026.09.14",
+      "quay.corp.example/osii/osii-dashboard:2026.09.14",
+      "quay.corp.example/osii/osii-baseline-processors:2026.09.14",
+      "quay.corp.example/osii/osii-llm-wikis:2026.09.14",
+      "quay.corp.example/osii/osii-tesseract-opencv:2026.09.14",
+    ]);
   });
 });

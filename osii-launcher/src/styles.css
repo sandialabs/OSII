@@ -78,6 +78,12 @@ main { max-width: 1320px; margin: 0 auto; padding: 2.2rem 2.5rem 5rem; }
 .text-button { padding: 0.35rem 0.45rem; background: #fff; color: var(--turquoise-dark); }
 .text-button:hover:not(:disabled) { transform: none; background: #fff; color: var(--orange-dark); }
 .text-button.danger { color: var(--orange-dark); }
+.image-plan { max-width: 820px; margin-top: 1rem; border: 1px solid var(--border); border-radius: 9px; background: #fff; }
+.image-plan summary { padding: 0.72rem 0.82rem; color: var(--turquoise-dark); cursor: pointer; font-size: 0.78rem; font-weight: 800; }
+.image-plan p { margin: 0; padding: 0 0.82rem 0.75rem; color: var(--muted); font-size: 0.76rem; line-height: 1.45; }
+.image-plan ul { margin: 0 0.82rem 0.82rem; padding-left: 1.3rem; }
+.image-plan li { margin: 0.35rem 0; color: var(--ink); overflow-wrap: anywhere; }
+.image-plan code { color: var(--turquoise-dark); font: 0.72rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .check-detail, .secure-note, .source-note { margin: 0.75rem 0 0; color: var(--muted); font-size: 0.76rem; line-height: 1.45; }
 .check-detail.ok, .secure-note { color: var(--turquoise-dark); }
 .check-detail.bad { color: var(--orange-dark); }

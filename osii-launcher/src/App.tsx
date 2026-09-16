@@ -9,7 +9,7 @@ import type {
   RegistryStatus,
   SourceCheck,
 } from "./types";
-import { coreImage, profileProblem } from "./validation";
+import { coreImage, profileImages, profileProblem } from "./validation";
 
 const emptyDraft: ProfileDraft = {
   name: "My OSII library",
@@ -77,17 +77,10 @@ function App() {
   );
   const validation = profileProblem(draft);
   const runningSelected = deployment.profileId === selectedId && deployment.state !== "stopped";
+  const plannedImages = profileImages(draft);
   const imageRecoveryCommands = selected ? [
     `podman login ${registryHost.trim()}`,
-    `podman pull ${coreImage(selected)}`,
-    `podman pull ${selected.imagePrefix.trim()}-dashboard:${selected.imageTag.trim()}`,
-    `podman pull ${selected.imagePrefix.trim()}-baseline-processors:${selected.imageTag.trim()}`,
-    ...((selected.readableWiki || selected.conceptEntityWiki)
-      ? [`podman pull ${selected.imagePrefix.trim()}-llm-wikis:${selected.imageTag.trim()}`]
-      : []),
-    ...(selected.tesseractOpenCv
-      ? [`podman pull ${selected.imagePrefix.trim()}-tesseract-opencv:${selected.imageTag.trim()}`]
-      : []),
+    ...profileImages(selected).map((image) => `podman pull ${image}`),
   ].join("\n") : "";
 
   const run = useCallback(async <T,>(label: string, operation: () => Promise<T>): Promise<T | null> => {
@@ -426,6 +419,15 @@ function App() {
                 <button className="secondary" disabled={Boolean(busy) || !registryHost.trim()} onClick={() => void checkRegistry()}>Check login</button>
                 <button disabled={Boolean(busy) || !registryHost.trim() || !registryUsername.trim() || !registryPassword} onClick={() => void loginRegistry()}>Log in</button>
               </div>
+              <details className="image-plan">
+                <summary>Images pulled when OSII starts{plannedImages.length ? ` (${plannedImages.length})` : ""}</summary>
+                <p>Checking Quay verifies the existing Podman login only. Selecting <strong>Start OSII</strong> runs a pull for each image below before Compose starts. Podman reuses image layers already present on the workstation.</p>
+                {plannedImages.length ? (
+                  <ul>{plannedImages.map((image) => <li key={image}><code>{image}</code></li>)}</ul>
+                ) : (
+                  <p>Enter the image prefix and pinned release tag in step 2 to preview the approved images.</p>
+                )}
+              </details>
             </div>
           </section>
 
