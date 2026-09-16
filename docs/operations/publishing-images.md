@@ -18,6 +18,58 @@ OSII has one user-facing product launch and three default image artifacts:
 | `-dashboard` | Static dashboard and API proxy |
 | `-baseline-processors` | Native extractor, full-page Tesseract OCR, synthesizer, embedder, enricher, or model bridge |
 
+## Carry images to an airgapped workstation
+
+On a connected computer, export the three required images into one directory.
+Choose the **target computer's** Linux container architecture. For example,
+an Apple Silicon Mac can collect AMD64 images for a Windows/AMD64 workstation
+without running them:
+
+```bash
+make export-images OUTPUT_DIR="$HOME/Desktop/osii-offline" \
+  OSII_IMAGE_PREFIX=quay.example.org/team/osii OSII_IMAGE_TAG=1.2.3 \
+  EXPORT_PLATFORM=linux/amd64 PULL_IMAGES=true
+```
+
+Windows PowerShell equivalent:
+
+```powershell
+.\scripts\osii.ps1 export-images -OutputDir C:\Users\you\Desktop\osii-offline `
+  -ImagePrefix quay.example.org/team/osii -ImageTag 1.2.3 `
+  -ExportPlatform linux/amd64 -PullImages
+```
+
+Add optional Toolbox images only if that workstation will run them: append
+`EXPORT_TOOLBOX="tesseract-opencv llm-wikis"` to Make, or
+`-ExportToolbox tesseract-opencv,llm-wikis` to PowerShell. Omit
+`PULL_IMAGES=true` / `-PullImages` to export images already in local container
+storage without contacting a registry. The script refuses to mix architectures
+or overwrite an existing collection. It writes `osii-images.tar` and
+`manifest.json`, which records exact tags, image IDs, platform, and the archive
+SHA-256. Inspect the manifest and compare its checksum after transfer with
+`shasum -a 256 osii-images.tar` on macOS/Linux or
+`Get-FileHash .\osii-images.tar -Algorithm SHA256` in PowerShell.
+
+On the offline workstation, load the archive once:
+
+```bash
+podman load --input /path/to/osii-offline/osii-images.tar
+```
+
+```powershell
+podman load --input C:\Users\you\Desktop\osii-offline\osii-images.tar
+```
+
+Use the same image prefix and tag in the launcher or `make run` /
+`.\scripts\osii.ps1 run`. The launcher now uses locally loaded images
+without pulling them again; it contacts the registry only for a missing image.
+Transfer the launcher or Compose files separately. This image collection does
+**not** copy source documents, `.osii` libraries, host registry credentials,
+profile secrets, Ollama models, or optional upstream images such as Apache
+Tika. Model-free OSII baselines work offline. Image layers themselves must
+still be reviewed for embedded secrets. Treat corporate image archives and
+their embedded certificate trust as sensitive deployment artifacts.
+
 The default deployment starts nine containers: the core image runs API and worker;
 the baseline image runs six independently addressable processor/adapter
 commands; and the dashboard serves the browser experience. Optional Toolbox

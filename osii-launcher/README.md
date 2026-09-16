@@ -119,8 +119,10 @@ the file immediately. The same directory contains `models.toml` and `secrets.env
 The collapsed **Images pulled when OSII starts** panel in step 1 previews the
 exact pinned images for the current profile and optional-service selection.
 **Check login** only asks Podman whether it is already authenticated to Quay.
-**Start OSII** runs `podman pull` for every listed image before starting Compose;
-Podman reuses already-downloaded layers.
+**Start OSII** uses images already in local Podman storage and pulls only those
+that are missing. For an airgapped workstation, load an
+[offline image collection](../docs/operations/publishing-images.md#carry-images-to-an-airgapped-workstation)
+first; use the same image prefix and pinned tag in the profile.
 
 Launcher builds from before this policy change may have created Keychain entries
 with service name `org.osii.launcher.openai`. The current launcher neither reads

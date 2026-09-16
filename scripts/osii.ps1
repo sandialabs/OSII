@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("help", "dev", "dev-shared", "demo", "demo-data", "run", "run-shared", "build", "push-release", "publish-multiarch", "toolbox-list", "toolbox-build", "toolbox-push", "toolbox-run", "toolbox-stop", "toolbox-publish-multiarch", "down", "logs", "doctor")]
+    [ValidateSet("help", "dev", "dev-shared", "demo", "demo-data", "run", "run-shared", "build", "push-release", "publish-multiarch", "export-images", "toolbox-list", "toolbox-build", "toolbox-push", "toolbox-run", "toolbox-stop", "toolbox-publish-multiarch", "down", "logs", "doctor")]
     [string]$Command = "dev",
 
     [ValidateSet("Podman", "Docker")]
@@ -22,6 +22,14 @@ param(
     [string]$RuntimeDir = "",
 
     [string]$Tool = "",
+
+    [string]$OutputDir = "",
+
+    [string[]]$ExportToolbox = @(),
+
+    [string]$ExportPlatform = "",
+
+    [switch]$PullImages,
 
     [switch]$InsecureRegistries,
 
@@ -256,6 +264,7 @@ function Show-OsiiHelp {
     Write-Host "  .\scripts\osii.ps1 run        Start previously built container images"
     Write-Host "  .\scripts\osii.ps1 run-shared Start images with an already connected shared drive"
     Write-Host "  .\scripts\osii.ps1 publish-multiarch Build and push Linux AMD64 + ARM64 release manifests"
+    Write-Host "  .\scripts\osii.ps1 export-images -OutputDir C:\path Export images for an offline workstation"
     Write-Host "  .\scripts\osii.ps1 toolbox-list List optional independently deployable tools"
     Write-Host "  .\scripts\osii.ps1 toolbox-run -Tool tesseract-opencv Pull and start one optional tool"
     Write-Host "  .\scripts\osii.ps1 down       Stop the container deployment"
@@ -344,6 +353,29 @@ try {
             & uv @PublishArguments
             if ($LASTEXITCODE -ne 0) {
                 throw "Multi-architecture publication failed with code $LASTEXITCODE."
+            }
+        }
+        "export-images" {
+            if (-not $OutputDir) {
+                throw "Set -OutputDir to a new folder for the offline image collection."
+            }
+            $PythonExecutable = Get-Command "python" -ErrorAction SilentlyContinue
+            if (-not $PythonExecutable) {
+                throw "Python was not found. Image export uses only the Python standard library."
+            }
+            $ExportArguments = @(
+                "scripts/export_images.py", "--output-dir", $OutputDir,
+                "--image-prefix", $ImagePrefix, "--image-tag", $ImageTag,
+                "--runtime", $Runtime.ToLowerInvariant()
+            )
+            foreach ($Name in $ExportToolbox) {
+                $ExportArguments += @("--toolbox", $Name)
+            }
+            if ($ExportPlatform) { $ExportArguments += @("--platform", $ExportPlatform) }
+            if ($PullImages) { $ExportArguments += "--pull" }
+            & $PythonExecutable.Source @ExportArguments
+            if ($LASTEXITCODE -ne 0) {
+                throw "Image export failed with code $LASTEXITCODE."
             }
         }
         "toolbox-list" {

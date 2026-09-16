@@ -236,7 +236,7 @@ function App() {
     if (!profile) return;
     setProfiles((current) => [profile, ...current.filter((item) => item.id !== profile.id)]);
     selectProfile(profile);
-    setNotice("Built-in demo is ready. Log into Quay, then select Start OSII.");
+    setNotice("Built-in demo is ready. Start OSII with local images, or log into Quay to pull missing ones.");
   }
 
   async function checkSource() {
@@ -404,8 +404,8 @@ function App() {
           <section className="panel section-card">
             <div className="section-number">1</div>
             <div className="section-body">
-              <div className="section-title"><div><p className="step-label">Approved images</p><h2>Connect to Quay</h2></div><StepStatus state={registryCheckState} verifiedText={registry?.username ? `Connected as ${registry.username}` : "Connected"} /></div>
-              <p className="section-copy">The launcher passes this credential directly to Podman. It never stores or reads the registry password.</p>
+              <div className="section-title"><div><p className="step-label">Approved images</p><h2>Images and registry</h2></div><StepStatus state={registryCheckState} verifiedText={registry?.username ? `Connected as ${registry.username}` : "Connected"} /></div>
+              <p className="section-copy">Already loaded images work offline. Log in only if OSII needs to pull missing images; the launcher passes credentials directly to Podman and does not store the password.</p>
               <div className="form-grid registry-grid">
                 <label>Registry<input value={registryHost} onChange={(event) => {
                   setRegistryHost(event.target.value);
@@ -420,8 +420,8 @@ function App() {
                 <button disabled={Boolean(busy) || !registryHost.trim() || !registryUsername.trim() || !registryPassword} onClick={() => void loginRegistry()}>Log in</button>
               </div>
               <details className="image-plan">
-                <summary>Images pulled when OSII starts{plannedImages.length ? ` (${plannedImages.length})` : ""}</summary>
-                <p>Checking Quay verifies the existing Podman login only. Selecting <strong>Start OSII</strong> runs a pull for each image below before Compose starts. Podman reuses image layers already present on the workstation.</p>
+                <summary>Images needed when OSII starts{plannedImages.length ? ` (${plannedImages.length})` : ""}</summary>
+                <p>Checking Quay verifies an existing Podman login. <strong>Start OSII</strong> uses loaded images and pulls only missing ones. An offline image collection can be loaded first with <code>podman load</code>.</p>
                 {plannedImages.length ? (
                   <ul>{plannedImages.map((image) => <li key={image}><code>{image}</code></li>)}</ul>
                 ) : (

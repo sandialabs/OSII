@@ -1,16 +1,19 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant};
 use tauri::menu::{Menu, MenuItem};
 use tauri::path::BaseDirectory;
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 const BASELINE_SERVICES: &[&str] = &[
     "tesseract",
@@ -55,6 +58,10 @@ struct ProfileDraft {
     image_prefix: String,
     image_tag: String,
     #[serde(default)]
+    stack_images: Option<StackImages>,
+    #[serde(default)]
+    tool_images: BTreeMap<String, String>,
+    #[serde(default)]
     readable_wiki: bool,
     #[serde(default)]
     concept_entity_wiki: bool,
@@ -79,11 +86,156 @@ struct Profile {
     image_prefix: String,
     image_tag: String,
     #[serde(default)]
+    stack_images: Option<StackImages>,
+    #[serde(default)]
+    tool_images: BTreeMap<String, String>,
+    #[serde(default)]
     readable_wiki: bool,
     #[serde(default)]
     concept_entity_wiki: bool,
     #[serde(default)]
     tesseract_open_cv: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct StackImages {
+    release: String,
+    core: String,
+    dashboard: String,
+    baseline_processors: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CatalogVersion {
+    label: String,
+    reference: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CatalogTool {
+    id: String,
+    display_name: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    processor_api: bool,
+    versions: Vec<CatalogVersion>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CatalogImage {
+    id: String,
+    display_name: String,
+    #[serde(default)]
+    description: String,
+    versions: Vec<CatalogVersion>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CatalogStack {
+    id: String,
+    display_name: String,
+    images: StackImages,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Catalog {
+    version: u32,
+    registry: String,
+    namespace: String,
+    stacks: Vec<CatalogStack>,
+    #[serde(default)]
+    tools: Vec<CatalogTool>,
+    #[serde(default)]
+    images: Vec<CatalogImage>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CatalogResponse {
+    catalog: Catalog,
+    source: String,
+    fetched_at: u64,
+    cache_age_seconds: Option<u64>,
+    warning: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalImage {
+    reference: String,
+    present: bool,
+    id: Option<String>,
+    digest: Option<String>,
+    size: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ImageInventory {
+    images: Vec<LocalImage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ActivityRecord {
+    id: String,
+    label: String,
+    command: String,
+    timestamp: u64,
+    output: String,
+    exit_code: Option<i32>,
+    running: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CustomContainerDraft {
+    #[serde(default)]
+    id: String,
+    name: String,
+    image: String,
+    #[serde(default)]
+    command: String,
+    #[serde(default)]
+    arguments: Vec<String>,
+    #[serde(default)]
+    environment: BTreeMap<String, String>,
+    #[serde(default)]
+    secret_environment: BTreeMap<String, String>,
+    #[serde(default)]
+    ports: Vec<String>,
+    #[serde(default)]
+    mounts: Vec<CustomMount>,
+    #[serde(default)]
+    network: String,
+    #[serde(default)]
+    restart_policy: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CustomMount {
+    source: String,
+    destination: String,
+    #[serde(default)]
+    read_only: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ManagedContainer {
+    id: String,
+    name: String,
+    image: String,
+    state: String,
+    status: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -135,6 +287,101 @@ fn output_text(output: &Output) -> String {
         stdout
     } else {
         stderr
+    }
+}
+
+fn unix_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn redact(value: &str, secrets: &[String]) -> String {
+    secrets.iter().fold(value.to_string(), |text, secret| {
+        if secret.is_empty() { text } else { text.replace(secret, "[REDACTED]") }
+    })
+}
+
+fn activity_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(launcher_data_dir(app)?.join("activity.json"))
+}
+
+fn append_activity(app: &AppHandle, record: &ActivityRecord) {
+    let path = match activity_path(app) { Ok(path) => path, Err(_) => return };
+    let mut records: Vec<ActivityRecord> = fs::read_to_string(&path)
+        .ok()
+        .and_then(|value| serde_json::from_str(&value).ok())
+        .unwrap_or_default();
+    records.push(record.clone());
+    if records.len() > 120 { records.drain(..records.len() - 120); }
+    if let Ok(value) = serde_json::to_string_pretty(&records) {
+        let _ = fs::write(path, format!("{value}\n"));
+    }
+}
+
+fn emit_activity(app: &AppHandle, record: &ActivityRecord) {
+    let _ = app.emit("osii://activity", record);
+}
+
+fn run_activity(
+    app: &AppHandle,
+    label: &str,
+    program: &str,
+    arguments: &[String],
+    secrets: &[String],
+) -> Result<Output, String> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let command = redact(&display_command(&program_path(program), arguments), secrets);
+    let started = ActivityRecord {
+        id: id.clone(), label: label.to_string(), command: command.clone(), timestamp: unix_timestamp(),
+        output: String::new(), exit_code: None, running: true,
+    };
+    emit_activity(app, &started);
+    let mut child = process_command(program_path(program))
+        .args(arguments)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Could not run {program}: {error}"))?;
+    let stdout = child.stdout.take().ok_or_else(|| format!("Could not read {program} output"))?;
+    let stderr = child.stderr.take().ok_or_else(|| format!("Could not read {program} error output"))?;
+    let (sender, receiver) = mpsc::channel::<String>();
+    for stream in [stdout, stderr] {
+        let sender = sender.clone();
+        thread::spawn(move || {
+            for line in BufReader::new(stream).lines() {
+                if let Ok(line) = line { let _ = sender.send(format!("{line}\n")); }
+            }
+        });
+    }
+    drop(sender);
+    let mut output = String::new();
+    for line in receiver {
+        let line = redact(&line, secrets);
+        output.push_str(&line);
+        emit_activity(app, &ActivityRecord {
+            id: id.clone(), label: label.to_string(), command: command.clone(), timestamp: unix_timestamp(),
+            output: line, exit_code: None, running: true,
+        });
+    }
+    let status = child.wait().map_err(|error| format!("Could not wait for {program}: {error}"))?;
+    let completed = ActivityRecord {
+        id, label: label.to_string(), command, timestamp: unix_timestamp(), output: output.clone(),
+        exit_code: status.code(), running: false,
+    };
+    emit_activity(app, &completed);
+    append_activity(app, &completed);
+    Ok(Output { status, stdout: output.into_bytes(), stderr: Vec::new() })
+}
+
+#[tauri::command]
+fn list_activity(app: AppHandle) -> Result<Vec<ActivityRecord>, String> {
+    let path = activity_path(&app)?;
+    match fs::read_to_string(path) {
+        Ok(content) => serde_json::from_str(&content).map_err(|error| format!("Could not read activity history: {error}")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(error) => Err(format!("Could not read activity history: {error}")),
     }
 }
 
@@ -1277,6 +1524,15 @@ fn profile_images(profile: &Profile) -> Vec<String> {
     images
 }
 
+fn image_is_local(image: &str) -> Result<bool, String> {
+    let result = run_output("podman", &["image", "exists", image])?;
+    match result.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => Err(format!("Could not check local image {image}: {}", output_text(&result))),
+    }
+}
+
 fn selected_services(profile: &Profile) -> Vec<&'static str> {
     let mut services = BASELINE_SERVICES.to_vec();
     if profile.readable_wiki {
@@ -1322,15 +1578,15 @@ fn deployment_preview(
     let provider =
         compose_provider().ok_or_else(|| "No Compose provider is available.".to_string())?;
     let project = project_name(&profile_id)?;
-    let mut commands = profile_images(&profile)
-        .iter()
-        .map(|image| {
-            display_command(
+    let mut commands = Vec::new();
+    for image in profile_images(&profile) {
+        if !image_is_local(&image)? {
+            commands.push(display_command(
                 &program_path("podman"),
-                &["pull".to_string(), image.to_string()],
-            )
-        })
-        .collect::<Vec<_>>();
+                &["pull".to_string(), image],
+            ));
+        }
+    }
     let mut start_args = vec!["up", "-d", "--no-build"];
     let selected = selected_services(&profile);
     start_args.extend(selected.iter().copied());
@@ -1458,7 +1714,9 @@ fn start_profile(
     }
 
     for image in profile_images(&profile) {
-        run_checked("podman", &["pull", &image])?;
+        if !image_is_local(&image)? {
+            run_checked("podman", &["pull", &image])?;
+        }
     }
     let files = deployment_files(&app, &profile)?;
     let compose = compose_file(&app)?;

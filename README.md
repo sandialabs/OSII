@@ -72,6 +72,9 @@ npm run tauri -- build
 The [launcher guide](osii-launcher/README.md) explains image defaults and where
 to find the built app. Configure model connections later in dashboard
 **Setup**; model keys do not belong in the launcher.
+For a disconnected workstation, [export the container images to an offline
+collection](docs/operations/publishing-images.md#carry-images-to-an-airgapped-workstation)
+on a connected computer, then load them locally before starting OSII.
 
 ### Bare-metal demo
 

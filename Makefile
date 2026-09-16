@@ -15,6 +15,11 @@ OSII_CA_BUNDLE ?=
 SHARED_DRIVE_PATH ?=
 SHARED_DRIVE_DATA ?= ./osii-data/shared-drive
 TOOL ?=
+OUTPUT_DIR ?=
+EXPORT_TOOLBOX ?=
+PULL_IMAGES ?= false
+EXPORT_PLATFORM ?=
+EXPORT_RUNTIME ?= podman
 DISABLE_CONTAINER_PROXIES ?= false
 PROXY_ENVIRONMENT_VARIABLES := HTTP_PROXY HTTPS_PROXY FTP_PROXY ALL_PROXY http_proxy https_proxy ftp_proxy all_proxy
 
@@ -68,7 +73,7 @@ endef
 TOOLBOX_BUILD_SERVICE = $(if $(filter tesseract-opencv,$(TOOL)),tesseract-opencv,$(if $(filter tabular,$(TOOL)),tabular-extractor,readable-wiki-enricher))
 TOOLBOX_RUN_SERVICES = $(if $(filter tabular,$(TOOL)),tabular-extractor tabular-enricher,$(if $(filter llm-wikis,$(TOOL)),readable-wiki-enricher concept-entity-wiki-enricher,$(TOOLBOX_BUILD_SERVICE)))
 
-.PHONY: help dev dev-shared demo demo-data run run-shared build push-release publish-multiarch toolbox-list toolbox-build toolbox-push toolbox-run toolbox-stop toolbox-publish-multiarch down logs test docs doctor
+.PHONY: help dev dev-shared demo demo-data run run-shared build push-release publish-multiarch export-images toolbox-list toolbox-build toolbox-push toolbox-run toolbox-stop toolbox-publish-multiarch down logs test docs doctor
 
 help:
 	@echo "OSII startup commands"
@@ -78,13 +83,15 @@ help:
 	@echo "  make run        Start previously built container images"
 	@echo "  make run-shared Start images with an already mounted shared drive"
 	@echo "  make publish-multiarch Build and push Linux AMD64 + ARM64 release manifests"
+	@echo "  make export-images OUTPUT_DIR=/path Export local images for an offline workstation"
 	@echo "  make toolbox-list List optional independently deployable tools"
 	@echo "  make toolbox-run TOOL=tesseract-opencv Pull and start one optional tool"
 	@echo "  make down       Stop the container deployment"
 	@echo "  make doctor     Report disk usage; never deletes files"
 	@echo ""
-	@echo "Normal source development needs only 'make demo' or 'make dev'. Optional AI,"
-	@echo "Tika, and non-bundled Toolbox services are connected from the Setup page."
+	@echo "Normal source development needs only 'make demo' or 'make dev'. Dashboard"
+	@echo "Setup manages model connections and processing rules; packaged optional"
+	@echo "services are selected in the launcher. Local dev can start Tika in Setup."
 	@echo "For direct-network Podman containers, append DISABLE_CONTAINER_PROXIES=true."
 	@echo "To add local corporate trust, append OSII_CA_BUNDLE=/path/to/roots.pem."
 
@@ -160,6 +167,15 @@ publish-multiarch:
 		--python-version "$(OSII_PYTHON_VERSION)" \
 		$(if $(strip $(OSII_CA_BUNDLE)),--ca-bundle "$(OSII_CA_BUNDLE)") \
 		$(if $(filter true,$(DISABLE_CONTAINER_PROXIES)),--disable-container-proxies)
+
+# One portable archive for the current platform; optional Toolbox images are explicit.
+export-images:
+	@if [ -z "$(OUTPUT_DIR)" ]; then echo "Set OUTPUT_DIR to a new folder for the offline image collection."; exit 2; fi
+	python3 scripts/export_images.py --output-dir "$(OUTPUT_DIR)" \
+		--image-prefix "$(OSII_IMAGE_PREFIX)" --image-tag "$(OSII_IMAGE_TAG)" --runtime "$(EXPORT_RUNTIME)" \
+		$(if $(strip $(EXPORT_PLATFORM)),--platform "$(EXPORT_PLATFORM)") \
+		$(foreach tool,$(EXPORT_TOOLBOX),--toolbox "$(tool)") \
+		$(if $(filter true,$(PULL_IMAGES)),--pull)
 
 toolbox-list:
 	@echo "tesseract-opencv  Experimental OpenCV region OCR       http://localhost:8081"
