@@ -1,5 +1,10 @@
 # Corporate pilot images and Quay releases
 
+For normal release decisions, start with the [release runbooks](runbook-releases.md).
+They distinguish full and component-only releases, copy unchanged
+multi-architecture images to the new immutable tag, and keep the optional
+corporate `:latest` promotion separate. This page is the image-build reference.
+
 The main repository's `osii-toolbox/` directory owns specialized optional
 images. Normal release and startup commands do not build or start Toolbox
 services. Parallel `toolbox-*` commands make each one easy to deploy when

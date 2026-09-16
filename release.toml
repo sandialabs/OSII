@@ -1,0 +1,5 @@
+# Prepared by scripts/release_plan.py. The next corporate tag must match version.
+version = "0.1.0"
+previous_tag = ""
+scope = "full"
+package_version = "0.1.0"

@@ -58,6 +58,19 @@ def test_manifest_phase_uses_existing_architecture_images() -> None:
     assert output.count("podman manifest push --all") == 6
 
 
+def test_selective_ui_build_only_builds_dashboard() -> None:
+    output = dry_run("--image-set", "all", "--include", "dashboard").stdout
+    assert output.count("podman build --platform") == 2
+    assert "osii-dashboard:1.2.3-amd64" in output
+    assert "osii-core:1.2.3-amd64" not in output
+
+
+def test_empty_selection_builds_nothing() -> None:
+    output = dry_run("--image-set", "all", "--include").stdout
+    assert "podman build" not in output
+    assert "podman manifest push" not in output
+
+
 def test_direct_mode_removes_proxy_variables_from_built_images() -> None:
     output = dry_run("--disable-container-proxies").stdout
     assert "--http-proxy=false" in output

@@ -28,6 +28,10 @@ markdown_extensions:
 nav:
   - Start here: index.md
   - Install and use:
+      - What are you trying to do?: operations/runbooks.md
+      - Mac and Windows launchers: operations/runbook-desktop.md
+      - Development paths: operations/runbook-development.md
+      - Releases and rollback: operations/runbook-releases.md
       - Python walkthrough: tutorials/python-demonstrations.md
       - Single-file walkthrough: tutorials/single-file.md
       - Generate an LLM wiki: tutorials/llm-wiki.md

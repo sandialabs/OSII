@@ -20,6 +20,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+      - name: Corporate defaults must not enter public GitHub
+        run: |
+          if test -f corporate/osii.toml; then
+            echo "Corporate defaults belong only in the private GitLab repository."
+            exit 1
+          fi
       - uses: astral-sh/setup-uv@v10
       - name: Core, SDK, and packaging tests
         run: uv run --frozen --python 3.12 --package osii --extra dev python -m pytest osii-core/tests osii-core/processor-sdk/tests osii-toolbox/tests/test_packaging.py -q
@@ -77,18 +83,27 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [checks, frontend, installation]
     runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10
-      - run: uv run --no-project --python 3.12 python scripts/corporate_release.py version
-      - run: uv build osii-core --out-dir dist
+      - id: plan
+        run: |
+          uv run --no-project --python 3.12 python scripts/corporate_release.py version
+          if uv run --no-project --python 3.12 python scripts/release_plan.py needs-package; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.plan.outputs.publish == 'true'
+        run: uv build osii-core --out-dir dist
       - uses: actions/upload-artifact@v7
+        if: steps.plan.outputs.publish == 'true'
         with:
           name: python-distributions
           path: dist/*
 
   pypi:
-    if: startsWith(github.ref, 'refs/tags/v') && vars.OSII_PUBLISH_PYPI == 'true'
+    if: startsWith(github.ref, 'refs/tags/v') && vars.OSII_PUBLISH_PYPI == 'true' && needs.package.outputs.publish == 'true'
     needs: package
     runs-on: ubuntu-latest
     environment: pypi

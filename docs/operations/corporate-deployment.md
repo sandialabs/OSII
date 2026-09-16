@@ -1,12 +1,15 @@
 # Public development and corporate releases
 
+For the short action checklist, start with [What are you trying to do?](runbooks.md).
+This page is the one-time setup and policy reference, not a daily runbook.
+
 OSII has one codebase and two environments:
 
 | Public GitHub | Corporate GitLab |
 | --- | --- |
 | Develop and review portable source | Add approved internal configuration |
 | Run fast tests on Python 3.12 and Linux | Repeat validation on corporate runners |
-| Build the Python package on a release tag | Publish the Python package internally |
+| Build the Python package on a Core/full release tag | Publish the Python package only when Core/SDK changes |
 | Optionally publish `osii` to public PyPI | Build signed desktop installers |
 | Never contain corporate names or secrets | Build AMD64/ARM64 images and push corporate Quay |
 
@@ -24,15 +27,25 @@ Routine pushes do not build containers, start the full stack, or run three
 operating-system jobs. This keeps feedback useful and reduces failed-run email.
 GitHub notification preferences still control which failures GitHub emails.
 
-A `vX.Y.Z` tag additionally tests installation on Linux, macOS, and Windows and
-stores the wheel and source distribution as workflow artifacts. It publishes
-to PyPI only when both of these administrative steps are complete:
+A `vX.Y.Z` tag additionally tests installation on Linux, macOS, and Windows.
+For a Core/full release it stores the wheel and source distribution as workflow
+artifacts. It publishes to PyPI only when both of these administrative steps
+are complete:
 
 - repository variable `OSII_PUBLISH_PYPI` is `true`;
 - PyPI trusts `.github/workflows/ci.yml` through the `pypi` environment.
 
-Until then, a GitHub tag validates and builds the package but does not upload
-it. GitHub does not publish OSII containers or corporate installers.
+Until then, a Core/full GitHub tag validates and builds the package but does
+not upload it. UI/launcher/Toolbox-only tags do not create a new Python package.
+GitHub does not publish OSII containers or corporate installers.
+
+For baseline security without more container CI, turn on GitHub secret
+scanning/push protection, Dependabot alerts, and CodeQL default setup in the
+public repository's Security settings. Those are one-time administrator
+settings; they are not configured by the OSII workflow file. Keep routine
+GitHub CI to portable tests and builds. See GitHub's
+[CodeQL default-setup instructions](https://docs.github.com/en/code-security/code-scanning/enabling-code-scanning/configuring-default-setup-for-code-scanning)
+and [secret-scanning instructions](https://docs.github.com/en/code-security/secret-scanning/enabling-secret-scanning-features/enabling-secret-scanning-for-your-repository).
 
 ## Bring public changes into the corporate repository
 
@@ -97,8 +110,8 @@ runners also need Node.js 22, Rust, and the Tauri prerequisites. Windows needs
 the approved code-signing certificate. macOS needs Apple signing and
 notarization credentials.
 
-Protect corporate `main`, the `v*` tag pattern, and the
-`corporate-release` environment. Require a merge request for imported changes
+Protect corporate `main`, the `v*` tag pattern, `corporate-release`, and
+`corporate-promotion` environments. Require a merge request for imported changes
 and restrict release approval and tag creation to release maintainers.
 
 Set these protected or environment-scoped CI variables:
@@ -122,36 +135,76 @@ Store passwords and signing credentials as masked, protected variables. Install
 package-manager registry and CA configuration on the runners so `uv`, pip,
 npm, Cargo, and OS package commands use approved sources.
 
+### Corporate defaults
+
+In the corporate repository only, commit `corporate/osii.toml` with *non-secret*
+values. The generic helper and CI read the same file, so Quay paths, approved
+base image, mirror URLs, and model defaults are entered once. For example:
+
+```toml
+[defaults]
+OSII_QUAY_REGISTRY = "quay.internal.invalid"
+OSII_IMAGE_PREFIX = "quay.internal.invalid/team/osii"
+OSII_BASE_IMAGE = "quay.internal.invalid/approved/ubi9@sha256:REPLACE_WITH_64_HEX_DIGEST"
+OSII_TESSERACT_SOURCE_URL = "https://artifacts.internal.invalid/tesseract.tar.gz"
+OSII_LEPTONICA_SOURCE_URL = "https://artifacts.internal.invalid/leptonica.tar.gz"
+OSII_TESSDATA_BASE_URL = "https://artifacts.internal.invalid/tessdata"
+OSII_MODEL_BASE_URL = "https://models.internal.invalid/v1"
+OSII_EMBEDDING_MODEL = ""
+OSII_CHAT_MODEL = ""
+```
+
+Replace the illustrative values with approved real ones. The helper rejects
+unknown keys, placeholders, non-HTTPS endpoints, and unpinned base images.
+Do not put API keys, Quay passwords, signing credentials, or certificate
+contents in this file. CI variables override these defaults and hold secrets.
+On a workstation, validate and create ignored `.env` and launcher `.env.local`
+without overwriting any existing local files:
+
+```bash
+uv run --no-project --python 3.12 python scripts/corporate_config.py check --version 0.1.1
+uv run --no-project --python 3.12 python scripts/corporate_config.py write --version 0.1.1
+```
+
+The example file is **never added to public GitHub**. Keep it on the corporate
+branch when importing upstream changes. The public GitHub workflow fails if a
+`corporate/osii.toml` is accidentally present.
+
 ## Make a corporate release
 
-Update every user-visible version to the same value before tagging. At minimum,
-check `osii-core/pyproject.toml`, `osii-launcher/package.json`,
-`osii-launcher/src-tauri/Cargo.toml`, and
-`osii-launcher/src-tauri/tauri.conf.json`. Commit and merge that version change
-into corporate `main`, then:
+On a release-preparation branch, use `scripts/release_plan.py prepare` with the
+next stack version, prior tag, and `full`, `core`, `ui`, `launcher`, or one
+`toolbox-*` scope. This updates the launcher versions, and it updates the
+Python package version only for Core/full releases. Commit and merge the plan
+into corporate `main`. Create a protected tag on that merged commit, using
+GitLab's **Repository → Tags → New tag** or these commands:
 
 ```bash
 git switch main
 git pull --ff-only origin main
-git tag -a v0.1.0 -m "OSII 0.1.0"
-git push origin v0.1.0
+git tag -a v0.1.1 -m "OSII 0.1.1"
+git push origin v0.1.1
 ```
 
 The protected tag pipeline validates the commit and pauses at
 `approve-release`. After a release maintainer approves it, GitLab:
 
-1. builds and tests the `osii` wheel and source distribution;
-2. builds all OSII and optional Toolbox images natively for Linux AMD64/ARM64;
-3. smoke-tests each image and pushes architecture tags to corporate Quay;
+1. builds and tests the `osii` wheel and source distribution only when Core/SDK changes;
+2. builds changed images natively for Linux AMD64/ARM64, and copies unchanged
+   image manifests by verified digest to the new immutable version;
+3. smoke-tests changed images and pushes architecture tags to corporate Quay;
 4. builds signed Windows and Intel/Apple-silicon macOS launchers with corporate
    registry, image tag, and model defaults;
 5. assembles and verifies the multi-architecture image manifests;
-6. publishes `osii` to the GitLab Python package registry;
+6. publishes `osii` to the GitLab Python package registry only when Core changes;
 7. creates a GitLab Release containing installers, `deployment.zip`, image
    digests, and SHA-256 checksums.
 
-Tags are immutable. If release `0.1.0` fails after publishing, fix the code and
-release `0.1.1`; never reuse the old tag or image version.
+Tags are immutable. If a release fails after publishing, fix the code and
+prepare a new version; never reuse the old tag or image version. After clean
+workstation acceptance, the separate protected `promote-latest` job may move
+corporate Quay's `:latest` aliases. The launcher and deployment bundles still
+use immutable versions; `latest` is not a deployment rollback mechanism.
 
 ## Non-developer acceptance check
 

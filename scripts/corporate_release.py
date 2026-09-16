@@ -13,14 +13,16 @@ import ssl
 import subprocess
 import sys
 import tempfile
-import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
 
-from publish_multiarch import RELEASE_IMAGES, TOOLBOX_IMAGES
+from corporate_config import apply_defaults
+from publish_multiarch import RELEASE_IMAGES, TOOLBOX_IMAGES, require_new_tag
+from release_plan import Plan, load_plan
+from release_plan import check as check_release_plan
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGES = RELEASE_IMAGES + TOOLBOX_IMAGES
@@ -38,9 +40,9 @@ def version() -> str:
     if not re.fullmatch(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", tag):
         raise ValueError("Release tags must be vX.Y.Z, for example v0.1.0.")
     expected = tag[1:]
-    metadata = tomllib.loads((ROOT / "osii-core/pyproject.toml").read_text())
-    if metadata["project"]["version"] != expected:
-        raise ValueError("The tag must match the version in osii-core/pyproject.toml.")
+    plan = check_release_plan()
+    if plan.version != expected:
+        raise ValueError("The tag must match the prepared version in release.toml.")
     return expected
 
 
@@ -87,12 +89,14 @@ def registry_login(directory: Path) -> None:
     )
 
 
-def image_command(release_version: str, phase: str, architectures: str) -> list[str]:
+def image_command(release_version: str, phase: str, architectures: str,
+                  plan: Plan) -> list[str]:
     command = [
         sys.executable, "scripts/publish_multiarch.py",
         "--image-prefix", required("OSII_IMAGE_PREFIX"), "--image-tag", release_version,
         "--base-image", required("OSII_BASE_IMAGE"), "--python-version", "3.12",
-        "--image-set", "all", "--phase", phase, "--platforms", architectures, "--require-new",
+        "--image-set", "all", "--phase", phase, "--platforms", architectures,
+        "--require-new", "--include", *plan.images_to_build,
     ]
     if bundle := os.environ.get("OSII_CA_BUNDLE"):
         command.extend(("--ca-bundle", bundle))
@@ -101,15 +105,21 @@ def image_command(release_version: str, phase: str, architectures: str) -> list[
 
 def build_images() -> None:
     release_version = preflight()
+    plan = load_plan()
+    if not plan.images_to_build:
+        print("No container images need rebuilding for this release.")
+        return
     arch = required("OSII_ARCH")
     native = {"x86_64": "amd64", "aarch64": "arm64", "arm64": "arm64"}.get(platform.machine())
     if platform.system() != "Linux" or arch != native:
         raise ValueError("Image jobs must run on native Linux runners matching OSII_ARCH.")
     with tempfile.TemporaryDirectory(prefix="osii-registry-") as directory:
         registry_login(Path(directory))
-        run(*image_command(release_version, "build", f"linux/{arch}"))
+        run(*image_command(release_version, "build", f"linux/{arch}", plan))
         # Exercise installed entry points without exposing host ports or mounting user data.
         for name, _, _ in IMAGES:
+            if name not in plan.images_to_build:
+                continue
             image = f"{required('OSII_IMAGE_PREFIX')}-{name}:{release_version}-{arch}"
             if name == "dashboard":
                 run("podman", "run", "--rm", "--entrypoint", "nginx", image, "-t")
@@ -222,6 +232,7 @@ def deployment_files(release_version: str) -> None:
 
 def publish() -> None:
     release_version = preflight()
+    plan = load_plan()
     tag = required("CI_COMMIT_TAG")
     try:
         api_request(f"releases/{urllib.parse.quote(tag, safe='')}")
@@ -232,34 +243,59 @@ def publish() -> None:
         raise ValueError("This GitLab release already exists. Use a new version.")
     output = ROOT / "release"
     wheels = list((output / "python").glob("*.whl"))
-    if len(wheels) != 1 or len(list((output / "python").glob("*.tar.gz"))) != 1:
+    distributions = list((output / "python").glob("*.tar.gz"))
+    if plan.publish_package and (len(wheels) != 1 or len(distributions) != 1):
         raise ValueError("Missing tested Python release artifacts.")
+    if not plan.publish_package and (wheels or distributions):
+        raise ValueError("A non-Core release must not publish a new Python package.")
     for target, suffix in (("windows-x64", "exe"), ("macos-arm64", "dmg"), ("macos-x64", "dmg")):
         if not (output / "installers" / f"OSII-{release_version}-{target}.{suffix}").is_file():
             raise ValueError(f"Missing signed installer for {target}.")
     with tempfile.TemporaryDirectory(prefix="osii-registry-") as directory:
         registry_login(Path(directory))
-        run(*image_command(release_version, "manifest", "linux/amd64,linux/arm64"))
+        prefix = required("OSII_IMAGE_PREFIX")
+        for name, _, _ in IMAGES:
+            require_new_tag(f"{prefix}-{name}:{release_version}")
+        reused = []
+        for name, _, _ in IMAGES:
+            if name in plan.images_to_build:
+                continue
+            source = f"{prefix}-{name}:{plan.previous_tag[1:]}"
+            target = f"{prefix}-{name}:{release_version}"
+            raw = subprocess.check_output(["skopeo", "inspect", "--raw", f"docker://{source}"])
+            _verified_platforms(raw, source)
+            digest = "sha256:" + hashlib.sha256(raw).hexdigest()
+            reused.append((name, digest, target))
+        if plan.images_to_build:
+            run(*image_command(release_version, "manifest", "linux/amd64,linux/arm64", plan))
+        for name, digest, target in reused:
+            run("skopeo", "copy", "--all", "--preserve-digests",
+                f"docker://{prefix}-{name}@{digest}",
+                f"docker://{target}")
+            copied = subprocess.check_output(["skopeo", "inspect", "--raw", f"docker://{target}"])
+            _verified_platforms(copied, target)
+            if hashlib.sha256(copied).hexdigest() != digest.removeprefix("sha256:"):
+                raise ValueError(f"Copied image does not match the prior release: {target}.")
         records = {}
         for name, _, _ in IMAGES:
             reference = f"{required('OSII_IMAGE_PREFIX')}-{name}:{release_version}"
             raw = subprocess.check_output(["skopeo", "inspect", "--raw", f"docker://{reference}"])
-            manifest = json.loads(raw)
-            platforms = {(item["platform"]["os"], item["platform"]["architecture"])
-                         for item in manifest.get("manifests", [])}
-            if platforms != {("linux", "amd64"), ("linux", "arm64")}:
-                raise ValueError(f"Incomplete multi-architecture image: {reference}")
-            digest = subprocess.check_output(
-                ["skopeo", "inspect", "--format", "{{.Digest}}", f"docker://{reference}"], text=True).strip()
+            _verified_platforms(raw, reference)
+            digest = "sha256:" + hashlib.sha256(raw).hexdigest()
             records[reference] = digest
     (output / "images.json").write_text(json.dumps(records, indent=2) + "\n")
+    (output / "python-package.json").write_text(json.dumps({
+        "name": "osii", "version": plan.package_version,
+        "published_in_this_release": plan.publish_package,
+    }, indent=2) + "\n")
     deployment_files(release_version)
-    env = os.environ.copy()
-    env.update(TWINE_USERNAME="gitlab-ci-token", TWINE_PASSWORD=required("CI_JOB_TOKEN"))
-    run(sys.executable, "-m", "twine", "check", *map(str, (output / "python").iterdir()))
-    run(sys.executable, "-m", "twine", "upload", "--non-interactive", "--repository-url",
-        f"{required('CI_API_V4_URL')}/projects/{required('CI_PROJECT_ID')}/packages/pypi",
-        *map(str, (output / "python").iterdir()), env=env)
+    if plan.publish_package:
+        env = os.environ.copy()
+        env.update(TWINE_USERNAME="gitlab-ci-token", TWINE_PASSWORD=required("CI_JOB_TOKEN"))
+        run(sys.executable, "-m", "twine", "check", *map(str, [*wheels, *distributions]))
+        run(sys.executable, "-m", "twine", "upload", "--non-interactive", "--repository-url",
+            f"{required('CI_API_V4_URL')}/projects/{required('CI_PROJECT_ID')}/packages/pypi",
+            *map(str, [*wheels, *distributions]), env=env)
     files = sorted(path for path in output.rglob("*") if path.is_file())
     (output / "SHA256SUMS").write_text("".join(
         f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(output).as_posix()}\n"
@@ -280,6 +316,7 @@ def publish() -> None:
         "choose your documents, test access, and start OSII. Registry and image version are prefilled.\n\n"
         "Optional Toolbox images: OpenCV/Tesseract and Tabular (enabled by an administrator).\n\n"
         f"Source: {required('CI_COMMIT_SHA')}\nPipeline: {required('CI_PIPELINE_URL')}\n\n"
+        f"Python package: osii {plan.package_version}. "
         "Installation and image smoke checks passed. Complete the fresh-workstation intake/search "
         "acceptance test before distributing this version to users. Roll back by selecting a prior "
         "release in the launcher; back up library data before upgrades.\n"
@@ -290,12 +327,47 @@ def publish() -> None:
     }).encode())
 
 
+def promote_latest() -> None:
+    release_version = preflight()
+    tag = required("CI_COMMIT_TAG")
+    api_request(f"releases/{urllib.parse.quote(tag, safe='')}")
+    with tempfile.TemporaryDirectory(prefix="osii-registry-") as directory:
+        registry_login(Path(directory))
+        prefix = required("OSII_IMAGE_PREFIX")
+        sources = []
+        for name, _, _ in IMAGES:
+            source = f"{prefix}-{name}:{release_version}"
+            raw = subprocess.check_output(["skopeo", "inspect", "--raw", f"docker://{source}"])
+            _verified_platforms(raw, source)
+            sources.append((name, "sha256:" + hashlib.sha256(raw).hexdigest()))
+        for name, digest in sources:
+            reference = f"{prefix}-{name}"
+            run("skopeo", "copy", "--all", "--preserve-digests",
+                f"docker://{reference}@{digest}",
+                f"docker://{reference}:latest")
+            current = subprocess.check_output(
+                ["skopeo", "inspect", "--raw", f"docker://{reference}:latest"])
+            _verified_platforms(current, f"{reference}:latest")
+            if hashlib.sha256(current).hexdigest() != digest.removeprefix("sha256:"):
+                raise ValueError(f"latest does not match tested release for {name}.")
+
+
+def _verified_platforms(raw: bytes, reference: str) -> None:
+    manifest = json.loads(raw)
+    platforms = {(item["platform"]["os"], item["platform"]["architecture"])
+                 for item in manifest.get("manifests", [])}
+    if platforms != {("linux", "amd64"), ("linux", "arm64")}:
+        raise ValueError(f"Incomplete multi-architecture image: {reference}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("version", "preflight", "images", "installer", "publish"))
+    parser.add_argument("action", choices=("version", "preflight", "images", "installer", "publish", "promote-latest"))
     args = parser.parse_args()
+    apply_defaults()
     actions = {"version": version, "preflight": preflight, "images": build_images,
-               "installer": build_installer, "publish": publish}
+               "installer": build_installer, "publish": publish,
+               "promote-latest": promote_latest}
     result = actions[args.action]()
     if result:
         print(result)

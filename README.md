@@ -255,6 +255,7 @@ keep the PEM under the repository root, use the ignored `.osii-certs/` folder.
 
 | If you want to… | Start here |
 | --- | --- |
+| Install, develop, release, or roll back OSII | [Choose a short runbook](docs/operations/runbooks.md) |
 | Learn the architecture by running small, inspectable examples | [Python demonstration series](osii-demo-notebooks/README.md) |
 | Process one file and inspect every resulting sidecar artifact | [Single-file walkthrough](docs/tutorials/single-file.md) |
 | Understand why OSII separates core, processors, dashboard, and agents | [Architecture](docs/concepts/architecture.md) |
