@@ -77,16 +77,19 @@ The agent's job is to execute the human's command—nothing more.
   branch, preserve the corporate configuration layer, and merge through a
   reviewed GitLab merge request before creating a protected `vX.Y.Z` tag.
 - Corporate tags build from approved mirrors and an immutable RHEL/UBI base,
-  publish AMD64/ARM64 images to corporate Quay, publish `osii` to the internal
-  Python registry, and attach signed launcher installers to the GitLab Release.
-- Keep releases immutable and keep package, launcher, and image versions
-  aligned. Never reuse a published version or rebuild an existing release tag.
+  publish or reuse verified AMD64/ARM64 images in corporate Quay, and attach
+  signed launcher installers to the GitLab Release. Publish a new internal
+  `osii` Python package only when Core/SDK changes.
+- Keep stack releases immutable. A component-only release may reuse a prior
+  package version and image digests; every new stack release still gets a
+  launcher pinned to its version. Never reuse a published tag.
+- Corporate Quay `:latest` is a separately approved alias of a tested
+  immutable release, never a build target or launcher default.
 - Preserve a simple non-developer path: install the signed launcher, choose a
   source folder, pull tested images, and open the dashboard. Validate that path
   on a clean workstation before announcing a release.
-- Keep `.github/workflows/ci.yml`, `.gitlab-ci.yml`, and
-  `docs/operations/corporate-deployment.md` consistent when release behavior
-  changes.
+- Keep `.github/workflows/ci.yml`, `.gitlab-ci.yml`, `release.toml`, and the
+  operations runbooks consistent when release behavior changes.
 
 ## Validation and handoff
 

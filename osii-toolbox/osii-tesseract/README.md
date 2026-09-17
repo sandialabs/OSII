@@ -19,6 +19,9 @@ simpler `local.tesseract-page-ocr` full-page processor instead. This service exp
 Processor API v1 at `POST /v1/extract`, returning one OCR text segment per
 detected region with normalized page bounding boxes and polygons. Its native
 `/ocr/document` API and tuning UI remain available for direct inspection.
+Its stable descriptor is `toolbox.tesseract-opencv`; the former
+`toolchest.tesseract-opencv` identity remains a registration alias for this
+release.
 
 ## Highlights
 

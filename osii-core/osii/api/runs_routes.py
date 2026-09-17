@@ -110,13 +110,10 @@ def safe_resolve_user_path(raw: str | None, fallback: Path) -> Path:
 
 
 def load_parser_routes(config_path: Path) -> list[dict]:
-    import tomllib
+    from osii.configuration import tools_path
+    from osii.domain.processing.extractor_selection import load_extractor_routes
 
-    if not config_path.exists():
-        return [{"name": "default-tika", "extractor": "tika", "extensions": ["*"]}]
-
-    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    return data.get("routes", [])
+    return load_extractor_routes(config_path if config_path.exists() and config_path != tools_path() else None)
 
 
 def choose_parser(path: Path, routes: list[dict]) -> str:

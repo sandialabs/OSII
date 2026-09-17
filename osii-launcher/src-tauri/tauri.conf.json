@@ -14,10 +14,10 @@
       {
         "label": "main",
         "title": "OSII Launcher",
-        "width": 1120,
-        "height": 760,
-        "minWidth": 900,
-        "minHeight": 640,
+        "width": 980,
+        "height": 680,
+        "minWidth": 780,
+        "minHeight": 560,
         "resizable": true
       }
     ],
@@ -37,7 +37,8 @@
     "shortDescription": "Run OSII on a workstation",
     "longDescription": "Configure Podman, approved OSII images, source folders, and model providers from a desktop application.",
     "resources": {
-      "../../compose.yaml": "deployment/compose.yaml"
+      "../../compose.yaml": "deployment/compose.yaml",
+      "../demo-assets": "demo"
     }
   }
 }

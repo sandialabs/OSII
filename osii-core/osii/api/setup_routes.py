@@ -10,6 +10,7 @@ import requests
 
 from osii.api.model_provider_routes import _load, _public, _with_runtime_defaults
 from osii.domain.processing.capability_readiness import intake_capability_readiness
+from osii.configuration import configuration_status
 
 
 router = APIRouter(prefix="/api/admin", tags=["setup"])
@@ -166,6 +167,7 @@ def setup_summary(request: Request):
         "providers": providers,
         "services": services,
         "service_control_available": service_control_available,
+        "configuration": configuration_status(),
         "readiness": readiness,
     }
 

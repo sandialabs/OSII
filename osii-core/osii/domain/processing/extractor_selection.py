@@ -4,20 +4,43 @@ import os
 from pathlib import Path
 import tomllib
 
+from osii.configuration import load_tools_config, tools_path
+
+
+NATIVE_EXTENSIONS = [
+    ".cfg", ".conf", ".css", ".csv", ".docx", ".htm", ".html",
+    ".ini", ".js", ".json", ".jsonl", ".log", ".md", ".pdf",
+    ".pptx", ".py", ".rst", ".rtf", ".sql", ".toml", ".ts",
+    ".tsv", ".txt", ".xlsx", ".xml", ".yaml", ".yml",
+]
+
+
+def default_extractor_routes() -> list[dict]:
+    return [
+        {"name": "native-supported", "extractor": "local.native-text", "fallbacks": ["tika"], "extensions": NATIVE_EXTENSIONS},
+        {"name": "tika-other", "extractor": "tika", "fallbacks": [], "extensions": ["*"]},
+    ]
+
 
 def extractor_routes_path() -> Path:
-    configured = os.getenv(
-        "OSII_EXTRACTOR_ROUTES_PATH",
-        "config/extractor_routes.toml",
-    )
-    return Path(configured).expanduser().resolve()
+    configured = os.getenv("OSII_EXTRACTOR_ROUTES_PATH", "").strip()
+    return Path(configured).expanduser().resolve() if configured else tools_path()
 
 
 def load_extractor_routes(config_path: Path | None = None) -> list[dict]:
-    path = config_path or extractor_routes_path()
+    if config_path is None:
+        routes = load_tools_config().get("routes", {}).get("extractor")
+        if isinstance(routes, list):
+            return routes
+        configured = os.getenv("OSII_EXTRACTOR_ROUTES_PATH", "").strip()
+        if not configured:
+            return default_extractor_routes()
+        path = Path(configured).expanduser().resolve()
+    else:
+        path = config_path
 
     if not path.exists():
-        return [{"name": "default-tika", "extractor": "tika", "extensions": ["*"]}]
+        return default_extractor_routes()
 
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     return data.get("routes", [])

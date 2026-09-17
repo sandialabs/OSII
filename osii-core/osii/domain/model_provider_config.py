@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from osii.configuration import load_models_config, model_connection
+
 DEFAULT_OLLAMA_EMBEDDING_MODEL = "all-minilm"
 DEFAULT_OLLAMA_CHAT_MODEL = "llama3.2:1b"
 
@@ -54,25 +56,16 @@ def selected_processor(
     *,
     osii_root: Path | None = None,
 ) -> str:
-    records = load_provider_records(osii_root)
-    if records is not None:
-        field = _CAPABILITY_FIELDS[capability]
-        for provider in enabled_providers(osii_root):
-            if not str(provider.get(field) or "").strip():
-                continue
-            name = _PROCESSOR_NAMES.get((str(provider.get("type")), capability))
-            if name:
-                return name
-        return (
-            "local.hashing" if capability == "embedder" else "local.extractive-preview"
-        )
-    environment_name = (
-        "OSII_DEFAULT_EMBEDDER"
-        if capability == "embedder"
-        else "OSII_DEFAULT_SYNTHESIZER"
-    )
-    fallback = "ollama.embedder" if capability == "embedder" else "ollama.synthesizer"
-    return os.getenv(environment_name, fallback).strip() or fallback
+    configuration = load_models_config(osii_root)
+    defaults = configuration.get("defaults", {})
+    config_capability = "embedding" if capability == "embedder" else "synthesis"
+    alias = str(defaults.get(config_capability) or "")
+    connection = model_connection(alias, osii_root) if alias else None
+    if connection:
+        provider_type = str(connection.get("type") or "")
+        provider = "ollama" if provider_type == "ollama-local" else "openai"
+        return _PROCESSOR_NAMES.get((provider, capability), "")
+    return "local.hashing" if capability == "embedder" else "local.extractive-preview"
 
 
 def selected_model(
@@ -80,33 +73,13 @@ def selected_model(
     *,
     osii_root: Path | None = None,
 ) -> str:
-    records = load_provider_records(osii_root)
-    if records is not None:
-        field = _CAPABILITY_FIELDS[capability]
-        for provider in enabled_providers(osii_root):
-            value = str(provider.get(field) or "").strip()
-            if value:
-                return value
-        return "osii-local-hashing-v1" if capability == "embedder" else ""
-    if selected_processor(capability, osii_root=osii_root).startswith("openai."):
-        variable = (
-            "OPENAI_EMBEDDING_MODEL"
-            if capability == "embedder"
-            else "OPENAI_SYNTHESIS_MODEL"
-        )
-        return os.getenv(variable, "").strip()
-    if capability == "embedder":
-        return (
-            os.getenv(
-                "EMBEDDING_MODEL",
-                os.getenv("OLLAMA_EMBEDDING_MODEL", DEFAULT_OLLAMA_EMBEDDING_MODEL),
-            ).strip()
-            or DEFAULT_OLLAMA_EMBEDDING_MODEL
-        )
-    return (
-        os.getenv("OLLAMA_SYNTHESIS_MODEL", DEFAULT_OLLAMA_CHAT_MODEL).strip()
-        or DEFAULT_OLLAMA_CHAT_MODEL
-    )
+    configuration = load_models_config(osii_root)
+    config_capability = "embedding" if capability == "embedder" else "synthesis"
+    alias = str(configuration.get("defaults", {}).get(config_capability) or "")
+    connection = model_connection(alias, osii_root) if alias else None
+    if connection:
+        return str(connection.get("model") or "")
+    return "osii-local-hashing-v1" if capability == "embedder" else ""
 
 
 def processor_model(
@@ -126,6 +99,14 @@ def processor_model(
     )
     if not provider_type:
         return ""
+
+    configuration = load_models_config(osii_root)
+    config_capability = "embedding" if capability == "embedder" else "synthesis"
+    alias = str(configuration.get("defaults", {}).get(config_capability) or "")
+    connection = model_connection(alias, osii_root) if alias else None
+    expected_type = "ollama-local" if provider_type == "ollama" else "openai-compatible"
+    if connection and connection.get("type") == expected_type:
+        return str(connection.get("model") or "")
 
     field = _CAPABILITY_FIELDS[capability]
     records = load_provider_records(osii_root)

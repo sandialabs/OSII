@@ -32,6 +32,9 @@ SERVICE_DISPLAY_NAMES = {
     "embedder": "lexical hashing vectors (no AI model)",
     "enricher": "document statistics and frequent keywords",
     "model-bridge": "Ollama/OpenAI-compatible HTTP adapter (not Ollama itself)",
+    "readable-wiki": "Readable LLM Wiki",
+    "concept-entity-wiki": "Concept and Entity LLM Wiki",
+    "tesseract-opencv": "Tesseract OCR with OpenCV regions",
     "api": "OSII backend API and grounded chat",
     "worker": "sequential intake worker",
     "mcp": "MCP server for agents",
@@ -46,6 +49,7 @@ class Service:
     working_directory: Path
     port: int
     environment: tuple[tuple[str, str], ...] = ()
+    start_automatically: bool = True
 
 
 CAPABILITY_SERVICE_INFO = {
@@ -55,6 +59,9 @@ CAPABILITY_SERVICE_INFO = {
     "embedder": ("Lexical hashing compatibility embedder", "Optional lexical vectors; BM25 search works without it.", "/health"),
     "enricher": ("Statistics and keywords enricher", "Creates local document statistics and keyword artifacts.", "/health"),
     "model-bridge": ("AI provider bridge", "Connects OSII to Ollama or an OpenAI-compatible endpoint.", "/health"),
+    "readable-wiki": ("Readable LLM Wiki", "Creates a cited, reader-friendly Markdown wiki using a configured chat connection.", "/health"),
+    "concept-entity-wiki": ("Concept and Entity LLM Wiki", "Creates a wiki, entity list, and concept table using a configured chat connection.", "/health"),
+    "tesseract-opencv": ("Tesseract OCR with OpenCV regions", "Finds page regions with OpenCV and preserves OCR bounding boxes.", "/health"),
     "tika": ("Apache Tika", "Adds broad document-format text extraction using Podman or Docker.", "/version"),
 }
 
@@ -133,6 +140,32 @@ def build_environment(core_only: bool) -> dict[str, str]:
     for path in (osii_root, uploads_root):
         path.mkdir(parents=True, exist_ok=True)
 
+    configured_directory = (env.get("OSII_CONFIG_DIR", "") or env.get("OSII_CONFIG_DIR_HOST", "")).strip()
+    previous_configuration_root = None
+    if configured_directory:
+        configuration_root = Path(configured_directory).expanduser()
+        if configuration_root.parts[-3:] == ("profiles", "development", "deployment"):
+            application_root = configuration_root.parents[2]
+            previous_configuration_root = (
+                Path(env.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "org.osii.launcher"
+                if sys.platform not in {"darwin", "win32"}
+                else application_root / "config"
+            )
+    elif sys.platform == "darwin":
+        application_root = Path.home() / "Library" / "Application Support" / "org.osii.launcher"
+        previous_configuration_root = application_root / "config"
+        configuration_root = application_root / "profiles" / "development" / "deployment"
+    elif os.name == "nt":
+        application_root = Path(env.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "org.osii.launcher"
+        previous_configuration_root = application_root / "config"
+        configuration_root = application_root / "profiles" / "development" / "deployment"
+    else:
+        application_root = Path(env.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "org.osii.launcher"
+        previous_configuration_root = Path(env.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "org.osii.launcher"
+        configuration_root = application_root / "profiles" / "development" / "deployment"
+    configuration_root = configuration_root.resolve()
+    configuration_root.mkdir(parents=True, exist_ok=True)
+
     api_port = env.get("OSII_API_PORT", "8511")
     embeddings_port = env.get("OSII_EMBEDDINGS_PORT", "8085")
     tika_port = env.get("OSII_TIKA_PORT", "9998")
@@ -173,13 +206,15 @@ def build_environment(core_only: bool) -> dict[str, str]:
             "MCP_HOST": "127.0.0.1",
             "MCP_PORT": mcp_port,
             "DEBUG": "true",
-            "OSII_ENV_FILE": str((REPOSITORY_ROOT / ".env").resolve()),
+            "OSII_CONFIG_DIR": str(configuration_root),
+            "OSII_ACTIVE_PROFILE": env.get("OSII_ACTIVE_PROFILE", "development"),
+            "OSII_ENV_FILE": str(configuration_root / "secrets.env"),
             "OSII_ALLOW_LOCAL_CONFIG_WRITES": "true",
+            "OSII_MODEL_GATEWAY_PUBLIC_URL": f"http://127.0.0.1:{env.get('OSII_MODEL_BRIDGE_PORT', '8095')}/v1",
         }
     )
-    env["OSII_EXTRACTOR_ROUTES_PATH"] = str(
-        (REPOSITORY_ROOT / "osii-core" / "config" / "extractor_routes_native.toml").resolve()
-    )
+    if previous_configuration_root is not None:
+        env["OSII_LEGACY_CONFIG_DIR"] = str(previous_configuration_root)
     provider_profile = "openai" if env.get("OPENAI_BASE_URL", "").strip() else "ollama"
     if not core_only:
         ollama_embedding_model = env.get("OLLAMA_EMBEDDING_MODEL", "").strip() or "all-minilm"
@@ -374,12 +409,37 @@ def service_commands(
             services.insert(0, Service(name, (uv, "run", "--no-sync", "--package", package, "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "osii-core" / "services" / directory, int(port)))
         bridge_port = env.get("OSII_MODEL_BRIDGE_PORT", "8095")
         services.insert(4, Service("model-bridge", (uv, "run", "--no-sync", "--package", "osii-model-provider-bridge", "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", bridge_port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "osii-core" / "services" / "model-provider-bridge", int(bridge_port)))
+        services.extend([
+            Service(
+                "readable-wiki",
+                (uv, "run", "--python", env.get("UV_PYTHON", "3.12"), "--project", ".", "python", "run.py", "readable", "--host", "127.0.0.1", "--port", "8099"),
+                REPOSITORY_ROOT / "osii-toolbox" / "llm-wiki-enrichers",
+                8099,
+                start_automatically=False,
+            ),
+            Service(
+                "concept-entity-wiki",
+                (uv, "run", "--python", env.get("UV_PYTHON", "3.12"), "--project", ".", "python", "run.py", "concept-entity", "--host", "127.0.0.1", "--port", "8100"),
+                REPOSITORY_ROOT / "osii-toolbox" / "llm-wiki-enrichers",
+                8100,
+                start_automatically=False,
+            ),
+            Service(
+                "tesseract-opencv",
+                (uv, "run", "--python", env.get("UV_PYTHON", "3.12"), "--project", ".", "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8081"),
+                REPOSITORY_ROOT / "osii-toolbox" / "osii-tesseract",
+                8081,
+                start_automatically=False,
+            ),
+        ])
     return services
 
 
 def ensure_ports_available(services: list[Service]) -> None:
     occupied: list[Service] = []
     for service in services:
+        if not service.start_automatically:
+            continue
         if service.port <= 0:
             continue
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
@@ -526,7 +586,7 @@ class CapabilitySupervisor:
             prerequisite = None
             if service_id == "tika" and self._compose_command() is None:
                 prerequisite = "Install Podman Compose or Docker Compose to run Apache Tika."
-            elif service_id == "ocr" and shutil.which("tesseract") is None:
+            elif service_id in {"ocr", "tesseract-opencv"} and shutil.which("tesseract") is None:
                 prerequisite = "Install the native Tesseract program, then restart OSII."
             return {
                 "id": service_id,
@@ -740,6 +800,7 @@ def run(
         uv = command_path("uv")
         npm = command_path("npm")
         env = build_environment(core_only)
+        env.setdefault("OSII_MODEL_GATEWAY_SECRET", secrets.token_urlsafe(48))
         provider_profile = "openai" if env.get("OPENAI_BASE_URL", "").strip() else "ollama"
         services = service_commands(uv, npm, env, core_only)
 
@@ -777,6 +838,8 @@ def run(
         dashboard_service = next(service for service in services if service.name == "dashboard")
         for service in services:
             if service.name == "dashboard":
+                continue
+            if not service.start_automatically:
                 continue
             if supervisor is not None and service.name in CAPABILITY_SERVICE_INFO:
                 processes[service.name] = (service, supervisor.start_initial(service))

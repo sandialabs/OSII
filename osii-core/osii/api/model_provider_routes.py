@@ -4,7 +4,6 @@ import json
 import os
 from pathlib import Path
 import re
-import tempfile
 import threading
 import uuid
 from typing import Any
@@ -21,6 +20,7 @@ from osii.domain.env_credentials import (
     resolve_env_value,
     write_env_value,
 )
+from osii.configuration import load_models_config, save_models_config
 
 
 router = APIRouter(prefix="/api/admin/model-providers", tags=["model-provider-administration"])
@@ -47,27 +47,59 @@ PULL_JOBS: dict[str, dict[str, Any]] = {}
 PULL_JOBS_LOCK = threading.Lock()
 
 
-def _path(osii_root: Path) -> Path:
-    path = osii_root / "state" / "model_providers.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def _load(osii_root: Path) -> list[dict[str, Any]]:
-    try:
-        value = json.loads(_path(osii_root).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
-    return value if isinstance(value, list) else []
+def _load(osii_root) -> list[dict[str, Any]]:
+    """Present connection-oriented models.toml through the legacy provider UI shape."""
+    config = load_models_config(osii_root)
+    defaults = config.get("defaults") or {}
+    records = []
+    for alias, connection in (config.get("models") or {}).items():
+        if not isinstance(connection, dict):
+            continue
+        capabilities = set(connection.get("capabilities") or [])
+        model = str(connection.get("model") or "")
+        records.append({
+            "id": str(alias),
+            "type": "ollama" if connection.get("type") == "ollama-local" else "openai",
+            "base_url": str(connection.get("base_url") or "").rstrip("/"),
+            "enabled": bool(connection.get("enabled", True)),
+            "priority": int(connection.get("priority", 100)),
+            "embedding_model": model if "embedding" in capabilities else "",
+            "synthesis_model": model if "synthesis" in capabilities else "",
+            "chat_model": model if "chat" in capabilities else "",
+            "credential_env": str(connection.get("api_key_env") or ""),
+            "default_chat": str(defaults.get("chat") or "") == str(alias),
+            "default_embedding": str(defaults.get("embedding") or "") == str(alias),
+        })
+    by_id = {str(item["id"]): item for item in records}
+    merged: list[dict[str, Any]] = []
+    consumed: set[str] = set()
+    for record in records:
+        identifier = str(record["id"])
+        if identifier in consumed or identifier.endswith("-embedding"):
+            continue
+        sibling_id = f"{identifier}-embedding"
+        sibling = by_id.get(sibling_id)
+        if sibling and sibling.get("type") == record.get("type") and sibling.get("base_url") == record.get("base_url"):
+            record = {
+                **record,
+                "embedding_model": sibling.get("embedding_model", ""),
+                "default_embedding": bool(sibling.get("default_embedding")),
+            }
+            consumed.add(sibling_id)
+        merged.append(record)
+    merged.extend(
+        record for record in records
+        if str(record["id"]).endswith("-embedding") and str(record["id"]) not in consumed
+    )
+    return merged
 
 
 def _with_runtime_defaults(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     result = list(records)
-    known = {item.get("id") for item in result}
-    if "ollama-local" not in known:
-        result.append({"id": "ollama-local", "type": "ollama", "base_url": os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/"), "enabled": True, "priority": 100, "embedding_model": os.getenv("OLLAMA_EMBEDDING_MODEL", "").strip() or DEFAULT_OLLAMA_EMBEDDING_MODEL, "synthesis_model": os.getenv("OLLAMA_SYNTHESIS_MODEL", "").strip() or DEFAULT_OLLAMA_CHAT_MODEL, "chat_model": os.getenv("OLLAMA_CHAT_MODEL", "").strip() or DEFAULT_OLLAMA_CHAT_MODEL, "credential_env": "", "implicit": True})
+    if not any(item.get("type") == "ollama" for item in result):
+        result.append({"id": "ollama-local", "type": "ollama", "base_url": os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/"), "enabled": True, "priority": 100, "embedding_model": os.getenv("OLLAMA_EMBEDDING_MODEL", "").strip() or DEFAULT_OLLAMA_EMBEDDING_MODEL, "synthesis_model": os.getenv("OLLAMA_SYNTHESIS_MODEL", "").strip() or DEFAULT_OLLAMA_CHAT_MODEL, "chat_model": os.getenv("OLLAMA_CHAT_MODEL", "").strip() or DEFAULT_OLLAMA_CHAT_MODEL, "credential_env": "", "default_chat": True, "default_embedding": True, "implicit": True})
     openai_configured = bool(os.getenv("OPENAI_BASE_URL", "").strip())
-    if openai_configured and "openai-compatible" not in known:
+    if openai_configured and not any(item.get("type") == "openai" for item in result):
         result.append({
             "id": "openai-compatible",
             "type": "openai",
@@ -78,21 +110,66 @@ def _with_runtime_defaults(records: list[dict[str, Any]]) -> list[dict[str, Any]
             "synthesis_model": os.getenv("OPENAI_SYNTHESIS_MODEL", "").strip(),
             "chat_model": os.getenv("OPENAI_CHAT_MODEL", "").strip(),
             "credential_env": "OPENAI_API_KEY",
+            "default_chat": True,
+            "default_embedding": bool(os.getenv("OPENAI_EMBEDDING_MODEL", "").strip()),
             "implicit": True,
         })
     return result
 
 
-def _save(osii_root: Path, records: list[dict[str, Any]]) -> None:
-    target = _path(osii_root)
-    descriptor, temporary = tempfile.mkstemp(prefix="model-providers-", suffix=".json", dir=target.parent)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(records, handle, indent=2)
-            handle.write("\n")
-        os.replace(temporary, target)
-    finally:
-        Path(temporary).unlink(missing_ok=True)
+def _save(osii_root, records: list[dict[str, Any]]) -> None:
+    current = load_models_config(osii_root)
+    old_defaults = dict(current.get("defaults") or {})
+    models: dict[str, dict[str, Any]] = {}
+    language_aliases: list[str] = []
+    embedding_aliases: list[str] = []
+    requested_chat_default = ""
+    requested_embedding_default = ""
+    for record in records:
+        identifier = str(record["id"])
+        provider_type = "ollama-local" if record.get("type") == "ollama" else "openai-compatible"
+        common = {
+            "type": provider_type,
+            "base_url": str(record.get("base_url") or "").rstrip("/"),
+            "enabled": bool(record.get("enabled", True)),
+            "priority": int(record.get("priority", 100)),
+        }
+        credential_env = str(record.get("credential_env") or "").strip()
+        if credential_env:
+            common["api_key_env"] = credential_env
+        language = str(record.get("chat_model") or record.get("synthesis_model") or "").strip()
+        embedding = str(record.get("embedding_model") or "").strip()
+        if language:
+            alias = identifier
+            models[alias] = {**common, "model": language, "capabilities": ["chat", "synthesis"]}
+            language_aliases.append(alias)
+            if record.get("default_chat"):
+                requested_chat_default = alias
+        if embedding:
+            alias = identifier if not language or embedding == language else f"{identifier}-embedding"
+            capabilities = ["embedding"] if embedding != language else ["chat", "synthesis", "embedding"]
+            models[alias] = {**common, "model": embedding, "capabilities": capabilities}
+            embedding_aliases.append(alias)
+            if record.get("default_embedding"):
+                requested_embedding_default = alias
+        if not language and not embedding:
+            models[identifier] = {**common, "model": "", "capabilities": []}
+    chat_default = requested_chat_default or (
+        str(old_defaults.get("chat") or "")
+        if str(old_defaults.get("chat") or "") in language_aliases
+        else (language_aliases[0] if language_aliases else "")
+    )
+    embedding_default = requested_embedding_default or (
+        str(old_defaults.get("embedding") or "")
+        if str(old_defaults.get("embedding") or "") in embedding_aliases
+        else (embedding_aliases[0] if embedding_aliases else "")
+    )
+    current["defaults"] = {
+        **({"chat": chat_default, "synthesis": chat_default} if chat_default else {}),
+        **({"embedding": embedding_default} if embedding_default else {}),
+    }
+    current["models"] = models
+    save_models_config(current)
 
 
 def _validate(payload: dict[str, Any], provider_id: str | None = None) -> dict[str, Any]:
@@ -118,6 +195,8 @@ def _validate(payload: dict[str, Any], provider_id: str | None = None) -> dict[s
         "synthesis_model": str(payload.get("synthesis_model") or "").strip(),
         "chat_model": str(payload.get("chat_model") or "").strip(),
         "credential_env": credential_env,
+        "default_chat": bool(payload.get("default_chat", False)),
+        "default_embedding": bool(payload.get("default_embedding", False)),
     }
 
 
@@ -145,7 +224,17 @@ def _saved_credential_name(record: dict[str, Any]) -> str:
 
 
 def _provider(osii_root: Path, provider_id: str) -> dict[str, Any] | None:
-    return next((item for item in _with_runtime_defaults(_load(osii_root)) if item.get("id") == provider_id), None)
+    records = _with_runtime_defaults(_load(osii_root))
+    record = next((item for item in records if item.get("id") == provider_id), None)
+    if record is None:
+        return None
+    embedding = next(
+        (item for item in records if item.get("id") == f"{provider_id}-embedding"),
+        None,
+    )
+    if embedding and not record.get("embedding_model"):
+        record = {**record, "embedding_model": embedding.get("embedding_model", "")}
+    return record
 
 
 def _allowed_ollama_models() -> set[str]:
@@ -332,9 +421,15 @@ def update_provider(request: Request, provider_id: str, payload: dict):
 def delete_provider(request: Request, provider_id: str):
     root = request.app.state.osii_root.resolve()
     records = _load(root)
+    removed = next((item for item in records if item.get("id") == provider_id), None)
     retained = [item for item in records if item.get("id") != provider_id]
     if len(retained) == len(records):
         raise HTTPException(status_code=404, detail="model provider not found")
+    if removed is not None:
+        credential_name = _saved_credential_name(removed)
+        _, source = resolve_env_value(credential_name)
+        if source == "repo_env" and local_config_writable():
+            write_env_value(credential_name, None)
     _save(root, retained)
     return {"deleted": provider_id}
 

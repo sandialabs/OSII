@@ -57,8 +57,7 @@ def test_native_text_extractor_preserves_pdf_page_text(tmp_path: Path):
 def test_native_routes_leave_unsupported_binaries_for_explicit_handling(
     monkeypatch,
 ):
-    config = Path(__file__).resolve().parents[1] / "config" / "extractor_routes_native.toml"
-    monkeypatch.setenv("OSII_EXTRACTOR_ROUTES_PATH", str(config))
+    monkeypatch.delenv("OSII_EXTRACTOR_ROUTES_PATH", raising=False)
     routes = load_extractor_routes()
 
     assert choose_extractor_for_path(Path("report.pdf"), routes) == "local.native-text"

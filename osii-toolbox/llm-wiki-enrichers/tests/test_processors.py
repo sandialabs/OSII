@@ -1,46 +1,31 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
 from osii.processor_sdk import (
-    Capability,
     DocumentInput,
     EnrichmentRequest,
-    ProcessorDescriptor,
-    ProcessorKind,
-    ProvenanceRef,
     ScopeInput,
-    SynthesisResponse,
 )
 from wiki_enrichers.main import concept_entity_app, readable_app
 from wiki_enrichers.processors import ConceptEntityWikiEnricher, ReadableWikiEnricher
-
-
-SYNTHESIZER = ProcessorDescriptor(
-    name="test.synthesizer",
-    version="1.0.0",
-    display_name="Test synthesizer",
-    description="A deterministic test double.",
-    kind=ProcessorKind.SYNTHESIZER,
-    capabilities=Capability(scope_types=["object", "folder", "collection", "root"]),
-)
 
 
 class FakeClient:
     def __init__(self, markdown: str) -> None:
         self.markdown = markdown
         self.requests = []
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
 
-    def synthesize(self, request):
-        self.requests.append(request)
-        return SynthesisResponse(
-            request_id=request.request_id,
-            processor=SYNTHESIZER,
-            markdown=self.markdown,
-            citations=[ProvenanceRef(file_id="sha256-a")],
-            metadata={"provider": "test", "model": "test-model"},
+    def create(self, **kwargs):
+        self.requests.append(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=self.markdown))],
+            model="actual-test-model",
+            model_extra={"osii": {"connection": "top", "provider_type": "test"}},
         )
 
 
@@ -69,15 +54,16 @@ def request() -> EnrichmentRequest:
 
 def test_readable_wiki_returns_one_standard_markdown_artifact() -> None:
     fake = FakeClient("## Overview\n\nProject Atlas uses Sensor A [sha256-a].")
-    result = ReadableWikiEnricher(lambda _url, _timeout: fake).enrich(request())
+    result = ReadableWikiEnricher().enrich(request(), client=fake, model="top")
 
     wiki = result.artifacts[0].standard_data
     assert wiki.artifact_type == "wiki_markdown"
     assert wiki.markdown.startswith("# col-demo Wiki")
     assert "## Sources" in wiki.markdown
-    assert result.metadata["synthesizer"] == "test.synthesizer"
-    assert fake.requests[0].scope.scope_type == "collection"
-    assert fake.requests[0].expert_context.startswith("Treat Atlas")
+    assert result.metadata["model_connection"] == "top"
+    assert result.metadata["model"] == "actual-test-model"
+    assert fake.requests[0]["model"] == "top"
+    assert "Treat Atlas" in fake.requests[0]["messages"][1]["content"]
 
 
 def test_concept_entity_wiki_returns_three_generic_standard_artifacts() -> None:
@@ -113,7 +99,7 @@ def test_concept_entity_wiki_returns_three_generic_standard_artifacts() -> None:
         "caveats": ["Only two short reports were supplied."],
     }
     fake = FakeClient(f"```json\n{json.dumps(generated)}\n```")
-    result = ConceptEntityWikiEnricher(lambda _url, _timeout: fake).enrich(request())
+    result = ConceptEntityWikiEnricher().enrich(request(), client=fake, model="mid")
 
     assert [item.standard_data.artifact_type for item in result.artifacts] == [
         "wiki_markdown",
@@ -138,3 +124,4 @@ def test_each_processor_has_independent_live_api_docs() -> None:
         schema = client.get("/openapi.json")
         assert schema.status_code == 200
         assert "/v1/enrich" in schema.json()["paths"]
+        assert client.post("/v1/enrich", json=request().model_dump(mode="json")).status_code == 422

@@ -43,7 +43,7 @@ class TesseractRegionExtractor(Extractor):
     """Return one grounded segment for each OCR region on each source page."""
 
     descriptor = ProcessorDescriptor(
-        name="toolchest.tesseract-opencv",
+        name="toolbox.tesseract-opencv",
         version="0.2.0",
         display_name="Tesseract OCR with OpenCV regions",
         description=(

@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import uuid
-from collections.abc import Callable
 from typing import Any
 
+from openai import OpenAI
 from osii.processor_sdk import (
     Artifact,
     Capability,
@@ -18,20 +16,16 @@ from osii.processor_sdk import (
     Enricher,
     EnrichmentRequest,
     EnrichmentResponse,
-    ProcessorClient,
-    ProcessorClientError,
     ProcessorDescriptor,
     ProcessorKind,
     ProvenanceRef,
-    ScopeInput,
-    SynthesisRequest,
     TableArtifactData,
     TableColumn,
     WikiMarkdownArtifactData,
 )
 
 
-DEFAULT_SYNTHESIZER_URL = "http://127.0.0.1:8095/ollama/synthesizer"
+PROMPT_VERSION = "2026-09-15"
 READABLE_WIKI_PROMPT = """Create a useful, grounded wiki page from the supplied sources.
 
 Begin with the requested level-one title. Do not preface the wiki with commentary.
@@ -80,13 +74,6 @@ processes, and risks under concepts instead. Every entity needs source evidence.
 concepts selective and useful; do not turn every entity into a concept. Do not add outside
 background knowledge."""
 
-ClientFactory = Callable[[str, float], ProcessorClient]
-
-
-def _client(base_url: str, timeout: float) -> ProcessorClient:
-    return ProcessorClient(base_url, timeout=timeout)
-
-
 def _bounded_int(config: dict[str, Any], key: str, default: int, minimum: int, maximum: int) -> int:
     try:
         value = int(config.get(key, default))
@@ -126,17 +113,6 @@ def _bounded_documents(documents: list[DocumentInput], max_input_chars: int) -> 
     return bounded, truncated
 
 
-def _synthesizer_url(config: dict[str, Any]) -> str:
-    url = str(
-        config.get("synthesizer_url")
-        or os.getenv("OSII_WIKI_SYNTHESIZER_URL")
-        or DEFAULT_SYNTHESIZER_URL
-    ).strip().rstrip("/")
-    if not url.startswith(("http://", "https://")):
-        raise ValueError("synthesizer_url must begin with http:// or https://")
-    return url
-
-
 def _source_citations(documents: list[DocumentInput]) -> list[ProvenanceRef]:
     return [ProvenanceRef(file_id=document.file_id) for document in documents if document.file_id]
 
@@ -162,47 +138,58 @@ def _normalized_wiki(markdown: str, title: str, documents: list[DocumentInput]) 
     return value.rstrip() + "\n"
 
 
-def _call_synthesizer(
+def _call_model(
     request: EnrichmentRequest,
     documents: list[DocumentInput],
     *,
     instructions: str,
     config: dict[str, Any],
-    client_factory: ClientFactory,
+    client: OpenAI,
+    model: str,
 ) -> tuple[str, dict[str, Any], list[ProvenanceRef], str]:
-    base_url = _synthesizer_url(config)
-    timeout = _bounded_float(config, "timeout_seconds", 240.0, 10.0, 900.0)
-    synthesis_id = str(uuid.uuid4())
-    synthesis_config: dict[str, Any] = {
-        "instructions": instructions,
-        "max_tokens": _bounded_int(config, "max_tokens", 1800, 256, 16000),
-        "temperature": _bounded_float(config, "temperature", 0.2, 0.0, 2.0),
-    }
-    if str(config.get("model") or "").strip():
-        synthesis_config["model"] = str(config["model"]).strip()
-    try:
-        response = client_factory(base_url, timeout).synthesize(
-            SynthesisRequest(
-                request_id=synthesis_id,
-                scope=ScopeInput(
-                    scope_type=request.scope.scope_type,
-                    scope_id=request.scope.scope_id,
-                    documents=documents,
-                    metadata={"knowledge_product": "wiki_markdown"},
-                ),
-                expert_context=request.expert_context,
-                config=synthesis_config,
-            )
+    source_blocks = []
+    for document in documents:
+        source_blocks.append(
+            f"SOURCE {document.file_id or document.filename} ({document.filename}):\n"
+            f"{_document_text(document)}"
         )
-    except ProcessorClientError as exc:
-        raise ValueError(
-            f"Could not use the configured synthesizer at {base_url}: {exc}. "
-            "Start the model-provider bridge or choose another Processor API synthesizer URL."
-        ) from exc
-    if response.request_id != synthesis_id:
-        raise ValueError("The synthesizer returned a mismatched request_id.")
-    citations = response.citations or _source_citations(documents)
-    return response.markdown, response.metadata, citations, response.processor.name
+    expert_context = str(request.expert_context or "").strip()
+    messages: list[dict[str, str]] = [{"role": "system", "content": instructions}]
+    if expert_context:
+        messages.append({
+            "role": "user",
+            "content": f"Human-provided expert context:\n{expert_context}",
+        })
+    messages.append({
+        "role": "user",
+        "content": "Create the requested knowledge product from these sources:\n\n" + "\n\n".join(source_blocks),
+    })
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        max_tokens=_bounded_int(config, "max_tokens", 1800, 256, 16000),
+        temperature=_bounded_float(config, "temperature", 0.2, 0.0, 2.0),
+    )
+    if not response.choices or not response.choices[0].message.content:
+        raise ValueError("The selected language model returned no content.")
+    extra = getattr(response, "model_extra", None) or {}
+    gateway_metadata = extra.get("osii") if isinstance(extra, dict) else {}
+    metadata = {
+        "model_connection": model,
+        "model": str(getattr(response, "model", "") or model),
+        "prompt_version": PROMPT_VERSION,
+    }
+    if isinstance(gateway_metadata, dict):
+        metadata.update({
+            "provider_type": gateway_metadata.get("provider_type"),
+            "model_connection": gateway_metadata.get("connection") or model,
+        })
+    return (
+        str(response.choices[0].message.content),
+        metadata,
+        _source_citations(documents),
+        str(metadata["model"]),
+    )
 
 
 def _common_schema(instructions: str, *, max_tokens: int) -> dict[str, Any]:
@@ -213,18 +200,6 @@ def _common_schema(instructions: str, *, max_tokens: int) -> dict[str, Any]:
                 "type": "string",
                 "title": "Wiki title",
                 "description": "Leave blank to derive a title from the current scope.",
-                "default": "",
-            },
-            "synthesizer_url": {
-                "type": "string",
-                "title": "Processor API synthesizer URL",
-                "description": "Usually the Ollama or OpenAI-compatible synthesizer exposed by OSII's model-provider bridge.",
-                "default": os.getenv("OSII_WIKI_SYNTHESIZER_URL", DEFAULT_SYNTHESIZER_URL),
-            },
-            "model": {
-                "type": "string",
-                "title": "Optional model override",
-                "description": "Leave blank to use the model selected for that synthesizer in Setup.",
                 "default": "",
             },
             "instructions": {
@@ -255,13 +230,6 @@ def _common_schema(instructions: str, *, max_tokens: int) -> dict[str, Any]:
                 "maximum": 16000,
                 "default": max_tokens,
             },
-            "timeout_seconds": {
-                "type": "number",
-                "title": "Request timeout (seconds)",
-                "minimum": 10,
-                "maximum": 900,
-                "default": 240,
-            },
         },
         "additionalProperties": False,
     }
@@ -276,7 +244,7 @@ class ReadableWikiEnricher(Enricher):
         display_name="Readable LLM wiki",
         description=(
             "Creates a traditional, cited Markdown overview that is pleasant to read. "
-            "Requires a separately configured model-backed Processor API synthesizer."
+            "Uses the chat model connection assigned to this tool in OSII Setup."
         ),
         kind=ProcessorKind.ENRICHER,
         capabilities=Capability(
@@ -284,23 +252,22 @@ class ReadableWikiEnricher(Enricher):
             output_kinds=["wiki_markdown"],
         ),
         config_schema=_common_schema(READABLE_WIKI_PROMPT, max_tokens=1800),
+        model_requirements={"chat": "required"},
     )
 
-    def __init__(self, client_factory: ClientFactory = _client) -> None:
-        self._client_factory = client_factory
-
-    def enrich(self, request: EnrichmentRequest) -> EnrichmentResponse:
+    def enrich(self, request: EnrichmentRequest, *, client: OpenAI, model: str) -> EnrichmentResponse:
         config = request.config
         maximum = _bounded_int(config, "max_input_chars", 60000, 4000, 250000)
         documents, truncated = _bounded_documents(request.scope.documents, maximum)
         title = str(config.get("title") or f"{request.scope.scope_id} Wiki").strip()
         instructions = str(config.get("instructions") or READABLE_WIKI_PROMPT).strip()
-        markdown, metadata, citations, synthesizer = _call_synthesizer(
+        markdown, metadata, citations, actual_model = _call_model(
             request,
             documents,
             instructions=f"{instructions}\n\nThe requested level-one title is: {title}",
             config=config,
-            client_factory=self._client_factory,
+            client=client,
+            model=model,
         )
         return EnrichmentResponse(
             request_id=request.request_id,
@@ -318,7 +285,7 @@ class ReadableWikiEnricher(Enricher):
                 )
             ],
             metadata={
-                "synthesizer": synthesizer,
+                "model": actual_model,
                 "input_document_count": len(documents),
                 "input_truncated": truncated,
                 **metadata,
@@ -422,22 +389,21 @@ class ConceptEntityWikiEnricher(Enricher):
             output_kinds=["wiki_markdown", "entity_list", "table"],
         ),
         config_schema=_common_schema(CONCEPT_ENTITY_PROMPT, max_tokens=6000),
+        model_requirements={"chat": "required"},
     )
 
-    def __init__(self, client_factory: ClientFactory = _client) -> None:
-        self._client_factory = client_factory
-
-    def enrich(self, request: EnrichmentRequest) -> EnrichmentResponse:
+    def enrich(self, request: EnrichmentRequest, *, client: OpenAI, model: str) -> EnrichmentResponse:
         config = request.config
         maximum = _bounded_int(config, "max_input_chars", 60000, 4000, 250000)
         documents, truncated = _bounded_documents(request.scope.documents, maximum)
         instructions = str(config.get("instructions") or CONCEPT_ENTITY_PROMPT).strip()
-        raw, metadata, citations, synthesizer = _call_synthesizer(
+        raw, metadata, citations, actual_model = _call_model(
             request,
             documents,
             instructions=instructions,
             config=config,
-            client_factory=self._client_factory,
+            client=client,
+            model=model,
         )
         payload = _json_object(raw)
         by_id = {str(document.file_id): document for document in documents if document.file_id}
@@ -565,7 +531,7 @@ class ConceptEntityWikiEnricher(Enricher):
                 ),
             ],
             metadata={
-                "synthesizer": synthesizer,
+                "model": actual_model,
                 "input_document_count": len(documents),
                 "input_truncated": truncated,
                 "concept_count": len(concepts),

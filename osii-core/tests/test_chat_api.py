@@ -1,5 +1,6 @@
 import json
 
+from osii.configuration import save_models_config
 from osii.rag.config import get_chat_settings
 
 
@@ -58,6 +59,31 @@ def test_saved_openai_provider_uses_bundled_model_bridge(monkeypatch, temp_osii_
     assert settings.openai_compatible_base_url == "http://127.0.0.1:18095/openai/v1"
     assert settings.openai_chat_model == "meta-llama/Llama-3.1-8B-Instruct"
     assert settings.openai_compatible_api_key == ""
+
+
+def test_models_yaml_default_drives_chat_without_environment_editing(monkeypatch, temp_osii_root):
+    monkeypatch.delenv("CHAT_PROVIDER", raising=False)
+    monkeypatch.delenv("CHAT_PROVIDER_CHAIN", raising=False)
+    monkeypatch.setenv("OSII_MODEL_BRIDGE_URL", "http://127.0.0.1:18095")
+    save_models_config({
+        "version": 1,
+        "models": {
+            "top": {
+                "type": "openai-compatible",
+                "base_url": "https://models.example.test/v1",
+                "api_key_env": "OPENAI_API_KEY",
+                "model": "vendor/high-quality-instruct",
+                "capabilities": ["chat", "synthesis"],
+            }
+        },
+        "defaults": {"chat": "top", "synthesis": "top"},
+    })
+
+    settings = get_chat_settings(temp_osii_root)
+
+    assert settings.chat_provider_chain == ("openai", "extractive")
+    assert settings.openai_chat_model == "vendor/high-quality-instruct"
+    assert settings.openai_compatible_base_url == "http://127.0.0.1:18095/openai/v1"
 
 
 def test_disabling_all_saved_providers_selects_extractive_chat(monkeypatch, temp_osii_root):

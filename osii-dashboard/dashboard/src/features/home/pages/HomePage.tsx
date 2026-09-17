@@ -24,11 +24,11 @@ export function HomePage() {
             <Stack spacing={0.25}>
               <Typography variant="h6" fontWeight={700}>Start your first OSII library</Typography>
               <Typography variant="body2" color="text.secondary">
-                <code>make dev</code> started OSII&apos;s dashboard, backend, Python text extraction, full-page Tesseract OCR service, no-AI previews, lexical search tools, and local enrichments. Bare-metal OCR requires the Tesseract program to be installed on this computer; packaged OSII images already contain it. Ollama remains optional and separately installed.
+                OSII keeps your original files in their source folder and builds inspectable, reusable results beside them. Basic reading and lexical search work without a model connection.
               </Typography>
             </Stack>
             <Alert severity="info">
-              Put documents in <code>osii-data/source</code> and use <strong>Intake</strong>. Open <strong>Setup</strong> only to add OCR, Apache Tika, or an AI connection.
+              Choose your source folder and optional services in the launcher, then use <strong>Intake</strong> to process files. Open <strong>Setup</strong> only to add a model connection or change processing rules. In a local development session, <code>make dev</code> uses <code>osii-data/source</code> by default.
             </Alert>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
               <Button variant="outlined" onClick={() => navigate("/admin/processors")}>Open Setup</Button>

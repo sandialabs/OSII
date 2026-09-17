@@ -10,7 +10,7 @@ workflow:
     - if: '$CI_PIPELINE_SOURCE == "web"'
     - when: never
 
-stages: [verify, approve, build, publish]
+stages: [verify, approve, build, publish, catalog, promote]
 
 default:
   tags: [osii-linux-amd64]
@@ -72,8 +72,15 @@ python-package:
   extends: .release
   stage: build
   script:
-    - uv run --no-project --python 3.12 --with build python scripts/check_python_distribution.py
-    - uv build osii-core --out-dir release/python
+    - |
+      if uv run --no-project --python 3.12 python scripts/release_plan.py needs-package; then
+        uv run --no-project --python 3.12 --with build python scripts/check_python_distribution.py
+        uv build osii-core --out-dir release/python
+      else
+        echo "Reusing the prior osii Python package; no package build or upload."
+        mkdir -p release/python
+        printf 'Reusing the prior osii Python package.\n' > release/python/reused.txt
+      fi
   artifacts:
     paths: [release/python/]
     expire_in: 14 days
@@ -115,3 +122,25 @@ publish-release:
     name: corporate-release
   script:
     - uv run --no-project --python 3.12 --with twine --with PyYAML python scripts/corporate_release.py publish
+
+update-launcher-catalog:
+  extends: .release
+  stage: catalog
+  needs: [publish-release]
+  resource_group: corporate-release
+  script:
+    - uv run --no-project --python 3.12 python scripts/corporate_release.py catalog
+
+promote-latest:
+  extends: .release
+  stage: promote
+  needs: [publish-release]
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ && $CI_COMMIT_REF_PROTECTED == "true"'
+      when: manual
+      allow_failure: true
+  resource_group: corporate-release
+  environment:
+    name: corporate-promotion
+  script:
+    - uv run --no-project --python 3.12 python scripts/corporate_release.py promote-latest

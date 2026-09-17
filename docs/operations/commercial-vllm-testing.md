@@ -27,10 +27,11 @@ failed experiment cannot leave expensive workers running.
 
 ## 2. Configure OSII without committing a credential
 
-Copy the values from the repository-root `.env.commercial.example` file into
-the ignored repository-root `.env` file. Replace `ENDPOINT_ID` and
-`YOUR_SERVED_CHAT_MODEL`, then place the personal API key only in
-`OPENAI_API_KEY`.
+Start OSII, open **Setup**, and add an **OpenAI-compatible endpoint**. Enter
+the `/v1` base URL, served model name, and personal API key there. OSII stores
+the non-secret connection in the platform application-data `profiles/development/deployment/models.toml`
+file and the key in its adjacent `secrets.env`; neither file is part of
+a library or repository.
 
 The commercial profile makes the remote endpoint the preferred chat and
 synthesis provider. It deliberately uses OSII's local lexical embedder by
@@ -52,8 +53,8 @@ printing your API key or response body.
 
 ## 4. Run the isolated OSII lifecycle
 
-Start OSII. The configured `OPENAI_BASE_URL` makes this endpoint the preferred
-provider automatically:
+Start OSII, then select the connection in **Setup** as the model used for chat
+and synthesis:
 
 ```bash
 make dev
@@ -80,10 +81,9 @@ verify these stages in order:
    stop or delete the Runpod endpoint, revoke its API key, and remove the key
    from `.env` or the secret manager.
 
-For container parity, put the same non-secret variables and key in `.env`, then
-run `make build` followed by `make run`. The Compose services receive the generic
-OpenAI-compatible endpoint variables; credentials remain outside the image and
-OSII store.
+For container parity, configure the same connection after `make build` and
+`make run`. The mounted application configuration remains outside the images
+and every `.osii` library.
 
 ## What this validates
 

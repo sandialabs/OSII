@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tomli_w
 
 from fastapi import APIRouter, HTTPException, Request
 from osii.domain.processor_settings import (
@@ -23,6 +24,10 @@ def put_processor_settings(request: Request, processor_name: str, payload: dict)
         raise HTTPException(status_code=422, detail="config must be an object")
     if len(json.dumps(config)) > 100_000:
         raise HTTPException(status_code=422, detail="processor settings are too large")
+    try:
+        tomli_w.dumps({"settings": config})
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"settings must use TOML-compatible values: {exc}") from exc
     saved = save_processor_settings(
         request.app.state.osii_root.resolve(),
         processor_name,

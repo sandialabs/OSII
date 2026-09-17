@@ -11,6 +11,7 @@ from osii.domain.catalog_db import list_semantic_indexes
 from osii.domain.model_provider_config import processor_model, selected_processor
 from osii.indexing.common import embeddings_meta_path
 from osii.processors.remote import discover_remote_processors
+from osii.configuration import configured_tools
 
 
 def _service_probe(url: str, *, timeout: float = 3.0) -> tuple[bool, str]:
@@ -179,12 +180,23 @@ def embedding_readiness(osii_root: Path | None = None) -> dict[str, Any]:
 
 
 def _registered_endpoints(osii_root: Path) -> list[dict[str, Any]]:
-    path = osii_root / "state" / "processor_endpoints.json"
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
-    return data if isinstance(data, list) else []
+    records = []
+    for tool_id, tool in configured_tools(osii_root).items():
+        if not isinstance(tool, dict):
+            continue
+        runtime = tool.get("runtime") if isinstance(tool.get("runtime"), dict) else {}
+        endpoint = str(runtime.get("endpoint") or "").rstrip("/")
+        if endpoint:
+            records.append({
+                "id": tool_id,
+                "processor_id": tool.get("processor_id"),
+                "display_name": tool.get("display_name") or tool.get("processor_id") or tool_id,
+                "kind": tool.get("kind"),
+                "base_url": endpoint,
+                "enabled": bool(tool.get("enabled", True)),
+                "model_access": tool.get("model_access") or {"mode": "none"},
+            })
+    return records
 
 
 def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:

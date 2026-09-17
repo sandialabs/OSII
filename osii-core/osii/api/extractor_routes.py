@@ -2,18 +2,15 @@ import os
 from pathlib import Path
 import tomllib
 
-import tomli_w
 from fastapi import APIRouter
+from osii.configuration import load_tools_config, save_tools_config, tools_path
+from osii.domain.processing.extractor_selection import load_extractor_routes
 
 router = APIRouter(prefix="/api", tags=["extractor-routes"])
 
 
 def extractor_routes_path() -> Path:
-    configured = os.getenv(
-        "OSII_EXTRACTOR_ROUTES_PATH",
-        "config/extractor_routes.toml",
-    )
-    return Path(configured).expanduser().resolve()
+    return tools_path()
 
 
 def extractors_config_path() -> Path:
@@ -21,10 +18,7 @@ def extractors_config_path() -> Path:
 
 
 def load_extractor_routes_file() -> dict:
-    path = extractor_routes_path()
-    if not path.exists():
-        return {"routes": []}
-    return tomllib.loads(path.read_text(encoding="utf-8"))
+    return {"routes": load_extractor_routes()}
 
 
 def load_extractors_file() -> dict:
@@ -154,14 +148,14 @@ async def put_extractor_routes(payload: dict):
     if errors:
         return {"ok": False, "errors": errors, "warnings": warnings}
 
-    path = extractor_routes_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(tomli_w.dumps(payload), encoding="utf-8")
+    configuration = load_tools_config()
+    configuration.setdefault("routes", {})["extractor"] = payload["routes"]
+    save_tools_config(configuration)
 
     return {
         "ok": True,
         "message": "extractor routes updated.",
-        "path": str(path),
+        "path": str(tools_path()),
         "routes": payload.get("routes", []),
         "warnings": warnings,
     }

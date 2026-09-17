@@ -727,10 +727,18 @@ export type ProcessingRunsResponse = {
 
 export type ProcessorEndpoint = {
   id: string;
+  processor_id?: string;
   display_name: string;
   kind: "extractor" | "synthesizer" | "embedder" | "enricher";
   base_url: string;
   enabled: boolean;
+  model_access?: { mode: "none" | "gateway"; bindings?: Record<string, string> };
+  model_requirements?: Record<string, "required" | "optional">;
+  capabilities?: {
+    scope_types?: string[];
+    input_media_types?: string[];
+    output_kinds?: string[];
+  };
 };
 
 export type ModelProvider = {
@@ -743,6 +751,8 @@ export type ModelProvider = {
   synthesis_model: string;
   chat_model: string;
   credential_env: string;
+  default_chat?: boolean;
+  default_embedding?: boolean;
   credential_required?: boolean;
   credential_present?: boolean;
   credential_source?: "environment" | "repo_env" | null;
@@ -782,6 +792,13 @@ export type SetupSummary = {
   providers: ModelProvider[];
   services: ManagedCapabilityService[];
   service_control_available: boolean;
+  configuration: {
+    directory: string;
+    active_profile: string;
+    files: Record<"models" | "tools" | "secrets", string>;
+    errors: Record<string, string>;
+    generation: number;
+  };
   readiness: IntakeReadiness;
 };
 

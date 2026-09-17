@@ -1,0 +1,17 @@
+{
+  "name": "Iris flower measurements",
+  "source": "scikit-learn bundled datasets",
+  "row_count": 150,
+  "feature_names": [
+    "sepal length (cm)",
+    "sepal width (cm)",
+    "petal length (cm)",
+    "petal width (cm)"
+  ],
+  "target_name": "target_class",
+  "target_names": [
+    "setosa",
+    "versicolor",
+    "virginica"
+  ]
+}

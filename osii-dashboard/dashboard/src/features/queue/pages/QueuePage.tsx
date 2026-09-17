@@ -533,6 +533,11 @@ export function QueuePage() {
     (embedder) => embedder.id === readiness.data?.defaults.embedder,
   ) ?? readiness.data?.embedders[0];
   const embeddingAvailable = Boolean(embeddingStatus?.available);
+  useEffect(() => {
+    if (section === "add" && readiness.data && !embeddingAvailable && embed) {
+      setEmbed(false);
+    }
+  }, [section, readiness.data, embeddingAvailable, embed]);
   const extractorStatus = (name: string) => readiness.data?.extractors.find(
     (extractor) => (
       extractor.id === name
@@ -550,15 +555,19 @@ export function QueuePage() {
   );
 
   return (
-    <Stack spacing={3}>
+    <Stack spacing={2.5} sx={{ maxWidth: 1100, mx: "auto" }}>
       <Stack spacing={0.5}>
         <Typography variant="h5" fontWeight={700}>Intake</Typography>
         <Typography color="text.secondary">
-          Add documents, extend your current library, and monitor processing without mixing those tasks together.
+          Choose documents, select what OSII should do, then review the run before it starts.
         </Typography>
       </Stack>
 
-      <Paper variant="outlined" sx={{ px: 1 }}>
+      <Box sx={{ borderLeft: 3, borderColor: "secondary.main", pl: 2, py: 0.5 }}>
+        <Typography variant="body2" color="text.secondary">In packaged OSII, the launcher owns the source folder and optional services. Setup owns model connections and processing rules. This page chooses work for the configured library; it never changes original files.</Typography>
+      </Box>
+
+      <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
         <Tabs
           value={section}
           onChange={(_, value) => changeSection(value)}
@@ -570,7 +579,7 @@ export function QueuePage() {
           <Tab value="process" label="Process library" />
           <Tab value="activity" label="Activity" />
         </Tabs>
-      </Paper>
+      </Box>
 
       {notice ? <Alert severity={notice.severity}>{notice.text}</Alert> : null}
 
@@ -625,20 +634,9 @@ export function QueuePage() {
         </Paper>
       ) : null}
 
-      <Alert
-        severity="info"
-        action={(
-          <Button color="inherit" size="small" onClick={() => navigate("/admin/processors")}>
-            Open Setup
-          </Button>
-        )}
-      >
-        <strong>Basic document reading is included.</strong> Open Setup only when you need OCR, Apache Tika, semantic embeddings, or generated summaries.
-      </Alert>
-
       {sourceStatus ? (
-        <Paper variant="outlined" sx={{ p: 2 }}>
-          <Stack spacing={1}>
+        <Box sx={{ px: 0.5 }}>
+          <Stack spacing={0.5}>
             <Stack
               direction={{ xs: "column", sm: "row" }}
               justifyContent="space-between"
@@ -646,14 +644,9 @@ export function QueuePage() {
               spacing={1}
             >
               <Stack spacing={0.25}>
-                <Typography fontWeight={700}>
-                  {sourceStatus.kind === "shared" ? "Shared drive documents" : "Local documents"}
-                </Typography>
+                <Typography variant="body2" fontWeight={700}>Configured source</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
-                  Reading originals from <code>{sourceStatus.source_root}</code>
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
-                  Writing OSII artifacts to <code>{sourceStatus.osii_root}</code>
+                  {sourceStatus.kind === "shared" ? "Shared drive" : "Local folder"} · <code>{sourceStatus.source_root}</code>
                 </Typography>
               </Stack>
               <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
@@ -661,19 +654,19 @@ export function QueuePage() {
                   color={sourceStatus.ready_for_intake ? "success" : "error"}
                   label={sourceStatus.ready_for_intake ? "Connected and ready" : "Source needs attention"}
                 />
-                {sourceStatus.source_mode === "read_only" ? <Chip variant="outlined" label="Originals read-only" /> : null}
               </Stack>
             </Stack>
-            {sourceStatus.detail ? (
-              <Alert severity={sourceStatus.ready_for_intake ? "info" : "error"} sx={{ py: 0.25 }}>
+            {sourceStatus.detail && !sourceStatus.ready_for_intake ? (
+              <Alert severity="error" sx={{ py: 0.25 }}>
                 {sourceStatus.detail}
               </Alert>
             ) : null}
+            <Box component="details"><Typography component="summary" variant="caption" sx={{ cursor: "pointer", color: "text.secondary" }}>Source and artifact locations</Typography><Typography variant="caption" component="div" color="text.secondary">Originals: <code>{sourceStatus.source_root}</code><br />OSII artifacts: <code>{sourceStatus.osii_root}</code>{sourceStatus.source_mode === "read_only" ? " · Originals are read-only" : ""}</Typography></Box>
           </Stack>
-        </Paper>
+        </Box>
       ) : null}
 
-      <Paper variant="outlined" sx={{ p: 2 }}>
+      <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2 }}>
         <Stack spacing={2}>
           <Stack
             direction={{ xs: "column", sm: "row" }}
@@ -681,9 +674,9 @@ export function QueuePage() {
             spacing={1}
           >
             <Stack spacing={0.25}>
-              <Typography fontWeight={700}>Document scope</Typography>
+              <Typography variant="h6" fontWeight={700}>1. Choose documents</Typography>
               <Typography variant="body2" color="text.secondary">
-                The default scope is every file under the configured source root. Choose individual paths only when a broad folder selection is not suitable.
+                Start with the configured source folder. Narrow it only when this run needs a smaller set of files.
               </Typography>
             </Stack>
             {preview.data ? (
@@ -694,50 +687,6 @@ export function QueuePage() {
               />
             ) : null}
           </Stack>
-
-          <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "action.hover" }}>
-            <Stack spacing={1}>
-              <Stack
-                direction={{ xs: "column", md: "row" }}
-                justifyContent="space-between"
-                alignItems={{ md: "center" }}
-                spacing={1}
-              >
-                <Stack spacing={0.25}>
-                  <Typography variant="body2" fontWeight={700}>Originals moved or reorganized?</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Rescan the configured source root and match existing OSII objects by exact file-content hash. Previewing does not change files or rerun extraction.
-                  </Typography>
-                </Stack>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  startIcon={<RefreshOutlinedIcon />}
-                  disabled={rescanning}
-                  onClick={() => void rescanSources(false)}
-                >
-                  {rescanning ? "Scanning…" : "Rescan source paths"}
-                </Button>
-              </Stack>
-              {rescanResult ? (
-                <Alert
-                  severity={rescanResult.applied ? "success" : "info"}
-                  action={!rescanResult.applied && rescanResult.summary.moved > 0 ? (
-                    <Button
-                      color="inherit"
-                      size="small"
-                      disabled={rescanning}
-                      onClick={() => void rescanSources(true)}
-                    >
-                      Apply {rescanResult.summary.moved} path update{rescanResult.summary.moved === 1 ? "" : "s"}
-                    </Button>
-                  ) : undefined}
-                >
-                  {rescanResult.summary.moved} moved · {rescanResult.summary.missing_source} missing · {rescanResult.summary.changed} changed in place · {rescanResult.summary.new_files} new. New and changed files are left for a normal Intake run.
-                </Alert>
-              ) : null}
-            </Stack>
-          </Paper>
 
           <FormControlLabel
             control={(
@@ -783,9 +732,7 @@ export function QueuePage() {
                   </Button>
                 </Stack>
 
-                <Alert severity="info" sx={{ py: 0.25 }}>
-                  OSII browses only within <code>OSII_SOURCE_DIR</code>. A mounted shared or network drive works when that setting points to the drive and the OSII process has access; restart <code>make dev</code> after changing it.
-                </Alert>
+                <Typography variant="caption" color="text.secondary">Only the configured source folder is browsable here. If a shared drive is missing, reconnect it and check access in the launcher or your local development configuration.</Typography>
 
                 {browse.isLoading ? <LinearProgress /> : null}
                 <List
@@ -887,17 +834,27 @@ export function QueuePage() {
               </Stack>
             </AccordionDetails>
           </Accordion>
+
+          <Accordion variant="outlined" disableGutters>
+            <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}><Stack><Typography fontWeight={600}>Moved or renamed originals?</Typography><Typography variant="caption" color="text.secondary">Advanced: reconcile source paths without rerunning extraction.</Typography></Stack></AccordionSummary>
+            <AccordionDetails><Stack spacing={1}>
+              <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ md: "center" }} spacing={1}>
+                <Typography variant="body2" color="text.secondary">Rescan the source folder and match OSII objects by file-content hash. Previewing makes no changes.</Typography>
+                <Button size="small" variant="outlined" startIcon={<RefreshOutlinedIcon />} disabled={rescanning} onClick={() => void rescanSources(false)}>{rescanning ? "Scanning…" : "Rescan source paths"}</Button>
+              </Stack>
+              {rescanResult ? <Alert severity={rescanResult.applied ? "success" : "info"} action={!rescanResult.applied && rescanResult.summary.moved > 0 ? <Button color="inherit" size="small" disabled={rescanning} onClick={() => void rescanSources(true)}>Apply {rescanResult.summary.moved} path update{rescanResult.summary.moved === 1 ? "" : "s"}</Button> : undefined}>
+                {rescanResult.summary.moved} moved · {rescanResult.summary.missing_source} missing · {rescanResult.summary.changed} changed in place · {rescanResult.summary.new_files} new. New and changed files are left for a normal Intake run.
+              </Alert> : null}
+            </Stack></AccordionDetails>
+          </Accordion>
         </Stack>
       </Paper>
 
-      {section === "add" ? <Paper variant="outlined" sx={{ p: 2, bgcolor: "action.hover" }}>
+      {section === "add" ? <Accordion variant="outlined" disableGutters>
+        <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}><Stack><Typography fontWeight={600}>Save these files as a collection{createCollection ? " · selected" : ""}</Typography><Typography variant="caption" color="text.secondary">Optional: keep this Intake as a reusable scope for later work.</Typography></Stack></AccordionSummary>
+        <AccordionDetails>
         <Stack spacing={1.25}>
-          <Stack spacing={0.25}>
-            <Typography fontWeight={700}>Make this Intake a logical collection</Typography>
-            <Typography variant="body2" color="text.secondary">
-              A collection is a reusable OSII scope for enrichments, tables, Search, and Chat. It can begin with a folder, selected files across folders, uploads, or the whole source root; originals are never copied.
-            </Typography>
-          </Stack>
+          <Typography variant="body2" color="text.secondary">Collections are reusable scopes for Search, Chat, and later processing. They reference files without copying originals.</Typography>
           <FormControlLabel
             control={(
               <Checkbox
@@ -930,17 +887,14 @@ export function QueuePage() {
               />
             </Stack>
           ) : null}
-        </Stack>
-      </Paper> : null}
+        </Stack></AccordionDetails>
+      </Accordion> : null}
 
-      {section === "add" ? <Paper variant="outlined" sx={{ p: 2 }}>
+      {section === "add" ? <Accordion variant="outlined" disableGutters>
+        <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}><Stack><Typography fontWeight={600}>Upload one-off files instead{uploadedItems.length ? ` · ${uploadedItems.length} selected` : ""}</Typography><Typography variant="caption" color="text.secondary">Optional: process files outside the launcher&apos;s source folder.</Typography></Stack></AccordionSummary>
+        <AccordionDetails>
         <Stack spacing={1.5}>
-          <Stack spacing={0.25}>
-            <Typography fontWeight={700}>One-off uploads</Typography>
-            <Typography variant="body2" color="text.secondary">
-              Upload files that do not belong in the shared corpus. Uploading switches this intake to those files only.
-            </Typography>
-          </Stack>
+          <Typography variant="body2" color="text.secondary">Uploading switches this run to the uploaded files only. It does not add them to the source folder.</Typography>
           <Button
             component="label"
             variant="outlined"
@@ -977,17 +931,14 @@ export function QueuePage() {
               </Button>
             </Stack>
           ))}
-        </Stack>
-      </Paper> : null}
+        </Stack></AccordionDetails>
+      </Accordion> : null}
 
-      <Paper variant="outlined" sx={{ p: 2 }}>
+      <Accordion variant="outlined" disableGutters>
+        <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}><Stack><Typography fontWeight={600}>Filter files{filterPreset !== "all" || excludePatterns || !includeSubfolders || showHidden ? " · customized" : ""}</Typography><Typography variant="caption" color="text.secondary">Optional: include or exclude file types, subfolders, and hidden files.</Typography></Stack></AccordionSummary>
+        <AccordionDetails>
         <Stack spacing={2}>
-          <Stack spacing={0.25}>
-            <Typography fontWeight={700}>Scope rules</Typography>
-            <Typography variant="body2" color="text.secondary">
-              Rules narrow the source scope above; they never replace it. The default is all files under the configured source root with no include rule.
-            </Typography>
-          </Stack>
+          <Typography variant="body2" color="text.secondary">These rules narrow the chosen source. With the default settings, all visible files and subfolders are included.</Typography>
 
           <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
             <TextField
@@ -1049,16 +1000,16 @@ export function QueuePage() {
               label="Include hidden files"
             />
           </Stack>
-        </Stack>
-      </Paper>
+        </Stack></AccordionDetails>
+      </Accordion>
 
-      <Paper variant="outlined" sx={{ p: 1.5 }}>
+      <Box sx={{ px: 0.5 }}>
         <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1.25} alignItems={{ md: "center" }}>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
             <Chip
-              color={!runExtraction || extractorPlanReady ? "success" : "error"}
+              color={!readiness.data ? "default" : !runExtraction || extractorPlanReady ? "success" : "error"}
               variant="outlined"
-              label={runExtraction
+              label={!readiness.data ? "Checking extraction route" : runExtraction
                 ? (extractorPlanReady ? "Extraction route ready" : "Extraction route needs setup")
                 : "Using current extraction"}
             />
@@ -1070,26 +1021,18 @@ export function QueuePage() {
                 : "BM25 search ready; embeddings unavailable"}
             />
           </Stack>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Typography variant="caption" color="text.secondary">
-              File-type routes and fallbacks are managed in Setup.
-            </Typography>
-            <Button size="small" variant="outlined" startIcon={<SettingsOutlinedIcon />} onClick={() => navigate("/admin/processors")}>Open Setup</Button>
-          </Stack>
+          {runExtraction && !extractorPlanReady && readiness.data ? <Button size="small" variant="outlined" startIcon={<SettingsOutlinedIcon />} onClick={() => navigate("/admin/processors")}>Fix extraction in Setup</Button> : null}
         </Stack>
         {readiness.isLoading ? <LinearProgress sx={{ mt: 1 }} /> : null}
         {readiness.isError ? <Alert severity="error" sx={{ mt: 1 }}>Tool readiness could not be tested. Intake is paused until the tools can be checked.</Alert> : null}
         {runExtraction && unavailableExtractorPlan.length ? <Alert severity="error" sx={{ mt: 1 }}>No available extractor or fallback is configured for one or more matched file types. Open Setup to fix the route.</Alert> : null}
-      </Paper>
+      </Box>
 
-      <Paper variant="outlined" sx={{ p: 2 }}>
+      <Accordion variant="outlined" disableGutters>
+        <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}><Stack><Typography fontWeight={600}>Add expert context{expertContext.trim() ? " · included" : ""}</Typography><Typography variant="caption" color="text.secondary">Optional: subject-matter guidance for model-backed processing.</Typography></Stack></AccordionSummary>
+        <AccordionDetails>
         <Stack spacing={1.5}>
-          <Stack spacing={0.25}>
-            <Typography fontWeight={700}>Expert context</Typography>
-            <Typography variant="body2" color="text.secondary">
-              Add subject-matter guidance for the matched documents. OSII saves it with each document for later VLM extraction, synthesis, and enrichment. Tesseract OCR does not need or use it.
-            </Typography>
-          </Stack>
+          <Typography variant="body2" color="text.secondary">This guidance is saved with each matched document for later VLM extraction, synthesis, and enrichment. Tesseract OCR does not use it.</Typography>
           <TextField
             fullWidth
             multiline
@@ -1101,13 +1044,13 @@ export function QueuePage() {
             inputProps={{ maxLength: 20_000 }}
             helperText={`${expertContext.length.toLocaleString()} / 20,000 characters · New text replaces saved guidance for matched documents. Leave blank to reuse their saved context. Sent to selected processors; do not include credentials.`}
           />
-        </Stack>
-      </Paper>
+        </Stack></AccordionDetails>
+      </Accordion>
 
-      <Paper variant="outlined" sx={{ p: 2 }}>
+      <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2 }}>
         <Stack spacing={1.5}>
           <Stack spacing={0.25}>
-            <Typography fontWeight={700}>{section === "process" ? "Processing steps" : "Derived outputs"}</Typography>
+            <Typography variant="h6" fontWeight={700}>2. {section === "process" ? "Choose processing" : "Choose outputs"}</Typography>
             <Typography variant="body2" color="text.secondary">
               {section === "process"
                 ? "Only the selected steps run. Downstream work uses each document's current primary extraction."
@@ -1233,7 +1176,7 @@ export function QueuePage() {
                 onChange={(event) => setEmbed(event.target.checked)}
               />
             )}
-            label="Build semantic embeddings"
+            label="Build retrieval embeddings"
           />
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
             {embeddingAvailable
@@ -1275,10 +1218,10 @@ export function QueuePage() {
         </Stack>
       </Paper>
 
-      <Paper variant="outlined" sx={{ p: 2 }}>
+      <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: 2, borderColor: "secondary.main" }}>
         <Stack spacing={1.5}>
           <Stack spacing={0.25}>
-            <Typography fontWeight={700}>Review and start</Typography>
+            <Typography variant="h6" fontWeight={700}>3. Review and start</Typography>
             <Typography variant="body2" color="text.secondary">
               Review exactly what will run before adding it to the sequential processing queue.
             </Typography>

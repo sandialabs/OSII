@@ -20,6 +20,12 @@ services:
         OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
     environment:
       OSII_ROOT: /data/.osii
+      OSII_CONFIG_DIR: /config
+      OSII_ENV_FILE: /config/secrets.env
+      OSII_ACTIVE_PROFILE: ${OSII_ACTIVE_PROFILE:-containers}
+      OSII_ALLOW_LOCAL_CONFIG_WRITES: ${OSII_ALLOW_LOCAL_CONFIG_WRITES:-true}
+      OSII_MODEL_GATEWAY_PUBLIC_URL: http://model-provider-bridge:8095/v1
+      OSII_MODEL_GATEWAY_SECRET: ${OSII_MODEL_GATEWAY_SECRET:-osii-compose-development}
       SHARED_VOLUME_ROOT: /data/source
       OSII_SOURCE_KIND: ${OSII_SOURCE_KIND:-auto}
       UPLOAD_ORIGINALS_ROOT: /data/uploads
@@ -29,7 +35,6 @@ services:
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-minilm}
       OSII_DEFAULT_EXTRACTOR: ${OSII_DEFAULT_EXTRACTOR:-local.native-text}
       OSII_DEFAULT_ENRICHER: ${OSII_DEFAULT_ENRICHER:-local.stats-keywords}
-      OSII_EXTRACTOR_ROUTES_PATH: /app/config/extractor_routes_native.toml
       TIKA_URL: http://tika:9998
       OSII_MODEL_BASE_URL: ${OSII_MODEL_BASE_URL:-}
       OSII_CHAT_BASE_URL: ${OSII_CHAT_BASE_URL:-}
@@ -53,6 +58,7 @@ services:
     volumes:
       - osii-data:/data
       - "${OSII_SOURCE_DIR:-./osii-data/source}:/data/source:ro"
+      - "${OSII_CONFIG_DIR_HOST:-./osii-data/config}:/config"
     depends_on:
       local-embedder:
         condition: service_healthy
@@ -71,6 +77,11 @@ services:
     command: ["python", "-m", "osii.worker"]
     environment:
       OSII_ROOT: /data/.osii
+      OSII_CONFIG_DIR: /config
+      OSII_ENV_FILE: /config/secrets.env
+      OSII_ACTIVE_PROFILE: ${OSII_ACTIVE_PROFILE:-containers}
+      OSII_MODEL_GATEWAY_PUBLIC_URL: http://model-provider-bridge:8095/v1
+      OSII_MODEL_GATEWAY_SECRET: ${OSII_MODEL_GATEWAY_SECRET:-osii-compose-development}
       SHARED_VOLUME_ROOT: /data/source
       OSII_SOURCE_KIND: ${OSII_SOURCE_KIND:-auto}
       UPLOAD_ORIGINALS_ROOT: /data/uploads
@@ -81,7 +92,6 @@ services:
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-minilm}
       OSII_DEFAULT_EXTRACTOR: ${OSII_DEFAULT_EXTRACTOR:-local.native-text}
       OSII_DEFAULT_ENRICHER: ${OSII_DEFAULT_ENRICHER:-local.stats-keywords}
-      OSII_EXTRACTOR_ROUTES_PATH: /app/config/extractor_routes_native.toml
       OSII_MODEL_BASE_URL: ${OSII_MODEL_BASE_URL:-}
       OSII_CHAT_BASE_URL: ${OSII_CHAT_BASE_URL:-}
       OSII_MODEL_API_KEY: ${OSII_MODEL_API_KEY:-}
@@ -93,6 +103,7 @@ services:
     volumes:
       - osii-data:/data
       - "${OSII_SOURCE_DIR:-./osii-data/source}:/data/source:ro"
+      - "${OSII_CONFIG_DIR_HOST:-./osii-data/config}:/config:ro"
     depends_on:
       api:
         condition: service_healthy
@@ -188,8 +199,6 @@ services:
         OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
         OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
     command: ["readable"]
-    environment:
-      OSII_WIKI_SYNTHESIZER_URL: ${OSII_WIKI_SYNTHESIZER_URL:-http://host.containers.internal:8095/ollama/synthesizer}
     ports: ["${OSII_READABLE_WIKI_PORT:-8099}:8099"]
     profiles: ["toolbox"]
 
@@ -200,8 +209,6 @@ services:
       dockerfile: osii-toolbox/llm-wiki-enrichers/Dockerfile
       args: *llm-wiki-build-args
     command: ["concept-entity"]
-    environment:
-      OSII_WIKI_SYNTHESIZER_URL: ${OSII_WIKI_SYNTHESIZER_URL:-http://host.containers.internal:8095/ollama/synthesizer}
     ports: ["${OSII_CONCEPT_ENTITY_WIKI_PORT:-8100}:8100"]
     profiles: ["toolbox"]
 
@@ -281,6 +288,10 @@ services:
     healthcheck: *processor-health
     environment:
       OSII_ROOT: /data/.osii
+      OSII_CONFIG_DIR: /config
+      OSII_ENV_FILE: /config/secrets.env
+      OSII_ACTIVE_PROFILE: ${OSII_ACTIVE_PROFILE:-containers}
+      OSII_MODEL_GATEWAY_SECRET: ${OSII_MODEL_GATEWAY_SECRET:-osii-compose-development}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.containers.internal:11434}
       OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-all-minilm}
       OLLAMA_SYNTHESIS_MODEL: ${OLLAMA_SYNTHESIS_MODEL:-llama3.2:1b}
@@ -297,6 +308,7 @@ services:
       PORT: "8095"
     volumes:
       - osii-data:/data:ro
+      - "${OSII_CONFIG_DIR_HOST:-./osii-data/config}:/config:ro"
 
 volumes:
   osii-data:

@@ -15,6 +15,14 @@ from osii.domain.storage.objects import append_manifest_record, write_meta_toml,
 from osii.domain.storage.store import ensure_osii_store_layout
 
 
+@pytest.fixture(autouse=True)
+def isolated_application_config(tmp_path: Path, monkeypatch):
+    """Keep models.toml, tools.toml, and secrets.env inside each test sandbox."""
+    monkeypatch.setenv("OSII_CONFIG_DIR", str(tmp_path / "app-config"))
+    monkeypatch.setenv("OSII_ENV_FILE", str(tmp_path / "app-config" / "secrets.env"))
+    monkeypatch.setenv("OSII_ACTIVE_PROFILE", "development")
+
+
 @pytest.fixture
 def temp_data_root(tmp_path: Path) -> Path:
     root = tmp_path / "data_volume" / "my_data"

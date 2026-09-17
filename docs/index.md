@@ -7,6 +7,7 @@ matches what you want to do.
 ## Start here
 
 - Read the repository README included with your checkout for the first-run path.
+- [Choose a deployment or release runbook](operations/runbooks.md)
 - [Run the corporate pilot bundle](operations/publishing-images.md)
 - [Use a shared drive or Samba share](operations/shared-drives.md)
 - [Follow the friendly Python walkthrough](tutorials/python-demonstrations.md)

@@ -53,6 +53,10 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--image-set", choices=("release", "toolbox", "all"), default="release"
     )
+    result.add_argument(
+        "--include", nargs="*", metavar="IMAGE",
+        help="Build only these image names from the selected set (an empty list builds none).",
+    )
     result.add_argument("--dry-run", action="store_true")
     result.add_argument("--phase", choices=("all", "build", "manifest"), default="all",
                         help="Native CI runners build one architecture; a later job assembles manifests.")
@@ -138,11 +142,15 @@ def main() -> int:
     if not args.dry_run:
         run(["podman", "info"], dry_run=False)
 
-    images = {
+    image_set = {
         "release": RELEASE_IMAGES,
         "toolbox": TOOLBOX_IMAGES,
         "all": RELEASE_IMAGES + TOOLBOX_IMAGES,
     }[args.image_set]
+    known = {name for name, _, _ in image_set}
+    if args.include is not None and set(args.include) - known:
+        raise SystemExit("Unknown release images: " + ", ".join(sorted(set(args.include) - known)))
+    images = tuple(item for item in image_set if args.include is None or item[0] in args.include)
     if args.require_new and not args.dry_run:
         for image_name, _, _ in images:
             target = f"{prefix}-{image_name}:{args.image_tag}"

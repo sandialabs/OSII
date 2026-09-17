@@ -4,10 +4,9 @@
 
 Extractor routing determines which extractor processes each source file during an ingest run.
 
-Current extractors:
-- `native_text`
-- `tika_catchall`
-- `pdf_default`
+The default route uses `local.native-text` for supported text-bearing formats
+and tries `tika` if that fails. Other formats route to `tika`. An unavailable
+Tika service is reported as such; scanned PDFs need OCR.
 
 Routing is configured externally so extractor selection is not hardcoded in the run pipeline.
 
@@ -18,7 +17,7 @@ Routing is configured externally so extractor selection is not hardcoded in the 
 Location:
 
 ```text
-config/extractor_routes.toml
+<OSII application data>/profiles/<profile-id>/deployment/tools.toml
 ```
 
 ---
@@ -27,17 +26,20 @@ config/extractor_routes.toml
 
 The file contains ordered routes:
 
+Only custom overrides need to be saved. To send PDFs through the optional
+OpenCV OCR processor, use:
+
 ```toml
-[[routes]]
-name = "pdf-default"
-extractor = "pdf_default"
-fallbacks = ["tika", "local.native-text"]
+[[routes.extractor]]
+name = "pdf-ocr"
+extractor = "toolbox.tesseract-opencv"
+fallbacks = ["local.native-text"]
 extensions = [".pdf"]
 
-[[routes]]
-name = "default-tika"
-extractor = "tika_catchall"
-fallbacks = ["local.native-text"]
+[[routes.extractor]]
+name = "other-native"
+extractor = "local.native-text"
+fallbacks = ["tika"]
 extensions = ["*"]
 ```
 
@@ -92,16 +94,16 @@ Recommended pattern:
 Example:
 
 ```toml
-[[routes]]
+[[routes.extractor]]
 name = "dense-pdf"
-extractor = "pdf_default"
-fallbacks = ["tika_catchall", "local.native-text"]
+extractor = "toolbox.tesseract-opencv"
+fallbacks = ["local.native-text"]
 extensions = [".pdf"]
 
-[[routes]]
-name = "default-tika"
-extractor = "tika_catchall"
-fallbacks = ["local.native-text"]
+[[routes.extractor]]
+name = "other-native"
+extractor = "local.native-text"
+fallbacks = ["tika"]
 extensions = ["*"]
 ```
 
@@ -109,10 +111,11 @@ extensions = ["*"]
 
 ## Supported extractor names
 
-Current expected extractor identifiers:
-- `native_text`
-- `pdf_default`
-- `tika_catchall`
+Common extractor identifiers:
+- `local.native-text`
+- `tika`
+- `local.tesseract-page-ocr`
+- `toolbox.tesseract-opencv` when that optional service is registered
 
 These names should match the dispatcher implementation in:
 

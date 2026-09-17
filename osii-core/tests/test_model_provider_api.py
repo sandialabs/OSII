@@ -1,4 +1,6 @@
 import json
+import os
+from pathlib import Path
 import time
 
 from osii.domain.model_provider_config import selected_processor
@@ -29,20 +31,21 @@ class FakeResponse:
 
 def test_default_ollama_provider_uses_small_us_models(client):
     payload = client.get("/api/admin/model-providers").json()
-    provider = next(item for item in payload["providers"] if item["id"] == "ollama-local")
-    assert provider["enabled"] is True
-    assert provider["embedding_model"] == "all-minilm"
-    assert provider["chat_model"] == "llama3.2:1b"
+    embedder = next(item for item in payload["providers"] if item["id"] == "minilm")
+    language = next(item for item in payload["providers"] if item["id"] == "base")
+    assert embedder["enabled"] is True
+    assert embedder["embedding_model"] == "all-minilm"
+    assert language["chat_model"] == "llama3.2:1b"
     assert {item["model"] for item in payload["ollama_recommendations"]} == {"all-minilm", "llama3.2:1b"}
 
 
 def test_explicitly_disabling_model_providers_restores_local_baselines(client, temp_osii_root):
-    response = client.put("/api/admin/model-providers/ollama-local", json={
+    response = client.put("/api/admin/model-providers/base", json={
         "type": "ollama",
         "base_url": "http://127.0.0.1:11434",
         "enabled": False,
         "priority": 100,
-        "embedding_model": "all-minilm",
+        "embedding_model": "",
         "synthesis_model": "llama3.2:1b",
         "chat_model": "llama3.2:1b",
         "credential_env": "",
@@ -63,14 +66,42 @@ def test_model_provider_configuration_never_persists_secret(client, temp_osii_ro
         "synthesis_model": "chat-v1",
         "chat_model": "chat-v1",
         "credential_env": "MY_CORPORATE_KEY",
+        "default_chat": True,
+        "default_embedding": True,
     })
     assert response.status_code == 200
     assert response.json()["provider"]["credential_present"] is True
-    raw = (temp_osii_root / "state" / "model_providers.json").read_text()
+    raw = (Path(os.environ["OSII_CONFIG_DIR"]) / "models.toml").read_text()
     assert "super-secret-value" not in raw
     assert "MY_CORPORATE_KEY" in raw
-    assert '"embedding_model": "embed-v1"' in raw
+    assert 'model = "embed-v1"' in raw
     assert selected_processor("embedder", osii_root=temp_osii_root) == "openai.embedder"
+    assert selected_processor("synthesizer", osii_root=temp_osii_root) == "openai.synthesizer"
+
+
+def test_additional_connection_only_becomes_default_when_selected(client, temp_osii_root):
+    payload = {
+        "type": "openai",
+        "base_url": "https://premium-models.example.test/v1",
+        "enabled": True,
+        "priority": 10,
+        "embedding_model": "",
+        "synthesis_model": "vendor/top-model",
+        "chat_model": "vendor/top-model",
+        "credential_env": "OPENAI_API_KEY",
+        "default_chat": False,
+        "default_embedding": False,
+    }
+    assert client.put("/api/admin/model-providers/top", json=payload).status_code == 200
+    assert selected_processor("synthesizer", osii_root=temp_osii_root) == "ollama.synthesizer"
+
+    selected = client.put(
+        "/api/admin/model-providers/top",
+        json={**payload, "default_chat": True},
+    )
+
+    assert selected.status_code == 200
+    assert selected.json()["provider"]["default_chat"] is True
     assert selected_processor("synthesizer", osii_root=temp_osii_root) == "openai.synthesizer"
 
 
@@ -101,7 +132,7 @@ def test_local_env_credential_is_write_only_and_used_for_health(client, temp_osi
     assert "saved-secret" not in response.text
     assert "UNCHANGED=value" in env_file.read_text(encoding="utf-8")
     assert 'OPENAI_API_KEY="saved-secret"' in env_file.read_text(encoding="utf-8")
-    assert "saved-secret" not in (temp_osii_root / "state" / "model_providers.json").read_text()
+    assert "saved-secret" not in (Path(os.environ["OSII_CONFIG_DIR"]) / "models.toml").read_text()
 
     seen = {}
 
@@ -118,6 +149,32 @@ def test_local_env_credential_is_write_only_and_used_for_health(client, temp_osi
     removed = client.delete("/api/admin/model-providers/openai-demo/credential")
     assert removed.status_code == 200
     assert "OPENAI_API_KEY" not in env_file.read_text(encoding="utf-8")
+
+
+def test_removing_connection_also_forgets_its_locally_saved_key(client, tmp_path, monkeypatch):
+    env_file = tmp_path / "secrets.env"
+    monkeypatch.setenv("OSII_ENV_FILE", str(env_file))
+    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    client.put("/api/admin/model-providers/top", json={
+        "type": "openai",
+        "base_url": "https://models.example.test/v1",
+        "enabled": True,
+        "priority": 10,
+        "embedding_model": "",
+        "synthesis_model": "chat-v1",
+        "chat_model": "chat-v1",
+        "credential_env": "OPENAI_API_KEY",
+    })
+    client.put(
+        "/api/admin/model-providers/top/credential",
+        json={"api_key": "saved-secret"},
+    )
+
+    removed = client.delete("/api/admin/model-providers/top")
+
+    assert removed.status_code == 200
+    assert "saved-secret" not in env_file.read_text(encoding="utf-8")
 
 
 def test_openai_environment_exposes_generic_runtime_defaults(client, monkeypatch):
@@ -192,7 +249,7 @@ def test_ollama_models_are_discovered_and_allowlisted_pull_runs(client, monkeypa
         "osii.api.model_provider_routes.requests.get",
         lambda *_, **__: FakeResponse(payload={"models": [{"name": "all-minilm:latest", "size": 46_000_000, "digest": "abc", "details": {"family": "bert", "parameter_size": "22M"}}]}),
     )
-    health = client.post("/api/admin/model-providers/ollama-local/health").json()
+    health = client.post("/api/admin/model-providers/minilm/health").json()
     assert health["ok"] is True
     assert health["model_details"][0]["parameter_size"] == "22M"
     assert health["capabilities"]["embedding"] == {
@@ -207,17 +264,17 @@ def test_ollama_models_are_discovered_and_allowlisted_pull_runs(client, monkeypa
         "osii.api.model_provider_routes.requests.post",
         lambda *_, **__: FakeResponse(lines=[json.dumps({"status": "pulling manifest"}).encode(), json.dumps({"status": "success", "completed": 10, "total": 10}).encode()]),
     )
-    started = client.post("/api/admin/model-providers/ollama-local/models/pull", json={"model": "all-minilm"})
+    started = client.post("/api/admin/model-providers/minilm/models/pull", json={"model": "all-minilm"})
     assert started.status_code == 200
     job = started.json()
     for _ in range(50):
-        job = client.get(f"/api/admin/model-providers/ollama-local/models/pull/{job['job_id']}").json()
+        job = client.get(f"/api/admin/model-providers/minilm/models/pull/{job['job_id']}").json()
         if job["status"] not in {"queued", "running"}:
             break
         time.sleep(0.01)
     assert job["status"] == "complete"
 
-    denied = client.post("/api/admin/model-providers/ollama-local/models/pull", json={"model": "deepseek-r1"})
+    denied = client.post("/api/admin/model-providers/minilm/models/pull", json={"model": "deepseek-r1"})
     assert denied.status_code == 403
 
 
@@ -230,14 +287,14 @@ def test_ollama_pull_stream_error_is_reported(client, monkeypatch):
     )
 
     started = client.post(
-        "/api/admin/model-providers/ollama-local/models/pull",
+        "/api/admin/model-providers/minilm/models/pull",
         json={"model": "all-minilm"},
     )
     assert started.status_code == 200
     job = started.json()
     for _ in range(50):
         job = client.get(
-            f"/api/admin/model-providers/ollama-local/models/pull/{job['job_id']}"
+            f"/api/admin/model-providers/minilm/models/pull/{job['job_id']}"
         ).json()
         if job["status"] not in {"queued", "running"}:
             break

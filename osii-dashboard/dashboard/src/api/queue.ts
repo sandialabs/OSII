@@ -103,8 +103,16 @@ export async function listProcessorEndpoints(): Promise<{ processors: ProcessorE
   return apiJson("/api/admin/processors");
 }
 
-export async function createProcessorEndpoint(payload: Omit<ProcessorEndpoint, "id"> & { id?: string }) {
+export async function createProcessorEndpoint(payload: { base_url: string; id?: string; model_connection?: string }) {
   return apiJson<{ processor: ProcessorEndpoint }>("/api/admin/processors", { method: "POST", json: payload });
+}
+
+export async function deleteProcessorEndpoint(id: string) {
+  return apiJson<{ deleted: string }>(`/api/admin/processors/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function updateProcessorEndpoint(id: string, payload: { model_connection: string }) {
+  return apiJson<{ processor: ProcessorEndpoint }>(`/api/admin/processors/${encodeURIComponent(id)}`, { method: "PUT", json: payload });
 }
 
 export async function checkProcessorEndpoint(id: string, test = false) {
@@ -120,6 +128,10 @@ export async function listModelProviders(): Promise<{ providers: ModelProvider[]
 
 export async function createModelProvider(payload: ModelProvider) {
   return apiJson<{ provider: ModelProvider }>(`/api/admin/model-providers/${encodeURIComponent(payload.id)}`, { method: "PUT", json: payload });
+}
+
+export async function deleteModelProvider(id: string) {
+  return apiJson<{ deleted: string }>(`/api/admin/model-providers/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 export async function checkModelProvider(id: string) {

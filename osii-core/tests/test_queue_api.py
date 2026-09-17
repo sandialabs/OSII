@@ -53,8 +53,8 @@ def test_browse_and_preview_report_processed_files(
     assert preview.json()["preview"]["extractor_plan"] == [
         {
             "extension": ".pdf",
-            "extractor": "tika",
-            "fallbacks": [],
+            "extractor": "local.native-text",
+            "fallbacks": ["tika"],
             "count": 1,
             "sample": ["finished.PDF"],
         }
@@ -164,6 +164,7 @@ def test_intake_readiness_hides_compatibility_duplicates_and_labels_model(
     client,
     monkeypatch,
 ):
+    from osii.configuration import load_models_config, save_models_config
     from osii.domain.processing import capability_readiness
 
     descriptors = [
@@ -222,7 +223,9 @@ def test_intake_readiness_hides_compatibility_duplicates_and_labels_model(
         "_ollama_model_status",
         lambda model: (True, f"Ollama model {model} is installed."),
     )
-    monkeypatch.setenv("OLLAMA_SYNTHESIS_MODEL", "llama3.2:3b")
+    models = load_models_config()
+    models["models"]["base"]["model"] = "llama3.2:3b"
+    save_models_config(models)
 
     payload = client.get("/api/intake/readiness").json()
 

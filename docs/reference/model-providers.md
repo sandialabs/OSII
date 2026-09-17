@@ -9,8 +9,98 @@ OSII deliberately distinguishes model providers from Processor API services.
 - A **guaranteed local capability** needs neither of those.
 
 Do not register an OpenAI-compatible endpoint or Ollama as a custom Processor endpoint. Connect them
-through **Setup → Model connections**; the bundled bridge supplies the Processor API
-boundary internally.
+through **Setup → Model connections**. Model-backed processors then use OSII's
+OpenAI-compatible **Model Gateway**; provider credentials never enter their
+containers.
+
+## Where configuration lives
+
+Model and tool configuration belongs to the active library profile, not the
+source documents or portable `.osii` sidecar. The launcher keeps an existing
+`profiles/<profile-id>/deployment/` directory beside its local `data/` directory:
+
+```text
+deployment/
+├── models.toml      # connection aliases, model names, and defaults
+├── tools.toml       # processors, bindings, routing, and setting overrides
+└── secrets.env      # API keys; never returned by the API
+```
+
+For `make dev`, the profile is named `development`: on macOS its path is
+`~/Library/Application Support/org.osii.launcher/profiles/development/deployment`,
+on Windows `%APPDATA%\org.osii.launcher\profiles\development\deployment`, and
+on Linux `${XDG_DATA_HOME:-~/.local/share}/org.osii.launcher/profiles/development/deployment`.
+Set `OSII_CONFIG_DIR` to use a different directory. The selected source may be
+on a read-only shared drive; all three configuration files remain local.
+
+`models.toml` names reusable connections such as `base`, `mid`, `top`, and
+`minilm`. `tools.toml` binds a processor capability to one of those aliases.
+Changing a binding takes effect on the next operation; the processor does not
+restart. Both files are re-read when used. If an edit contains invalid TOML,
+OSII keeps the last valid generation and reports the line and column in the
+Setup API.
+
+A practical `models.toml` can mix endpoints by cost or quality. Each key is a
+stable connection name, not a vendor name:
+
+```toml
+version = 1
+
+[defaults]
+chat = "base"
+synthesis = "base"
+embedding = "minilm"
+
+[models.base]
+type = "openai-compatible"
+base_url = "https://models.example.com/v1"
+api_key_env = "OPENAI_BASE_API_KEY"
+model = "vendor/small-instruct"
+capabilities = ["chat", "synthesis"]
+
+[models.minilm]
+type = "ollama-local"
+base_url = "http://127.0.0.1:11434"
+model = "all-minilm"
+capabilities = ["embedding"]
+```
+
+The corresponding `tools.toml` states whether a processor is self-contained or
+which connection it may use:
+
+```toml
+version = 1
+
+[tools.readable-llm-wiki]
+enabled = true
+processor_id = "toolbox.readable-wiki"
+runtime = { mode = "external", endpoint = "http://127.0.0.1:8099" }
+model_access = { mode = "gateway", bindings = { chat = "top" } }
+
+[[routes.extractor]]
+name = "pdf-with-ocr"
+extractor = "toolbox.tesseract-opencv"
+fallbacks = ["local.native-text"]
+extensions = [".pdf"]
+```
+
+You can create and bind all of this in Workbench Setup. TOML is also a
+deliberately readable power-user interface for review, source-controlled
+deployment templates, and local processor development. Never put key values in
+either TOML file; Setup writes them to `secrets.env` under the declared
+environment-variable names. Setup has separate **Use as default** switches for
+language and embedding connections; adding a high-cost `top` connection does
+not silently make every ordinary chat request use it.
+
+The launcher can **Export profile** to one versioned TOML snapshot and **Import
+profile** as a new library. It preserves exact source paths and service URLs,
+which may reveal internal locations; inspect the file before sharing. It never
+exports credentials, original documents, `.osii` artifacts, or caches. An
+imported profile needs its credentials re-entered and any unreachable source or
+endpoint remapped before it can run. Free-form processor setting overrides
+(which can contain sensitive prompt text) are deliberately not exported.
+Older YAML/JSON settings are imported on
+first use; new edits go only to TOML.
 
 ## Ollama
 
@@ -73,10 +163,10 @@ model,” which is the readiness condition Intake uses. For compatible servers
 that reject OpenAI's optional `encoding_format` field, the bridge retries using
 only the required `model` and `input` fields.
 
-Set `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_EMBEDDING_MODEL`,
-`OPENAI_SYNTHESIS_MODEL`, and `OPENAI_CHAT_MODEL`, or enter the same values in
-Setup. OSII stores only the configured environment-variable name in `.osii`; a
-locally saved value lives in the repository-root `.env`.
+Enter the endpoint, model, and credential in Setup. `models.toml` stores only
+the environment-variable name; a locally saved value lives in `secrets.env`.
+`OPENAI_API_KEY` is the conventional default name. Process environment values
+take precedence over the file.
 
 Extraction remains local through the Python extractor, Apache Tika, Tesseract,
 or a custom Processor API extractor. `make dev` automatically selects the
@@ -105,10 +195,33 @@ prompts and bounds through Processor API descriptors. Saved defaults apply to
 Intake, file actions, and direct enrichment jobs; an explicit request
 configuration overrides them.
 
+## Model Gateway for Toolbox processors
+
+The bridge also exposes the ordinary OpenAI client surface at
+`/v1/chat/completions`, `/v1/embeddings`, and `/v1/models`. Core supplies each
+model-backed processor with a short-lived job token and the gateway URL. The
+token is restricted to that tool, job, capability, connection alias, request
+count, and expiration. Core revokes it as soon as the synchronous processor
+operation returns; its short expiration remains the fallback if the gateway is
+temporarily unreachable during revocation. The gateway translates an alias
+such as `top` to the actual provider model and attaches the provider credential
+itself.
+
+This lets a processor use normal, directly testable code:
+
+```python
+response = client.chat.completions.create(
+    model=model,
+    messages=[{"role": "user", "content": "Create a grounded wiki."}],
+)
+```
+
+The processor receives neither the upstream base URL nor its API key.
+
 ## Secret handling
 
-Provider JSON stores no secret values. In host development, Setup may write a
-credential to the repository-root `.env`, which `.gitignore` excludes. The
+`models.toml` stores no secret values. In host development, Setup may write a
+credential to `secrets.env`. The
 backend and provider bridge reread that file, so no restart is required.
 Process environment values take precedence and cannot be replaced from the UI.
 Managed/container deployments disable file writes. OSII never writes

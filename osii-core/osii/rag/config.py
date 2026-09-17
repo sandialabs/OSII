@@ -1,10 +1,8 @@
-import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-
+from osii.configuration import load_models_config, model_connection
 
 @dataclass(frozen=True)
 class ChatSettings:
@@ -20,54 +18,40 @@ class ChatSettings:
     openai_compatible_api_key: str
 
 
-def _provider_records(osii_root: Path) -> list[dict[str, Any]] | None:
-    path = osii_root / "state" / "model_providers.json"
-    if not path.exists():
-        return None
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
-    return value if isinstance(value, list) else []
-
-
 def get_chat_settings(osii_root: Path) -> ChatSettings:
-    primary = os.getenv("CHAT_PROVIDER", "ollama").strip().lower()
-    configured_chain = os.getenv("CHAT_PROVIDER_CHAIN", primary)
-    chain = tuple(
-        item.strip().lower()
-        for item in configured_chain.split(",")
-        if item.strip()
-    )
     ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
     ollama_model = os.getenv("OLLAMA_CHAT_MODEL", "llama3.2:1b").strip() or "llama3.2:1b"
     openai_url = f"{os.getenv('OSII_MODEL_BRIDGE_URL', 'http://127.0.0.1:8095').rstrip('/')}/openai/v1"
     openai_model = os.getenv("OPENAI_CHAT_MODEL", os.getenv("OSII_CHAT_MODEL", "")).strip()
     openai_key = ""
 
-    records = _provider_records(osii_root)
-    if records is not None:
-        enabled = sorted(
-            (item for item in records if item.get("enabled")),
-            key=lambda item: int(item.get("priority", 100)),
-        )
-        if not enabled:
-            chain = ("extractive",)
+    configuration = load_models_config(osii_root)
+    chat_alias = str(configuration.get("defaults", {}).get("chat") or "")
+    connection = model_connection(chat_alias, osii_root) if chat_alias else None
+    if connection and "chat" in connection.get("capabilities", []):
+        provider_type = str(connection.get("type") or "")
+        if provider_type == "ollama-local":
+            chain = ("ollama", "extractive")
+            ollama_url = str(connection.get("base_url") or ollama_url).rstrip("/")
+            ollama_model = str(connection.get("model") or ollama_model).strip() or ollama_model
+        elif provider_type == "openai-compatible":
+            chain = ("openai", "extractive")
+            openai_model = str(connection.get("model") or openai_model).strip()
         else:
-            configured: list[str] = []
-            for item in enabled:
-                kind = str(item.get("type") or "").strip().lower()
-                if kind == "ollama":
-                    configured.append("ollama")
-                    ollama_url = str(item.get("base_url") or ollama_url).rstrip("/")
-                    ollama_model = (
-                        str(item.get("chat_model") or ollama_model).strip()
-                        or ollama_model
-                    )
-                elif kind in {"openai", "openai_compatible"}:
-                    configured.append("openai")
-                    openai_model = str(item.get("chat_model") or openai_model).strip()
-            chain = tuple(dict.fromkeys([*configured, "extractive"]))
+            chain = ("extractive",)
+    else:
+        chain = ("extractive",)
+
+    # Explicit deployment overrides remain available for one release. Ordinary
+    # Setup and launcher workflows use models.toml instead.
+    configured_chain = os.getenv("CHAT_PROVIDER_CHAIN", "").strip()
+    configured_primary = os.getenv("CHAT_PROVIDER", "").strip()
+    if (configured_chain or configured_primary) and configuration.get("models"):
+        chain = tuple(
+            item.strip().lower()
+            for item in (configured_chain or configured_primary).split(",")
+            if item.strip()
+        )
 
     aliases = {"openai_compatible": "openai"}
     chain = tuple(aliases.get(item, item) for item in chain)

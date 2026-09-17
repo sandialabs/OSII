@@ -36,3 +36,11 @@ def test_processor_settings_reject_non_object_config(client):
     )
 
     assert response.status_code == 422
+
+
+def test_processor_settings_reject_toml_incompatible_null(client):
+    response = client.put(
+        "/api/admin/processor-settings/local.native-text",
+        json={"config": {"temperature": None}},
+    )
+    assert response.status_code == 422

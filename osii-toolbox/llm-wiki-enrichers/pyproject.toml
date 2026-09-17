@@ -7,7 +7,7 @@ name = "osii-llm-wiki-enrichers"
 version = "0.1.0"
 description = "Two optional OSII Processor API enrichers for readable and concept/entity wikis."
 requires-python = ">=3.11,<3.14"
-dependencies = ["osii", "uvicorn[standard]>=0.35,<1"]
+dependencies = ["openai>=1,<3", "osii", "uvicorn[standard]>=0.35,<1"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<9", "httpx>=0.27,<1"]

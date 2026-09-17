@@ -18,8 +18,9 @@ enricher and remains the only component that writes `.osii`.
 1. Start OSII with `make dev` on macOS/Linux or
    `.\scripts\osii.ps1 dev` on Windows.
 2. Open **Setup**, connect Ollama or an OpenAI-compatible provider, and select
-   a synthesis model.
-3. Start the optional wiki processors from a separate terminal:
+   a chat-capable model connection.
+3. Start the optional wiki processors from **Setup → Advanced & diagnostics →
+   Local capability services**. Or use a separate terminal:
 
    ```bash
    make toolbox-build TOOL=llm-wikis
@@ -28,7 +29,7 @@ enricher and remains the only component that writes `.osii`.
 
    PowerShell uses `toolbox-build -Tool llm-wikis` and
    `toolbox-run -Tool llm-wikis` through `scripts\osii.ps1`.
-4. In **Setup → Custom Processor API services**, register
+4. In **Setup → Register running processor**, register
    `http://127.0.0.1:8099` and `http://127.0.0.1:8100`.
 
 For source-only development commands and OpenAI-compatible routing, see
@@ -46,18 +47,18 @@ The concept/entity processor also returns structured artifacts. Open the
 regular **Enrichments** view to browse and sort those outputs through the
 generic entity-list and table renderers.
 
-Processor settings, including the prompt, temperature, input budget, model
-override, and downstream synthesizer URL, are descriptor-driven and appear in
-Setup. No frontend change is required to expose the same supported schema
-fields from a new processor.
+Processor settings, including the prompt, temperature, and input budget, are
+descriptor-driven and appear in Setup. The chosen model connection is a tool
+binding in `tools.toml`, not a processor-specific URL. No frontend change is
+required to expose the same supported schema fields from a new processor.
 
 ## Storage and provenance
 
 Core saves each returned artifact under the requested scope's `enrichments/`
 directory. Filenames include the processor descriptor and artifact ID, so both
 wiki varieties can coexist and be regenerated independently. Sidecar metadata
-records the processor URL, processor version, artifact ID, expert context, and
-model metadata returned by the downstream synthesizer.
+records the processor URL, processor version, artifact ID, expert context,
+connection alias, actual provider model, prompt version, and citations.
 
 The deprecated `osii.enrichment.llm_wiki.LlmWikiEnricher` import is only a
 temporary forwarding shim for older Python demos. It is not registered as a
