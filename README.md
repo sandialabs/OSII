@@ -1,356 +1,304 @@
-# The On-Store Intelligence Index (OSII)
+# OSII
 
-OSII builds a grounded, inspectable intelligence layer over a user's own files.
-People can browse, search, and chat with their corpus today; AI agents can use
-the same scopes, artifacts, provenance, and retrieval APIs for detailed future
-workflows.
+> **Keep the evidence. Grow the intelligence.**
 
-The project also supports domain extension without a core fork. A subject
-matter expert can package an extractor, synthesizer, embedder, or enricher as a
-small container. For example, an experimental team can process thousands of
-run folders into a standard table artifact that is immediately visible in the
-dashboard and available to agents.
+OSII (the On-Store Intelligence Index) turns a folder of documents and datasets
+into a library you can browse, search, enrich, and ask questions about. It runs
+locally, works without an AI model, and can use approved AI services when they
+are available.
 
-[Read the documentation](https://heidikmkv.github.io/osii/) ·
-[Browse the documentation on GitHub](docs/index.md) ·
-[Follow the Python walkthrough](osii-demo-notebooks/README.md)
+The central promise is simple: **your original files stay where they are and
+OSII does not alter them.** OSII records extracted text, tables, summaries,
+search indexes, and provenance in a neighboring `.osii` folder. That portable
+folder is the *sidecar*: it can be inspected, rebuilt, transferred, or removed
+without changing the source material.
 
-## Getting started
+[Start the documentation](docs/index.md) ·
+[Learn through Python examples](osii-demo-notebooks/README.md) ·
+[Understand the architecture](docs/concepts/architecture.md)
 
-Choose the path that matches your goal:
-
-- **Use a corporate pilot release:** follow [Corporate pilot images and Quay releases](docs/operations/publishing-images.md). It runs the supported bundle from approved images.
-- **Develop or evaluate OSII from source:** follow the steps below. This path runs editable code and reloads Python/dashboard changes.
-- **Build a processor:** start with [Extend OSII](docs/extending/index.md); a processor is an optional compute service, not a fork of core storage.
-
-OSII uses Podman for packaged deployment and system-level development dependencies.
-
-### 1. Choose where your files live
-
-By default, OSII looks in this folder inside the downloaded project:
+## What happens when you use OSII
 
 ```text
-osii-data/
-└── source/       Put the files and folders you want OSII to process here
+Your files                         OSII's portable sidecar
+----------                         -----------------------
+reports, PDFs, CSVs, notes  --->   extracted text and source locations
+                                   typed tables, entities, and wikis
+                                   provenance and processing history
+                                   rebuildable search indexes
+                                         |
+                                         +--> browse, search, chat, Python,
+                                              REST, MCP, and custom processors
 ```
 
-On macOS or Linux, create it and initialize your settings with:
+You interact with the result through the dashboard, Python, REST, or MCP. A
+normal first run needs no containers and no model download. Later, you can add
+Ollama, an OpenAI-compatible endpoint, OCR, or a domain-specific processor
+without replacing the library you already built.
+
+Four ideas guide the project:
+
+- **Grounding before generation.** A model may help interpret material, but it
+  is not the source of truth.
+- **Canonical files before indexes.** Search indexes and caches make OSII
+  fast; they can be rebuilt. The ordinary `.osii` sidecar remains inspectable.
+- **Replaceable computation.** You can swap or add extractors, synthesizers,
+  embedders, and enrichers without forking the core or changing your originals.
+- **One shared vocabulary.** People, scripts, the dashboard, REST clients, and
+  agents use the same objects, scopes, artifacts, and provenance.
+
+## Start here: explore the built-in demo
+
+This is the shortest route to seeing OSII work. It uses public demonstration
+data and the built-in model-free baseline, so you can postpone decisions about
+AI providers, OCR, and containers.
+
+Before starting, install [uv](https://docs.astral.sh/uv/) and Node.js/npm. On
+macOS or Linux, you also need `make`. OSII asks uv for its tested Python 3.12
+runtime, so you do not need to create or activate a Python environment. No
+container runtime or model download is required for this path.
+
+### macOS or Linux
+
+From the repository root:
 
 ```bash
-cd /path/to/osii
-mkdir -p osii-data/source
-cp .env.example .env
+make demo
 ```
 
-On Windows PowerShell:
+### Windows PowerShell
+
+From the repository root:
 
 ```powershell
-cd C:\path\to\osii
-New-Item -ItemType Directory -Force osii-data\source
-Copy-Item .env.example .env
+.\scripts\osii.ps1 demo
 ```
 
-You can now drag files into the newly created `osii-data/source` folder using
-Finder or File Explorer. Files placed in the repository root are intentionally
-not shown; this avoids treating OSII's own code and configuration as your
-corpus.
+That one command installs a small public example corpus—one PDF and two
+datasets—then starts the complete model-free OSII baseline. It creates and
+manages the application environment for you. The first run installs Python and
+JavaScript packages and can take a few minutes; later runs reuse them. Keep that
+terminal open, then visit:
 
-OSII mounts `source` read-only: it can read your originals but cannot modify or
-delete them. The `osii-data` folder is ignored by Git, so your documents will
-not accidentally be included in a commit.
+- **Dashboard:** <http://localhost:5173>
+- **Backend health:** <http://localhost:8511/health>
 
-You can instead use an existing folder anywhere on your computer. Open `.env`
-in a text editor and set its absolute path:
+In the dashboard, open **Intake**, choose the example files, and process them.
+Then explore **Files**, **Search**, and **Collections**. You should be able to
+inspect the extracted content and see what OSII created without needing a
+model connection.
 
-```dotenv
-OSII_SOURCE_DIR=/Users/your-name/Documents/my-files
-```
+The baseline includes document extraction, source-excerpt previews, BM25
+search, local enrichment, the worker, API, MCP server, and dashboard. Its
+ordinary Tesseract service runs once per complete page; on a bare-metal
+`make dev` computer, the Tesseract program must first be installed on the host.
+The packaged baseline image already contains it. Open **Setup** afterward to
+connect Ollama or another AI endpoint, or to add optional Apache Tika. Ollama
+is not part of normal startup.
 
-On Windows, use a forward-slash path such as:
+To stop the local stack, return to the terminal and press <kbd>Ctrl</kbd> +
+<kbd>C</kbd>.
 
-```dotenv
-OSII_SOURCE_DIR=C:/Users/your-name/Documents/my-files
-```
+### Use your own files instead
 
-A mounted shared or network drive works the same way; point
-`OSII_SOURCE_DIR` at its mounted path (for example `S:/project-files`) and make
-sure the account running OSII can read it. Intake intentionally browses only
-inside this configured root rather than exposing the whole host filesystem.
+Put files in `osii-data/source/`, then run `make dev` on macOS/Linux or
+`.\scripts\osii.ps1 dev` on Windows. OSII reads that folder but does not modify
+or delete its contents. Its derived data is stored beside it in
+`osii-data/.osii/`, which is ignored by Git.
 
-Files added with the dashboard's **Upload files** button are stored separately.
-Canonical extracted text and provenance stay as inspectable `.osii` files;
-queue state and the rebuildable SQLite catalog stay under `.osii/state/`.
+To use a source folder elsewhere on your computer, copy `.env.example` to
+`.env` and set `OSII_SOURCE_DIR`. The `.env` file is optional for the default
+layout. See [local-first operation](docs/operations/local-first.md) for the
+cross-platform details and optional capabilities.
 
-### 2. Develop OSII with live reload
+### Use a shared drive or Samba share
 
-On macOS or Linux, start the editable stack:
+First connect the share through Windows, Finder, or your Linux desktop so it
+appears as an ordinary folder. OSII never asks for or stores the share password.
+It reads originals in place—even when they are read-only—and keeps the writable
+`.osii` artifacts locally.
+
+macOS or Linux, after mounting the share:
 
 ```bash
-cd /path/to/osii
-make dev
+make dev-shared SHARED_DRIVE_PATH="/Volumes/Team Documents"
 ```
 
-`make dev` requires no container runtime or preexisting model download. It runs the API
-(including grounded chat), worker, MCP server, dashboard, and four independent Processor API
-services directly from source: Python text-layer PDF/Office extraction, cited
-source-excerpt previews that do not use AI, 384-dimensional lexical token/word-pair
-hashing, and deterministic document statistics/frequent-keyword enrichment.
-Scanned PDFs still require optional Tesseract OCR. The launcher checks ports and dependencies,
-reloads backend services when source changes, and keeps generated data under
-`osii-data/`.
-
-**OSII does not install or start the separate Ollama application.** If you use
-Ollama, manage it separately. OSII then
-tries that separately running Ollama service with `all-minilm` for
-semantic embeddings and Meta `llama3.2:1b` for chat and synthesis. Open
-**Tools & services → AI models** to check the connection, see installed models, and explicitly download
-either approved starter model when missing. OSII bundles neither Ollama nor
-model weights. Use `ollama list` and `ollama pull <model>` for additional model
-choices available in your environment. BM25 and extractive chat remain the automatic model-free
-fallbacks. Lexical hashing is available as an explicit no-model vector option;
-it is not presented as semantic search.
-
-**The Tesseract executable is also a separate manual installation** in the
-bare-metal workflow. Confirm `tesseract --version` works, then start OSII's
-OpenCV/Tesseract wrapper with `make dev-ocr-host` or
-`.\scripts\osii.ps1 dev-ocr-host`. Normal `make dev` does not start OCR.
-
-On Windows PowerShell, use the equivalent launcher:
+Windows PowerShell accepts either a mapped drive or a UNC path:
 
 ```powershell
-cd C:\path\to\osii
-.\scripts\osii.ps1 dev
+.\scripts\osii.ps1 dev-shared `
+  -SourceDir '\\server\share\Team Documents'
 ```
 
-The first development startup may take longer while dependencies are checked.
-Later starts reuse the ignored `osii-env` Python environment. When the terminal
-output settles, open:
+By default, this shared-drive profile stores artifacts under
+`osii-data/shared-drive/`. Use `SHARED_DRIVE_DATA=/local/path` on macOS/Linux or
+`-RuntimeDir "D:\OSII\team-share"` on Windows to choose another local location.
+If the share is disconnected or unreadable, startup explains that directly
+instead of creating an empty folder with the same name. Intake shows both the
+documents location and the separate artifact location. See [Shared drives and
+Samba](docs/operations/shared-drives.md) for packaged-container behavior and
+security details.
 
-- **OSII dashboard:** <http://localhost:5173>
-- **Backend status:** <http://localhost:8511/health>
-- **Extractor docs:** <http://localhost:8092/docs>
-- **Synthesizer docs:** <http://localhost:8093/docs>
-- **Embedder docs:** <http://localhost:8085/docs>
-- **Enricher docs:** <http://localhost:8094/docs>
-- **Model-provider bridge docs:** <http://localhost:8095/docs>
-- **Chat health:** <http://localhost:8511/api/chat/health>
-- **MCP server:** <http://localhost:8022/mcp>
+## Build deployment images with an approved base image
 
-In the dashboard, select **Intake** in the first sidebar section. **Add files**
-tests required tools and shows the extractor selected for each matched file
-type. **Process library** adds embeddings, summaries, enrichments, or a better
-extraction to existing documents without repeating unrelated work.
-**Activity** keeps run history out of the setup forms. The entire shared volume
-is the default scope; file-type and glob rules narrow it rather than replacing
-it. Files are processed sequentially and appear under **Files** as each
-extraction completes.
+Most people should begin with `make demo` or `make dev` above. Use this section
+when you are ready to build the three default OSII images for Podman. These
+commands choose the base image for this build only; they do not permanently
+change your shell or repository configuration.
 
-Re-extraction is versioned. A better extractor can be saved beside the current
-result or made primary while preserving the previous version. See
-[Extraction versions and downstream lineage](docs/reference/extraction-versions.md).
+If the registry requires authentication, run `podman login quay.asdf.xyz`
+first. Then copy and paste the command for your operating system from the
+repository root.
 
-With an Ollama synthesis model selected, open a document's **Wiki** tab or an
-individual collection to generate a grounded LLM wiki as a standard enrichment
-artifact. The model runs outside OSII; the portable Markdown and provenance are
-saved inside `.osii`. See [Generate an LLM wiki](docs/tutorials/llm-wiki.md).
+### macOS or Linux
 
-The document **Enrichments** tab and collection **Derived artifacts** section
-also include model-free examples for a top-20 noun/adjective n-gram keyword
-table and a grounded named-entity candidate list. See
-[Example keyword and entity enrichments](docs/tutorials/example-enrichments.md).
-
-Search and Chat retain up to 20 recent searches or prompts in the current
-browser so those pages remain useful between visits. Only the prompt, scope,
-time, and search mode are saved—never results, answers, or citations—and each
-entry or the complete browser-local history can be deleted. Saved root and
-collection keyword snapshots also provide one-click searches and grounded
-question starters. The Home page's collapsed **Library Insights** section
-exposes root-level wikis, tables, entity lists, and standard knowledge graphs
-without adding another service or storage authority.
-
-Use **Labels & Tags** on a document to store portable sensitivity awareness,
-handling notes, and plain-text tags in its canonical object sidecar. These
-markings are metadata, not access controls. A collection can be exported as a
-manifest/checksum-validated OSII package and merged from **Collections** on
-another system; duplicate file IDs retain local data and union their labels.
-**Delete File Data** always shows the affected collections, folders, aggregate
-products, source file, and indexes before requiring exact confirmation. See
-[Sensitive data, transfer, and deletion](docs/operations/sensitive-data.md).
-
-Open **Tools & services** before the first intake. Its **Start & status**, **AI
-models**, **Processing methods**, and **Custom services** submenus state what
-`make dev` started, what must be installed separately, and what each method
-actually does.
-For a domain
-processor running on the host, use a base URL such as
-`http://127.0.0.1:8091`; a packaged API container should use the processor's
-Compose service name or `host.containers.internal` for a host service. Run
-**Health**, then **Test**, and return to Intake to select **Retest tools**.
-
-Keep the terminal window open while using OSII. Stop host processes with
-<kbd>Ctrl</kbd>+<kbd>C</kbd>. There are no containers to stop after `make dev`.
-
-### Test locally built images
-
-Use the deployment-style stack when testing images rather than editing code:
+Normal inherited proxy behavior:
 
 ```bash
-make build
+make build OSII_BASE_IMAGE=quay.asdf.xyz/dice/rhel9
+```
+
+If HTTPS inspection requires local corporate certificates, export only the
+public CA certificates to one PEM bundle outside the repository, then run:
+
+```bash
+make build \
+  OSII_BASE_IMAGE=quay.asdf.xyz/dice/rhel9 \
+  OSII_CA_BUNDLE=/absolute/path/to/corporate-roots.pem
+```
+
+When the image should retain its corporate certificates but must not inherit
+HTTP, HTTPS, FTP, or ALL proxy settings:
+
+```bash
+make build \
+  OSII_BASE_IMAGE=quay.asdf.xyz/dice/rhel9 \
+  OSII_CA_BUNDLE=/absolute/path/to/corporate-roots.pem \
+  DISABLE_CONTAINER_PROXIES=true
+```
+
+Start images built in direct-network mode with the matching runtime setting:
+
+```bash
+make run DISABLE_CONTAINER_PROXIES=true
+```
+
+Otherwise, start them normally:
+
+```bash
 make run
 ```
 
-On Windows PowerShell:
+### Windows PowerShell
+
+Normal inherited proxy behavior:
 
 ```powershell
-.\scripts\osii.ps1 build
+.\scripts\osii.ps1 build `
+  -BaseImage "quay.asdf.xyz/dice/rhel9"
+```
+
+If HTTPS inspection requires local corporate certificates, export only the
+public CA certificates to one PEM bundle outside the repository, then run:
+
+```powershell
+.\scripts\osii.ps1 build `
+  -BaseImage "quay.asdf.xyz/dice/rhel9" `
+  -CaBundle "C:\secure\corporate-roots.pem"
+```
+
+Keep corporate certificates but disable inherited container proxies:
+
+```powershell
+.\scripts\osii.ps1 build `
+  -BaseImage "quay.asdf.xyz/dice/rhel9" `
+  -CaBundle "C:\secure\corporate-roots.pem" `
+  -DisableContainerProxies
+```
+
+Start images built in direct-network mode with the matching runtime setting:
+
+```powershell
+.\scripts\osii.ps1 run -DisableContainerProxies
+```
+
+Otherwise, start them normally:
+
+```powershell
 .\scripts\osii.ps1 run
 ```
 
-`make run` never rebuilds images. Use `make containers-dev` or
-`.\scripts\osii.ps1 containers-dev` when you intentionally want to rebuild and
-run the integrated stack with optional MCP and OCR. The normal `run` command
-starts the eight application/baseline containers and does not silently require
-optional MCP or OCR images.
+The base image must provide `dnf` and access to the required RHEL packages;
+each OSII image then installs its tested Python 3.12 runtime. Ordinary
+page-by-page Tesseract OCR is compiled into `osii-baseline-processors`; no
+fourth image is needed. The experimental OpenCV region OCR and other
+`osii-toolbox` images use explicit `toolbox-*` commands. Docker Compose remains available
+with `COMPOSE='docker compose'`, but strict removal of proxy settings inherited
+from a custom base image is guaranteed only on the supported Podman path. See
+[publishing and running images](docs/operations/publishing-images.md) for image
+names, tags, registries, and optional Toolbox publication.
 
-The normal release publishes three OSII image artifacts: core (shared by API,
-worker, and chat), dashboard, and baseline processors. The extractor,
-synthesizer, embedder, enricher, and model-provider bridge remain separate
-containers but select commands from the same compact baseline image. See
-[Publish OSII images to Quay](docs/operations/publishing-images.md).
+`OSII_CA_BUNDLE`/`-CaBundle` is explicit and build-only. OSII validates that the
+file contains PEM certificates and no private key, prints its SHA-256
+fingerprint, and passes it to Podman as a build secret. The certificate bundle
+is installed into the resulting private images so HTTPS works at runtime, but
+the source path and file never enter the Git build context. Never supply a
+`.pfx`, `.p12`, client certificate, or private key. If you must temporarily
+keep the PEM under the repository root, use the ignored `.osii-certs/` folder.
 
-### Useful shortcuts
+## Choose your next path
 
-- `make dev` / `make dev-host` / `.\scripts\osii.ps1 dev`: run the complete
-  editable development stack without containers.
-- `make dev-core` / `.\scripts\osii.ps1 dev-core`: run application services
-  without processors for external-integration testing.
-- `make dev-ollama` / `.\scripts\osii.ps1 dev-ollama`: explicit alias for the
-  normal Ollama-first development profile.
-- `make dev-corporate` / `.\scripts\osii.ps1 dev-corporate`: prefer the
-  built-in Shirty HTTP adapter, then Ollama, then extractive fallbacks.
-- `make dev-extractor`, `dev-synthesizer`, `dev-embedder`, or `dev-enricher`
-  (and matching PowerShell commands): run one processor independently.
-- `make dev-model-bridge` / `.\scripts\osii.ps1 dev-model-bridge`: run only the
-  HTTP-only Ollama/Shirty/OpenAI-compatible provider adapter.
-- `make dev-ocr-host` / `.\scripts\osii.ps1 dev-ocr-host`: run the optional
-  OpenCV/Tesseract OCR service directly on the host, with its tuning UI at
-  `http://localhost:8080/demo`.
-- `make dev-tika` / `.\scripts\osii.ps1 dev-tika`: start only Apache Tika in
-  Podman. Run it in a second terminal beside `make dev` to keep all OSII code
-  editable on the host.
-- `make dev-containers` / `.\scripts\osii.ps1 dev-containers`: run application
-  services from source while Tika and Tesseract run in Podman for deployment
-  parity.
-- `make dev-containers-insecure`: the same hybrid workflow with Podman registry
-  TLS verification disabled for image pulls and builds. On Windows use
-  `.\scripts\osii.ps1 dev-containers -InsecureRegistries`. This is an explicit
-  trust decision; prefer verified registry certificates when available.
-- `make dev-services` / `.\scripts\osii.ps1 dev-services`: start only the
-  Podman OCR services used by `dev-containers`.
-- `make dev-examples` / `.\scripts\osii.ps1 dev-examples`: run editable OSII
-  plus the example table enricher.
-- `make dev-all` / `.\scripts\osii.ps1 dev-all`: include optional agents, OCR,
-  and all example services in containers. Ollama remains separately managed.
-- `make containers-dev` / `.\scripts\osii.ps1 containers-dev`: rebuild and
-  run the normal deployment-style container stack.
-- `make build-release` / `.\scripts\osii.ps1 build-release`: build the three
-  normal publishable images exactly once each.
-- `make push-release` / `.\scripts\osii.ps1 push-release`: push those three
-  explicitly tagged images after a non-local registry prefix is supplied.
-- `make logs` / `.\scripts\osii.ps1 logs`: follow service logs.
-- `make down` / `.\scripts\osii.ps1 down`: stop the stack without deleting
-  your data volume.
-- `make doctor` / `.\scripts\osii.ps1 doctor`: report generated environments,
-  model caches, `node_modules`, OSII data, and container storage without deleting anything.
-- `make catalog-rebuild` and `make catalog-verify` (with matching PowerShell
-  commands): manage the disposable `.osii/state/catalog.sqlite3` read index.
-- [Export components for separate corporate repositories](docs/operations/component-export.md).
+| If you want to… | Start here |
+| --- | --- |
+| Learn the architecture by running small, inspectable examples | [Python demonstration series](osii-demo-notebooks/README.md) |
+| Process one file and inspect every resulting sidecar artifact | [Single-file walkthrough](docs/tutorials/single-file.md) |
+| Understand why OSII separates core, processors, dashboard, and agents | [Architecture](docs/concepts/architecture.md) |
+| Add a custom extractor, synthesizer, embedder, or enricher | [Extend OSII](docs/extending/index.md) |
+| Build an external processor against the stable public contract | [Processor API v1](docs/reference/processor-api/index.md) |
+| Work with tables and datasets | [Tabular dataset walkthrough](docs/tutorials/tabular-datasets.md) |
+| Run packaged deployment images instead of editable source | [Publish and run images](docs/operations/publishing-images.md) |
+| Deploy or publish optional dataset and embedding tools, or inspect bundled OCR | [Toolbox: deployment and Quay commands](osii-toolbox/README.md) |
+| Find a REST route or schema | [REST API overview](docs/reference/api/index.md) and [OpenAPI schema](osii-core/docs/api/openapi.yaml) |
 
-Docker is supported as an override when it is your local container runtime:
+## How this repository is organized
 
-```bash
-make COMPOSE='docker compose' dev-containers
-```
+You do not need to learn the entire monorepo to use OSII. The broad boundaries
+are intentional and reflected directly in the root names:
 
-```powershell
-.\scripts\osii.ps1 dev-containers -Runtime Docker
-```
+- **`osii-core/`** owns canonical `.osii` persistence, scopes, retrieval, the
+  REST API, the worker, and bounded grounded chat.
+- **`osii-core/osii/processor_sdk/`** contains the public contracts for custom
+  processors, included in the single `osii` Python package. Copyable examples
+  and contract tests live in `osii-core/processor-sdk/`.
+- **`osii-core/services/`** contains the guaranteed local processor hosts.
+  They run automatically during local development and remain independently
+  addressable and containerizable.
+- **`osii-dashboard/`** and **`osii-mcp/`** are human and agent clients of Core.
+- **`osii-launcher/`** is the separately releasable desktop deployment shell
+  for non-developers. It owns host-level Podman, Quay, shared-drive, profile,
+  and application-lifecycle workflows without moving those concerns into Core.
+- **`osii-toolbox/`** contains the optional OpenCV/Tesseract region extractor
+  plus dataset and model-backed tools whose dependencies do not belong in
+  Core. The two LLM wiki implementations are Processor API enrichers here,
+  rather than ad-hoc Core functions. Ordinary full-page Tesseract lives with
+  the baseline processors.
+- **`osii-demo-notebooks/`**, **`docs/`**, and **`scripts/`** provide learning,
+  reference, and cross-platform operating support.
 
-See the [documentation index](docs/index.md) for three short starting paths.
-The remaining pages are task-oriented reference material; nobody needs to read
-the documentation tree from beginning to end. Common next steps are:
+For operational commands, see the [CLI cheat sheet](docs/reference/cli.md).
+For offline behavior, model connections, OCR, and privacy boundaries, see
+[local-first operation](docs/operations/local-first.md) and [sensitive data,
+transfer, and deletion](docs/operations/sensitive-data.md).
 
-- [Python module walkthrough](osii-demo-notebooks/README.md)
-- [Extend OSII](docs/extending/index.md)
-- [Processor API v1](docs/reference/processor-api/index.md)
-- [Standard artifact formats](docs/reference/processor-api/standard-artifacts.md)
-- [Architecture](docs/concepts/architecture.md)
-- [Local operation](docs/operations/local-first.md)
-- [Guaranteed local processors](docs/operations/local-processors.md)
-- [Sensitive data, transfer, and deletion](docs/operations/sensitive-data.md)
+## What OSII is—and is not
 
-The repository currently includes:
+OSII is a research project and a working implementation of grounded,
+extensible knowledge infrastructure. It is designed to make the structure and
+limits of an interpretation visible—not to claim that a model has solved
+understanding.
 
-- a backend for creating local OSII databases from source collections
-- a REST API for serving OSII content, search, and derived artifacts
-- a frontend for browsing and inspecting the resulting data
-- supporting services for OCR and chat/RAG workflows
-- a versioned processor SDK and copyable extension examples
-
-## What this does
-
-At a high level, the system works in three stages:
-
-1. ingest a source file collection into a local structured OSII database
-2. serve that database through a backend API
-3. browse, inspect, search, and analyze the collection through the frontend
-
-## Local-first operation
-
-Browsing, lexical retrieval, hashing-vector retrieval, extractive grounded
-chat, baseline synthesis, and baseline enrichment run without a model
-connection. Tika and Tesseract remain optional OCR/deployment services. Ollama,
-OpenAI-compatible services, Shirty, and domain processors enhance capabilities
-without becoming dependencies of the basic user experience.
-
-Retrieval defaults to sentence-aligned 768-character chunks with roughly 128
-characters of overlap. Intake exposes these settings, while BM25 and semantic
-retrieval share the same chunk manifest and grounded source offsets. See
-[retrieval chunking and overlap](docs/concepts/retrieval-chunking.md).
-
-The repository remains under active development. Processor API v1 is the
-compatibility boundary for new extensions.
-
-## Repository contents
-
-The monorepo currently contains components such as:
-
-- OSII backend
-- frontend dashboard / data viewer
-- OCR service integrations
-- chat / RAG support
-- MCP and related tooling
-
-## Typical usage
-
-### 1. Build a local OSII database
-Use the backend CLI to process a source collection into `.osii`.
-For a comprehensive but small step-by-step walkthrough, use the
-[Jupytext-ready Python demonstrations](osii-demo-notebooks/README.md). Plain
-Python files are canonical; `manage_notebooks.py` converts the complete set to
-or from notebooks without making notebook JSON the normal review format.
-
-### 2. Start the backend API
-Run the backend FastAPI service to expose the OSII store over REST.
-
-### 3. Start the frontend
-Run the frontend to browse and inspect the collection.
-
-## Work in progress
-
-This is an open development repository. Expect:
-
-- ongoing refactors
-- evolving APIs
-- incomplete documentation in some areas
-- experimental features
+The repository is actively evolving. The stable compatibility boundary for
+external extensions is [Processor API v1](docs/reference/processor-api/index.md).
+When in doubt, favor the source material, inspect the sidecar, and follow the
+provenance.

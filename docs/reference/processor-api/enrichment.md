@@ -1,5 +1,10 @@
 # Enrichment API
 
+Core's remote adapter reuses saved
+[expert context](../osii-store.md#expert-context) for the requested scope when
+no new guidance is supplied. Context is passed explicitly to the service;
+domain processors do not read sidecars themselves.
+
 `POST /v1/enrich` produces structured, rebuildable artifacts over an object,
 folder, collection, or root scope.
 
@@ -58,4 +63,9 @@ Every v1 enrichment must use one of the standard artifact formats so it is
 immediately usable in the dashboard and by agents. The dashboard retains a
 generic JSON view only for legacy artifacts created before this contract.
 
-See `examples/enricher.py` and `services/table-pdf-enricher`.
+See `osii-core/processor-sdk/examples/enricher.py`.
+
+Two model-backed wiki examples live outside Core in
+`osii-toolbox/llm-wiki-enrichers`. They demonstrate that a knowledge product
+can compose a separately deployed synthesizer while still returning only typed
+Processor API artifacts.

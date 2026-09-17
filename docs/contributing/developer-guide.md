@@ -12,12 +12,13 @@ Read:
 
 The main repository boundaries are:
 
-- `ai-ready-ingest/osii`: core domain logic, persistence, REST API, worker, and grounded chat;
-- `packages/osii-processor-sdk`: public processor contracts and service helpers;
-- `services`: independently deployable processor implementations;
+- `osii-core/osii`: core domain logic, persistence, REST API, worker, and grounded RAG under `osii/rag`;
+- `osii-core/osii/processor_sdk`: public processor contracts and service helpers, included in `osii`;
+- `osii-core/processor-sdk`: copyable processor examples and contract tests;
+- `osii-core/services`: guaranteed local, independently addressable processor hosts;
 - `osii-dashboard/dashboard`: React and TypeScript user interface;
-- `ai-ready-rag-chat`: standalone chat reference; the standard release serves chat from the core API;
-- `ai-ready-mcp`: agent-facing OSII tools.
+- `osii-mcp`: agent-facing OSII tools;
+- `osii-toolbox`: optional processors with independent dependencies and images.
 
 ## Design invariants
 
@@ -35,13 +36,13 @@ The main repository boundaries are:
 ### Core extraction
 
 Read the [extraction architecture](../concepts/extraction.md), then inspect
-`ai-ready-ingest/osii/extraction/`. Preserve canonical text and manifest
+`osii-core/osii/extraction/`. Preserve canonical text and manifest
 semantics, and keep synthesis and embeddings downstream.
 
 ### Core synthesis
 
 Read the [synthesis architecture](../concepts/synthesis.md), then inspect
-`ai-ready-ingest/osii/synthesis/`. Synthesizers consume extracted OSII data and
+`osii-core/osii/synthesis/`. Synthesizers consume extracted OSII data and
 must not reparse source files.
 
 ### External processors
@@ -60,13 +61,26 @@ shared renderer rather than processor-specific pages.
 
 From the repository root:
 
-OSII development uses Python 3.11 through 3.13. `uv` reads the included
-`.python-version` file and selects Python 3.13 automatically; Python 3.14 is
-not yet supported by the pinned FastAPI/Pydantic dependency set.
+OSII supports Python 3.11 through 3.13. The checked-in `.python-version`, host
+launcher, container builds, and examples use Python 3.12 so local and deployed
+behavior do not drift. Python 3.14 is not yet supported by the pinned
+FastAPI/Pydantic dependency set.
 
 ```bash
 make test
 ```
+
+To check that OSII can be installed without the monorepo, build its source
+distribution and wheel and install into a temporary, clean environment:
+
+```bash
+uv run --no-project --python 3.12 --with build python scripts/check_python_distribution.py
+```
+
+CI runs this on Linux, macOS, and Windows with Python 3.12. Both
+`osii.processor_sdk` and the compatibility imports `osii_processor_sdk` ship in
+one distribution. Processor services depend on `osii` and install Core's normal
+dependencies; package installation does not launch any services.
 
 For documentation:
 

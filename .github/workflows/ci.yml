@@ -4,98 +4,99 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
 
-env:
-  UV_PROJECT_ENVIRONMENT: osii-env
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
-  python:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: uv sync --python 3.11 --package osii --package osii-processor-sdk --extra dev
-      - run: uv run --python 3.11 --package osii python -m pytest ai-ready-ingest/tests
-      - run: uv run --python 3.11 --package osii-processor-sdk python -m pytest packages/osii-processor-sdk/tests
-
-  processor-contracts:
+  checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - run: uv sync --python 3.11 --package ai-ready-chat --package osii-local-extractor --package osii-local-synthesizer --package osii-local-embedder --package osii-local-enricher --package osii-model-provider-bridge --extra dev
-      - run: cd ai-ready-rag-chat && uv run --python 3.11 --package ai-ready-chat python -m pytest tests
-      - run: cd services/local-extractor && uv run --python 3.11 --package osii-local-extractor python -m pytest tests
-      - run: cd services/local-synthesizer && uv run --python 3.11 --package osii-local-synthesizer python -m pytest tests
-      - run: cd services/local-embedder && uv run --python 3.11 --package osii-local-embedder python -m pytest tests
-      - run: cd services/local-enricher && uv run --python 3.11 --package osii-local-enricher python -m pytest tests
-      - run: cd services/model-provider-bridge && uv run --python 3.11 --package osii-model-provider-bridge python -m pytest tests
-
-  windows-powershell:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - shell: pwsh
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - name: Core, SDK, and packaging tests
+        run: uv run --frozen --python 3.12 --package osii --extra dev python -m pytest osii-core/tests osii-core/processor-sdk/tests osii-toolbox/tests/test_packaging.py -q
+      - name: Isolated processor contracts
         run: |
-          .\scripts\osii.ps1 dev -DryRun
-          .\scripts\osii.ps1 dev-core -DryRun
-          .\scripts\osii.ps1 dev-ollama -DryRun
-          .\scripts\osii.ps1 dev-corporate -DryRun
-      - shell: pwsh
-        run: uv run --no-project --python 3.11 python scripts/export_components.py --output "$env:RUNNER_TEMP\osii-export" --components backend,frontend,mcp,chat,tools,local-extractor,local-synthesizer,local-embedder,local-enricher,model-provider-bridge
+          for service in local-extractor local-tesseract local-synthesizer local-embedder local-enricher model-provider-bridge; do
+            uv run --isolated --no-project --python 3.12 --with-editable osii-core \
+              --with-editable "osii-core/services/$service" --with pytest \
+              --with 'httpx>=0.27,<1' python -m pytest "osii-core/services/$service/tests" -q
+          done
+          uv run --isolated --no-project --python 3.12 --with pytest \
+            --with 'uvicorn[standard]>=0.35,<1' python -m pytest \
+            osii-core/services/baseline-processors/tests -q
+      - name: Documentation links and strict build
+        run: make docs
 
-  dashboard:
+  frontend:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: osii-dashboard/dashboard
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: osii-dashboard/dashboard/package-lock.json
-      - run: npm ci
-      - run: npm run build
+          cache-dependency-path: |
+            osii-dashboard/dashboard/package-lock.json
+            osii-launcher/package-lock.json
+      - name: Dashboard
+        working-directory: osii-dashboard/dashboard
+        run: npm ci && npm test --if-present && npm run build
+      - name: Launcher frontend
+        working-directory: osii-launcher
+        run: npm ci && npm test && npm run build
 
-  containers:
-    runs-on: ubuntu-latest
-    env:
-      CHAT_PROVIDER: extractive
-      CHAT_PROVIDER_CHAIN: extractive
+  # Platform/package checks are reserved for tags and manual runs.
+  installation:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - run: docker compose config --quiet
-      - run: docker compose build api dashboard local-extractor
-      - run: docker compose up --detach --wait local-extractor local-synthesizer local-embedder local-enricher model-provider-bridge api worker dashboard
-      - run: curl --fail --retry 20 --retry-connrefused http://localhost:5173/health
-      - run: >-
-          curl --fail --show-error --request POST http://localhost:5173/api/chat
-          --header 'Content-Type: application/json'
-          --data '{"query":"What information is available?","scope":{"scope_type":"root"}}'
-      - if: always()
-        run: docker compose down --volumes --remove-orphans
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - run: uv run --no-project --python 3.12 --with build python scripts/check_python_distribution.py
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\scripts\osii.ps1 dev -DryRun
 
-  documentation:
+  # Public publishing is opt-in; corporate publication is GitLab's job.
+  package:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [checks, frontend, installation]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - run: uv run --no-project --python 3.12 python scripts/corporate_release.py version
+      - run: uv build osii-core --out-dir dist
+      - uses: actions/upload-artifact@v7
         with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: docs/requirements.txt
-      - run: pip install -r docs/requirements.txt
-      - run: python scripts/check_docs_links.py
-      - run: mkdocs build --strict
+          name: python-distributions
+          path: dist/*
+
+  pypi:
+    if: startsWith(github.ref, 'refs/tags/v') && vars.OSII_PUBLISH_PYPI == 'true'
+    needs: package
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: python-distributions
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1

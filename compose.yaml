@@ -1,17 +1,29 @@
 name: osii
 
+x-baseline-build-args: &baseline-build-args
+  OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"
+  OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
+  OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
+  OSII_TESSERACT_SOURCE_URL: "${OSII_TESSERACT_SOURCE_URL:-https://codeload.github.com/tesseract-ocr/tesseract/tar.gz/refs/tags/5.5.3}"
+  OSII_LEPTONICA_SOURCE_URL: "${OSII_LEPTONICA_SOURCE_URL:-https://github.com/DanBloomberg/leptonica/releases/download/1.87.0/leptonica-1.87.0.tar.gz}"
+  OSII_TESSDATA_BASE_URL: "${OSII_TESSDATA_BASE_URL:-https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/4.1.0}"
+
 services:
   api:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-core:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: ai-ready-ingest/Dockerfile
-      args: {OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"}
+      dockerfile: osii-core/Dockerfile
+      args:
+        OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"
+        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
+        OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
     environment:
       OSII_ROOT: /data/.osii
       SHARED_VOLUME_ROOT: /data/source
+      OSII_SOURCE_KIND: ${OSII_SOURCE_KIND:-auto}
       UPLOAD_ORIGINALS_ROOT: /data/uploads
-      OSII_PROCESSORS: ${OSII_PROCESSORS:-http://local-extractor:8092,http://local-synthesizer:8093,http://local-embedder:8085,http://local-enricher:8094,http://model-provider-bridge:8095/ollama/embedder,http://model-provider-bridge:8095/ollama/synthesizer}
+      OSII_PROCESSORS: ${OSII_PROCESSORS:-http://local-extractor:8092,http://tesseract:8080,http://local-synthesizer:8093,http://local-embedder:8085,http://local-enricher:8094,http://model-provider-bridge:8095/ollama/embedder,http://model-provider-bridge:8095/ollama/synthesizer,http://model-provider-bridge:8095/openai/synthesizer}
       OSII_DEFAULT_SYNTHESIZER: ${OSII_DEFAULT_SYNTHESIZER:-ollama.synthesizer}
       OSII_DEFAULT_EMBEDDER: ${OSII_DEFAULT_EMBEDDER:-ollama.embedder}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-minilm}
@@ -19,10 +31,11 @@ services:
       OSII_DEFAULT_ENRICHER: ${OSII_DEFAULT_ENRICHER:-local.stats-keywords}
       OSII_EXTRACTOR_ROUTES_PATH: /app/config/extractor_routes_native.toml
       TIKA_URL: http://tika:9998
-      OSII_TESSERACT_URL: http://tesseract:8080
       OSII_MODEL_BASE_URL: ${OSII_MODEL_BASE_URL:-}
       OSII_CHAT_BASE_URL: ${OSII_CHAT_BASE_URL:-}
       OSII_MODEL_API_KEY: ${OSII_MODEL_API_KEY:-}
+      OSII_CHAT_MODEL: ${OSII_CHAT_MODEL:-}
+      OSII_SYNTHESIS_MODEL: ${OSII_SYNTHESIS_MODEL:-}
       OSII_MODEL_BRIDGE_URL: http://model-provider-bridge:8095
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.containers.internal:11434}
       OSII_OLLAMA_ALLOWED_MODELS: ${OSII_OLLAMA_ALLOWED_MODELS:-all-minilm,llama3.2:1b}
@@ -30,12 +43,11 @@ services:
       CHAT_PROVIDER_CHAIN: ${CHAT_PROVIDER_CHAIN:-ollama,extractive}
       CHAT_MODEL: ${CHAT_MODEL:-llama3.2:1b}
       OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-llama3.2:1b}
-      SHIRTY_BASE_URL: ${SHIRTY_BASE_URL:-}
-      SHIRTY_API_KEY: ${SHIRTY_API_KEY:-}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      SHIRTY_SYNTHESIS_MODEL: ${SHIRTY_SYNTHESIS_MODEL:-meta-llama/Llama-3.1-8B-Instruct}
-      SHIRTY_CHAT_MODEL: ${SHIRTY_CHAT_MODEL:-meta-llama/Llama-3.1-8B-Instruct}
+      OPENAI_SYNTHESIS_MODEL: ${OPENAI_SYNTHESIS_MODEL:-}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-}
     ports:
       - "${OSII_API_PORT:-8511}:8511"
     volumes:
@@ -45,6 +57,8 @@ services:
       local-embedder:
         condition: service_healthy
       model-provider-bridge:
+        condition: service_healthy
+      tesseract:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8511/health')"]
@@ -58,10 +72,10 @@ services:
     environment:
       OSII_ROOT: /data/.osii
       SHARED_VOLUME_ROOT: /data/source
+      OSII_SOURCE_KIND: ${OSII_SOURCE_KIND:-auto}
       UPLOAD_ORIGINALS_ROOT: /data/uploads
       TIKA_URL: http://tika:9998
-      OSII_TESSERACT_URL: http://tesseract:8080
-      OSII_PROCESSORS: ${OSII_PROCESSORS:-http://local-extractor:8092,http://local-synthesizer:8093,http://local-embedder:8085,http://local-enricher:8094,http://model-provider-bridge:8095/ollama/embedder,http://model-provider-bridge:8095/ollama/synthesizer}
+      OSII_PROCESSORS: ${OSII_PROCESSORS:-http://local-extractor:8092,http://tesseract:8080,http://local-synthesizer:8093,http://local-embedder:8085,http://local-enricher:8094,http://model-provider-bridge:8095/ollama/embedder,http://model-provider-bridge:8095/ollama/synthesizer,http://model-provider-bridge:8095/openai/synthesizer}
       OSII_DEFAULT_SYNTHESIZER: ${OSII_DEFAULT_SYNTHESIZER:-ollama.synthesizer}
       OSII_DEFAULT_EMBEDDER: ${OSII_DEFAULT_EMBEDDER:-ollama.embedder}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-minilm}
@@ -71,6 +85,8 @@ services:
       OSII_MODEL_BASE_URL: ${OSII_MODEL_BASE_URL:-}
       OSII_CHAT_BASE_URL: ${OSII_CHAT_BASE_URL:-}
       OSII_MODEL_API_KEY: ${OSII_MODEL_API_KEY:-}
+      OSII_CHAT_MODEL: ${OSII_CHAT_MODEL:-}
+      OSII_SYNTHESIS_MODEL: ${OSII_SYNTHESIS_MODEL:-}
       OSII_MODEL_BRIDGE_URL: http://model-provider-bridge:8095
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.containers.internal:11434}
       OSII_WORKER_POLL_SECONDS: ${OSII_WORKER_POLL_SECONDS:-1}
@@ -88,7 +104,9 @@ services:
     build:
       context: osii-dashboard/dashboard
       dockerfile: Dockerfile
-      args: {OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"}
+      args:
+        OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"
+        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
     ports:
       - "${OSII_DASHBOARD_PORT:-5173}:8080"
     depends_on:
@@ -99,7 +117,10 @@ services:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-mcp:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: ai-ready-mcp/Dockerfile
+      dockerfile: osii-mcp/Dockerfile
+      args:
+        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
+        OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
     environment:
       OSII_ROOT: /data/.osii
       MCP_HOST: 0.0.0.0
@@ -115,20 +136,74 @@ services:
         condition: service_healthy
     profiles: ["agents"]
 
-  table-pdf-enricher:
+  tesseract-opencv:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-tesseract-opencv:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: services/table-pdf-enricher/Dockerfile
+      dockerfile: osii-toolbox/osii-tesseract/Dockerfile
+      args:
+        OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"
+        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
+        OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
+        OSII_TESSERACT_SOURCE_URL: "${OSII_TESSERACT_SOURCE_URL:-https://codeload.github.com/tesseract-ocr/tesseract/tar.gz/refs/tags/5.5.3}"
+        OSII_LEPTONICA_SOURCE_URL: "${OSII_LEPTONICA_SOURCE_URL:-https://github.com/DanBloomberg/leptonica/releases/download/1.87.0/leptonica-1.87.0.tar.gz}"
+        OSII_TESSDATA_BASE_URL: "${OSII_TESSDATA_BASE_URL:-https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/4.1.0}"
     ports:
-      - "${OSII_EXAMPLE_PROCESSOR_PORT:-8091}:8091"
-    profiles: ["examples"]
+      - "${OSII_TESSERACT_OPENCV_PORT:-8081}:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    profiles: ["toolbox"]
 
-  tesseract:
+  tabular-extractor:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-tabular:${OSII_IMAGE_TAG:-latest}"
     build:
-      context: ai-ready-tool-shelf/osii-tesseract
-    ports:
-      - "${OSII_TESSERACT_PORT:-8080}:8080"
-    profiles: ["ocr"]
+      context: .
+      dockerfile: osii-toolbox/tabular-dataset-processors/Dockerfile
+      args: &tabular-build-args
+        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
+        OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
+    command: ["extractor"]
+    ports: ["${OSII_TABULAR_EXTRACTOR_PORT:-8097}:8097"]
+    profiles: ["toolbox"]
+
+  tabular-enricher:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-tabular:${OSII_IMAGE_TAG:-latest}"
+    build:
+      context: .
+      dockerfile: osii-toolbox/tabular-dataset-processors/Dockerfile
+      args: *tabular-build-args
+    command: ["enricher"]
+    ports: ["${OSII_TABULAR_ENRICHER_PORT:-8098}:8098"]
+    profiles: ["toolbox"]
+
+  readable-wiki-enricher:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-llm-wikis:${OSII_IMAGE_TAG:-latest}"
+    build:
+      context: .
+      dockerfile: osii-toolbox/llm-wiki-enrichers/Dockerfile
+      args: &llm-wiki-build-args
+        OSII_BASE_IMAGE: "${OSII_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi:latest}"
+        OSII_PYTHON_VERSION: "${OSII_PYTHON_VERSION:-3.12}"
+    command: ["readable"]
+    environment:
+      OSII_WIKI_SYNTHESIZER_URL: ${OSII_WIKI_SYNTHESIZER_URL:-http://host.containers.internal:8095/ollama/synthesizer}
+    ports: ["${OSII_READABLE_WIKI_PORT:-8099}:8099"]
+    profiles: ["toolbox"]
+
+  concept-entity-wiki-enricher:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-llm-wikis:${OSII_IMAGE_TAG:-latest}"
+    build:
+      context: .
+      dockerfile: osii-toolbox/llm-wiki-enrichers/Dockerfile
+      args: *llm-wiki-build-args
+    command: ["concept-entity"]
+    environment:
+      OSII_WIKI_SYNTHESIZER_URL: ${OSII_WIKI_SYNTHESIZER_URL:-http://host.containers.internal:8095/ollama/synthesizer}
+    ports: ["${OSII_CONCEPT_ENTITY_WIKI_PORT:-8100}:8100"]
+    profiles: ["toolbox"]
 
   tika:
     image: apache/tika:3.2.3.0-full
@@ -140,8 +215,8 @@ services:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: services/baseline-processors/Dockerfile
-      args: &baseline-build-args {OSII_VERSION: "${OSII_IMAGE_TAG:-latest}"}
+      dockerfile: osii-core/services/baseline-processors/Dockerfile
+      args: *baseline-build-args
     command: ["extractor"]
     ports: ["${OSII_LOCAL_EXTRACTOR_PORT:-8092}:8092"]
     healthcheck: &processor-health
@@ -151,11 +226,22 @@ services:
       retries: 10
     environment: {PORT: "8092"}
 
+  tesseract:
+    image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"
+    build:
+      context: .
+      dockerfile: osii-core/services/baseline-processors/Dockerfile
+      args: *baseline-build-args
+    command: ["ocr"]
+    ports: ["${OSII_TESSERACT_PORT:-8080}:8080"]
+    healthcheck: *processor-health
+    environment: {PORT: "8080"}
+
   local-synthesizer:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: services/baseline-processors/Dockerfile
+      dockerfile: osii-core/services/baseline-processors/Dockerfile
       args: *baseline-build-args
     command: ["synthesizer"]
     ports: ["${OSII_LOCAL_SYNTHESIZER_PORT:-8093}:8093"]
@@ -166,7 +252,7 @@ services:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: services/baseline-processors/Dockerfile
+      dockerfile: osii-core/services/baseline-processors/Dockerfile
       args: *baseline-build-args
     command: ["embedder"]
     ports: ["${OSII_EMBEDDINGS_PORT:-8085}:8085"]
@@ -177,7 +263,7 @@ services:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: services/baseline-processors/Dockerfile
+      dockerfile: osii-core/services/baseline-processors/Dockerfile
       args: *baseline-build-args
     command: ["enricher"]
     ports: ["${OSII_LOCAL_ENRICHER_PORT:-8094}:8094"]
@@ -188,7 +274,7 @@ services:
     image: "${OSII_IMAGE_PREFIX:-localhost/osii}-baseline-processors:${OSII_IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: services/baseline-processors/Dockerfile
+      dockerfile: osii-core/services/baseline-processors/Dockerfile
       args: *baseline-build-args
     command: ["model-bridge"]
     ports: ["${OSII_MODEL_BRIDGE_PORT:-8095}:8095"]
@@ -202,12 +288,12 @@ services:
       OSII_MODEL_BASE_URL: ${OSII_MODEL_BASE_URL:-}
       OSII_MODEL_API_KEY: ${OSII_MODEL_API_KEY:-}
       OSII_MODEL_API_KEY_ENV: ${OSII_MODEL_API_KEY_ENV:-OSII_MODEL_API_KEY}
-      SHIRTY_BASE_URL: ${SHIRTY_BASE_URL:-}
-      SHIRTY_API_KEY: ${SHIRTY_API_KEY:-}
+      OSII_SYNTHESIS_MODEL: ${OSII_SYNTHESIS_MODEL:-}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      SHIRTY_SYNTHESIS_MODEL: ${SHIRTY_SYNTHESIS_MODEL:-meta-llama/Llama-3.1-8B-Instruct}
-      SHIRTY_CHAT_MODEL: ${SHIRTY_CHAT_MODEL:-meta-llama/Llama-3.1-8B-Instruct}
+      OPENAI_SYNTHESIS_MODEL: ${OPENAI_SYNTHESIS_MODEL:-}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-}
       PORT: "8095"
     volumes:
       - osii-data:/data:ro

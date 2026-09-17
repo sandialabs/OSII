@@ -27,6 +27,7 @@
 import json
 
 from osii.domain.artifacts.read_enrichments import list_scope_enrichments
+from osii.domain.read.catalog import load_files_catalog
 from osii.domain.scopes.collections import list_collections
 from osii.enrichment.linguistic_examples import (
     EntityCandidateEnricher,
@@ -39,11 +40,22 @@ from _demo_support import demo_paths, require_path
 paths = demo_paths()
 require_path(paths.osii_root / "objects", "Run the extraction example first.")
 
+if not load_files_catalog(paths.osii_root):
+    raise RuntimeError("No extracted objects found. Run 01_Extract_documents_with_Tesseract first.")
+
 root_scope = {"scope_type": "root"}
 collection = next(
-    item for item in list_collections(paths.osii_root)
-    if item["name"] == "Purcell analysis"
+    (
+        item for item in list_collections(paths.osii_root)
+        if item["name"] == "Purcell analysis"
+    ),
+    None,
 )
+if collection is None:
+    raise RuntimeError(
+        "The 'Purcell analysis' collection is missing. "
+        "Run 03_Browse_and_create_a_collection first."
+    )
 collection_scope = {
     "scope_type": "collection",
     "collection_id": collection["id"],

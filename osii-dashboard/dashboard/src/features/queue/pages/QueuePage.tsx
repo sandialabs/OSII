@@ -1,7 +1,9 @@
 import {
   ChangeEvent,
   useDeferredValue,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -9,6 +11,7 @@ import {
   AccordionDetails,
   AccordionSummary,
   Alert,
+  Box,
   Button,
   Checkbox,
   Chip,
@@ -27,8 +30,10 @@ import {
   Typography,
 } from "@mui/material";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
+import CancelOutlinedIcon from "@mui/icons-material/CancelOutlined";
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
 import FolderOutlinedIcon from "@mui/icons-material/FolderOutlined";
+import PauseCircleOutlineOutlinedIcon from "@mui/icons-material/PauseCircleOutlineOutlined";
 import PlayArrowOutlinedIcon from "@mui/icons-material/PlayArrowOutlined";
 import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
@@ -38,15 +43,19 @@ import { useNavigate } from "react-router-dom";
 
 import {
   browseIntake,
+  controlProcessingRun,
   createProcessingRun,
+  getProcessingRunLogs,
   getIntakeReadiness,
   listProcessingRuns,
+  recoverProcessingQueue,
   rescanSourcePaths,
   resolveIntake,
   uploadQueueFiles,
 } from "../../../api/queue";
 import type {
   QueueBrowseEntry,
+  ProcessingRun,
   SourceRescanResponse,
   UploadResponse,
 } from "../../../api/types";
@@ -91,6 +100,33 @@ function formatSize(size: number | null | undefined): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function secondsBetween(start?: string | null, end?: string | null): number | null {
+  if (!start) return null;
+  const startMs = Date.parse(start);
+  const endMs = end ? Date.parse(end) : Date.now();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null;
+  return Math.max(0, (endMs - startMs) / 1000);
+}
+
+function formatDuration(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return "not recorded";
+  if (seconds < 1) return `${Math.round(seconds * 1000)} ms`;
+  if (seconds < 60) return `${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)} s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.round(seconds % 60);
+  if (minutes < 60) return `${minutes}m ${remainder}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
+function completedFileDurations(run: ProcessingRun): number[] {
+  return (run.items ?? []).flatMap((item) => (
+    typeof item.duration_seconds === "number" && Number.isFinite(item.duration_seconds)
+      ? [item.duration_seconds]
+      : []
+  ));
+}
+
 function parentDisplay(display: string): string {
   const normalized = display.replace(/\\/g, "/");
   const parts = normalized.split("/");
@@ -121,15 +157,21 @@ export function QueuePage() {
   const [chunkSize, setChunkSize] = useState(768);
   const [chunkOverlap, setChunkOverlap] = useState(128);
   const [enrich, setEnrich] = useState(false);
+  const [createCollection, setCreateCollection] = useState(false);
+  const [collectionName, setCollectionName] = useState("");
+  const [collectionDescription, setCollectionDescription] = useState("");
   const [selectedSynthesizer, setSelectedSynthesizer] = useState("");
   const [selectedEnricher, setSelectedEnricher] = useState("");
-  const [extractorOverrides, setExtractorOverrides] = useState<Record<string, string>>({});
   const [expertContext, setExpertContext] = useState("");
   const [uploading, setUploading] = useState(false);
   const [starting, setStarting] = useState(false);
   const [rescanning, setRescanning] = useState(false);
   const [rescanResult, setRescanResult] = useState<SourceRescanResponse | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [controllingRun, setControllingRun] = useState<string | null>(null);
+  const [recoveringQueue, setRecoveringQueue] = useState(false);
+  const [selectedLogRunId, setSelectedLogRunId] = useState<string | null>(null);
+  const logPanelRef = useRef<HTMLPreElement | null>(null);
 
   const selectedFilter = FILE_FILTERS.find(
     (option) => option.value === filterPreset,
@@ -166,7 +208,7 @@ export function QueuePage() {
     queryKey: ["processing-runs"],
     queryFn: listProcessingRuns,
     refetchInterval: (query) => query.state.data?.runs.some(
-      (run) => ["queued", "pending", "running"].includes(run.status),
+      (run) => ["queued", "pending", "running", "pausing", "cancelling"].includes(run.status),
     ) ? 1500 : 5000,
   });
   const readiness = useQuery({
@@ -174,6 +216,7 @@ export function QueuePage() {
     queryFn: getIntakeReadiness,
     staleTime: 30_000,
   });
+  const sourceStatus = readiness.data?.source;
   const availableSynthesizers = readiness.data?.synthesizers.filter(
     (item) => item.available,
   ) ?? [];
@@ -209,7 +252,6 @@ export function QueuePage() {
       deferredIncludePatterns,
       deferredExcludePatterns,
       showHidden,
-      extractorOverrides,
       section,
       runExtraction,
       extractMode,
@@ -228,7 +270,6 @@ export function QueuePage() {
       include_patterns: deferredIncludePatterns,
       exclude_patterns: deferredExcludePatterns,
       show_hidden: showHidden,
-      extractor_overrides: extractorOverrides,
       workflow: section === "process" ? "library" : "intake",
       run_extraction: runExtraction,
       extract_mode: extractMode,
@@ -250,9 +291,85 @@ export function QueuePage() {
     () => runs.data?.runs.slice(0, 10) ?? [],
     [runs.data],
   );
+  const selectedLogRun = recentRuns.find((run) => run.id === selectedLogRunId);
+  const runLogs = useQuery({
+    queryKey: ["processing-runs", selectedLogRunId, "logs"],
+    queryFn: () => getProcessingRunLogs(selectedLogRunId ?? ""),
+    enabled: section === "activity" && Boolean(selectedLogRunId),
+    refetchInterval: selectedLogRun
+      && ["queued", "pending", "running", "pausing", "cancelling"].includes(selectedLogRun.status)
+      ? 1000
+      : 5000,
+  });
+  const displayedLogLines = runLogs.data?.logs ?? selectedLogRun?.logs ?? [];
+
+  useEffect(() => {
+    if (section !== "activity" || selectedLogRunId || !recentRuns.length) return;
+    const visibleRun = recentRuns.find((run) => (
+      ["queued", "pending", "running", "pausing", "cancelling", "error"].includes(run.status)
+    )) ?? recentRuns[0];
+    setSelectedLogRunId(visibleRun.id);
+  }, [recentRuns, section, selectedLogRunId]);
+
+  useEffect(() => {
+    const panel = logPanelRef.current;
+    if (panel) panel.scrollTop = panel.scrollHeight;
+  }, [displayedLogLines.length, selectedLogRunId]);
+
+  const controlRun = async (run: ProcessingRun, action: "pause" | "resume" | "cancel" | "retry") => {
+    setControllingRun(`${run.id}:${action}`);
+    try {
+      const result = await controlProcessingRun(run.id, action);
+      setNotice({
+        severity: "info",
+        text: action === "pause"
+          ? "Pause requested. OSII will finish the current file, then free the worker for another run."
+          : action === "cancel"
+            ? "Cancellation requested. OSII will finish the current file, then stop this run."
+            : action === "retry"
+              ? "The failed run is queued again. Files that already completed will not be repeated."
+            : "Run resumed. Completed files will not be repeated.",
+      });
+      await queryClient.invalidateQueries({ queryKey: ["processing-runs"] });
+      if (result.status === "paused" || result.status === "cancelled") {
+        await runs.refetch();
+      }
+    } catch (error) {
+      setNotice({
+        severity: "error",
+        text: error instanceof Error ? error.message : `Could not ${action} run.`,
+      });
+    } finally {
+      setControllingRun(null);
+    }
+  };
+
+  const recoverQueue = async () => {
+    setRecoveringQueue(true);
+    try {
+      const result = await recoverProcessingQueue();
+      setNotice({
+        severity: "info",
+        text: result.recovered_count
+          ? `${result.recovered_count} interrupted run(s) returned to a safe queue state.`
+          : "No stale run was found. If the worker just stopped, wait 15 seconds and try again.",
+      });
+      await queryClient.invalidateQueries({ queryKey: ["processing-runs"] });
+    } catch (error) {
+      setNotice({
+        severity: "error",
+        text: error instanceof Error ? error.message : "Could not recover the processing queue.",
+      });
+    } finally {
+      setRecoveringQueue(false);
+    }
+  };
 
   const addSharedEntry = (entry: QueueBrowseEntry) => {
     setIncludeSharedRoot(false);
+    if (entry.type === "folder" && !collectionName.trim()) {
+      setCollectionName(entry.name);
+    }
     setSelectedSharedItems((items) => (
       items.some((item) => item.path === entry.path)
         ? items
@@ -326,7 +443,7 @@ export function QueuePage() {
   };
 
   const start = async () => {
-    if (!queuePaths.length || !preview.data?.preview.matched_count) return;
+    if (!queuePaths.length || !preview.data?.preview.matched_count || (createCollection && !collectionName.trim())) return;
     setStarting(true);
     setNotice(null);
     try {
@@ -336,7 +453,6 @@ export function QueuePage() {
         include_patterns: includePatterns,
         exclude_patterns: excludePatterns,
         show_hidden: showHidden,
-        extractor_overrides: extractorOverrides,
         workflow: section === "process" ? "library" : "intake",
         run_extraction: runExtraction,
         extract_mode: extractMode,
@@ -352,16 +468,29 @@ export function QueuePage() {
           ? (selectedEnricher || readiness.data?.defaults.enricher || "local.stats-keywords")
           : null,
         expert_context: expertContext.trim() || null,
+        collection: section === "add" && createCollection
+          ? {
+            name: collectionName.trim(),
+            description: collectionDescription.trim() || null,
+          }
+          : undefined,
       });
+      const collectionMessage = run.collection
+        ? ` A logical collection, “${run.collection.name}”, will include each document that finishes.`
+        : "";
       setNotice({
         severity: "success",
-        text: `${section === "process" ? "Processing" : "Intake"} run ${run.id} is queued for ${run.resolved_count ?? preview.data.preview.matched_count} file(s).`,
+        text: `${section === "process" ? "Processing" : "Intake"} run ${run.id} is queued for ${run.resolved_count ?? preview.data.preview.matched_count} file(s).${collectionMessage}`,
       });
       setUploadedItems([]);
       setSelectedSharedItems([]);
       setIncludeSharedRoot(true);
       setExpertContext("");
+      setCreateCollection(false);
+      setCollectionName("");
+      setCollectionDescription("");
       await queryClient.invalidateQueries({ queryKey: ["processing-runs"] });
+      setSelectedLogRunId(run.id);
       setSection("activity");
     } catch (error) {
       setNotice({
@@ -411,7 +540,9 @@ export function QueuePage() {
     ),
   );
   const unavailableExtractorPlan = preview.data?.preview.extractor_plan.filter(
-    (plan) => !extractorStatus(plan.extractor)?.available,
+    (plan) => ![plan.extractor, ...(plan.fallbacks ?? [])].some(
+      (name) => extractorStatus(name)?.available,
+    ),
   ) ?? [];
   const extractorPlanReady = (
     Boolean(readiness.data)
@@ -442,6 +573,20 @@ export function QueuePage() {
       </Paper>
 
       {notice ? <Alert severity={notice.severity}>{notice.text}</Alert> : null}
+
+      {runs.data?.worker && !runs.data.worker.available ? (
+        <Alert
+          severity="error"
+          action={(
+            <Stack direction="row" spacing={0.5}>
+              <Button color="inherit" size="small" onClick={() => setSection("activity")}>View activity</Button>
+              <Button color="inherit" size="small" disabled={recoveringQueue} onClick={() => void recoverQueue()}>{recoveringQueue ? "Checking…" : "Recover queue"}</Button>
+            </Stack>
+          )}
+        >
+          <strong>The intake worker is not responding.</strong> {runs.data.worker.detail} New work will remain queued until the worker is running.
+        </Alert>
+      ) : null}
 
       {section !== "activity" ? <>
 
@@ -484,12 +629,49 @@ export function QueuePage() {
         severity="info"
         action={(
           <Button color="inherit" size="small" onClick={() => navigate("/admin/processors")}>
-            Open Tools &amp; services
+            Open Setup
           </Button>
         )}
       >
-        <strong><code>make dev</code> already started OSII&apos;s Python text extractor and no-AI source-excerpt preview.</strong> OSII does not manage the separate Ollama or Tesseract applications. Open Tools &amp; services for exact connection status and startup commands before processing scanned PDFs or requesting AI models.
+        <strong>Basic document reading is included.</strong> Open Setup only when you need OCR, Apache Tika, semantic embeddings, or generated summaries.
       </Alert>
+
+      {sourceStatus ? (
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <Stack spacing={1}>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              justifyContent="space-between"
+              alignItems={{ sm: "center" }}
+              spacing={1}
+            >
+              <Stack spacing={0.25}>
+                <Typography fontWeight={700}>
+                  {sourceStatus.kind === "shared" ? "Shared drive documents" : "Local documents"}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
+                  Reading originals from <code>{sourceStatus.source_root}</code>
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
+                  Writing OSII artifacts to <code>{sourceStatus.osii_root}</code>
+                </Typography>
+              </Stack>
+              <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+                <Chip
+                  color={sourceStatus.ready_for_intake ? "success" : "error"}
+                  label={sourceStatus.ready_for_intake ? "Connected and ready" : "Source needs attention"}
+                />
+                {sourceStatus.source_mode === "read_only" ? <Chip variant="outlined" label="Originals read-only" /> : null}
+              </Stack>
+            </Stack>
+            {sourceStatus.detail ? (
+              <Alert severity={sourceStatus.ready_for_intake ? "info" : "error"} sx={{ py: 0.25 }}>
+                {sourceStatus.detail}
+              </Alert>
+            ) : null}
+          </Stack>
+        </Paper>
+      ) : null}
 
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={2}>
@@ -708,6 +890,49 @@ export function QueuePage() {
         </Stack>
       </Paper>
 
+      {section === "add" ? <Paper variant="outlined" sx={{ p: 2, bgcolor: "action.hover" }}>
+        <Stack spacing={1.25}>
+          <Stack spacing={0.25}>
+            <Typography fontWeight={700}>Make this Intake a logical collection</Typography>
+            <Typography variant="body2" color="text.secondary">
+              A collection is a reusable OSII scope for enrichments, tables, Search, and Chat. It can begin with a folder, selected files across folders, uploads, or the whole source root; originals are never copied.
+            </Typography>
+          </Stack>
+          <FormControlLabel
+            control={(
+              <Checkbox
+                checked={createCollection}
+                onChange={(event) => setCreateCollection(event.target.checked)}
+              />
+            )}
+            label="Create a logical collection from this Intake"
+          />
+          {createCollection ? (
+            <Stack spacing={1.25}>
+              <TextField
+                required
+                fullWidth
+                size="small"
+                label="Collection name"
+                value={collectionName}
+                onChange={(event) => setCollectionName(event.target.value)}
+                helperText="When you select a folder, OSII suggests its name. You can use any meaningful name."
+              />
+              <TextField
+                fullWidth
+                size="small"
+                label="What is this collection for? (optional)"
+                multiline
+                minRows={2}
+                value={collectionDescription}
+                onChange={(event) => setCollectionDescription(event.target.value)}
+                helperText="Only documents that finish this run are added, so the collection remains an accurate reusable scope."
+              />
+            </Stack>
+          ) : null}
+        </Stack>
+      </Paper> : null}
+
       {section === "add" ? <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
           <Stack spacing={0.25}>
@@ -827,156 +1052,34 @@ export function QueuePage() {
         </Stack>
       </Paper>
 
-      <Paper variant="outlined" sx={{ p: 2 }}>
-        <Stack spacing={2}>
-          <Stack
-            direction={{ xs: "column", md: "row" }}
-            justifyContent="space-between"
-            spacing={1}
-          >
-            <Stack spacing={0.25}>
-              <Typography fontWeight={700}>Tools and extraction routing</Typography>
-              <Typography variant="body2" color="text.secondary">
-                These choices are calculated from the document scope and file rules above. Completed files remain browsable while processing continues.
-              </Typography>
-            </Stack>
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<RefreshOutlinedIcon />}
-                onClick={() => void queryClient.invalidateQueries({
-                  queryKey: ["intake", "readiness"],
-                })}
-              >
-                Retest tools
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<SettingsOutlinedIcon />}
-                onClick={() => navigate("/admin/processors")}
-              >
-                Manage tools &amp; services
-              </Button>
-            </Stack>
+      <Paper variant="outlined" sx={{ p: 1.5 }}>
+        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1.25} alignItems={{ md: "center" }}>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Chip
+              color={!runExtraction || extractorPlanReady ? "success" : "error"}
+              variant="outlined"
+              label={runExtraction
+                ? (extractorPlanReady ? "Extraction route ready" : "Extraction route needs setup")
+                : "Using current extraction"}
+            />
+            <Chip
+              color={embeddingAvailable ? "success" : "default"}
+              variant="outlined"
+              label={embeddingAvailable
+                ? `${embeddingStatus?.display_name ?? "Embedding method"} ready`
+                : "BM25 search ready; embeddings unavailable"}
+            />
           </Stack>
-
-          {readiness.isLoading ? <LinearProgress /> : null}
-          {readiness.isError ? (
-            <Alert severity="error">
-              Tool readiness could not be tested. Intake is paused until the tools can be checked.
-            </Alert>
-          ) : null}
-
-          {readiness.data ? (
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              {runExtraction ? (
-                <Chip
-                  color={extractorPlanReady ? "success" : "error"}
-                  variant="outlined"
-                  label={extractorPlanReady
-                    ? "Selected text extractors are running"
-                    : "A selected extractor needs setup"}
-                />
-              ) : (
-                <Chip color="success" variant="outlined" label="Using current extraction" />
-              )}
-              <Chip color="success" variant="outlined" label="Cited source-excerpt preview ready (no AI)" />
-              <Chip
-                color={embeddingAvailable ? "success" : "default"}
-                variant="outlined"
-                label={embeddingAvailable
-                  ? `${embeddingStatus?.display_name ?? "Embedding method"} is usable`
-                  : "No embedding model — BM25 keyword search still works"}
-              />
-              <Chip
-                color="success"
-                variant="outlined"
-                label={`${readiness.data.enrichers.filter((item) => item.available).length} enrichment methods available`}
-              />
-            </Stack>
-          ) : null}
-
-          {runExtraction ? (
-            <Stack spacing={1}>
-              <Typography variant="subtitle2">Extractor rules for matched files</Typography>
-              {(preview.data?.preview.extractor_plan ?? []).map((plan) => {
-                const selectedStatus = extractorStatus(plan.extractor);
-                return (
-                  <Paper key={plan.extension} variant="outlined" sx={{ p: 1.5 }}>
-                    <Stack
-                      direction={{ xs: "column", md: "row" }}
-                      alignItems={{ md: "center" }}
-                      justifyContent="space-between"
-                      spacing={1.5}
-                    >
-                      <Stack minWidth={0}>
-                        <Typography fontWeight={600}>
-                          {plan.extension} · {plan.count} file{plan.count === 1 ? "" : "s"}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary" noWrap>
-                          {plan.sample.join(", ")}
-                        </Typography>
-                      </Stack>
-                      <TextField
-                        select
-                        size="small"
-                        label="Extractor"
-                        value={selectedStatus?.id ?? plan.extractor}
-                        onChange={(event) => setExtractorOverrides((current) => ({
-                          ...current,
-                          [plan.extension]: event.target.value,
-                        }))}
-                        sx={{ minWidth: 240 }}
-                      >
-                        {(readiness.data?.extractors ?? []).map((extractor) => (
-                          <MenuItem
-                            key={extractor.id}
-                            value={extractor.id}
-                            disabled={!extractor.available}
-                          >
-                            {extractor.display_name}
-                            {extractor.available ? "" : " — unavailable"}
-                          </MenuItem>
-                        ))}
-                      </TextField>
-                      <Chip
-                        size="small"
-                        color={selectedStatus?.available ? "success" : "error"}
-                        label={selectedStatus?.available ? "Ready" : "Unavailable"}
-                        sx={{ alignSelf: { xs: "flex-start", md: "center" } }}
-                      />
-                    </Stack>
-                  </Paper>
-                );
-              })}
-              {preview.isLoading ? <LinearProgress /> : null}
-              {!preview.isLoading && !(preview.data?.preview.extractor_plan.length) ? (
-                <Typography variant="body2" color="text.secondary">
-                  No files currently match the source scope and rules above.
-                </Typography>
-              ) : null}
-            </Stack>
-          ) : (
-            <Alert severity="success">
-              Extraction will not run. OSII will reuse each document&apos;s current primary extraction.
-            </Alert>
-          )}
-
-          {runExtraction && unavailableExtractorPlan.length ? (
-            <Alert severity="error">
-              Start the required extractor service or choose another ready extractor.
-            </Alert>
-          ) : null}
-          {readiness.data?.external.length ? (
+          <Stack direction="row" spacing={1} alignItems="center">
             <Typography variant="caption" color="text.secondary">
-              {readiness.data.external.filter((item) => item.available).length} of{" "}
-              {readiness.data.external.length} registered external tools responded.
-              Use Manage tools &amp; services to run their full contract tests.
+              File-type routes and fallbacks are managed in Setup.
             </Typography>
-          ) : null}
+            <Button size="small" variant="outlined" startIcon={<SettingsOutlinedIcon />} onClick={() => navigate("/admin/processors")}>Open Setup</Button>
+          </Stack>
         </Stack>
+        {readiness.isLoading ? <LinearProgress sx={{ mt: 1 }} /> : null}
+        {readiness.isError ? <Alert severity="error" sx={{ mt: 1 }}>Tool readiness could not be tested. Intake is paused until the tools can be checked.</Alert> : null}
+        {runExtraction && unavailableExtractorPlan.length ? <Alert severity="error" sx={{ mt: 1 }}>No available extractor or fallback is configured for one or more matched file types. Open Setup to fix the route.</Alert> : null}
       </Paper>
 
       <Paper variant="outlined" sx={{ p: 2 }}>
@@ -984,7 +1087,7 @@ export function QueuePage() {
           <Stack spacing={0.25}>
             <Typography fontWeight={700}>Expert context</Typography>
             <Typography variant="body2" color="text.secondary">
-              Add facts a subject-matter expert knows about the selected documents or folders. OSII saves this context with the intake and supplies it to processors that can use it.
+              Add subject-matter guidance for the matched documents. OSII saves it with each document for later VLM extraction, synthesis, and enrichment. Tesseract OCR does not need or use it.
             </Typography>
           </Stack>
           <TextField
@@ -996,7 +1099,7 @@ export function QueuePage() {
             value={expertContext}
             onChange={(event) => setExpertContext(event.target.value)}
             inputProps={{ maxLength: 20_000 }}
-            helperText={`${expertContext.length.toLocaleString()} / 20,000 characters · Applies to every matched document in this run.`}
+            helperText={`${expertContext.length.toLocaleString()} / 20,000 characters · New text replaces saved guidance for matched documents. Leave blank to reuse their saved context. Sent to selected processors; do not include credentials.`}
           />
         </Stack>
       </Paper>
@@ -1221,7 +1324,7 @@ export function QueuePage() {
             </Paper>
           ) : (
             <Typography variant="caption" color="text.secondary">
-              No expert context supplied. You can still start this run.
+              No new expert context supplied. Saved document context will be reused where available; Tesseract OCR needs none.
             </Typography>
           )}
 
@@ -1263,11 +1366,14 @@ export function QueuePage() {
               || starting
               || preview.isLoading
               || readiness.isLoading
+              || sourceStatus?.ready_for_intake === false
+              || runs.data?.worker?.available === false
               || (runExtraction && !extractorPlanReady)
               || (synthesize && !effectiveSynthesizer)
               || (embed && !embeddingAvailable)
               || (embed && !chunkSettingsValid)
               || (extractionPolicy === "save_variant" && runExtraction && (synthesize || embed || enrich))
+              || (section === "add" && createCollection && !collectionName.trim())
             }
             onClick={() => void start()}
             sx={{ alignSelf: "flex-start" }}
@@ -1283,14 +1389,34 @@ export function QueuePage() {
 
       {section === "activity" ? <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={1.5}>
-          <Typography fontWeight={700}>Processing activity</Typography>
-          {recentRuns.some((run) => ["queued", "pending", "running"].includes(run.status)) ? (
-            <Alert severity="success">
-              Intake runs sequentially. Open Files at any time to browse documents that have already completed.
+          <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1} alignItems={{ sm: "center" }}>
+            <Typography fontWeight={700}>Processing activity</Typography>
+            <Chip
+              size="small"
+              color={runs.data?.worker?.available ? "success" : "error"}
+              label={runs.data?.worker?.available ? "Worker responding" : "Worker unavailable"}
+            />
+          </Stack>
+          {recentRuns.some((run) => ["queued", "pending", "running", "pausing", "cancelling"].includes(run.status)) ? (
+            <Alert severity="info">
+              Runs use one worker and process files sequentially. Pause a long run to let a newly queued priority run go next; pausing or cancelling takes effect safely after the current file finishes.
             </Alert>
           ) : null}
-          {recentRuns.map((run) => (
-            <Paper key={run.id} variant="outlined" sx={{ p: 1.5 }}>
+          {recentRuns.map((run) => {
+            const durations = completedFileDurations(run);
+            const processorSeconds = durations.reduce((total, duration) => total + duration, 0);
+            const averageSeconds = durations.length ? processorSeconds / durations.length : null;
+            const remainingFiles = Math.max(0, (run.total ?? 0) - (run.completed ?? 0));
+            const estimatedRemaining = averageSeconds == null ? null : averageSeconds * remainingFiles;
+            const elapsedSeconds = secondsBetween(run.started_at, run.finished_at);
+            const itemErrors = (run.items ?? []).filter((item) => item.error);
+            const controllable = Boolean(run.workflow);
+            const canPause = controllable && ["queued", "pending", "running"].includes(run.status);
+            const canResume = controllable && run.status === "paused";
+            const canCancel = controllable && ["queued", "pending", "running", "pausing", "paused"].includes(run.status);
+            const canRetry = controllable && run.status === "error";
+            return (
+              <Paper key={run.id} variant="outlined" sx={{ p: 1.5 }}>
               <Stack
                 direction={{ xs: "column", sm: "row" }}
                 justifyContent="space-between"
@@ -1326,19 +1452,94 @@ export function QueuePage() {
                     {run.operations?.enrich ? <Chip size="small" label="Enrichment" /> : null}
                   </Stack>
                 </Stack>
-                <Chip
-                  color={
-                    run.status === "done"
-                      ? "success"
-                      : run.status === "error"
-                        ? "error"
-                        : "primary"
-                  }
-                  label={run.status}
-                />
+                <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <Button
+                    size="small"
+                    variant={selectedLogRunId === run.id ? "contained" : "text"}
+                    onClick={() => setSelectedLogRunId(run.id)}
+                  >
+                    View log
+                  </Button>
+                  {canPause ? (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<PauseCircleOutlineOutlinedIcon />}
+                      disabled={controllingRun !== null}
+                      onClick={() => void controlRun(run, "pause")}
+                    >
+                      Pause
+                    </Button>
+                  ) : null}
+                  {canResume ? (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      startIcon={<PlayArrowOutlinedIcon />}
+                      disabled={controllingRun !== null}
+                      onClick={() => void controlRun(run, "resume")}
+                    >
+                      Resume
+                    </Button>
+                  ) : null}
+                  {canCancel ? (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="error"
+                      startIcon={<CancelOutlinedIcon />}
+                      disabled={controllingRun !== null}
+                      onClick={() => void controlRun(run, "cancel")}
+                    >
+                      Cancel
+                    </Button>
+                  ) : null}
+                  {canRetry ? (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      startIcon={<RefreshOutlinedIcon />}
+                      disabled={controllingRun !== null || runs.data?.worker?.available === false}
+                      onClick={() => void controlRun(run, "retry")}
+                    >
+                      Retry failed run
+                    </Button>
+                  ) : null}
+                  <Chip
+                    color={
+                      run.status === "done"
+                        ? "success"
+                        : ["error", "cancelled"].includes(run.status)
+                          ? "error"
+                          : run.status === "paused"
+                            ? "warning"
+                            : "primary"
+                    }
+                    label={run.status}
+                  />
+                </Stack>
               </Stack>
+              {run.started_at ? (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  Elapsed {formatDuration(elapsedSeconds)}
+                  {durations.length ? ` · measured processor time ${formatDuration(processorSeconds)} · average ${formatDuration(averageSeconds)} per completed file` : ""}
+                  {estimatedRemaining != null && remainingFiles > 0 ? ` · estimated remaining ${formatDuration(estimatedRemaining)}` : ""}
+                </Typography>
+              ) : null}
+              {run.status === "pausing" ? <Alert severity="info" sx={{ mt: 1 }}>Finishing the current file before pausing.</Alert> : null}
+              {run.status === "cancelling" ? <Alert severity="info" sx={{ mt: 1 }}>Finishing the current file before cancelling.</Alert> : null}
               {run.error ? <Alert severity="error" sx={{ mt: 1 }}>{run.error}</Alert> : null}
               {run.indexing_error ? <Alert severity="warning" sx={{ mt: 1 }}>{run.indexing_error}</Alert> : null}
+              {itemErrors.length ? (
+                <Alert severity="error" sx={{ mt: 1 }}>
+                  {itemErrors.slice(0, 3).map((item, index) => (
+                    <Typography key={`${item.display}-${index}`} variant="body2">
+                      {item.display}: {item.error}
+                    </Typography>
+                  ))}
+                  {itemErrors.length > 3 ? `And ${itemErrors.length - 3} more file error(s).` : null}
+                </Alert>
+              ) : null}
               {(run.logs ?? []).slice(-2).map((line) => (
                 <Typography
                   key={line}
@@ -1349,8 +1550,91 @@ export function QueuePage() {
                   {line}
                 </Typography>
               ))}
+              {(run.items ?? []).some((item) => item.started_at || item.duration_seconds != null) ? (
+                <Accordion variant="outlined" disableGutters sx={{ mt: 1 }}>
+                  <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
+                    <Typography variant="body2" fontWeight={600}>File processing times</Typography>
+                  </AccordionSummary>
+                  <AccordionDetails sx={{ maxHeight: 300, overflow: "auto" }}>
+                    <Stack spacing={1}>
+                      {durations.length ? (
+                        <Typography variant="caption" color="text.secondary">
+                          Fastest {formatDuration(Math.min(...durations))} · slowest {formatDuration(Math.max(...durations))} · average {formatDuration(averageSeconds)}
+                        </Typography>
+                      ) : null}
+                      {(run.items ?? []).map((item, index) => (
+                        <Stack
+                          key={`${item.display}-${index}`}
+                          direction={{ xs: "column", sm: "row" }}
+                          justifyContent="space-between"
+                          spacing={0.5}
+                        >
+                          <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>{item.display}</Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
+                            {item.status} · {formatDuration(
+                              item.duration_seconds ?? secondsBetween(item.started_at, item.finished_at),
+                            )}
+                          </Typography>
+                        </Stack>
+                      ))}
+                    </Stack>
+                  </AccordionDetails>
+                </Accordion>
+              ) : null}
+              </Paper>
+            );
+          })}
+          {selectedLogRunId ? (
+            <Paper
+              variant="outlined"
+              sx={{
+                bgcolor: "#10151d",
+                color: "#d8e2ef",
+                borderColor: "#344155",
+                overflow: "hidden",
+              }}
+            >
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                justifyContent="space-between"
+                alignItems={{ sm: "center" }}
+                spacing={1}
+                sx={{ px: 1.5, py: 1, borderBottom: "1px solid #344155" }}
+              >
+                <Typography variant="body2" fontWeight={700} color="inherit">
+                  Live run log · {selectedLogRunId.slice(0, 8)}
+                  {selectedLogRun ? ` · ${selectedLogRun.status}` : ""}
+                </Typography>
+                <Stack direction="row" spacing={1}>
+                  <Button size="small" color="inherit" onClick={() => void runLogs.refetch()}>
+                    Refresh
+                  </Button>
+                </Stack>
+              </Stack>
+              <Box
+                component="pre"
+                ref={logPanelRef}
+                aria-live="polite"
+                sx={{
+                  m: 0,
+                  p: 1.5,
+                  minHeight: 120,
+                  maxHeight: 300,
+                  overflow: "auto",
+                  whiteSpace: "pre-wrap",
+                  overflowWrap: "anywhere",
+                  fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+                  fontSize: "0.78rem",
+                  lineHeight: 1.55,
+                }}
+              >
+                {runLogs.isError
+                  ? "Could not load this run log. Use Refresh after confirming the backend is available."
+                  : displayedLogLines.join("\n")
+                    || "Waiting for the worker to begin this run…"}
+              </Box>
             </Paper>
-          ))}
+          ) : null}
           {!recentRuns.length ? (
             <Typography color="text.secondary">No intake runs yet.</Typography>
           ) : null}

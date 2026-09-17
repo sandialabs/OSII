@@ -46,7 +46,7 @@ export function ScopeEnrichmentsPanel({ scope }: { scope: ScopeDescribeRequest }
     (entry): entry is EnrichmentListEntryFile =>
       entry.kind === "file" &&
       entry.name.endsWith(".json") &&
-      entry.name !== "wiki--llm_wiki.json" &&
+      entry.artifact_type !== "wiki_markdown" &&
       !entry.name.endsWith(".meta.json"),
   );
   return (

@@ -3,11 +3,17 @@ import type {
   IntakeResolveResponse,
   IntakeReadiness,
   ProcessingRun,
+  ProcessingRunsResponse,
   ProcessorEndpoint,
   ModelProvider,
   ModelProviderHealth,
   ModelPullJob,
   OllamaRecommendation,
+  ManagedCapabilityService,
+  SetupSummary,
+  ExtractorRoute,
+  ExtractorRoutesResponse,
+  ExtractorRoutesSaveResponse,
   QueueBrowseResponse,
   SourceRescanResponse,
   UploadResponse,
@@ -67,8 +73,30 @@ export async function saveProcessorSettings(processorName: string, config: Recor
   );
 }
 
-export async function listProcessingRuns(): Promise<{ runs: ProcessingRun[]; queue: Array<Record<string, unknown>> }> {
+export async function listProcessingRuns(): Promise<ProcessingRunsResponse> {
   return apiJson("/api/runs");
+}
+
+export async function recoverProcessingQueue(): Promise<{
+  recovered_run_ids: string[];
+  recovered_count: number;
+  worker: ProcessingRunsResponse["worker"];
+}> {
+  return apiJson("/api/runs/recover", { method: "POST", json: {} });
+}
+
+export async function getProcessingRunLogs(runId: string): Promise<{ run_id: string; logs: string[] }> {
+  return apiJson(`/api/runs/${encodeURIComponent(runId)}/logs`);
+}
+
+export async function controlProcessingRun(
+  runId: string,
+  action: "pause" | "resume" | "cancel" | "retry",
+): Promise<{ run_id: string; status: string; queue_status: string }> {
+  return apiJson(`/api/runs/${encodeURIComponent(runId)}/${action}`, {
+    method: "POST",
+    json: {},
+  });
 }
 
 export async function listProcessorEndpoints(): Promise<{ processors: ProcessorEndpoint[] }> {
@@ -99,6 +127,49 @@ export async function checkModelProvider(id: string) {
     `/api/admin/model-providers/${encodeURIComponent(id)}/health`,
     { method: "POST", json: {} },
   );
+}
+
+export async function saveModelProviderCredential(id: string, apiKey: string) {
+  return apiJson<{ provider_id: string; credential_present: boolean; credential_source: string }>(
+    `/api/admin/model-providers/${encodeURIComponent(id)}/credential`,
+    { method: "PUT", json: { api_key: apiKey } },
+  );
+}
+
+export async function deleteModelProviderCredential(id: string) {
+  return apiJson<{ provider_id: string; credential_present: boolean }>(
+    `/api/admin/model-providers/${encodeURIComponent(id)}/credential`,
+    { method: "DELETE" },
+  );
+}
+
+export async function getSetupSummary(): Promise<SetupSummary> {
+  return apiJson<SetupSummary>("/api/admin/setup");
+}
+
+export async function getExtractorRoutes(): Promise<ExtractorRoutesResponse> {
+  return apiJson("/api/extractor-routes");
+}
+
+export async function saveExtractorRoutes(routes: ExtractorRoute[]): Promise<ExtractorRoutesSaveResponse> {
+  return apiJson("/api/extractor-routes", {
+    method: "PUT",
+    json: { routes },
+  });
+}
+
+export async function controlCapabilityService(
+  id: string,
+  action: "start" | "stop" | "restart",
+): Promise<ManagedCapabilityService> {
+  return apiJson(`/api/admin/services/${encodeURIComponent(id)}/${action}`, {
+    method: "POST",
+    json: {},
+  });
+}
+
+export async function getCapabilityServiceLogs(id: string): Promise<{ service_id: string; lines: string[] }> {
+  return apiJson(`/api/admin/services/${encodeURIComponent(id)}/logs`);
 }
 
 export async function pullOllamaModel(id: string, model: string): Promise<ModelPullJob> {

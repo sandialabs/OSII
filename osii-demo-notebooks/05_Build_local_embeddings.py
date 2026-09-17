@@ -18,16 +18,10 @@
 # index. OSII records them so a workflow cannot silently mix incompatible
 # vectors after a model change.
 #
-# Start the baseline service in a second terminal:
+# Start the normal stack from the repository root:
 #
 # ```bash
-# make dev-embedder
-# ```
-#
-# Windows PowerShell:
-#
-# ```powershell
-# .\scripts\osii.ps1 dev-embedder
+# make dev
 # ```
 
 # %%

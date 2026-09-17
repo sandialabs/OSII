@@ -1,0 +1,39 @@
+[[routes]]
+name = "host-native-development"
+extractor = "local.native-text"
+fallbacks = ["tika"]
+extensions = [
+  ".cfg",
+  ".conf",
+  ".css",
+  ".csv",
+  ".docx",
+  ".htm",
+  ".html",
+  ".ini",
+  ".js",
+  ".json",
+  ".jsonl",
+  ".log",
+  ".md",
+  ".pdf",
+  ".pptx",
+  ".py",
+  ".rst",
+  ".rtf",
+  ".sql",
+  ".toml",
+  ".ts",
+  ".tsv",
+  ".txt",
+  ".xlsx",
+  ".xml",
+  ".yaml",
+  ".yml",
+]
+
+[[routes]]
+name = "host-tika-catchall"
+extractor = "tika"
+fallbacks = []
+extensions = ["*"]

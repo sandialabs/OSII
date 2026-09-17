@@ -1,7 +1,12 @@
 # Standard enrichment artifact formats
 
-The discriminator is always `artifact_type`. Version 1 defines four formats.
+These are canonical **enrichment** outputs, not extractor categories. The
+discriminator is always `artifact_type`. Version 1 defines four formats.
 SDK validation rejects undocumented fields so formats evolve deliberately.
+
+The dashboard chooses a view from this discriminator rather than from a
+processor name or filename. A newly registered SME enricher therefore receives
+the appropriate standard view without custom frontend code.
 
 ## Table
 
@@ -9,8 +14,20 @@ Fields: `title`, optional `description`, `columns`, `rows`, and optional
 `row_provenance`. Column keys address values in every row. Supported data types
 are `string`, `number`, `integer`, `boolean`, `date`, `datetime`, and `json`.
 
-The dashboard renders a scrollable table. Agents can inspect columns, filter
-rows in future tool surfaces, and follow row provenance.
+Use a table when a processor can defend a rectangular view of its source or
+scope. An **extractor** can return a table for one file as part of canonical
+reading; an **enricher** can return one table over an object, folder,
+collection, or root scope when combining, filtering, or joining grounded rows
+is the intended derived product.
+
+The dashboard renders a scrollable, sortable table and offers **Copy CSV**.
+People can choose visible columns with checkboxes; the `source_file` provenance
+column is hidden initially to keep wide tables readable, but remains available
+from **Columns**. Copied CSV uses the visible columns and active sort order.
+The artifact remains JSON with typed columns and row provenance, rather than
+becoming a dashboard-only spreadsheet. Future agent tools can consume the same
+stable artifact contract to inspect columns, select rows, and follow the
+grounding without a processor-specific integration.
 
 ## Knowledge graph
 
@@ -37,6 +54,8 @@ Fields: `title`, `markdown`, and optional citations. Markdown may use GFM,
 mathematics, tables, and headings. Raw HTML is not part of the contract.
 
 The dashboard renders sanitized Markdown using its existing Markdown stack.
+Multiple processors—and multiple Wiki Markdown artifacts returned by one
+processor—may coexist in the same scope.
 
 ## Provenance
 

@@ -15,17 +15,47 @@ The dashboard is intentionally modular. It is a standalone frontend that talks t
 - Reuse or delete up to 20 recent browser-local searches and chat prompts; answers and results are never stored
 - Explore root or collection scopes through saved noun/adjective phrase suggestions
 - Open and inspect documents including source PDFs
-- Navigate by folder using a lazy-loaded tree
+- Browse one folder at a time in a compact list or thumbnail/icon grid, with folders first, name filtering, and name/date/size sorting; subfolder files appear only when you open that subfolder
 - Organize documents into collections
+- Open a collection's collapsed **Enrichments** drawer for its wiki and other products; documents remain visible without an inline wiki or example-enrichment panel
 - Add or remove collection members without touching their originals, and export/import manifest-validated collection OSII packages
 - Apply structured sensitivity-awareness labels, handling notes, and reusable plain-text tags
 - Preview and surgically remove one file's OSII data, with a separate option to delete the writable original too
 - Expand Library Insights on Home to view root-level standard enrichments without loading them into the normal file grid
 - Open root-level derived artifacts only when needed; long lists and wiki content stay within scrollable regions and standard table columns are sortable
 - Rescan the configured source root for moved originals and safely remap exact hash matches without rerunning extraction
+- Select any Ollama model discovered on the configured server independently for embedding, synthesis, and chat
+- Connect AI models in Setup, then open the collapsed Extractors, Synthesizers, Embedders, and Enrichers drawers to inspect methods and settings; file-type routing lives inside Extractors. Bundled model-free methods are labeled as fallbacks.
+- Setup action feedback stays visible in bottom-right notifications; errors stay open until dismissed or replaced by a later result.
+- See worker heartbeat, live logs, safe stale-queue recovery, and failed-run retry controls in Intake Activity
 - Prepare for future document chat workflows
 
 ---
+
+## Browsing folders and collection products
+
+**Browse** shows only the current folder's contents. Use the breadcrumbs to go
+up, click a folder to go down, and switch **List / Icons** without changing the
+scope. The view choice stays in the URL when navigating folders or reloading.
+Filtering matches names in this folder, not the whole library; use **Search**
+for cross-folder retrieval. Up to 48 items display at first; **Show more** loads
+the next group. Folder synthesis/details are collapsed separately.
+
+Collection pages put documents first. **Enrichments** starts closed even when
+a wiki already exists. Open **Wiki** or **Other enrichments** inside the drawer
+when needed; **Close enrichments** hides them without deleting stored artifacts.
+**Delete saved wiki** provides a separate confirmation and removes only that
+derived wiki and its metadata, never documents or originals.
+Generation uses the collection's extracted documents together to create a
+collection-level result, not a separate result on every member. Adding documents
+does not regenerate an existing product automatically; rerun its generation
+action when you want it updated. Keyword-based suggestions remain available in
+collection-scoped Search and Chat.
+
+Run `npm test` and `npm run build` from `osii-dashboard/dashboard` to check these
+changes. Tests use Node's built-in runner (Node 22.6+); no test dependency is
+installed. With `make dev` / `.\scripts\osii.ps1 dev`, refresh the browser;
+packaged deployments require rebuilding the dashboard image.
 
 ## How it works
 
@@ -103,6 +133,14 @@ The backend should already expose the dashboard-facing endpoints used by this UI
 ---
 
 ## Quick start
+
+For the normal repository workflow, run `make dev` on macOS/Linux or
+`.\scripts\osii.ps1 dev` on Windows from the repository root, then open
+<http://localhost:5173>. Use **Setup** to connect AI models and configure processing
+services. Bundled model-free services keep basic work available during outages.
+
+The commands below are only for running this frontend independently against an
+already-running OSII backend.
 
 ### 1. Start the OSII backend
 

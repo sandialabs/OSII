@@ -148,6 +148,6 @@ print("Catalog verification:", verify_catalog(osii_root))
 # 2. Where will OSII put canonical and derived information?
 # 3. Which database can be deleted and rebuilt?
 #
-# Continue with one step-01 extraction notebook. Both local Tesseract and the
-# corporate Shirty bridge ultimately commit the same OSII object structure;
-# downstream code does not need to care which implementation produced it.
+# Continue with the local Tesseract extraction notebook. Every supported
+# extractor ultimately commits the same OSII object structure; downstream code
+# does not need to care which implementation produced it.

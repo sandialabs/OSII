@@ -2,6 +2,7 @@
 import { Breadcrumbs, Link, Typography } from "@mui/material";
 
 import type { FolderScopeDescriptor } from "../../../api/types";
+import { folderName } from "../contents";
 
 type BrowseBreadcrumbsProps = {
   items: FolderScopeDescriptor[];
@@ -29,7 +30,7 @@ export function BrowseBreadcrumbs({
     >
       {items.map((item, index) => {
         const isLast = index === items.length - 1;
-        const label = item.path ? item.label.split("/").slice(-1)[0] : "root";
+        const label = folderName(item);
 
         if (isLast) {
           return (

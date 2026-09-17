@@ -1,12 +1,15 @@
 # Environment and credentials
 .env
+.osii-certs/
 .env.*
 !.env.example
+!.env.commercial.example
 *.pem
 *.key
 certs/
 **/certs/
 tls-ca-bundle.pem
+podman-build-secret-*
 
 # Python
 __pycache__/
@@ -65,3 +68,6 @@ Thumbs.db
 *.log
 coverage.xml
 repo_for_ai.txt
+
+# Local implementation plans
+plans/

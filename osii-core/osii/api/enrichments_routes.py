@@ -1,0 +1,76 @@
+from fastapi import APIRouter, HTTPException, Request
+
+from osii.domain.artifacts.enrichment_artifacts import write_enrichment_bundle_file
+from osii.domain.artifacts.read_enrichments import (
+    get_object_enrichment_payload,
+    get_scope_enrichment_payload,
+    list_scope_enrichments,
+    delete_scope_enrichment,
+)
+
+router = APIRouter(prefix="/api/enrichments", tags=["enrichments"])
+
+
+@router.post("/list")
+async def list_enrichments_route(request: Request, payload: dict):
+    osii_root = request.app.state.osii_root.resolve()
+    try:
+        items = list_scope_enrichments(osii_root, payload)
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    return {
+        "scope": payload,
+        "enrichments": items,
+    }
+
+
+@router.post("/payload")
+async def get_scope_enrichment_route(request: Request, payload: dict):
+    osii_root = request.app.state.osii_root.resolve()
+    filename = str(payload.get("filename") or "")
+    scope = payload.get("scope") or {}
+    try:
+        data = get_scope_enrichment_payload(osii_root, scope, filename)
+    except ValueError as exc:
+        return {"error": str(exc)}
+    if data is None:
+        return {"error": "enrichment not found"}
+    return data
+
+
+@router.delete("/payload")
+async def delete_scope_enrichment_route(request: Request, payload: dict):
+    osii_root = request.app.state.osii_root.resolve()
+    filename = str(payload.get("filename") or "")
+    scope = payload.get("scope") or {}
+    try:
+        result = delete_scope_enrichment(osii_root, scope, filename)
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="enrichment not found")
+    return result
+
+
+@router.get("/objects/{file_id}/{filename}")
+async def get_object_enrichment_route(request: Request, file_id: str, filename: str):
+    osii_root = request.app.state.osii_root.resolve()
+    data = get_object_enrichment_payload(osii_root, file_id, filename)
+    if data is None:
+        return {"error": "enrichment not found"}
+    return data
+
+
+@router.put("/bundle-file")
+async def put_enrichment_bundle_file_route(request: Request, payload: dict):
+    osii_root = request.app.state.osii_root.resolve()
+
+    content = payload.get("content")
+    if not isinstance(content, str):
+        return {"error": "content must be a string"}
+
+    try:
+        return write_enrichment_bundle_file(osii_root, payload.get("relpath"), content)
+    except ValueError as exc:
+        return {"error": str(exc)}

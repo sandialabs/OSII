@@ -27,7 +27,7 @@ The guaranteed `local.extractive-preview` service is a model-free example. It
 selects short source excerpts and formats cited Markdown. It is not OCR, does
 not interpret the corpus, and does not generate new claims.
 
-Ollama, generic OpenAI-compatible services, and Shirty are model providers.
+Ollama and OpenAI-compatible services are model providers.
 Thin bridges adapt them to the same synthesis contract, so Intake and the
 dashboard do not need provider-specific persistence logic.
 
@@ -57,7 +57,7 @@ reproduce its behavior:
 - citations and creation time.
 
 Changing a prompt creates a new derived result; it does not change extracted
-text. Tools exposes descriptor-defined settings such as instructions,
+text. Setup exposes descriptor-defined settings such as instructions,
 temperature, and output limits. Custom processors publish a JSON Schema in
 their descriptor so an SME can expose settings without writing frontend code.
 
@@ -92,7 +92,7 @@ New work belongs behind Processor API v1.
 2. Implement the typed `Synthesizer` interface and publish a descriptor.
 3. Return cited Markdown without writing `.osii`.
 4. Contract-test `/health`, `/v1/descriptor`, `/v1/synthesize`, and OpenAPI.
-5. Register the service in Tools, test it, and select it for an Intake action.
+5. Register the service in Setup, test it, and select it for an Intake action.
 
 For an executable client and commit-adapter example, run
 `osii-demo-notebooks/03_Create_local_text_previews.py`. For a model-backed

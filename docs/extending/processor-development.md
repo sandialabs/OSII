@@ -1,7 +1,12 @@
 # Develop an OSII processor
 
 Start with the [hello table enricher](hello-enricher.md), then copy the closest
-small implementation from `packages/osii-processor-sdk/examples/`.
+small implementation from `osii-core/processor-sdk/examples/`.
+
+The extension API is included in OSII. From the monorepo root, install it with
+`python -m pip install ./osii-core` in your Python environment. After publication
+to your package registry, use `python -m pip install osii`. Import from
+`osii.processor_sdk`; existing `osii_processor_sdk` imports remain compatible.
 
 ## Choose the boundary first
 
@@ -21,7 +26,7 @@ data alongside text that has already been extracted.
 Each service subclasses exactly one SDK interface and declares one descriptor:
 
 ```python
-from osii_processor_sdk import (
+from osii.processor_sdk import (
     Enricher,
     EnrichmentRequest,
     EnrichmentResponse,
@@ -72,7 +77,8 @@ for exact payloads.
 
 ## Expose settings without dashboard code
 
-Tools renders `config_schema` as a generic settings form. String and multiline
+Setup renders `config_schema` as a generic settings form under **Advanced &
+diagnostics**. String and multiline
 prompt fields, numbers, integers, Booleans, and enums require no custom
 frontend implementation. Saved non-secret defaults live in
 `.osii/state/processor_settings.json`; explicit values in an API request take
@@ -100,7 +106,7 @@ page region or visually mapping table columns.
 
 ## Register and verify
 
-Register the service base URL under **Tools & services → Custom services**. **Health** verifies
+Register the service base URL under **Setup → Advanced & diagnostics → Custom Processor API services**. **Health** verifies
 liveness. **Test** reads the descriptor, checks that its kind matches the
 registration, and sends a small contract-valid operation request.
 

@@ -1,5 +1,9 @@
 # Synthesis API
 
+Core reuses saved [expert context](../osii-store.md#expert-context) for the
+requested scope when no new guidance is supplied. Treat this field as
+human-provided interpretation guidance, not citable document evidence.
+
 `POST /v1/synthesize` produces grounded Markdown for an object, folder,
 collection, or root scope.
 

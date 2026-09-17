@@ -32,10 +32,13 @@ nav:
       - Single-file walkthrough: tutorials/single-file.md
       - Generate an LLM wiki: tutorials/llm-wiki.md
       - Example enrichments: tutorials/example-enrichments.md
+      - Tabular datasets: tutorials/tabular-datasets.md
       - CLI cheat sheet: reference/cli.md
   - Understand OSII:
       - Architecture: concepts/architecture.md
       - Extraction: concepts/extraction.md
+      - Tables and tabular extraction: concepts/tabular-extraction.md
+      - Collections and enrichments: concepts/collections-and-enrichments.md
       - Extraction versions: reference/extraction-versions.md
       - Synthesis: concepts/synthesis.md
       - Untrusted content: concepts/untrusted-content.md
@@ -52,14 +55,18 @@ nav:
           - Synthesis: reference/processor-api/synthesis.md
           - Embedding: reference/processor-api/embedding.md
           - Enrichment: reference/processor-api/enrichment.md
+          - Canonical outputs: reference/processor-api/canonical-outputs.md
           - Standard artifacts: reference/processor-api/standard-artifacts.md
   - Operate offline:
       - Local-first operation: operations/local-first.md
+      - Shared drives and Samba: operations/shared-drives.md
+      - Commercial vLLM testing: operations/commercial-vllm-testing.md
       - Guaranteed local processors: operations/local-processors.md
       - Extractor routing: reference/extractor-routing.md
       - Sensitive data and transfer: operations/sensitive-data.md
       - Export components: operations/component-export.md
       - Publish images to Quay: operations/publishing-images.md
+      - Public and corporate releases: operations/corporate-deployment.md
   - API and formats:
       - REST API:
           - Overview: reference/api/index.md

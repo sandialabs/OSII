@@ -53,7 +53,7 @@ The monorepo installs two packages used in this series:
   indexing, and search. The current research API is explicit: some examples
   import focused modules such as `osii.domain.scopes.collections` rather than a
   single top-level convenience object.
-- `osii_processor_sdk` is the stable public extension surface. It provides
+- `osii.processor_sdk` is the stable public extension surface. It provides
   typed requests and responses plus one-method interfaces for extractors,
   synthesizers, embedders, and enrichers.
 
@@ -63,13 +63,13 @@ domain logic.
 
 ## Set up the notebook environment once
 
-Use Python 3.11, the OSII host-development baseline. Run these commands from
+Use Python 3.12, the OSII host-development baseline. Run these commands from
 this directory because `requirements.txt` contains paths relative to the
 monorepo:
 
 ```bash
 cd osii-demo-notebooks
-python3.11 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
@@ -81,7 +81,7 @@ On Windows PowerShell:
 
 ```powershell
 cd osii-demo-notebooks
-py -3.11 -m venv .venv
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
@@ -110,7 +110,6 @@ Run the core walkthrough in order. For step 01, choose one extraction path.
 |---|---|
 | `00_Start_here` | What is an OSII store, and which parts are canonical? |
 | `01_Extract_documents_with_Tesseract` | How does local extraction become grounded OSII data? |
-| `01_Extract_documents_with_Shirty` | How can a private extractor use the same public contract? |
 | `02_Create_local_text_previews` | Why is synthesis separate from extraction? |
 | `03_Browse_and_create_a_collection` | How do objects and scopes become agent-ready context? |
 | `04_Build_and_search_a_lexical_index` | How does zero-model retrieval remain grounded? |
@@ -125,10 +124,17 @@ Then use the extension track as copyable starting points:
 | `08_Write_a_custom_extractor` | Source bytes to grounded text segments |
 | `09_Write_a_custom_synthesizer` | Existing text to cited Markdown |
 | `10_Write_a_custom_enricher` | Existing text to a standard entity-list artifact |
+| `11_Explore_tabular_datasets` | CSV rows to source and collection table artifacts |
 
-Each extension example runs the processor directly in Python before wrapping it
-as an HTTP app. This keeps domain logic easy to test: the network boundary is
-an adapter, not the place where the research algorithm has to live.
+Examples 08–10 run the processor directly in Python before wrapping it as an
+HTTP app. This keeps domain logic easy to test: the network boundary is an
+adapter, not the place where the research algorithm has to live. Example 11
+then shows how a notebook consumes an independently deployed processor.
+
+The dataset example uses the optional tabular processor in this repository's
+[`osii-toolbox/`](../osii-toolbox/README.md). From the Core repository, run `make demo-data` or
+`.\scripts\osii.ps1 demo-data`, then start the Toolbox container and configure
+its URLs in `OSII_PROCESSORS` before using the live endpoint.
 
 ## Add your own documents
 
@@ -136,52 +142,34 @@ Put files in `demo-workspace/documents/`, beside the bundled `purcell.pdf`.
 Additional files there are ignored by Git. OSII reads the originals in place
 and writes all derived data under `demo-workspace/.osii/`.
 
-The bundled PDF is scanned. To run the public OCR path, install Tesseract and
-start the OCR service from the repository root in a second terminal:
+The bundled PDF is scanned. The normal OSII stack includes the baseline
+full-page Tesseract Processor API service. From the repository root, start it
+with the rest of the local services:
 
 ```bash
-tesseract --version
-make dev-ocr-host
+make dev
 ```
 
-Windows PowerShell:
+On Windows PowerShell, run `.\scripts\osii.ps1 dev`. Wait until
+<http://127.0.0.1:8080/health> returns `{"status":"ok"}`. The extraction
+notebook discovers and registers this endpoint for its own Python process. The
+experimental OpenCV region-OCR processor remains an optional
+[Toolbox](../osii-toolbox/README.md) deployment.
+
+For an OpenAI-compatible model endpoint, set the endpoint and credential in
+`.env`, then start the normal stack. It provides model-backed synthesis,
+embeddings, and chat; extraction remains a local or Processor API capability:
 
 ```powershell
-tesseract --version
-.\scripts\osii.ps1 dev-ocr-host
+$env:OPENAI_BASE_URL = "https://models.example.test/v1"
+$env:OPENAI_API_KEY = "your-api-key-here"
+.\scripts\osii.ps1 dev
 ```
 
-Wait until <http://127.0.0.1:8080/health> returns `{"status":"ok"}`. The
-notebook checks the service and skips extraction with a readable message if it
-is unavailable.
-
-For the corporate Shirty path, set the endpoint and credential, then start the
-bundled HTTP adapter from the repository root in a second terminal:
-
-```powershell
-$env:SHIRTY_BASE_URL = "https://shirty.sandia.gov/api/v1"
-$env:SHIRTY_API_KEY = "your-api-key-here"
-.\scripts\osii.ps1 dev-model-bridge
-```
-
-Outside the corporate environment, use the deterministic Shirty emulator and
+Outside the corporate environment, use the deterministic OpenAI-compatible emulator and
 point the same adapter at `http://127.0.0.1:8096/api/v1`. Exact macOS and
 PowerShell commands are in
-[`services/model-provider-bridge/README.md`](../services/model-provider-bridge/README.md).
-
-Later examples can use the independent baseline services:
-
-```bash
-make dev-synthesizer
-make dev-embedder
-```
-
-Windows PowerShell:
-
-```powershell
-.\scripts\osii.ps1 dev-synthesizer
-.\scripts\osii.ps1 dev-embedder
-```
+[`osii-core/services/model-provider-bridge/README.md`](../osii-core/services/model-provider-bridge/README.md).
 
 `make dev` or `.\scripts\osii.ps1 dev` starts the complete editable stack.
 

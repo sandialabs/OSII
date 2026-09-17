@@ -23,6 +23,7 @@ from __future__ import annotations
 import os
 
 from osii.domain.osii_packages import create_collection_package
+from osii.domain.read.catalog import load_files_catalog
 from osii.domain.scopes.collections import list_collections
 from osii.enrichment.llm_wiki import LlmWikiEnricher
 from osii.processors.remote import RemoteSynthesizer
@@ -33,10 +34,21 @@ from _demo_support import demo_paths, processor_descriptor, require_path
 paths = demo_paths()
 require_path(paths.osii_root / "objects", "Run the earlier core examples first.")
 
+if not load_files_catalog(paths.osii_root):
+    raise RuntimeError("No extracted objects found. Run 01_Extract_documents_with_Tesseract first.")
+
 collection = next(
-    item for item in list_collections(paths.osii_root)
-    if item["name"] == "Purcell analysis"
+    (
+        item for item in list_collections(paths.osii_root)
+        if item["name"] == "Purcell analysis"
+    ),
+    None,
 )
+if collection is None:
+    raise RuntimeError(
+        "The 'Purcell analysis' collection is missing. "
+        "Run 03_Browse_and_create_a_collection first."
+    )
 collection_scope = {
     "scope_type": "collection",
     "collection_id": collection["id"],
@@ -47,16 +59,11 @@ print(collection_scope)
 # %% [markdown]
 # ## Discover the optional model bridge
 #
-# Start it only when you want this experiment:
+# Configure Ollama or an OpenAI-compatible endpoint in `.env`, then start the
+# normal stack:
 #
 # ```bash
-# make dev-model-bridge
-# ```
-#
-# Windows PowerShell:
-#
-# ```powershell
-# .\scripts\osii.ps1 dev-model-bridge
+# make dev
 # ```
 #
 # Ollama and the selected model must also be installed separately.
@@ -178,5 +185,5 @@ print("Original source files included: no")
 # 2. scope text to cited Markdown with a custom synthesizer;
 # 3. scope text to a standard entity artifact with a custom enricher.
 #
-# Each example uses only top-level imports from `osii_processor_sdk`, which is
+# Each example uses only top-level imports from `osii.processor_sdk`, which is
 # the friendly compatibility boundary for external research code.

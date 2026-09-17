@@ -7,6 +7,8 @@ export type FileCardModel = {
   subtitle: string;
   mime: string | null;
   sourceFileRelpath: string | null;
+  sizeBytes: number | null;
+  modifiedAt: string | null;
   synthesisPreview: string | null;
   previewAvailable: boolean;
   hasPreferredText: boolean;
@@ -22,6 +24,8 @@ export function toFileCardModel(summary: ObjectSummary): FileCardModel {
     subtitle: summary.source_relpath ?? "",
     mime: summary.mime ?? null,
     sourceFileRelpath: summary.source_file_relpath ?? null,
+    sizeBytes: summary.size_bytes ?? null,
+    modifiedAt: summary.mtime_utc ?? null,
     synthesisPreview: summary.synthesis_preview ?? null,
     previewAvailable: summary.preview_available,
     hasPreferredText: summary.has_preferred_text,

@@ -33,3 +33,13 @@ export async function getScopeEnrichmentPayload(params: {
     json: params,
   });
 }
+
+export async function deleteScopeEnrichment(params: {
+  scope: ScopeDescribeRequest;
+  filename: string;
+}): Promise<{ filename: string; deleted: boolean; metadata_deleted: boolean }> {
+  return apiJson("/api/enrichments/payload", {
+    method: "DELETE",
+    json: params,
+  });
+}

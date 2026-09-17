@@ -8,12 +8,19 @@ matches what you want to do.
 
 - Read the repository README included with your checkout for the first-run path.
 - [Run the corporate pilot bundle](operations/publishing-images.md)
+- [Use a shared drive or Samba share](operations/shared-drives.md)
 - [Follow the friendly Python walkthrough](tutorials/python-demonstrations.md)
 - [Process one file through the CLI](tutorials/single-file.md)
+- [Demonstrate tabular datasets](tutorials/tabular-datasets.md)
 
-These three pages are the normal entry points. The remaining documentation is
+These pages are the normal entry points. The remaining documentation is
 reference material: read it when you need to understand, extend, or operate a
 specific boundary rather than from top to bottom.
+
+After starting OSII, the dashboard's **Setup** page lists every extractor,
+synthesizer, embedder, and enricher; configures extension-based extraction
+routes and fallbacks; connects optional model providers; starts optional Tika
+or Tesseract capabilities; and reaches advanced processor diagnostics.
 
 ## Understand OSII
 
@@ -43,10 +50,12 @@ the `.osii` store directly.
 ## Operate offline
 
 - [Local and intermittently connected operation](operations/local-first.md)
+- [Shared drives and Samba](operations/shared-drives.md)
 - [Guaranteed container-free processor services](operations/local-processors.md)
 - [Extractor routing](reference/extractor-routing.md)
 - [Export components for separate repositories](operations/component-export.md)
 - [Publish the consolidated images to Quay](operations/publishing-images.md)
+- [Deploy Toolbox OCR, table, and embedding images](operations/publishing-images.md)
 - [Sensitive data, OSII package transfer, and deletion](operations/sensitive-data.md)
 
 ## API and file-format reference
@@ -58,6 +67,7 @@ the `.osii` store directly.
 - [API compatibility](reference/api/compatibility.md)
 - [Processor API v1](reference/processor-api/index.md)
 - [Model-provider capabilities](reference/model-providers.md)
+- [Catalog and flat-file browsing](reference/catalog.md)
 - [Collection file format](reference/collection-file-format.md)
 - [CLI cheat sheet](reference/cli.md)
 

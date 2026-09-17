@@ -80,7 +80,7 @@ export function FileEnrichmentsPanel({ fileId }: FileEnrichmentsPanelProps) {
 
   const enrichments = (data?.enrichments ?? []).filter(
     (entry) => entry.kind !== "file" || (
-      !entry.name.endsWith(".meta.json") && entry.name !== "wiki--llm_wiki.json"
+      !entry.name.endsWith(".meta.json") && entry.artifact_type !== "wiki_markdown"
     ),
   );
 

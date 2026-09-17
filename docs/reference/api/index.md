@@ -96,6 +96,7 @@ Collection membership must reference stable object identifiers such as `file_id`
 
 - `GET /api/objects/{file_id}`
 - `GET /api/objects/{file_id}/manifest`
+- `GET /api/objects/{file_id}/extractions/{variant_id}/artifacts`
 - `GET /api/objects/{file_id}/texts`
 - `GET /api/objects/{file_id}/texts/preferred`
 - `GET /api/objects/{file_id}/syntheses`
@@ -103,6 +104,11 @@ Collection membership must reference stable object identifiers such as `file_id`
 - `PUT /api/objects/{file_id}/governance`
 - `POST /api/objects/{file_id}/deletion-preview`
 - `DELETE /api/objects/{file_id}`
+
+The extraction-artifact endpoint lists safe previews of non-text products
+returned by one extractor version. Standard tables are rendered generically by
+the dashboard; large or binary artifacts remain listed without being embedded
+in the JSON response.
 
 ### Text spans
 
@@ -112,6 +118,8 @@ Collection membership must reference stable object identifiers such as `file_id`
 ### Enrichments
 
 - `POST /api/enrichments/list`
+- `POST /api/enrichments/payload`
+- `DELETE /api/enrichments/payload`
 - `GET /api/enrichments/objects/{file_id}/{filename}`
 
 ### Search
@@ -127,11 +135,31 @@ Collection membership must reference stable object identifiers such as `file_id`
 - `GET /api/synthesizers`
 - `GET /api/folder-synthesizers`
 - `POST /api/runs`
+- `GET /api/runs` (run history, durable queue state, and worker heartbeat)
 - `GET /api/runs/{run_id}`
 - `GET /api/runs/{run_id}/logs`
+- `POST /api/runs/{run_id}/{pause|resume|cancel|retry}`
+- `POST /api/runs/recover` safely requeues only work whose worker lease expired
 - `POST /api/embeddings/build`
 - `GET /api/embeddings/build/{job_id}`
 - `GET /api/embeddings/meta`
+
+### Setup and local administration
+
+- `GET /api/admin/setup` returns the human-facing readiness summary, selected
+  methods, provider presence, and capability-service state.
+- `PUT /api/admin/model-providers/{provider_id}/credential` accepts an API key
+  as a write-only value when local `.env` writes are enabled.
+- `DELETE /api/admin/model-providers/{provider_id}/credential` forgets a key
+  previously saved by OSII.
+- `GET /api/admin/services` lists allowlisted capability services.
+- `POST /api/admin/services/{service_id}/{start|stop|restart}` controls only a
+  service owned by the local launcher.
+- `GET /api/admin/services/{service_id}/logs` returns a bounded recent log tail.
+
+Credential responses report presence and source but never return the value.
+The service-control endpoints return `503` in deployments without the local
+loopback supervisor.
 
 ### Compatibility and artifact serving
 
@@ -806,6 +834,15 @@ Example response:
 }
 ```
 
+### Read or delete a scope enrichment payload
+
+Scope-level JSON artifacts are read with `POST /api/enrichments/payload` and a
+body containing `scope` plus a path-free `filename`. The same payload sent with
+`DELETE` removes that derived JSON artifact and its `.meta.json` sidecar. A
+missing artifact returns `404`; an invalid scope or filename returns `400`.
+This never deletes source files, extracted text, or collection membership. The
+dashboard uses it for the confirmed **Delete saved wiki** action.
+
 ### Read an object enrichment payload
 
 ```http
@@ -897,8 +934,11 @@ These include:
 - `GET /api/synthesizers`
 - `GET /api/folder-synthesizers`
 - `POST /api/runs`
+- `GET /api/runs`
 - `GET /api/runs/{run_id}`
 - `GET /api/runs/{run_id}/logs`
+- `POST /api/runs/{run_id}/{pause|resume|cancel|retry}`
+- `POST /api/runs/recover`
 - `POST /api/embeddings/build`
 - `GET /api/embeddings/build/{job_id}`
 - `GET /api/embeddings/meta`

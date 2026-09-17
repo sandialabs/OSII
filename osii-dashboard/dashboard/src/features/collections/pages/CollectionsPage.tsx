@@ -7,15 +7,21 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { useCollections } from "../../../hooks/useCollections";
 import { CollectionCard } from "../components/CollectionCard";
+import { CreateCollectionDialog } from "../components/CreateCollectionDialog";
 import { usePackageImport } from "../../../hooks/usePackageImport";
 
 export function CollectionsPage() {
   const { data, isLoading, isError, error } = useCollections();
   const packageImport = usePackageImport();
+  const navigate = useNavigate();
+  const [createOpen, setCreateOpen] = useState(false);
 
   const handlePackage = async (file: File | undefined) => {
     if (!file) return;
@@ -30,13 +36,18 @@ export function CollectionsPage() {
             Collections
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Organize files into curated groups, or merge a manifest-validated OSII sidecar package. Original files are never included in sidecar packages.
+            Collections are deliberate, reusable scopes for enrichments, tables, Search, and Chat. Start one from an Intake, a folder, selected files across folders, or a sidecar package; originals are never copied.
           </Typography>
         </Stack>
-        <Button component="label" variant="outlined" startIcon={<UploadFileOutlinedIcon />} disabled={packageImport.isPending}>
-          {packageImport.isPending ? "Importing…" : "Import OSII package"}
-          <input hidden type="file" accept=".zip,application/zip" onChange={(event) => void handlePackage(event.target.files?.[0])} />
-        </Button>
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setCreateOpen(true)}>
+            New collection
+          </Button>
+          <Button component="label" variant="outlined" startIcon={<UploadFileOutlinedIcon />} disabled={packageImport.isPending}>
+            {packageImport.isPending ? "Importing…" : "Import OSII package"}
+            <input hidden type="file" accept=".zip,application/zip" onChange={(event) => void handlePackage(event.target.files?.[0])} />
+          </Button>
+        </Stack>
       </Stack>
 
       {packageImport.isError ? <Alert severity="error">{packageImport.error instanceof Error ? packageImport.error.message : "Package import failed."}</Alert> : null}
@@ -53,7 +64,7 @@ export function CollectionsPage() {
           {error instanceof Error ? ` ${error.message}` : ""}
         </Alert>
       ) : (data?.collections ?? []).length === 0 ? (
-        <Typography color="text.secondary">No collections available.</Typography>
+        <Typography color="text.secondary">No collections yet. Create one here, or save your next Intake as a collection.</Typography>
       ) : (
         <Grid container spacing={1.75}>
           {(data?.collections ?? []).map((collection) => (
@@ -63,6 +74,11 @@ export function CollectionsPage() {
           ))}
         </Grid>
       )}
+      <CreateCollectionDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={(collectionId) => navigate(`/collections/${collectionId}`)}
+      />
     </Stack>
   );
 }

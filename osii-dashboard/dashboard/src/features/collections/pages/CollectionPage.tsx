@@ -1,6 +1,9 @@
 // src/features/collections/pages/CollectionPage.tsx
 import { useEffect, useState } from "react";
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Button,
   Dialog,
@@ -8,6 +11,8 @@ import {
   DialogContent,
   DialogTitle,
   Stack,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from "@mui/material";
@@ -17,6 +22,8 @@ import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import ChatOutlinedIcon from "@mui/icons-material/ChatOutlined";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
+import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
+import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { useBrowsingScope } from "../../../app/providers/BrowsingScopeProvider";
@@ -29,7 +36,6 @@ import { CollectionFileGrid } from "../components/CollectionFileGrid";
 import { ScopeEnrichmentsPanel } from "../../files/components/ScopeEnrichmentsPanel";
 import { ScopeWikiPanel } from "../../files/components/ScopeWikiPanel";
 import { AddFilesToCollectionDialog } from "../components/AddFilesToCollectionDialog";
-import { ScopeSuggestions } from "../../../components/discovery/ScopeSuggestions";
 
 export function CollectionPage() {
   const { collectionId } = useParams<{ collectionId: string }>();
@@ -49,6 +55,13 @@ export function CollectionPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [addFilesOpen, setAddFilesOpen] = useState(false);
+  const [enrichmentsOpen, setEnrichmentsOpen] = useState(false);
+  const [enrichmentTab, setEnrichmentTab] = useState("wiki");
+
+  useEffect(() => {
+    setEnrichmentsOpen(false);
+    setEnrichmentTab("wiki");
+  }, [collectionId]);
 
   useEffect(() => {
     if (data?.collection) {
@@ -113,16 +126,6 @@ export function CollectionPage() {
     );
   };
 
-  const handleSuggestedSearch = (keyword: string) => {
-    const params = new URLSearchParams({
-      q: keyword,
-      mode: "hybrid",
-      scope_type: "collection",
-      collection_id: collectionId,
-    });
-    navigate(`/search?${params.toString()}`);
-  };
-
   return (
     <>
       <Stack spacing={3}>
@@ -185,20 +188,49 @@ export function CollectionPage() {
           </Stack>
         </Stack>
 
-        <ScopeSuggestions
-          scope={{ scope_type: "collection", collection_id: collectionId }}
-          compact
-          onSelect={handleSuggestedSearch}
-        />
-
-        <ScopeWikiPanel
-          scope={{ scope_type: "collection", collection_id: collectionId }}
-          title={data.collection.name}
-        />
+        <Accordion
+          expanded={enrichmentsOpen}
+          onChange={(_, expanded) => setEnrichmentsOpen(expanded)}
+          variant="outlined"
+          disableGutters
+          slotProps={{ transition: { unmountOnExit: true } }}
+          sx={{ "&:before": { display: "none" } }}
+        >
+          <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />} aria-controls="collection-enrichments" id="collection-enrichments-heading">
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <AutoAwesomeOutlinedIcon color="primary" />
+              <Stack>
+                <Typography fontWeight={700}>Enrichments</Typography>
+                <Typography variant="body2" color="text.secondary">Collection-wide wiki, keywords, tables, and other products</Typography>
+              </Stack>
+            </Stack>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Stack spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                Use the extracted content of this collection together to create a collection-level product.
+                These actions do not add an enrichment to each individual file. Close this drawer to hide
+                the products; saved artifacts stay in OSII.
+              </Typography>
+              <Tabs value={enrichmentTab} onChange={(_, value: string) => setEnrichmentTab(value)} aria-label="Collection enrichment views">
+                <Tab value="wiki" label="Wiki" id="collection-wiki-tab" aria-controls="collection-wiki-panel" />
+                <Tab value="artifacts" label="Other enrichments" id="collection-artifacts-tab" aria-controls="collection-artifacts-panel" />
+              </Tabs>
+              {enrichmentTab === "wiki" ? (
+                <Stack role="tabpanel" id="collection-wiki-panel" aria-labelledby="collection-wiki-tab">
+                  <ScopeWikiPanel scope={{ scope_type: "collection", collection_id: collectionId }} title={data.collection.name} />
+                </Stack>
+              ) : (
+                <Stack role="tabpanel" id="collection-artifacts-panel" aria-labelledby="collection-artifacts-tab">
+                  <ScopeEnrichmentsPanel scope={{ scope_type: "collection", collection_id: collectionId }} />
+                </Stack>
+              )}
+              <Button onClick={() => setEnrichmentsOpen(false)} sx={{ alignSelf: "flex-start" }}>Close enrichments</Button>
+            </Stack>
+          </AccordionDetails>
+        </Accordion>
+        <Typography variant="h6" fontWeight={700}>Documents</Typography>
         <CollectionFileGrid collectionId={collectionId} />
-        <ScopeEnrichmentsPanel
-          scope={{ scope_type: "collection", collection_id: collectionId }}
-        />
       </Stack>
 
       <Dialog open={editOpen} onClose={() => setEditOpen(false)} fullWidth maxWidth="sm">

@@ -1,17 +1,36 @@
 # CLI cheat sheet
 
-## 1. Launch the FastAPI app / dashboard
-From repo root:
+## 1. Start OSII
+
+From the repository root, the first-time demo command installs the bundled
+examples and starts the complete baseline application:
+
+macOS or Linux:
+
+```bash
+make demo
+```
+
+Windows PowerShell:
 
 ```powershell
-python -m uvicorn osii.main:app --reload --host 0.0.0.0 --port 8511
+.\scripts\osii.ps1 demo
 ```
 
-Open:
+For later starts, or when your own files are already in `osii-data/source`, use
+`make dev` or `.\scripts\osii.ps1 dev`. The launcher manages Python 3.12 and
+the `osii-env` application environment; do not activate a virtual environment
+first. Keep the terminal open and visit:
 
 ```text
-http://localhost:8511/dashboard
+Dashboard: http://localhost:5173
+Backend API docs: http://localhost:8511/docs
 ```
+
+Press Ctrl+C once in the launch terminal to stop every process owned by this
+run. Open **Setup** in the dashboard to connect optional AI or Apache Tika.
+The packaged baseline already includes full-page Tesseract OCR; bare-metal
+development requires the native Tesseract program to be installed first.
 
 ---
 
@@ -192,7 +211,7 @@ Note:
 
 ## 7. Build embeddings / vector database over extracted text segments
 
-### MiniLM build
+### Local lexical-hashing build
 ```powershell
 python -m osii.build_vector_index `
   --osii-root "./osii-data/.osii" `
@@ -200,6 +219,10 @@ python -m osii.build_vector_index `
   --batch-size 1 `
   --checkpoint-every 50
 ```
+
+This is not MiniLM and does not use a model. For ordinary small-library search,
+use BM25; build this compatibility index only when you are exercising the
+vector-index path without a semantic provider.
 ## Rescan source files against the OSII store
 
 The rescan workflow compares the current source data root against the existing OSII store and reports:
@@ -271,10 +294,13 @@ Collection scope example:
 ```powershell
 python -m osii.enrich_scope `
   --osii-root ".\osii-data\.osii" `
-  --enricher llm_wiki_stub `
+  --enricher toolbox.readable-wiki `
   --scope-type collection `
   --collection-id "col-abc123"
 ```
+
+This requires the optional readable-wiki service to be running and registered;
+use `.\scripts\osii.ps1 toolbox-run -Tool llm-wikis` first.
 
 ## Apply a rescan
 

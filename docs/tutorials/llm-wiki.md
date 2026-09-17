@@ -1,66 +1,69 @@
 # Generate an LLM wiki
 
-An LLM wiki is a derived OSII knowledge product: grounded Markdown generated
-from the current primary extraction of one document or a collection. It is an
-enrichment rather than canonical text, so it can be regenerated without
-changing the source document or its extraction.
+LLM wikis are optional, derived knowledge products. They are not built into
+OSII Core. Two independent Processor API enrichers live in
+`osii-toolbox/llm-wiki-enrichers`:
+
+- **Readable LLM wiki** produces a traditional, cited narrative page.
+- **Concept and entity LLM wiki** produces a concept/entity-oriented wiki plus
+  a standard entity list and sortable concept table. It adapts the work on the
+  divergent `dev-aditya` branch to the current Processor API.
+
+Both use the current primary extraction and can run over a document, folder,
+collection, or the entire root. Core sends bounded text to the selected
+enricher and remains the only component that writes `.osii`.
 
 ## Before you start
 
 1. Start OSII with `make dev` on macOS/Linux or
    `.\scripts\osii.ps1 dev` on Windows.
-2. Open **Tools & services → AI models**.
-3. Confirm that Ollama is connected and select an installed synthesis model.
-   The small US-origin starter model is `llama3.2:1b` from Meta.
-4. Intake at least one supported document.
+2. Open **Setup**, connect Ollama or an OpenAI-compatible provider, and select
+   a synthesis model.
+3. Start the optional wiki processors from a separate terminal:
 
-OSII does not silently use the extractive preview for this feature. If no
-model-backed synthesizer is ready, wiki generation stops with an actionable
-message rather than calling the output an LLM wiki.
+   ```bash
+   make toolbox-build TOOL=llm-wikis
+   make toolbox-run TOOL=llm-wikis
+   ```
 
-## One-document demonstration
+   PowerShell uses `toolbox-build -Tool llm-wikis` and
+   `toolbox-run -Tool llm-wikis` through `scripts\osii.ps1`.
+4. In **Setup → Custom Processor API services**, register
+   `http://127.0.0.1:8099` and `http://127.0.0.1:8100`.
 
-1. Open **Files** and select a processed document.
-2. Open its **Wiki** tab.
-3. Select **Generate Wiki**.
-4. Keep working elsewhere if desired. Generation runs as a background job and
-   the page refreshes when the artifact is ready.
+For source-only development commands and OpenAI-compatible routing, see
+`osii-toolbox/llm-wiki-enrichers/README.md` in the repository.
 
-The wiki uses the document's current primary extraction. If a different
-extraction is later made primary, OSII marks the wiki stale so it can be
-regenerated from the new text.
+## Generate and compare
 
-## Collection demonstration
+Open a processed document's **Wiki** tab, a collection's **Enrichments**
+drawer, or root **Library Insights → Wiki**. Choose either method and select
+**Generate selected wiki**. Saved Wiki Markdown outputs are discovered by
+their standard `artifact_type`, not by a hard-coded processor name or filename,
+so another SME's conforming wiki enricher appears in the same view.
 
-1. Create or open a collection containing processed documents.
-2. Select **Generate Wiki** in the LLM Wiki panel.
-3. The result appears directly in the collection view above its document grid.
+The concept/entity processor also returns structured artifacts. Open the
+regular **Enrichments** view to browse and sort those outputs through the
+generic entity-list and table renderers.
 
-The collection wiki is generated only from extracted documents that belong to
-that collection. Factual statements are prompted to cite source file IDs in
-square brackets. OSII always adds an inspectable Sources section when the model
-does not produce one, and the standard artifact also stores structured
-file-level provenance references.
+Processor settings, including the prompt, temperature, input budget, model
+override, and downstream synthesizer URL, are descriptor-driven and appear in
+Setup. No frontend change is required to expose the same supported schema
+fields from a new processor.
 
-## Storage and portability
+## Storage and provenance
 
-The stable artifact paths are:
+Core saves each returned artifact under the requested scope's `enrichments/`
+directory. Filenames include the processor descriptor and artifact ID, so both
+wiki varieties can coexist and be regenerated independently. Sidecar metadata
+records the processor URL, processor version, artifact ID, expert context, and
+model metadata returned by the downstream synthesizer.
 
-```text
-objects/<file-id>/enrichments/wiki--llm_wiki.json
-collections/<collection-id>/enrichments/wiki--llm_wiki.json
-```
+The deprecated `osii.enrichment.llm_wiki.LlmWikiEnricher` import is only a
+temporary forwarding shim for older Python demos. It is not registered as a
+Core capability and contains no wiki-generation implementation.
 
-Each payload uses the Processor API `wiki_markdown` standard format. Metadata
-records the actual synthesizer, provider, model, input counts, citations, and
-whether source text was truncated to fit the configured input budget. The
-default budget is 60,000 characters across the scope and may be changed with
-the enricher configuration field `max_input_chars`. For collections of two to
-eight documents, the demonstration enricher first creates a short grounded
-brief for each source before composing the collection wiki. This helps small
-local models represent every member; `max_brief_documents` controls that
-threshold for machines with a larger model or more generation capacity.
-
-The dashboard, REST enrichment APIs, and MCP enrichment tools all consume the
-same saved artifact. Ollama and its model files remain outside OSII; another
-model-backed Processor API synthesizer can create the same knowledge product.
+Every wiki payload uses the canonical `wiki_markdown` format. The
+concept/entity processor additionally uses `entity_list` and `table`. Review
+[canonical Processor API outputs](../reference/processor-api/canonical-outputs.md)
+for the distinction between extraction outputs and enrichment artifact types.

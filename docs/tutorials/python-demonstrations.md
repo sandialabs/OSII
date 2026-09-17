@@ -18,20 +18,20 @@ the dashboard:
 7. return standard artifacts that work for both people and agents;
 8. export a collection sidecar without bundling original sources.
 
-The final extension track uses the public `osii_processor_sdk` package to build
+The final extension track uses the public `osii.processor_sdk` package to build
 and test a small extractor, synthesizer, and enricher. Those examples are
 intended to be copied into independent domain-processor services.
 
 ## Set up the notebook kernel
 
-Use Python 3.11. Run the installation from the demonstration directory because
+Use Python 3.12. Run the installation from the demonstration directory because
 its requirements contain monorepo-relative package paths.
 
 macOS or Linux:
 
 ```bash
 cd osii-demo-notebooks
-python3.11 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
@@ -44,7 +44,7 @@ Windows PowerShell:
 
 ```powershell
 cd osii-demo-notebooks
-py -3.11 -m venv .venv
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
@@ -53,9 +53,9 @@ python manage_notebooks.py to-notebooks
 jupyter lab
 ```
 
-Choose the **OSII demo** kernel and run the examples in numerical order. There
-are two alternative step-01 extraction paths; choose local Tesseract or the
-built-in Shirty HTTP adapter used by the corporate profile.
+Choose the **OSII demo** kernel and run the examples in numerical order. The
+step-01 extraction path uses local Tesseract. Configure an OpenAI-compatible
+model endpoint later for model-backed synthesis, embeddings, or chat.
 
 The notebook environment and host application environment have different
 jobs:

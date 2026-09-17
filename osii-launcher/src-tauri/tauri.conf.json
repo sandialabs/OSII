@@ -1,0 +1,43 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OSII Launcher",
+  "version": "0.1.0",
+  "identifier": "org.osii.launcher",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "OSII Launcher",
+        "width": 1120,
+        "height": 760,
+        "minWidth": 900,
+        "minHeight": 640,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
+    "category": "Productivity",
+    "shortDescription": "Run OSII on a workstation",
+    "longDescription": "Configure Podman, approved OSII images, source folders, and model providers from a desktop application.",
+    "resources": {
+      "../../compose.yaml": "deployment/compose.yaml"
+    }
+  }
+}

@@ -98,6 +98,8 @@ export type ObjectSummary = {
   source_relpath?: string | null;
   source_file_relpath?: string | null;
   mime?: string | null;
+  size_bytes?: number | null;
+  mtime_utc?: string | null;
   collections: CollectionReference[];
   processing: ObjectProcessing;
   source_state?: ObjectSourceState | null;
@@ -204,6 +206,8 @@ export type EnrichmentListEntryFile = {
   name: string;
   kind: "file";
   relpath: string;
+  artifact_type?: "table" | "knowledge_graph" | "entity_list" | "wiki_markdown";
+  title?: string;
 };
 
 export type EnrichmentListEntryBundle = {
@@ -243,6 +247,22 @@ export type ExtractionVariantsResponse = {
   file_id: string;
   primary_id: string | null;
   variants: ExtractionVariant[];
+};
+
+export type ExtractionArtifact = {
+  id: string;
+  kind: string;
+  media_type: string;
+  source_origin: Record<string, unknown>;
+  filename: string;
+  size_bytes: number | null;
+  data: unknown | null;
+};
+
+export type ExtractionArtifactsResponse = {
+  file_id: string;
+  variant_id: string;
+  artifacts: ExtractionArtifact[];
 };
 
 export type ObjectSynthesisArtifact = {
@@ -531,6 +551,7 @@ export type IntakePreview = {
   extractor_plan: Array<{
     extension: string;
     extractor: string;
+    fallbacks?: string[];
     count: number;
     sample: string[];
   }>;
@@ -571,6 +592,11 @@ export type CapabilityReadiness = {
   config_schema?: ProcessorConfigSchema;
   descriptor?: {
     config_schema?: ProcessorConfigSchema;
+    capabilities?: {
+      output_kinds?: string[];
+      scope_types?: string[];
+      [key: string]: unknown;
+    };
     [key: string]: unknown;
   } | null;
 };
@@ -605,6 +631,17 @@ export type IntakeReadiness = {
   embedders: CapabilityReadiness[];
   enrichers: CapabilityReadiness[];
   external: CapabilityReadiness[];
+  source?: {
+    kind: "local" | "shared";
+    source_root: string;
+    osii_root: string;
+    available: boolean;
+    readable: boolean;
+    source_mode: "read_write" | "read_only" | "unavailable";
+    osii_writable: boolean;
+    ready_for_intake: boolean;
+    detail?: string | null;
+  };
   semantic_indexes?: Array<{
     index_id: string;
     provider_id: string;
@@ -634,6 +671,7 @@ export type IntakeResolveResponse = {
 export type ProcessingRun = {
   id: string;
   status: "pending" | "queued" | "running" | "done" | "error" | string;
+  control_state?: "running" | "pause_requested" | "paused" | "cancel_requested" | "cancelled" | string;
   created_at: string;
   started_at?: string | null;
   finished_at?: string | null;
@@ -662,12 +700,29 @@ export type ProcessingRun = {
     error?: string | null;
     extractor?: string | null;
     extraction_variant_id?: string | null;
+    started_at?: string | null;
+    finished_at?: string | null;
+    duration_seconds?: number | null;
   }>;
   logs?: string[];
   queue_job_id?: string;
+  collection_id?: string | null;
+  collection?: CollectionResource | null;
   error?: string | null;
   resolved_count?: number;
   preview?: IntakePreview;
+};
+
+export type ProcessingWorkerStatus = {
+  available: boolean;
+  detail: string;
+  last_heartbeat: string | null;
+};
+
+export type ProcessingRunsResponse = {
+  runs: ProcessingRun[];
+  queue: Array<Record<string, unknown>>;
+  worker: ProcessingWorkerStatus;
 };
 
 export type ProcessorEndpoint = {
@@ -680,7 +735,7 @@ export type ProcessorEndpoint = {
 
 export type ModelProvider = {
   id: string;
-  type: "ollama" | "openai" | "shirty";
+  type: "ollama" | "openai";
   base_url: string;
   enabled: boolean;
   priority: number;
@@ -690,6 +745,44 @@ export type ModelProvider = {
   credential_env: string;
   credential_required?: boolean;
   credential_present?: boolean;
+  credential_source?: "environment" | "repo_env" | null;
+  credential_writable?: boolean;
+  implicit?: boolean;
+};
+
+export type ManagedCapabilityService = {
+  id: string;
+  display_name: string;
+  description: string;
+  status: "running" | "external" | "stopped" | "failed" | string;
+  ownership: "osii" | "external" | "none" | string;
+  url: string;
+  health_path: string;
+  can_start: boolean;
+  can_stop: boolean;
+  can_restart: boolean;
+  prerequisite?: string | null;
+  detail?: string | null;
+};
+
+export type SetupMethod = {
+  id: string;
+  display_name: string;
+  available: boolean;
+  description: string;
+  model?: string | null;
+};
+
+export type SetupSummary = {
+  overall_status: "ready" | "ready_optional" | "action_required";
+  headline: string;
+  extraction_ready: boolean;
+  ai_ready: boolean;
+  methods: Record<"extractor" | "synthesizer" | "embedder" | "enricher", SetupMethod>;
+  providers: ModelProvider[];
+  services: ManagedCapabilityService[];
+  service_control_available: boolean;
+  readiness: IntakeReadiness;
 };
 
 export type OllamaModelDetail = {
@@ -718,7 +811,35 @@ export type ModelProviderHealth = {
   missing_models: string[];
   pull_commands: string[];
   recommendations: OllamaRecommendation[];
+  capabilities?: {
+    embedding?: {
+      configured: boolean;
+      ok: boolean;
+      model: string;
+      dimensions?: number;
+      detail: string;
+    };
+  };
   detail?: string;
+};
+
+export type ExtractorRoute = {
+  name: string;
+  extractor: string;
+  fallbacks: string[];
+  extensions: string[];
+};
+
+export type ExtractorRoutesResponse = {
+  routes: ExtractorRoute[];
+};
+
+export type ExtractorRoutesSaveResponse = ExtractorRoutesResponse & {
+  ok: boolean;
+  message?: string;
+  path?: string;
+  errors?: string[];
+  warnings?: string[];
 };
 
 export type ModelPullJob = {
