@@ -9,7 +9,7 @@ param(
 
     [string]$ImagePrefix = "",
 
-    [string]$ImageTag = "latest",
+    [string]$ImageTag = "",
 
     [string]$BaseImage = "",
 
@@ -40,10 +40,36 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepositoryRoot = Split-Path -Parent $PSScriptRoot
+$OriginalEnvironment = [Environment]::GetEnvironmentVariables("Process")
+try {
+$DotEnvPath = Join-Path $RepositoryRoot ".env"
+if (Test-Path -LiteralPath $DotEnvPath -PathType Leaf) {
+    if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+        throw "uv is required to load the repository .env. Install uv, then retry."
+    }
+    # Use the same dotenv parser as Make; never execute configuration as code.
+    $DotEnvJson = & uv run --no-project --python 3.12 --env-file $DotEnvPath python -c 'import json, os; print(json.dumps(list(os.environ.items())))'
+    if ($LASTEXITCODE -ne 0) { throw "Unable to load the repository .env with uv." }
+    $DotEnvValues = $DotEnvJson | ConvertFrom-Json
+    foreach ($Entry in $DotEnvValues) {
+        if (-not $OriginalEnvironment.Contains($Entry[0])) {
+            [Environment]::SetEnvironmentVariable($Entry[0], $Entry[1], "Process")
+        }
+    }
+}
 $env:UV_PROJECT_ENVIRONMENT = Join-Path $RepositoryRoot "osii-env"
 Remove-Item Env:VIRTUAL_ENV -ErrorAction SilentlyContinue
 if (-not $ImagePrefix) {
     $ImagePrefix = if ($env:OSII_IMAGE_PREFIX) { $env:OSII_IMAGE_PREFIX } else { "localhost/osii" }
+}
+if (-not $ImageTag) {
+    $ImageTag = if ($env:OSII_IMAGE_TAG) { $env:OSII_IMAGE_TAG } else { "latest" }
+}
+if (-not $PSBoundParameters.ContainsKey("DisableContainerProxies") -and $env:DISABLE_CONTAINER_PROXIES) {
+    if ($env:DISABLE_CONTAINER_PROXIES -cnotin @("true", "false")) {
+        throw "DISABLE_CONTAINER_PROXIES must be true or false."
+    }
+    $DisableContainerProxies = $env:DISABLE_CONTAINER_PROXIES -ceq "true"
 }
 if (-not $BaseImage) {
     $BaseImage = if ($env:OSII_BASE_IMAGE) { $env:OSII_BASE_IMAGE } else { "registry.access.redhat.com/ubi9/ubi:latest" }
@@ -258,6 +284,7 @@ function Import-OsiiExampleData {
 
 function Show-OsiiHelp {
     Write-Host "OSII startup commands"
+    Write-Host "  Root .env loads automatically; shell variables and command options override it."
     Write-Host "  .\scripts\osii.ps1 demo       Install the example files and start OSII"
     Write-Host "  .\scripts\osii.ps1 dev        Start OSII with files already in osii-data\source"
     Write-Host "  .\scripts\osii.ps1 dev-shared Start OSII against an already connected shared drive"
@@ -433,4 +460,16 @@ try {
 }
 finally {
     Pop-Location
+}
+}
+finally {
+    # Re-read .env on each invocation without leaving stale values in this shell.
+    foreach ($Name in @([Environment]::GetEnvironmentVariables("Process").Keys)) {
+        if (-not $OriginalEnvironment.Contains($Name)) {
+            Remove-Item -LiteralPath "Env:$Name" -ErrorAction SilentlyContinue
+        }
+    }
+    foreach ($Name in $OriginalEnvironment.Keys) {
+        [Environment]::SetEnvironmentVariable($Name, $OriginalEnvironment[$Name], "Process")
+    }
 }

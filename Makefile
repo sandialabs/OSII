@@ -2,6 +2,17 @@
 # Docker Desktop, for example: make COMPOSE='docker compose' run
 COMPOSE ?= podman-compose
 UV ?= uv
+
+# Load dotenv before Make evaluates defaults. uv preserves existing environment
+# values and parses quoted paths without sourcing the file in a shell.
+# The recursive Make inherits command-line overrides and flags (including -n).
+ifeq ($(OSII_ENV_READY)$(wildcard .env),.env)
+.DEFAULT_GOAL := help
+.PHONY: .osii-env $(MAKECMDGOALS)
+$(or $(MAKECMDGOALS),help): .osii-env ;
+.osii-env:
+	+@$(UV) run --no-project --env-file .env -- $(MAKE) --no-print-directory OSII_ENV_READY=1 $(MAKECMDGOALS)
+else
 OSII_IMAGE_PREFIX ?= localhost/osii
 OSII_IMAGE_TAG ?= latest
 OSII_BASE_IMAGE ?= registry.access.redhat.com/ubi9/ubi:latest
@@ -21,6 +32,7 @@ PULL_IMAGES ?= false
 EXPORT_PLATFORM ?=
 EXPORT_RUNTIME ?= podman
 DISABLE_CONTAINER_PROXIES ?= false
+DRY_RUN ?= false
 PROXY_ENVIRONMENT_VARIABLES := HTTP_PROXY HTTPS_PROXY FTP_PROXY ALL_PROXY http_proxy https_proxy ftp_proxy all_proxy
 
 ifeq ($(DISABLE_CONTAINER_PROXIES),true)
@@ -77,6 +89,7 @@ TOOLBOX_RUN_SERVICES = $(if $(filter tabular,$(TOOL)),tabular-extractor tabular-
 
 help:
 	@echo "OSII startup commands"
+	@echo "  Root .env loads automatically; shell variables and command options override it."
 	@echo "  make demo       Install the example files and start OSII"
 	@echo "  make dev        Start OSII with files already in osii-data/source"
 	@echo "  make dev-shared Start OSII against an already mounted shared drive"
@@ -165,6 +178,7 @@ publish-multiarch:
 		--image-tag "$(OSII_IMAGE_TAG)" \
 		--base-image "$(OSII_BASE_IMAGE)" \
 		--python-version "$(OSII_PYTHON_VERSION)" \
+		$(if $(filter true,$(DRY_RUN)),--dry-run) \
 		$(if $(strip $(OSII_CA_BUNDLE)),--ca-bundle "$(OSII_CA_BUNDLE)") \
 		$(if $(filter true,$(DISABLE_CONTAINER_PROXIES)),--disable-container-proxies)
 
@@ -212,6 +226,7 @@ toolbox-publish-multiarch:
 		--image-tag "$(OSII_IMAGE_TAG)" \
 		--base-image "$(OSII_BASE_IMAGE)" \
 		--python-version "$(OSII_PYTHON_VERSION)" \
+		$(if $(filter true,$(DRY_RUN)),--dry-run) \
 		$(if $(strip $(OSII_CA_BUNDLE)),--ca-bundle "$(OSII_CA_BUNDLE)") \
 		$(if $(filter true,$(DISABLE_CONTAINER_PROXIES)),--disable-container-proxies)
 
@@ -221,3 +236,5 @@ docs:
 
 doctor:
 	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) python scripts/disk_usage.py
+
+endif

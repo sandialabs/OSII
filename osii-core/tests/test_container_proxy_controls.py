@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,108 @@ CA_AWARE_DOCKERFILES = (
     "osii-toolbox/osii-tesseract/Dockerfile",
     "osii-toolbox/tabular-dataset-processors/Dockerfile",
 )
+
+
+@pytest.fixture
+def dotenv_checkout(tmp_path: Path) -> Path:
+    if shutil.which("uv") is None:
+        pytest.skip("uv is required for dotenv loading")
+    shutil.copyfile(REPOSITORY_ROOT / "Makefile", tmp_path / "Makefile")
+    (tmp_path / "scripts").mkdir()
+    for name in ("publish_multiarch.py", "osii.ps1"):
+        shutil.copyfile(REPOSITORY_ROOT / "scripts" / name, tmp_path / "scripts" / name)
+    (tmp_path / ".env").write_text(
+        '# Workstation release defaults\n'
+        'OSII_IMAGE_PREFIX="quay.example.org/team/osii"\n'
+        'OSII_IMAGE_TAG="1.2.3"\n'
+        'OSII_BASE_IMAGE="quay.example.org/approved/rhel9"\n'
+        'OSII_PYTHON_VERSION=3.12\n'
+        'OSII_CA_BUNDLE=\n'
+        'DISABLE_CONTAINER_PROXIES=true\n'
+        'OSII_TESSERACT_SOURCE_URL="https://artifacts.example/tesseract.tar.gz"\n',
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def dotenv_environment() -> dict[str, str]:
+    return {key: value for key, value in os.environ.items()
+            if not key.startswith("OSII_") and key != "DISABLE_CONTAINER_PROXIES"}
+
+
+@pytest.mark.parametrize("shell_tag,command_tag,expected", [
+    (None, None, "1.2.3"), ("2.0.0", None, "2.0.0"), ("2.0.0", "3.0.0", "3.0.0"),
+])
+def test_make_loads_dotenv_with_explicit_overrides(
+    dotenv_checkout: Path, shell_tag: str | None, command_tag: str | None, expected: str,
+) -> None:
+    if shutil.which("make") is None:
+        pytest.skip("Make is not installed")
+    env = dotenv_environment()
+    if shell_tag:
+        env["OSII_IMAGE_TAG"] = shell_tag
+    command = ["make", "publish-multiarch", "DRY_RUN=true"]
+    if command_tag:
+        command.append(f"OSII_IMAGE_TAG={command_tag}")
+    result = subprocess.run(command, cwd=dotenv_checkout, env=env,
+                            text=True, capture_output=True, check=True)
+    assert f"quay.example.org/team/osii-core:{expected}-amd64" in result.stdout
+    assert "OSII_TESSERACT_SOURCE_URL=https://artifacts.example/tesseract.tar.gz" in result.stdout
+    assert "--http-proxy=false" in result.stdout
+
+
+def test_make_dotenv_quoted_ca_path_and_dry_run(dotenv_checkout: Path) -> None:
+    if shutil.which("make") is None:
+        pytest.skip("Make is not installed")
+    bundle = dotenv_checkout / "corporate roots.pem"
+    bundle.write_text("dry-run certificate placeholder", encoding="utf-8")
+    config = dotenv_checkout / ".env"
+    config.write_text(config.read_text(encoding="utf-8").replace(
+        "OSII_CA_BUNDLE=\n", f'OSII_CA_BUNDLE="{bundle.as_posix()}"\n'), encoding="utf-8")
+    result = subprocess.run(["make", "-n", "build"], cwd=dotenv_checkout,
+                            env=dotenv_environment(), text=True, capture_output=True, check=True)
+    assert f'src="{bundle}"' in result.stdout
+    assert "--http-proxy=false" in result.stdout
+
+
+@pytest.mark.parametrize("shell_tag,command_tag,expected", [
+    (None, None, "1.2.3"), ("2.0.0", None, "2.0.0"), ("2.0.0", "3.0.0", "3.0.0"),
+])
+def test_powershell_loads_dotenv_with_explicit_overrides(
+    dotenv_checkout: Path, shell_tag: str | None, command_tag: str | None, expected: str,
+) -> None:
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
+    if powershell is None:
+        pytest.skip("PowerShell is not installed")
+    env = dotenv_environment()
+    if shell_tag:
+        env["OSII_IMAGE_TAG"] = shell_tag
+    command = [powershell, "-NoProfile", "-File", str(dotenv_checkout / "scripts/osii.ps1"),
+               "publish-multiarch", "-DryRun"]
+    if command_tag:
+        command += ["-ImageTag", command_tag]
+    result = subprocess.run(command, cwd=dotenv_checkout.parent, env=env,
+                            text=True, capture_output=True, check=True)
+    assert f"quay.example.org/team/osii-core:{expected}-amd64" in result.stdout
+    assert "OSII_TESSERACT_SOURCE_URL=https://artifacts.example/tesseract.tar.gz" in result.stdout
+    assert "--http-proxy=false" in result.stdout
+
+
+def test_powershell_reloads_dotenv_and_restores_shell(dotenv_checkout: Path) -> None:
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
+    if powershell is None:
+        pytest.skip("PowerShell is not installed")
+    result = subprocess.run([
+        powershell, "-NoProfile", "-Command",
+        "$ErrorActionPreference = 'Stop'; "
+        "& ./scripts/osii.ps1 publish-multiarch -DryRun -DisableContainerProxies:$false; "
+        "if (Test-Path Env:OSII_IMAGE_TAG) { throw 'Leaked image tag' }; "
+        "(Get-Content .env -Raw).Replace('1.2.3', '1.2.4') | Set-Content .env; "
+        "& ./scripts/osii.ps1 publish-multiarch -DryRun -DisableContainerProxies:$false",
+    ], cwd=dotenv_checkout, env=dotenv_environment(), text=True, capture_output=True, check=True)
+    assert "osii-core:1.2.3-amd64" in result.stdout
+    assert "osii-core:1.2.4-amd64" in result.stdout
+    assert "--http-proxy=false" not in result.stdout
 
 
 def _make_command(target: str, *, disable_proxies: bool) -> str:

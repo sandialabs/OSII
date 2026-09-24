@@ -18,6 +18,47 @@ OSII has one user-facing product launch and three default image artifacts:
 | `-dashboard` | Static dashboard and API proxy |
 | `-baseline-processors` | Native extractor, full-page Tesseract OCR, synthesizer, embedder, enricher, or model bridge |
 
+## Save workstation settings once
+
+In the repository root (beside `Makefile`), copy `.env.containers.example` to
+`.env` if you do not already have one. Edit the existing file otherwise.
+Set your `OSII_IMAGE_PREFIX`, immutable `OSII_IMAGE_TAG`, approved digest-pinned
+`OSII_BASE_IMAGE`, and source URLs there. Optional `OSII_CA_BUNDLE` and
+`DISABLE_CONTAINER_PROXIES=true` belong there too. Quote paths containing spaces;
+on Windows use forward slashes, such as `"C:/corporate certificates/roots.pem"`.
+The optional `corporate_config.py write` command also generates a compatible
+`.env` from `corporate/osii.toml`.
+
+Make and `scripts/osii.ps1` automatically load this file using
+[uv's dotenv support](https://docs.astral.sh/uv/reference/cli/#uv-run--env-file).
+The order is **command options > shell/CI variables > `.env` > defaults**.
+Keep credentials in the approved credential store or process environment.
+The root `.env` is ignored by Git and is local to each workstation; GitLab
+variables are not downloaded to it. Launcher frontend builds still use
+`osii-launcher/.env.local` for their non-secret `VITE_*` values.
+
+After saving settings, preview image publication without building or pushing:
+
+```bash
+make publish-multiarch DRY_RUN=true
+```
+
+```powershell
+.\scripts\osii.ps1 publish-multiarch -DryRun
+```
+
+Remove the dry-run option to publish after logging in to your Quay host.
+For the next release, update `OSII_IMAGE_TAG` in `.env`; both commands read it
+again each time. One-off overrides still work, for example
+`make publish-multiarch OSII_IMAGE_TAG=0.1.2` or
+`.\scripts\osii.ps1 publish-multiarch -ImageTag 0.1.2`.
+
+Direct Python commands do not automatically read `.env`. Load it explicitly
+with `uv run --env-file .env --no-project --python 3.12 python ...` when calling
+a script outside the Make/PowerShell entry points; scripts may still require
+their own command arguments. This setup does not change which images a command
+builds or replace release-plan preparation.
+
 ## Carry images to an airgapped workstation
 
 On a connected computer, export the three required images into one directory.
@@ -312,16 +353,11 @@ Podman machine, authenticate once, and run:
 ```bash
 podman machine start
 podman login quay.example.org
-make publish-multiarch \
-  OSII_IMAGE_PREFIX=quay.example.org/your-organization/osii \
-  OSII_IMAGE_TAG=0.1.0 \
-  OSII_BASE_IMAGE=quay.example.org/approved/rhel9 \
-  OSII_CA_BUNDLE=/absolute/path/to/corporate-roots.pem \
-  DISABLE_CONTAINER_PROXIES=true
+make publish-multiarch
 ```
 
-Use the same command without `OSII_CA_BUNDLE` or
-`DISABLE_CONTAINER_PROXIES` when those controls are unnecessary. The command
+Save the registry, version, base, and optional CA/proxy settings in root `.env`
+as described [above](#save-workstation-settings-once). The command
 publishes architecture-suffixed images for diagnosis and one manifest-backed
 ordinary tag for each of `core`, `dashboard`, and `baseline-processors`.
 
@@ -330,12 +366,7 @@ PowerShell provides the equivalent workflow:
 ```powershell
 podman machine start
 podman login quay.example.org
-.\scripts\osii.ps1 publish-multiarch `
-  -ImagePrefix quay.example.org/your-organization/osii `
-  -ImageTag 0.1.0 `
-  -BaseImage quay.example.org/approved/rhel9 `
-  -CaBundle C:\certificates\corporate-roots.pem `
-  -DisableContainerProxies
+.\scripts\osii.ps1 publish-multiarch
 ```
 
 This succeeds only when the selected base image is published for both target
