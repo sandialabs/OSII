@@ -67,15 +67,15 @@ def render_files(defaults: dict[str, str], version: str) -> dict[Path, str]:
     if not re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", version):
         raise ValueError("Use an immutable X.Y.Z release version, not latest.")
     compose = {
-        "OSII_IMAGE_PREFIX": defaults["OSII_IMAGE_PREFIX"],
-        "OSII_IMAGE_TAG": version,
+        **deployment_defaults(defaults, version),
+        "OSII_PYTHON_VERSION": "3.12",
         "OSII_BASE_IMAGE": defaults["OSII_BASE_IMAGE"],
         "OSII_TESSERACT_SOURCE_URL": defaults["OSII_TESSERACT_SOURCE_URL"],
         "OSII_LEPTONICA_SOURCE_URL": defaults["OSII_LEPTONICA_SOURCE_URL"],
         "OSII_TESSDATA_BASE_URL": defaults["OSII_TESSDATA_BASE_URL"],
-        "OSII_MODEL_BASE_URL": defaults["OSII_MODEL_BASE_URL"],
-        "OPENAI_BASE_URL": defaults["OSII_MODEL_BASE_URL"],
     }
+    if defaults.get("OSII_CA_BUNDLE"):
+        compose["OSII_CA_BUNDLE"] = defaults["OSII_CA_BUNDLE"]
     launcher = {
         "VITE_OSII_REGISTRY": defaults["OSII_QUAY_REGISTRY"],
         "VITE_OSII_CATALOG_URL": defaults["OSII_CATALOG_URL"],
@@ -92,14 +92,39 @@ def render_files(defaults: dict[str, str], version: str) -> dict[Path, str]:
     }
 
 
+def deployment_defaults(defaults: dict[str, str], version: str) -> dict[str, str]:
+    """Shared, non-secret workstation settings; no publisher's local CA path."""
+    return {
+        "OSII_IMAGE_PREFIX": defaults["OSII_IMAGE_PREFIX"], "OSII_IMAGE_TAG": version,
+        "OSII_SOURCE_DIR": "./osii-data/source", "OSII_CONFIG_DIR_HOST": "./osii-data/config",
+        "OSII_ALLOW_LOCAL_CONFIG_WRITES": "true",
+        "OSII_DEFAULT_EXTRACTOR": "local.native-text",
+        "OSII_DEFAULT_SYNTHESIZER": "local.extractive-preview",
+        "OSII_DEFAULT_EMBEDDER": "local.hashing",
+        "OSII_DEFAULT_ENRICHER": "local.stats-keywords",
+        "OSII_MODEL_BASE_URL": defaults.get("OSII_MODEL_BASE_URL", ""),
+        "OPENAI_BASE_URL": defaults.get("OSII_MODEL_BASE_URL", ""),
+        "OPENAI_EMBEDDING_MODEL": defaults.get("OSII_EMBEDDING_MODEL", ""),
+        "OPENAI_CHAT_MODEL": defaults.get("OSII_CHAT_MODEL", ""),
+        "CHAT_PROVIDER": "extractive", "CHAT_PROVIDER_CHAIN": "extractive",
+        "OSII_OLLAMA_ALLOWED_MODELS": "", "MCP_DEBUG": "false",
+        "OLLAMA_BASE_URL": "http://host.containers.internal:11434",
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("check", "write"))
     parser.add_argument("--config", type=Path, default=DEFAULT_PATH)
     parser.add_argument("--version", required=True)
+    parser.add_argument("--output-dir", type=Path,
+                        help="Stage generated settings here instead of touching existing local files.")
     args = parser.parse_args()
     defaults = load_defaults(args.config)
     outputs = render_files(defaults, args.version)
+    if args.output_dir:
+        outputs = {args.output_dir / path.relative_to(ROOT): content
+                   for path, content in outputs.items()}
     if args.command == "write":
         occupied = [str(path) for path, content in outputs.items()
                     if path.exists() and path.read_text(encoding="utf-8") != content]
@@ -107,9 +132,10 @@ def main() -> None:
             raise ValueError("Refusing to overwrite existing local settings: " + ", ".join(occupied))
         for path, content in outputs.items():
             if not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(content, encoding="utf-8")
     print("Corporate defaults valid; " +
-          ("created " + ", ".join(str(path.relative_to(ROOT)) for path in outputs)
+          ("created " + ", ".join(str(path) for path in outputs)
            if args.command == "write" else "no files changed"))
 
 

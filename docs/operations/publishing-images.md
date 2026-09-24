@@ -5,10 +5,16 @@ They distinguish full and component-only releases, copy unchanged
 multi-architecture images to the new immutable tag, and keep the optional
 corporate `:latest` promotion separate. This page is the image-build reference.
 
+**No runners yet?** Use the [manual release checklist](runbook-releases.md).
+Its helper reads `corporate/osii.toml` and `release.toml`, builds only the declared
+scope, copies unchanged images and stages GitLab downloads. The Make/PowerShell
+commands below are lower-level image operations: they read `.env`, do not
+implement that selective plan, and do not create a GitLab Release or catalog MR.
+
 The main repository's `osii-toolbox/` directory owns specialized optional
-images. Normal release and startup commands do not build or start Toolbox
-services. Parallel `toolbox-*` commands make each one easy to deploy when
-needed.
+images. Local `make build` and normal startup do not build/start optional Toolbox
+services. A **full corporate release** does publish all six images, including
+Toolbox. Parallel `toolbox-*` commands handle local component work.
 
 OSII has one user-facing product launch and three default image artifacts:
 
@@ -276,9 +282,10 @@ runner/network policy, and required scanning/signing/retention policy. Keep
 registry credentials in the approved CI secret or identity mechanism, never in
 this repository or `.env`.
 
-CI validates the three release images and starts the complete packaged stack on
-every change. Publishing remains an approved, version-tagged release action
-until the corporate registry team supplies those details.
+Public CI performs focused source/build checks, not container publishing on
+every change. With no corporate runners, the maintainer performs release smoke
+tests and clean-workstation acceptance manually. Future corporate tag pipelines
+build only the release plan's changed images; publishing is always deliberate.
 
 ## Build the three default release images
 

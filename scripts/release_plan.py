@@ -161,6 +161,11 @@ def check(plan: Plan | None = None, *, compare: bool = True) -> Plan:
     cargo_lock = (ROOT / "osii-launcher/src-tauri/Cargo.lock").read_text(encoding="utf-8")
     if not re.search(rf'name = "osii-launcher"\nversion = "{re.escape(plan.version)}"', cargo_lock):
         raise ValueError("Launcher Cargo.lock must match the stack version.")
+    lock = ROOT / "uv.lock"
+    if lock.exists():
+        packages = tomllib.loads(lock.read_text(encoding="utf-8"))["package"]
+        if next(item["version"] for item in packages if item["name"] == "osii") != plan.package_version:
+            raise ValueError("uv.lock must match the osii package version.")
     if plan.previous_tag:
         _git("rev-parse", "--verify", f"{plan.previous_tag}^{{commit}}")
         subprocess.run(["git", "merge-base", "--is-ancestor", plan.previous_tag, "HEAD"],
@@ -227,6 +232,15 @@ def prepare(version: str, scope: str, previous_tag: str, *, dry_run: bool = Fals
                                else prior.package_version, version)
         for path in paths
     }
+    lock = ROOT / "uv.lock"
+    if plan.publish_package and lock.exists():
+        updated_lock, count = re.subn(
+            rf'(name = "osii"\nversion = "){re.escape(prior.package_version)}(")',
+            rf'\g<1>{version}\g<2>', lock.read_text(encoding="utf-8"), count=1,
+        )
+        if count != 1:
+            raise ValueError("uv.lock does not contain the previous osii package version.")
+        updated[lock] = updated_lock
     if dry_run:
         return plan
     for path, content in updated.items():

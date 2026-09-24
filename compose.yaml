@@ -43,7 +43,8 @@ services:
       OSII_SYNTHESIS_MODEL: ${OSII_SYNTHESIS_MODEL:-}
       OSII_MODEL_BRIDGE_URL: http://model-provider-bridge:8095
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.containers.internal:11434}
-      OSII_OLLAMA_ALLOWED_MODELS: ${OSII_OLLAMA_ALLOWED_MODELS:-all-minilm,llama3.2:1b}
+      # An explicitly empty allowlist must stay empty (do not use :- here).
+      OSII_OLLAMA_ALLOWED_MODELS: ${OSII_OLLAMA_ALLOWED_MODELS-all-minilm,llama3.2:1b}
       CHAT_PROVIDER: ${CHAT_PROVIDER:-ollama}
       CHAT_PROVIDER_CHAIN: ${CHAT_PROVIDER_CHAIN:-ollama,extractive}
       CHAT_MODEL: ${CHAT_MODEL:-llama3.2:1b}

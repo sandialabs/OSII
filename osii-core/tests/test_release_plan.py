@@ -3,6 +3,9 @@
 import hashlib
 import importlib
 import json
+import shutil
+import zipfile
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
@@ -210,3 +213,185 @@ def test_launcher_catalog_rejects_tags_and_uppercase_digests() -> None:
     }
     with pytest.raises(CatalogError, match="lowercase @sha256"):
         validate_catalog(catalog, registry="quay.corp.test")
+
+
+@pytest.fixture
+def manual_release(monkeypatch: pytest.MonkeyPatch):
+    root = Path(__file__).resolve().parents[2]
+    monkeypatch.syspath_prepend(str(root / "scripts"))
+    module = importlib.import_module("corporate_release")
+    monkeypatch.setenv("OSII_IMAGE_PREFIX", "quay.corp.test/ai-ready-everything/osii")
+    monkeypatch.setenv("OSII_QUAY_REGISTRY", "quay.corp.test")
+    monkeypatch.setenv("OSII_BASE_IMAGE", "quay.corp.test/ubi@sha256:" + "a" * 64)
+    monkeypatch.setenv("OSII_CATALOG_URL", "https://catalog.corp.test/catalog.json")
+    for name in ("OSII_TESSERACT_SOURCE_URL", "OSII_LEPTONICA_SOURCE_URL", "OSII_TESSDATA_BASE_URL"):
+        monkeypatch.setenv(name, "https://artifacts.corp.test/source")
+    return module
+
+
+@pytest.mark.parametrize("scope", ["full", "core", "ui", "launcher", "toolbox-tesseract-opencv",
+                                   "toolbox-tabular", "toolbox-llm-wikis"])
+def test_manual_assembly_only_assembles_selected_and_copies_the_rest(
+    scope, manual_release, monkeypatch, tmp_path,
+) -> None:
+    release = manual_release
+    plan = Plan("1.2.3", "v1.2.2", scope, "1.2.3" if scope in {"full", "core"} else "1.2.2")
+    raw = json.dumps({"manifests": [
+        {"platform": {"os": "linux", "architecture": arch}} for arch in ("amd64", "arm64")
+    ]}).encode()
+    commands = []
+    checked = []
+    monkeypatch.setattr(release, "ROOT", tmp_path)
+    monkeypatch.setattr(release, "require_new_tag", checked.append)
+    monkeypatch.setattr(release, "run", lambda *command, **kwargs: commands.append(command))
+
+    def inspect(command, **kwargs):
+        if "--raw" in command:
+            return raw
+        return json.dumps({"Os": "linux", "Architecture": command[-1].rsplit("-", 1)[1]}).encode()
+
+    monkeypatch.setattr(release.subprocess, "check_output", inspect)
+    release.assemble_images(plan.version, plan)
+    copies = [command for command in commands if command[0] == "skopeo"]
+    assert len(copies) == len(IMAGES) - len(plan.images_to_build)
+    assert all(command[1:4] == ("copy", "--all", "--preserve-digests") for command in copies)
+    manifests = [command for command in commands if "scripts/publish_multiarch.py" in command]
+    assert len(manifests) == bool(plan.images_to_build)
+    if manifests:
+        command = manifests[0]
+        assert command[command.index("--phase") + 1] == "manifest"
+        assert command[command.index("--include") + 1:] == plan.images_to_build
+    assert len(checked) == 6
+    records = json.loads((tmp_path / "release/images.json").read_text())
+    assert len(records) == 6
+    assert set(records.values()) == {"sha256:" + hashlib.sha256(raw).hexdigest()}
+
+
+def test_manual_assembly_fails_before_writes_when_previous_arch_is_missing(
+    manual_release, monkeypatch,
+) -> None:
+    release = manual_release
+    monkeypatch.setattr(release, "require_new_tag", lambda reference: None)
+    monkeypatch.setattr(release.subprocess, "check_output", lambda *args, **kwargs: b'{"manifests": []}')
+    monkeypatch.setattr(release, "run", lambda *args, **kwargs: pytest.fail("must not write tags"))
+    with pytest.raises(ValueError, match="Incomplete"):
+        release.assemble_images("1.2.3", Plan("1.2.3", "v1.2.2", "launcher", "1.2.2"))
+
+
+@pytest.mark.parametrize("scope", ["full", "core", "ui", "launcher", "toolbox-tesseract-opencv",
+                                   "toolbox-tabular", "toolbox-llm-wikis"])
+def test_manual_dry_run_does_not_build_or_publish(scope, manual_release, monkeypatch, capsys) -> None:
+    release = manual_release
+    plan = Plan("1.2.3", "v1.2.2", scope, "1.2.3" if scope in {"full", "core"} else "1.2.2")
+    monkeypatch.setattr(release, "load_defaults", lambda path: dict(release.os.environ))
+    monkeypatch.setattr(release, "manual_preflight", lambda **kwargs: plan)
+    monkeypatch.setattr(release, "run", lambda *args, **kwargs: pytest.fail("must not execute commands"))
+    for action in ("images", "assemble", "installer", "bundle", "catalog", "promote-latest"):
+        release.manual_action(Namespace(config=Path("unused"), dry_run=True, action=action))
+    output = capsys.readouterr().out
+    assert "no builds" in output
+    if scope == "launcher":
+        assert "Build: no images" in output
+
+
+def test_manual_image_build_rejects_wrong_engine(manual_release, monkeypatch) -> None:
+    release = manual_release
+    monkeypatch.setattr(release, "load_plan", lambda: Plan("1.2.3", "v1.2.2", "ui", "1.2.2"))
+    monkeypatch.setattr(release.subprocess, "check_output", lambda *args, **kwargs: "linux/arm64\n")
+    monkeypatch.setattr(release, "run", lambda *args, **kwargs: pytest.fail("must not build"))
+    with pytest.raises(ValueError, match="native linux/amd64"):
+        release.build_images("1.2.3", arch="amd64")
+
+
+def test_manual_preflight_rejects_dirty_or_wrong_tag(manual_release, monkeypatch) -> None:
+    release = manual_release
+    monkeypatch.setattr(release, "check_release_plan", lambda: Plan("1.2.3", "v1.2.2", "ui", "1.2.2"))
+    monkeypatch.setattr(release.subprocess, "check_output", lambda *args, **kwargs: " M changed.py\n")
+    with pytest.raises(ValueError, match="clean, committed"):
+        release.manual_preflight()
+    results = iter(["", "tagcommit", "othercommit"])
+    monkeypatch.setattr(release.subprocess, "check_output", lambda *args, **kwargs: next(results))
+    with pytest.raises(ValueError, match="Check out v1.2.3 exactly"):
+        release.manual_preflight()
+
+
+def test_manual_bundle_filters_stale_files_and_marks_missing_targets(
+    manual_release, monkeypatch, tmp_path,
+) -> None:
+    release = manual_release
+    shutil.copy2(release.ROOT / "compose.yaml", tmp_path / "compose.yaml")
+    monkeypatch.setattr(release, "ROOT", tmp_path)
+    monkeypatch.setattr(release, "_release_image_digests", lambda version: {name: "sha256:" + "a" * 64 for name in IMAGES})
+    monkeypatch.setattr(release.subprocess, "check_output", lambda *args, **kwargs: "abc123")
+    installers = tmp_path / "release/installers"
+    installers.mkdir(parents=True)
+    (installers / "OSII-1.2.3-windows-x64.exe").write_bytes(b"test placeholder, not a signed executable")
+    (installers / "OSII-0.0.1-windows-x64.exe").write_bytes(b"stale")
+    packages = tmp_path / "release/python"
+    packages.mkdir()
+    (packages / "osii-0.0.1-py3-none-any.whl").write_bytes(b"stale")
+    plan = Plan("1.2.3", "v1.2.2", "ui", "1.2.2")
+    release.manual_bundle(plan, ["windows-x64"])
+    staged = tmp_path / "release/1.2.3"
+    assert not list(staged.glob("*.whl"))
+    assert not list(staged.glob("*0.0.1*"))
+    notes = (staged / "RELEASE-NOTES.md").read_text()
+    assert "macos-arm64" in notes and "reused from the prior release" in notes
+    for record in (staged / "SHA256SUMS").read_text().splitlines():
+        digest, name = record.split("  ", 1)
+        assert hashlib.sha256((staged / name).read_bytes()).hexdigest() == digest
+    with zipfile.ZipFile(staged / "deployment.zip") as archive:
+        import yaml
+        compose = yaml.safe_load(archive.read("compose.yaml"))
+        assert all("build" not in service for service in compose["services"].values())
+        assert compose["services"]["api"]["environment"]["OSII_OLLAMA_ALLOWED_MODELS"] == (
+            "${OSII_OLLAMA_ALLOWED_MODELS-all-minilm,llama3.2:1b}"
+        )
+        assert "mcp" not in compose["services"] and "tika" not in compose["services"]
+        defaults = archive.read(".env.example").decode()
+        assert 'OSII_CONFIG_DIR_HOST="./osii-data/config"' in defaults
+        assert 'OSII_ALLOW_LOCAL_CONFIG_WRITES="true"' in defaults
+        assert 'OSII_DEFAULT_SYNTHESIZER="local.extractive-preview"' in defaults
+        assert 'OSII_DEFAULT_EMBEDDER="local.hashing"' in defaults
+        assert "API_KEY=" not in defaults and "CA_BUNDLE=" not in defaults
+    with pytest.raises(ValueError, match="already exists"):
+        release.manual_bundle(plan, ["windows-x64"])
+
+
+def test_manual_bundle_needs_matching_core_artifacts(manual_release, monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(manual_release, "ROOT", tmp_path)
+    with pytest.raises(ValueError, match="matching osii wheel"):
+        manual_release.manual_bundle(Plan("1.2.3", "v1.2.2", "core", "1.2.3"), ["none"])
+
+
+def test_manual_catalog_bootstrap_and_preservation(manual_release, monkeypatch, tmp_path) -> None:
+    release = manual_release
+    monkeypatch.setattr(release, "ROOT", tmp_path)
+    monkeypatch.setattr(release, "_verify_catalog_digest", lambda reference: None)
+    digests = {name: "sha256:" + "a" * 64 for name in IMAGES}
+    monkeypatch.setattr(release, "_release_image_digests", lambda version: digests)
+    release.manual_catalog(Plan("1.2.2", "", "full", "1.2.2"), None, first=True)
+    source = tmp_path / "prior.json"
+    shutil.copy2(tmp_path / "release/catalog.json", source)
+    release.manual_catalog(Plan("1.2.3", "v1.2.2", "ui", "1.2.2"), source, first=False)
+    catalog = json.loads((tmp_path / "release/catalog.json").read_text())
+    assert [stack["id"] for stack in catalog["stacks"]] == ["1.2.2", "1.2.3"]
+    assert catalog["tools"][0]["versions"][0]["label"] == "1.2.2"
+    with pytest.raises(ValueError, match="not both"):
+        release.manual_catalog(Plan("1.2.3", "v1.2.2", "ui", "1.2.2"), source, first=True)
+
+
+def test_prepare_keeps_local_python_lock_version_in_sync(tmp_path, monkeypatch) -> None:
+    from scripts import release_plan
+    root = release_plan.ROOT
+    for name in ("release.toml", "uv.lock", "osii-core/pyproject.toml", "osii-launcher/package.json",
+                 "osii-launcher/package-lock.json", "osii-launcher/src-tauri/Cargo.toml",
+                 "osii-launcher/src-tauri/Cargo.lock", "osii-launcher/src-tauri/tauri.conf.json"):
+        destination = tmp_path / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(root / name, destination)
+    monkeypatch.setattr(release_plan, "ROOT", tmp_path)
+    monkeypatch.setattr(release_plan, "PLAN_FILE", tmp_path / "release.toml")
+    plan = release_plan.prepare("99.0.0", "full", "")
+    release_plan.check(plan, compare=False)
+    assert 'name = "osii"\nversion = "99.0.0"' in (tmp_path / "uv.lock").read_text()

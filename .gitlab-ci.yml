@@ -1,5 +1,7 @@
 # Corporate runners are provisioned hosts; no public Docker-in-Docker image.
 # See docs/operations/corporate-deployment.md for runner tags and variables.
+# Until runners exist, use runbook-releases.md and corporate_release.py --manual.
+# Never run this tag pipeline for a version already published manually.
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'

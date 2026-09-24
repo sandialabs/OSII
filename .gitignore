@@ -70,6 +70,7 @@ Thumbs.db
 *.swo
 
 # Local logs and generated reports
+/release/
 *.log
 coverage.xml
 repo_for_ai.txt

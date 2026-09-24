@@ -1,4 +1,4 @@
-"""Corporate release jobs. Publishing runs only in a protected GitLab tag pipeline."""
+"""Corporate release steps, run by GitLab jobs or explicitly with --manual."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from corporate_config import apply_defaults
+from corporate_config import DEFAULT_PATH, apply_defaults, deployment_defaults, load_defaults
 from launcher_catalog import CatalogError, update_catalog, validate_catalog
 from publish_multiarch import RELEASE_IMAGES, TOOLBOX_IMAGES, require_new_tag
 from release_plan import Plan, load_plan
@@ -32,7 +32,7 @@ IMAGES = RELEASE_IMAGES + TOOLBOX_IMAGES
 def required(name: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
-        raise ValueError(f"Configure the corporate CI variable {name}.")
+        raise ValueError(f"Configure {name} in corporate defaults or the process environment.")
     return value
 
 
@@ -101,6 +101,11 @@ def preflight() -> str:
     )
     if ancestry.returncode:
         raise ValueError("Release tags must point to a commit on the corporate default branch.")
+    check_configuration()
+    return release_version
+
+
+def check_configuration() -> None:
     prefix = required("OSII_IMAGE_PREFIX")
     registry = required("OSII_QUAY_REGISTRY")
     if prefix != f"{registry}/ai-ready-everything/osii" or registry in ("quay.io", "localhost"):
@@ -111,7 +116,6 @@ def preflight() -> str:
     for name in ("OSII_TESSERACT_SOURCE_URL", "OSII_LEPTONICA_SOURCE_URL", "OSII_TESSDATA_BASE_URL"):
         if not required(name).startswith("https://"):
             raise ValueError(f"{name} must use the approved HTTPS artifact mirror.")
-    return release_version
 
 
 def registry_login(directory: Path) -> None:
@@ -138,18 +142,25 @@ def image_command(release_version: str, phase: str, architectures: str,
     return command
 
 
-def build_images() -> None:
-    release_version = preflight()
+def build_images(release_version: str | None = None, *, arch: str | None = None) -> None:
+    manual = release_version is not None
+    release_version = release_version or preflight()
     plan = load_plan()
     if not plan.images_to_build:
         print("No container images need rebuilding for this release.")
         return
-    arch = required("OSII_ARCH")
+    arch = arch or required("OSII_ARCH")
     native = {"x86_64": "amd64", "aarch64": "arm64", "arm64": "arm64"}.get(platform.machine())
-    if platform.system() != "Linux" or arch != native:
+    if manual:
+        engine = subprocess.check_output(
+            ["podman", "info", "--format", "{{.Host.OS}}/{{.Host.Arch}}"], text=True).strip()
+        if engine != f"linux/{arch}":
+            raise ValueError(f"Podman engine is {engine}; use a native linux/{arch} builder.")
+    elif platform.system() != "Linux" or arch != native:
         raise ValueError("Image jobs must run on native Linux runners matching OSII_ARCH.")
     with tempfile.TemporaryDirectory(prefix="osii-registry-") as directory:
-        registry_login(Path(directory))
+        if not manual:
+            registry_login(Path(directory))
         run(*image_command(release_version, "build", f"linux/{arch}", plan))
         # Exercise installed entry points without exposing host ports or mounting user data.
         for name, _, _ in IMAGES:
@@ -165,9 +176,9 @@ def build_images() -> None:
                 run("podman", "run", "--rm", "--entrypoint", "python", image, "-c", code)
 
 
-def build_installer() -> None:
-    release_version = preflight()
-    target = required("OSII_DESKTOP_TARGET")
+def build_installer(release_version: str | None = None, *, target: str | None = None) -> None:
+    release_version = release_version or preflight()
+    target = target or required("OSII_DESKTOP_TARGET")
     expected = {"windows-x64": ("Windows", "amd64"), "macos-arm64": ("Darwin", "arm64"),
                 "macos-x64": ("Darwin", "x86_64")}
     if target not in expected or (platform.system(), platform.machine().lower()) != expected[target]:
@@ -202,7 +213,8 @@ def build_installer() -> None:
         "--config", json.dumps(config), cwd=launcher, env=env)
     bundle_directory = launcher / "src-tauri/target/release/bundle"
     suffix = ".exe" if target == "windows-x64" else ".dmg"
-    candidates = list(bundle_directory.rglob("*" + suffix))
+    candidates = [path for path in bundle_directory.rglob("*" + suffix)
+                  if f"_{release_version}_" in path.name]
     if len(candidates) != 1:
         raise ValueError(f"Expected one {suffix} installer, found {len(candidates)}.")
     installer = candidates[0]
@@ -235,35 +247,34 @@ def deployment_files(release_version: str) -> None:
     configuration = yaml.safe_load((ROOT / "compose.yaml").read_text())
     for service in configuration["services"].values():
         service.pop("build", None)
-    defaults = {
-        "OSII_IMAGE_PREFIX": required("OSII_IMAGE_PREFIX"),
-        "OSII_IMAGE_TAG": release_version,
-        "OSII_SOURCE_DIR": "./source",
-        "OSII_DEFAULT_EXTRACTOR": "local.native-text",
-        "OSII_DEFAULT_SYNTHESIZER": "local.basic-synthesizer",
-        "OSII_DEFAULT_EMBEDDER": "local.hashing-embedder",
-        "OSII_DEFAULT_ENRICHER": "local.stats-keywords",
-        "OSII_MODEL_BASE_URL": os.environ.get("OSII_MODEL_BASE_URL", ""),
-        "OPENAI_BASE_URL": os.environ.get("OSII_MODEL_BASE_URL", ""),
-        "OPENAI_EMBEDDING_MODEL": os.environ.get("OSII_EMBEDDING_MODEL", ""),
-        "OPENAI_CHAT_MODEL": os.environ.get("OSII_CHAT_MODEL", ""),
-        "CHAT_PROVIDER": "extractive", "CHAT_PROVIDER_CHAIN": "extractive",
-        "OSII_OLLAMA_ALLOWED_MODELS": "", "MCP_DEBUG": "false",
-    }
+    # These profiles do not belong to the six-image release set.
+    configuration["services"].pop("mcp", None)
+    configuration["services"].pop("tika", None)
+    defaults = deployment_defaults(dict(os.environ), release_version)
+    output.mkdir(parents=True, exist_ok=True)
     # Non-secret values only. JSON double quoting also protects spaces and newlines.
     env_text = "\n".join(f"{key}={json.dumps(value)}" for key, value in defaults.items()) + "\n"
     with zipfile.ZipFile(output / "deployment.zip", "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("compose.yaml", yaml.safe_dump(configuration, sort_keys=False))
         archive.writestr(".env.example", env_text)
         archive.writestr("START-HERE.txt",
-            "For Windows/macOS use the OSII installer on this release page.\n"
-            "For managed Linux: copy .env.example to .env, set OSII_SOURCE_DIR, then\n"
-            "podman compose pull\npodman compose up -d --no-build\n"
+            "Pull-only deployment: Windows PowerShell, macOS, or Linux; no source checkout needed.\n"
+            "Prerequisites: Podman, a Compose provider, corporate trust, Quay read access.\n"
+            "Keep this folder for updates; it owns the Compose project and library volume.\n"
+            "Copy .env.example to .env (PowerShell: Copy-Item .env.example .env; shell: cp .env.example .env).\n"
+            "Set OSII_SOURCE_DIR and OSII_CONFIG_DIR_HOST to existing absolute local folders.\n"
+            "Use forward slashes on Windows (C:/Users/name/Documents); never replace an existing .env.\n"
+            "Run podman login <your registry>, then from this directory:\n"
+            "podman compose pull\npodman compose up -d --no-build --pull never\n"
             "Open http://localhost:5173\n"
             "Optional tools: podman compose --profile toolbox up -d --no-build --pull missing "
             "tesseract-opencv tabular-extractor tabular-enricher "
             "readable-wiki-enricher concept-entity-wiki-enricher\n"
-            "Register optional Processor API endpoints in dashboard Setup.\n")
+            "Register optional Processor API endpoints in dashboard Setup.\n"
+            "Model keys belong in dashboard Setup (private config/secrets.env), not in shared files.\n"
+            "Check: podman compose ps; stop: podman compose down (never add -v).\n"
+            "Update: back up data/config, retain this directory and .env, change only OSII_IMAGE_TAG,\n"
+            "then pull and up again. Rollback: restore the previous tag and repeat; migrations may need a backup.\n")
 
 
 def publish() -> None:
@@ -289,41 +300,7 @@ def publish() -> None:
             raise ValueError(f"Missing signed installer for {target}.")
     with tempfile.TemporaryDirectory(prefix="osii-registry-") as directory:
         registry_login(Path(directory))
-        prefix = required("OSII_IMAGE_PREFIX")
-        for name, _, _ in IMAGES:
-            require_new_tag(f"{prefix}-{name}:{release_version}")
-        reused = []
-        for name, _, _ in IMAGES:
-            if name in plan.images_to_build:
-                continue
-            source = f"{prefix}-{name}:{plan.previous_tag[1:]}"
-            target = f"{prefix}-{name}:{release_version}"
-            raw = subprocess.check_output(["skopeo", "inspect", "--raw", f"docker://{source}"])
-            _verified_platforms(raw, source)
-            digest = "sha256:" + hashlib.sha256(raw).hexdigest()
-            reused.append((name, digest, target))
-        if plan.images_to_build:
-            run(*image_command(release_version, "manifest", "linux/amd64,linux/arm64", plan))
-        for name, digest, target in reused:
-            run("skopeo", "copy", "--all", "--preserve-digests",
-                f"docker://{prefix}-{name}@{digest}",
-                f"docker://{target}")
-            copied = subprocess.check_output(["skopeo", "inspect", "--raw", f"docker://{target}"])
-            _verified_platforms(copied, target)
-            if hashlib.sha256(copied).hexdigest() != digest.removeprefix("sha256:"):
-                raise ValueError(f"Copied image does not match the prior release: {target}.")
-        records = {}
-        for name, _, _ in IMAGES:
-            reference = f"{required('OSII_IMAGE_PREFIX')}-{name}:{release_version}"
-            raw = subprocess.check_output(["skopeo", "inspect", "--raw", f"docker://{reference}"])
-            _verified_platforms(raw, reference)
-            digest = "sha256:" + hashlib.sha256(raw).hexdigest()
-            records[reference] = digest
-    (output / "images.json").write_text(json.dumps(records, indent=2) + "\n")
-    (output / "python-package.json").write_text(json.dumps({
-        "name": "osii", "version": plan.package_version,
-        "published_in_this_release": plan.publish_package,
-    }, indent=2) + "\n")
+        assemble_images(release_version, plan)
     deployment_files(release_version)
     if plan.publish_package:
         env = os.environ.copy()
@@ -361,6 +338,51 @@ def publish() -> None:
         "name": f"OSII {release_version}", "tag_name": tag,
         "description": description, "assets": {"links": links},
     }).encode())
+
+
+def assemble_images(release_version: str, plan: Plan) -> None:
+    """Assemble changed images and copy unchanged manifests; never rebuild here."""
+    prefix = required("OSII_IMAGE_PREFIX")
+    for name, _, _ in IMAGES:
+        require_new_tag(f"{prefix}-{name}:{release_version}")
+    reused = []
+    for name, _, _ in IMAGES:
+        if name in plan.images_to_build:
+            continue
+        source = f"{prefix}-{name}:{plan.previous_tag[1:]}"
+        raw = subprocess.check_output(["skopeo", "inspect", "--raw", f"docker://{source}"])
+        _verified_platforms(raw, source)
+        reused.append((name, "sha256:" + hashlib.sha256(raw).hexdigest()))
+    # Check both changed members before writing any final tag.
+    for name in plan.images_to_build:
+        for arch in ("amd64", "arm64"):
+            reference = f"{prefix}-{name}:{release_version}-{arch}"
+            data = json.loads(subprocess.check_output(["skopeo", "inspect", f"docker://{reference}"]))
+            if (data.get("Os"), data.get("Architecture")) != ("linux", arch):
+                raise ValueError(f"Wrong architecture for {reference}.")
+    if plan.images_to_build:
+        run(*image_command(release_version, "manifest", "linux/amd64,linux/arm64", plan))
+    for name, digest in reused:
+        target = f"{prefix}-{name}:{release_version}"
+        run("skopeo", "copy", "--all", "--preserve-digests",
+            f"docker://{prefix}-{name}@{digest}", f"docker://{target}")
+        copied = subprocess.check_output(["skopeo", "inspect", "--raw", f"docker://{target}"])
+        _verified_platforms(copied, target)
+        if "sha256:" + hashlib.sha256(copied).hexdigest() != digest:
+            raise ValueError(f"Copied image does not match the prior release: {target}.")
+    write_release_records(release_version, plan)
+
+
+def write_release_records(release_version: str, plan: Plan) -> None:
+    records = {f"{required('OSII_IMAGE_PREFIX')}-{name}:{release_version}": digest
+               for name, digest in _release_image_digests(release_version).items()}
+    output = ROOT / "release"
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "images.json").write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
+    (output / "python-package.json").write_text(json.dumps({
+        "name": "osii", "version": plan.package_version,
+        "published_in_this_release": plan.publish_package,
+    }, indent=2) + "\n", encoding="utf-8")
 
 
 def _release_image_digests(release_version: str) -> dict[str, str]:
@@ -466,8 +488,10 @@ def update_launcher_catalog() -> None:
             raise ValueError(str(error)) from error
         catalog_file.parent.mkdir(parents=True, exist_ok=True)
         catalog_file.write_text(json.dumps(updated, indent=2) + "\n", encoding="utf-8")
-        changed = subprocess.run(["git", "diff", "--quiet", "--", path], cwd=checkout,
-                                 env=environment, check=False).returncode != 0
+        # An initial catalog is untracked and therefore absent from `git diff`.
+        changed = bool(subprocess.check_output(
+            ["git", "status", "--porcelain", "--", path], cwd=checkout,
+            env=environment, text=True).strip())
         if not changed:
             print("Catalog already contains this release; no merge request opened.")
             return
@@ -504,12 +528,15 @@ def update_launcher_catalog() -> None:
     print(f"Opened catalog merge request: {merge_request.get('web_url', branch)}")
 
 
-def promote_latest() -> None:
-    release_version = preflight()
-    tag = required("CI_COMMIT_TAG")
-    api_request(f"releases/{urllib.parse.quote(tag, safe='')}")
+def promote_latest(release_version: str | None = None) -> None:
+    manual = release_version is not None
+    release_version = release_version or preflight()
+    if not manual:
+        tag = required("CI_COMMIT_TAG")
+        api_request(f"releases/{urllib.parse.quote(tag, safe='')}")
     with tempfile.TemporaryDirectory(prefix="osii-registry-") as directory:
-        registry_login(Path(directory))
+        if not manual:
+            registry_login(Path(directory))
         prefix = required("OSII_IMAGE_PREFIX")
         sources = []
         for name, _, _ in IMAGES:
@@ -537,14 +564,164 @@ def _verified_platforms(raw: bytes, reference: str) -> None:
         raise ValueError(f"Incomplete multi-architecture image: {reference}")
 
 
+def manual_preflight(*, dry_run: bool = False) -> Plan:
+    """Local release inputs are explicit, not impersonated CI variables."""
+    plan = check_release_plan()
+    check_configuration()
+    if sys.version_info[:2] != (3, 12):
+        raise ValueError("Run the release helper with Python 3.12.")
+    if not dry_run:
+        dirty = subprocess.check_output(
+            ["git", "status", "--porcelain"], cwd=ROOT, text=True).strip()
+        if dirty:
+            raise ValueError("Use a clean, committed release checkout; local changes are not tagged source.")
+        tag_commit = subprocess.check_output(
+            ["git", "rev-parse", f"v{plan.version}^{{commit}}"], cwd=ROOT, text=True).strip()
+        head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+        if head != tag_commit:
+            raise ValueError(f"Check out v{plan.version} exactly before building release artifacts.")
+        run("git", "fetch", "--no-tags", "origin", "main:refs/remotes/origin/main")
+        run("git", "merge-base", "--is-ancestor", head, "refs/remotes/origin/main")
+    return plan
+
+
+def manual_catalog(plan: Plan, source: Path | None, *, first: bool) -> None:
+    if bool(source) == first:
+        raise ValueError("Use --catalog-file PATH for the current catalog, or --first-catalog, not both.")
+    registry = required("OSII_QUAY_REGISTRY")
+    catalog = (json.loads(source.read_text(encoding="utf-8")) if source else {
+        "version": 1, "registry": registry, "namespace": "ai-ready-everything",
+        "stacks": [], "tools": [], "images": [],
+    })
+    validate_catalog(catalog, registry=registry, verify_digest=_verify_catalog_digest,
+                     allow_empty_stacks=True)
+    updated = update_catalog(catalog, release=plan.version,
+                             image_digests=_release_image_digests(plan.version),
+                             published_images=plan.images_to_build)
+    if any(stack["id"] == plan.version for stack in catalog["stacks"]) and updated != catalog:
+        raise ValueError("This catalog release already exists with different content; do not replace it.")
+    validate_catalog(updated, registry=registry, verify_digest=_verify_catalog_digest)
+    output = ROOT / "release/catalog.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(updated, indent=2) + "\n", encoding="utf-8")
+    print("Wrote release/catalog.json. Review it in a catalog-project merge request; nothing was pushed.")
+
+
+DESKTOP_TARGETS = {"windows-x64": "exe", "macos-arm64": "dmg", "macos-x64": "dmg"}
+
+
+def manual_bundle(plan: Plan, targets: list[str]) -> None:
+    """Stage only this version's explicit assets; never sweep up stale release files."""
+    if "none" in targets:
+        if targets != ["none"]:
+            raise ValueError("Use --targets none alone for a container-only pilot.")
+        targets = []
+    output = ROOT / "release"
+    installers = [output / "installers" / f"OSII-{plan.version}-{target}.{DESKTOP_TARGETS[target]}"
+                  for target in targets]
+    for path in installers:
+        if not path.is_file():
+            raise ValueError(f"Missing signed installer: {path}")
+    packages = []
+    if plan.publish_package:
+        packages = [output / "python" / f"osii-{plan.package_version}-py3-none-any.whl",
+                    output / "python" / f"osii-{plan.package_version}.tar.gz"]
+        if any(not path.is_file() for path in packages):
+            raise ValueError("Build the matching osii wheel and source distribution before bundling.")
+    write_release_records(plan.version, plan)
+    deployment_files(plan.version)
+    destination = output / plan.version
+    if destination.exists():
+        raise ValueError(f"{destination} already exists. Archive it before regenerating; do not upload twice.")
+    destination.mkdir()
+    for path in [*installers, *packages, output / "deployment.zip", output / "images.json",
+                 output / "python-package.json"]:
+        shutil.copy2(path, destination / path.name)
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    missing = sorted(set(DESKTOP_TARGETS) - set(targets))
+    notes = (
+        f"# OSII {plan.version}\n\nSource: `{commit}`; scope: `{plan.scope}`.\n\n"
+        f"Launcher installers included: {', '.join(targets) or 'none (container-only pilot)'}.\n"
+        f"Installer targets NOT included: {', '.join(missing) or 'none'}.\n\n"
+        "Install the matching signed launcher; IT supplies Podman, Compose, corporate trust and Quay access.\n"
+        "Refresh the reviewed catalog, choose a Stack, pull its images, select documents, and start.\n"
+        "Alternatively use deployment.zip: its START-HERE.txt works on Windows, Mac and Linux.\n\n"
+        f"Python package: osii {plan.package_version}; "
+        + ("new package: upload it to the internal Python registry.\n" if plan.publish_package
+           else "reused from the prior release; do not upload another copy.\n")
+        + "\nRelease maintainer: record clean-workstation acceptance results here BEFORE announcing.\n"
+        "Keep a backup before upgrading. Roll back to a prior approved Stack/tag; never delete library volumes.\n"
+    )
+    (destination / "RELEASE-NOTES.md").write_text(notes, encoding="utf-8")
+    files = sorted(path for path in destination.iterdir() if path.is_file())
+    (destination / "SHA256SUMS").write_text("".join(
+        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n" for path in files), encoding="utf-8")
+    print(f"Ready for manual GitLab upload: {destination}. No GitLab or Python upload was performed.")
+
+
+def manual_action(args: argparse.Namespace) -> None:
+    defaults = load_defaults(args.config)  # Require the reviewed private file.
+    plan = manual_preflight(dry_run=args.dry_run)
+    if plan.scope != "full":
+        for name in ("OSII_BASE_IMAGE", "OSII_TESSERACT_SOURCE_URL",
+                     "OSII_LEPTONICA_SOURCE_URL", "OSII_TESSDATA_BASE_URL"):
+            if os.environ.get(name) != defaults[name]:
+                raise ValueError(f"{name} overrides reviewed build defaults. Prepare a full release instead.")
+    print(f"Release plan (executing only '{args.action}'): stack {plan.version}; scope {plan.scope}; package {plan.package_version} "
+          f"({'publish' if plan.publish_package else 'reuse'}).")
+    print("Build: " + (", ".join(plan.images_to_build) or "no images"))
+    print("Copy: " + (", ".join(name for name, _, _ in IMAGES if name not in plan.images_to_build) or "no images"))
+    if args.dry_run:
+        print(f"Dry run of {args.action}: no builds, registry checks/writes, uploads or file changes. "
+              "Tag, clean-checkout and remote ancestry checks are deferred to the real run.")
+        return
+    if args.action in ("version", "preflight"):
+        return
+    if args.action == "images":
+        if plan.images_to_build and not args.arch:
+            raise ValueError("Pass --arch amd64 or --arch arm64 for this native builder.")
+        build_images(plan.version, arch=args.arch)
+    elif args.action == "assemble":
+        assemble_images(plan.version, plan)
+    elif args.action == "installer":
+        if not args.target:
+            raise ValueError("Pass --target windows-x64, macos-arm64, or macos-x64.")
+        build_installer(plan.version, target=args.target)
+    elif args.action == "catalog":
+        manual_catalog(plan, args.catalog_file, first=args.first_catalog)
+    elif args.action == "bundle":
+        manual_bundle(plan, args.targets)
+    elif args.action == "promote-latest":
+        if not args.approved:
+            raise ValueError("After release acceptance and approval, repeat with --approved.")
+        promote_latest(plan.version)
+    else:
+        raise ValueError("Manual publish is intentionally separate: upload the staged files with GitLab/glab.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "action",
-        choices=("version", "preflight", "images", "installer", "publish", "catalog", "promote-latest"),
+        choices=("version", "preflight", "images", "assemble", "installer", "bundle", "publish", "catalog", "promote-latest"),
     )
+    parser.add_argument("--manual", action="store_true", help="Use workstation credentials, not CI job credentials.")
+    parser.add_argument("--config", type=Path, default=DEFAULT_PATH)
+    parser.add_argument("--dry-run", action="store_true", help="Manual mode: show scope without builds or writes.")
+    parser.add_argument("--arch", choices=("amd64", "arm64"))
+    parser.add_argument("--target", choices=DESKTOP_TARGETS)
+    parser.add_argument("--targets", nargs="+", choices=[*DESKTOP_TARGETS, "none"], default=list(DESKTOP_TARGETS),
+                        help="Manual bundle: explicitly list the signed installer targets you can supply.")
+    parser.add_argument("--catalog-file", type=Path)
+    parser.add_argument("--first-catalog", action="store_true")
+    parser.add_argument("--approved", action="store_true", help="Confirm manual latest promotion was approved.")
     args = parser.parse_args()
-    apply_defaults()
+    apply_defaults(args.config)
+    if args.manual:
+        manual_action(args)
+        return
+    if args.dry_run or args.action in ("assemble", "bundle"):
+        parser.error("This option/action requires --manual.")
     actions = {"version": version, "preflight": preflight, "images": build_images,
                "installer": build_installer, "publish": publish,
                "catalog": update_launcher_catalog, "promote-latest": promote_latest}
@@ -556,5 +733,5 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except (ValueError, urllib.error.HTTPError, subprocess.CalledProcessError) as error:
+    except (OSError, ValueError, urllib.error.HTTPError, subprocess.CalledProcessError) as error:
         raise SystemExit(str(error)) from error

@@ -3,12 +3,17 @@
 For the short action checklist, start with [What are you trying to do?](runbooks.md).
 This page is the one-time setup and policy reference, not a daily runbook.
 
+**Current operating mode: manual releases, no corporate runners.** Follow the
+[manual release checklist](runbook-releases.md). GitLab stores reviewed source,
+packages and release downloads; your workstations perform the builds. The CI
+configuration below is for later enablement, not a prerequisite for releasing.
+
 OSII has one codebase and two environments:
 
 | Public GitHub | Corporate GitLab |
 | --- | --- |
 | Develop and review portable source | Add approved internal configuration |
-| Run fast tests on Python 3.12 and Linux | Repeat validation on corporate runners |
+| Run fast tests on Python 3.12 and Linux | Repeat validation locally; runners later |
 | Build the Python package on a Core/full release tag | Publish the Python package only when Core/SDK changes |
 | Optionally publish `osii` to public PyPI | Build signed desktop installers |
 | Never contain corporate names or secrets | Build AMD64/ARM64 images and push corporate Quay |
@@ -77,7 +82,7 @@ Then:
 - run the local focused tests;
 - push the branch to corporate GitLab;
 - open a merge request into corporate `main`;
-- let GitLab CI pass and review the public commits plus corporate adaptations;
+- review local test evidence and the public commits plus corporate adaptations;
 - merge the request; do not tag from the import branch.
 
 If corporate policy forbids a direct remote to GitHub, transfer an approved
@@ -95,6 +100,10 @@ git fetch /approved/path/osii-public.bundle origin/main:refs/remotes/public/main
 Continue with the same import branch, merge request, and review steps.
 
 ## Configure GitLab once
+
+For today's manual route, use the [manual setup checklist](runbook-releases.md#configure-gitlab-once).
+The remainder of this section describes **future runner setup**. Do not run a
+tag pipeline for a version that was already published manually.
 
 The checked-in `.gitlab-ci.yml` expects these runner tags:
 
@@ -129,7 +138,7 @@ Set these protected or environment-scoped CI variables:
 | `OSII_MODEL_BASE_URL` | Non-secret default model endpoint compiled into the launcher |
 | `OSII_EMBEDDING_MODEL`, `OSII_CHAT_MODEL` | Optional approved model defaults |
 | `OSII_CATALOG_URL` | Credential-free HTTPS raw URL for the reviewed launcher `catalog.json` |
-| `OSII_CATALOG_PROJECT` | Protected GitLab `group/project` that owns that catalog; allow this release project's Job Token to create branches and merge requests there |
+| `OSII_CATALOG_PROJECT` | Protected GitLab `group/project` that owns that catalog; allow this release project's Job Token to clone and, on supported GitLab versions, push release branches there |
 | `OSII_CATALOG_PATH`, `OSII_CATALOG_TARGET_BRANCH` | Optional catalog path and protected target branch; defaults are `catalog.json` and `main` |
 | Windows signing variables | `OSII_WINDOWS_CERTIFICATE_THUMBPRINT`, `OSII_WINDOWS_TIMESTAMP_URL` |
 | Apple signing variables | `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` |
@@ -163,7 +172,8 @@ unknown keys, placeholders, non-HTTPS endpoints, and unpinned base images.
 Do not put API keys, Quay passwords, signing credentials, certificate contents,
 or GitLab project credentials in this file. CI variables override these defaults
 and hold secrets. `OSII_CATALOG_PROJECT` is intentionally a CI variable: its
-Job Token permission must be granted by the separate protected catalog project.
+Job Token clone permission, and cross-project push permission when supported,
+must be granted by the separate protected catalog project.
 The catalog **repository** stays protected for writes and merge requests, but
 the HTTPS URL compiled into the launcher must be readable by approved
 workstations without a GitLab personal token. Publish its reviewed raw file
@@ -178,6 +188,44 @@ uv run --no-project --python 3.12 python scripts/corporate_config.py check --ver
 uv run --no-project --python 3.12 python scripts/corporate_config.py write --version 0.1.1
 ```
 
+Those files are for local Compose/frontend use, **not required by manual release
+commands**, which read TOML directly. To compare new defaults without replacing
+existing settings (including private credentials), stage them separately:
+
+```text
+uv run --no-project --python 3.12 python scripts/corporate_config.py write --version 0.1.1 --output-dir release/settings-preview
+```
+
+Review `release/settings-preview/.env` against your existing `.env`, then apply
+only the intended differences. A new release tag must not reset users' source
+folders, saved connections or library data. `write` refuses to overwrite a
+different existing file; it does not merge or erase local settings.
+
+### Configuration ownership and precedence
+
+| File or location | Used by | Rule |
+| --- | --- | --- |
+| `corporate/osii.toml` | Manual release helper and future GitLab jobs | Reviewed non-secret corporate defaults; process environment overrides |
+| `release.toml` | Release preparation/build/assembly | Stack version, prior tag, scope, Python version; never derive release version from `.env` |
+| Root `.env` from `.env.example` | Host-Python development | Host addresses; optional settings; not a production release manifest |
+| Root `.env` from `.env.containers.example` or corporate generator | Make/PowerShell container commands, Compose | Command options override shell variables, which override `.env` |
+| `osii-launcher/.env.local` | Direct frontend/Tauri builds | Non-secret compiled defaults; manual installer helper supplies authoritative `VITE_OSII_*` environment values instead |
+| Deployment bundle `.env` | End-user Compose | Pinned registry/tag and existing absolute source/config paths; keep across updates |
+| Saved library profile + catalog | Installed launcher | Catalog pins approved image digests; root repository `.env` is not read |
+| Workbench Setup's `models.toml` / `secrets.env` | Running Core and model bridge | Local model connections/keys; process-injected values can take precedence |
+
+Do not combine the host and container examples: `127.0.0.1` means this process's
+machine; containers use `host.containers.internal` for a model server on the
+workstation. The examples and generated deployment settings select model-free
+processing by default; development launch scripts also apply their selected
+provider profile. Configure and test the desired model explicitly in Setup.
+
+Corporate generated settings include the writable `/config` mount, opt-in
+Setup writes for a personal workstation, and approved model defaults. A managed
+shared deployment should set `OSII_ALLOW_LOCAL_CONFIG_WRITES=false` and inject
+credentials through its approved mechanism. `.env` and TOML are not interchangeable:
+the release helper deliberately does not auto-load an old development `.env`.
+
 The example file is **never added to public GitHub**. Keep it on the corporate
 branch when importing upstream changes. The public GitHub workflow fails if a
 `corporate/osii.toml` is accidentally present.
@@ -187,9 +235,15 @@ branch when importing upstream changes. The public GitHub workflow fails if a
 On a release-preparation branch, use `scripts/release_plan.py prepare` with the
 next stack version, prior tag, and `full`, `core`, `ui`, `launcher`, or one
 `toolbox-*` scope. This updates the launcher versions, and it updates the
-Python package version only for Core/full releases. Commit and merge the plan
-into corporate `main`. Create a protected tag on that merged commit, using
-GitLab's **Repository → Tags → New tag** or these commands:
+Python package version only for Core/full releases. The complete copy-pasteable
+procedure is in the [corporate release runbook](runbook-releases.md).
+
+For the **first corporate release**, use `--scope full --previous-tag=`.
+An imported public tag is not a prior corporate release because there are no
+corporate images to reuse. For later normal releases, use the preceding
+release-plan tag. Commit and merge the plan into corporate `main`. Create a
+protected tag on that merged commit using GitLab's **Code → Tags → New tag** or
+these commands:
 
 ```bash
 git switch main
@@ -198,7 +252,9 @@ git tag -a v0.1.1 -m "OSII 0.1.1"
 git push origin v0.1.1
 ```
 
-The protected tag pipeline validates the commit and pauses at
+**Today:** follow the manual runbook after tagging. No runner will build or
+upload these outputs for you. **After runners are provisioned and validated,**
+the protected tag pipeline validates the commit and pauses at
 `approve-release`. After a release maintainer approves it, GitLab:
 
 1. builds and tests the `osii` wheel and source distribution only when Core/SDK changes;
@@ -224,11 +280,147 @@ For the first release, the same job creates `catalog.json` from an empty
 version-1 catalog and adds the first complete Stack; no hand-edited placeholder
 digest is required.
 
-Tags are immutable. If a release fails after publishing, fix the code and
-prepare a new version; never reuse the old tag or image version. After clean
-workstation acceptance, the separate protected `promote-latest` job may move
-corporate Quay's `:latest` aliases. The launcher and deployment bundles still
-use immutable versions; `latest` is not a deployment rollback mechanism.
+The catalog job uses a GitLab Job Token for Git and the API. Confirm that the
+corporate GitLab version supports the required cross-project push settings.
+Standard GitLab job-token permissions document read-only Merge Requests API
+access, not creation. If the catalog branch push succeeds but the create-MR
+API call fails, open the merge request manually or add an approved corporate
+authentication layer. Do not put a personal token in the repository.
+
+Tags are immutable. Whether the same pipeline can be retried depends on which
+external outputs exist; follow the
+[failed-tag recovery decision table](runbook-releases.md#failed-tag-recovery).
+When a new version is required, never reuse the old tag or image version. After
+clean workstation acceptance, the separate protected `promote-latest` job may
+move corporate Quay's `:latest` aliases. The launcher and deployment bundles
+still use immutable versions; `latest` is not a deployment rollback mechanism.
+
+## Local validation without runners
+
+Run from the repository root before merging release preparation. Save the
+results in the merge request; a pending pipeline is not a passing test.
+
+```text
+uv run --frozen --python 3.12 --package osii --extra dev python -m pytest osii-core/tests osii-core/processor-sdk/tests osii-toolbox/tests/test_packaging.py -q
+uv run --no-project --python 3.12 python scripts/check_docs_links.py
+uv run --no-project --python 3.12 --with mkdocs-material mkdocs build --strict
+```
+
+For dashboard changes, from `osii-dashboard/dashboard`: `npm ci`,
+`npm test --if-present`, `npm run build`. For launcher changes, from
+`osii-launcher`: `npm ci`, `npm test`, `npm run build`, then
+`cargo test --manifest-path src-tauri/Cargo.toml` on a configured native host.
+Run changed processor services' own tests as described in their READMEs.
+Return to the root before release commands. Full releases need both frontend
+checks and the package installation check from the manual release runbook.
+Build smoke tests are not a substitute for the clean-user test below.
+
+## Code signing on workstations
+
+Signing identifies the publisher and detects modification of the executable.
+It is separate from Git tags, image digests, Quay login, and SHA-256 download
+checksums. You do not need CI to sign. Ask corporate IT to provision the
+identity and access once; do not purchase/export certificates ad hoc.
+
+### Windows
+
+Ask IT for a code-signing identity usable by Windows SignTool, its certificate
+thumbprint, the approved timestamp URL, and the trust policy on user devices.
+An internal certificate is useful only where its chain is trusted; a valid
+signature does not guarantee SmartScreen reputation. The current OSII helper
+uses Tauri's certificate-thumbprint signing route. An IT-managed cloud signing
+service needs an approved Tauri `signCommand` adaptation; these two variables
+alone do not configure cloud signing.
+[Tauri Windows signing](https://v2.tauri.app/distribute/sign/windows/).
+
+In native PowerShell, after IT installs the signing identity/private-key access:
+
+```powershell
+Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Format-Table Subject, Thumbprint, NotAfter
+$env:OSII_WINDOWS_CERTIFICATE_THUMBPRINT = Read-Host 'Approved certificate thumbprint'
+$env:OSII_WINDOWS_TIMESTAMP_URL = Read-Host 'Approved timestamp URL'
+uv run --no-project --python 3.12 python scripts/corporate_release.py installer --manual --target windows-x64
+Get-AuthenticodeSignature -LiteralPath release/installers/OSII-0.1.1-windows-x64.exe
+```
+
+The helper requires `Valid` before staging. Confirm the expected publisher,
+not merely any valid signer. Keep the private key in IT's approved certificate
+store/hardware mechanism, never in the repository or an installer transfer.
+
+### macOS
+
+Ask IT for a **Developer ID Application** identity and private-key access in
+the Mac's keychain, the Apple team ID, and approved notarization credentials.
+Signing identifies your organization; notarization is Apple's additional
+distribution check. Corporate network access to Apple's service is required.
+The current helper uses the Apple-ID route with an **app-specific password**,
+not your normal account password. API-key notarization is a separate supported
+Tauri option but is not wired into this helper.
+[Tauri macOS signing and notarization](https://v2.tauri.app/distribute/sign/macos/).
+
+In the Mac terminal, use the identity IT provides:
+
+```sh
+security find-identity -v -p codesigning
+export APPLE_SIGNING_IDENTITY='Developer ID Application: Your Organization (TEAMID)'
+export APPLE_TEAM_ID='TEAMID'
+export APPLE_ID='your-approved-apple-id'
+```
+
+Load `APPLE_PASSWORD` from the approved secret manager into this session, then
+run the manual installer command. Do not type the secret literally into shell
+history. For a temporary interactive session without a secret-manager command,
+these hidden-input prompts are shell-specific:
+
+```sh
+# macOS default zsh
+read -rs 'APPLE_PASSWORD?Apple app-specific password: '
+export APPLE_PASSWORD
+```
+
+```sh
+# Bash instead
+read -r -s -p 'Apple app-specific password: ' APPLE_PASSWORD
+export APPLE_PASSWORD
+```
+
+After building, `unset APPLE_PASSWORD`. The helper runs `xcrun stapler validate`
+on the DMG. Test the actual downloaded DMG on another managed Mac too. If IT
+cannot supply signing/notarization yet, use the approved Compose path; do not
+tell non-developers to disable Gatekeeper as routine installation guidance.
+
+## Internal Python publication
+
+One-time workstation setup: use the project ID shown by GitLab and create a
+non-secret `.pypirc` in your user home directory (Windows: `%USERPROFILE%`).
+Replace this illustrative URL; do not commit the file:
+
+```ini
+[distutils]
+index-servers = osii-internal
+
+[osii-internal]
+repository = https://gitlab.internal.invalid/api/v4/projects/123/packages/pypi
+```
+
+Twine's `--repository osii-internal` selects that upload destination. Use an
+approved deploy/access token with package-write permission via interactive
+prompt or the workstation secret manager. The username depends on the token
+type; ask the GitLab administrator. Keep credentials out of this file and URLs.
+Configure TLS trust; never disable certificate verification to upload.
+See [GitLab Python registry authentication](https://docs.gitlab.com/user/packages/pypi_repository/).
+
+For **consumers**, IT configures pip's internal index and read credentials once
+on each workstation. Then the package-only update is:
+
+```text
+python -m pip install --upgrade osii==0.1.1
+```
+
+Use the release's `python-package.json` version, which may be older than the
+stack version. The `osii` package includes `osii.processor_sdk`; it does not
+install the dashboard, launcher, Podman, or an entire running stack. Avoid
+combining an untrusted public extra index with internal package names.
 
 ## Non-developer acceptance check
 
@@ -237,13 +429,21 @@ cached OSII images:
 
 - install the matching signed OSII Launcher from the GitLab Release;
 - confirm Podman Desktop and a Compose provider are available;
-- open the launcher and confirm corporate Quay and version are prefilled;
+- open the launcher, refresh its catalog and choose/pull the approved Stack;
 - sign in to Quay, choose a readable document folder, and test container access;
 - start OSII and open the dashboard;
 - ingest a document and complete one search/chat workflow;
 - enable OpenCV/Tesseract or Tabular only when needed, then test its descriptor
   and one real document;
 - stop and restart OSII and confirm the library remains available.
+
+Also test `deployment.zip` in a fresh, stable folder on Windows and Mac/Linux:
+copy settings, configure absolute source/config paths, pull, start, configure a
+model in Setup, process a file, stop/restart, then roll back. Never use a new
+Compose project directory for an upgrade test without intentionally migrating
+its library volume. Record OS/CPU, stack tag, installer checksum, model endpoint
+(no key), result, and tester in the Release description. Advertise only tested
+installer targets; a missing Intel Mac installer is not an ARM64 installer.
 
 The release is ready for non-developers only after this clean-workstation test
 passes. Record any confusing step as a launcher or documentation issue for the
@@ -264,7 +464,8 @@ next patch release.
 
 - Import public changes through a branch and merge request.
 - Apply internal endpoints and policy in the corporate layer.
-- Use protected runners, variables, environment, `main`, and `v*` tags.
+- Protect `main` and `v*`; use approved workstation credentials now and protected
+  runners/variables/environments when automation is enabled.
 - Publish packages, signed installers, and immutable images only from a
   protected corporate tag.
 - Keep one approved release available for rollback.
