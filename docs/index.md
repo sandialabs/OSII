@@ -23,6 +23,23 @@ synthesizer, embedder, and enricher; configures extension-based extraction
 routes and fallbacks; connects optional model providers; starts optional Tika
 or Tesseract capabilities; and reaches advanced processor diagnostics.
 
+## The four processor APIs
+
+**Start with the [Python and HTTP guide](reference/processor-api/index.md).**
+Each page below explains one responsibility, provides a working Python example,
+and documents its request, response and service endpoint.
+
+| Building block | What you learn |
+| --- | --- |
+| [Extractor](reference/processor-api/extraction.md) | Read source bytes into grounded text |
+| [Synthesizer](reference/processor-api/synthesis.md) | Explain supplied evidence with citations |
+| [Embedder](reference/processor-api/embedding.md) | Map identified text to vectors |
+| [Enricher](reference/processor-api/enrichment.md) | Add typed tables, graphs, entities or a cited wiki |
+
+These are the public `osii.processor_sdk` interfaces included in the `osii`
+Python package. You can call your implementation directly before deploying it
+as a service. Core handles storing the results when invoked through its workflows.
+
 ## Understand OSII
 
 - [Architecture and component boundaries](concepts/architecture.md)

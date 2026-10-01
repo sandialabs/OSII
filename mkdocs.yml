@@ -27,6 +27,14 @@ markdown_extensions:
 
 nav:
   - Start here: index.md
+  - Four processor APIs:
+      - Start here — Python and HTTP: reference/processor-api/index.md
+      - Extractor — read the source: reference/processor-api/extraction.md
+      - Synthesizer — explain the evidence: reference/processor-api/synthesis.md
+      - Embedder — represent text: reference/processor-api/embedding.md
+      - Enricher — add knowledge: reference/processor-api/enrichment.md
+      - Canonical outputs: reference/processor-api/canonical-outputs.md
+      - Standard artifacts: reference/processor-api/standard-artifacts.md
   - Install and use:
       - What are you trying to do?: operations/runbooks.md
       - Mac and Windows launchers: operations/runbook-desktop.md
@@ -52,14 +60,6 @@ nav:
       - Choose an extension: extending/index.md
       - Hello table enricher: extending/hello-enricher.md
       - Processor development: extending/processor-development.md
-      - Processor API v1:
-          - Overview: reference/processor-api/index.md
-          - Extraction: reference/processor-api/extraction.md
-          - Synthesis: reference/processor-api/synthesis.md
-          - Embedding: reference/processor-api/embedding.md
-          - Enrichment: reference/processor-api/enrichment.md
-          - Canonical outputs: reference/processor-api/canonical-outputs.md
-          - Standard artifacts: reference/processor-api/standard-artifacts.md
   - Operate offline:
       - Local-first operation: operations/local-first.md
       - Shared drives and Samba: operations/shared-drives.md

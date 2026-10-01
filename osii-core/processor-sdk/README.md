@@ -19,6 +19,11 @@ Copyable implementations are in [`examples/`](examples/README.md). Processor
 services receive only the bounded input in a request and return typed results;
 Core alone writes the canonical `.osii` store.
 
+The [four processor API guides](../../docs/reference/processor-api/index.md)
+are the human-facing reference: each explains its role, shows a complete
+Python example, and documents inputs, outputs, HTTP calls and troubleshooting.
+In the documentation site, open **Four processor APIs** in the main navigation.
+
 From the repository root:
 
 ```bash

@@ -114,6 +114,7 @@ covers the container `.env`, Podman setup, and architecture checks. The
 | Learn the architecture through small examples | [Python demonstration series](osii-demo-notebooks/README.md) |
 | Process one file and inspect its artifacts | [Single-file walkthrough](docs/tutorials/single-file.md) |
 | Understand Core, processors, and clients | [Architecture](docs/concepts/architecture.md) |
+| Use the four processor APIs with small Python examples | [Extractor, synthesizer, embedder and enricher APIs](docs/reference/processor-api/index.md) |
 | Add your own extractor, synthesizer, embedder, or enricher | [Extend OSII](docs/extending/index.md) |
 | Use shared drives or configure models | [Shared drives](docs/operations/shared-drives.md) · [Model connections](docs/reference/model-providers.md) |
 | Find an operating procedure | [Deployment runbooks](docs/operations/runbooks.md) |

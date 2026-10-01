@@ -22,7 +22,8 @@ enrichment. The exact output boundary is summarized in
 
 ## The extension path
 
-1. Start with the [hello table enricher](hello-enricher.md).
+1. Start with the [four processor APIs](../reference/processor-api/index.md)
+   and the working example for your processor kind.
 2. Copy the closest implementation from
    `osii-core/processor-sdk/examples/`.
 3. Give the processor a stable descriptor name and semantic version.
@@ -51,6 +52,9 @@ Read the [processor development rules](processor-development.md) before
 building a production processor, then use the
 [Processor API reference](../reference/processor-api/index.md) for exact
 payloads.
+
+The [hello enricher walkthrough](hello-enricher.md) provides additional context
+for integrating a domain service with the dashboard.
 
 Core has commit adapters for all four Processor API kinds. External processors
 remain bounded services: they receive explicit data, return a typed response,
