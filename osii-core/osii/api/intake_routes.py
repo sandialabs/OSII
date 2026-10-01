@@ -2,7 +2,7 @@ import fnmatch
 import os
 import re
 import uuid
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 
@@ -19,7 +19,7 @@ from osii.domain.processing.capability_readiness import intake_capability_readin
 from osii.domain.processing.reconcile import reconcile_osii_with_source
 from osii.domain.processing.reconcile_apply import apply_source_path_reconciliation
 from osii.domain.processing.pathing import display_rel, path_within
-from osii.domain.processing.source_access import source_access_summary
+from osii.domain.processing.source_access import resolve_intake_path, source_access_summary
 from osii.domain.catalog_db import rebuild_catalog
 
 router = APIRouter(prefix="/api", tags=["intake"])
@@ -31,23 +31,21 @@ def _safe_upload_name(filename: str | None) -> str:
     return safe or "upload.bin"
 
 
-def normalize_user_path(raw: str | None) -> Path | None:
-    if not raw:
-        return None
-    cleaned = str(raw).strip().strip('"').strip("'")
-    if not cleaned:
-        return None
-    return Path(cleaned).expanduser()
-
-
-def safe_resolve_user_path(raw: str | None, fallback: Path) -> Path:
-    p = normalize_user_path(raw)
-    if p is None:
-        return fallback.resolve()
+def resolve_requested_path(request: Request, raw: str | None) -> Path:
     try:
-        return p.resolve()
-    except Exception:
-        return fallback.resolve()
+        return resolve_intake_path(
+            raw,
+            request.app.state.shared_volume_root,
+            request.app.state.upload_originals_root,
+            filesystem_mode=getattr(request.app.state, "filesystem_mode", "local"),
+            host_root=getattr(request.app.state, "shared_volume_host_path", ""),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"Cannot open this location: {exc}") from exc
 
 
 @router.get("/intake/readiness")
@@ -103,15 +101,15 @@ async def browse(
     osii_root = request.app.state.osii_root.resolve()
     data_volume_root = shared_root.parent.resolve()
 
-    current = safe_resolve_user_path(path, shared_root)
-    if not path_within(shared_root, current):
-        current = shared_root
+    current = resolve_requested_path(request, path)
+    if not current.is_dir():
+        raise HTTPException(status_code=422, detail=f"Choose a folder, not a file: {current}")
 
     entries = []
     try:
         children = sorted(current.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
-    except Exception:
-        children = []
+    except OSError as exc:
+        raise HTTPException(status_code=403, detail=f"OSII cannot read this folder: {current}. {exc}") from exc
 
     include_list = parse_patterns(include_patterns)
     exclude_list = parse_patterns(exclude_patterns)
@@ -172,9 +170,22 @@ async def browse(
             }
         )
 
+    filesystem_mode = getattr(request.app.state, "filesystem_mode", "local")
+    host_root = getattr(request.app.state, "shared_volume_host_path", "")
+    host_path = str(current)
+    if host_root and path_within(shared_root, current):
+        host = PureWindowsPath(host_root) if PureWindowsPath(host_root).drive else Path(host_root)
+        host_path = str(host.joinpath(*current.relative_to(shared_root).parts))
+    parent_path = str(current.parent) if current.parent != current else None
+    if filesystem_mode == "mounted" and current in (shared_root, upload_root):
+        parent_path = None
     return {
         "current_path": str(current),
         "display_path": display_rel(current, shared_root, upload_root),
+        "folder_name": current.name or str(current),
+        "parent_path": parent_path,
+        "filesystem_mode": filesystem_mode,
+        "host_path": host_path,
         "entries": entries,
     }
 
@@ -203,7 +214,7 @@ async def resolve_queue(request: Request, payload: dict):
 
     queue_items = []
     for raw in queue_paths:
-        p = safe_resolve_user_path(raw, shared_root)
+        p = resolve_requested_path(request, raw)
         if p.exists():
             queue_items.append(
                 {
@@ -224,7 +235,11 @@ async def resolve_queue(request: Request, payload: dict):
         max_total_size=max_total_size,
         shared_root=shared_root,
         upload_root=upload_root,
+        excluded_paths=payload.get("excluded_paths", []),
     )
+    if getattr(request.app.state, "filesystem_mode", "local") == "mounted":
+        for file in preview["available_files"]:
+            resolve_requested_path(request, file["path"])
     add_processed_counts(preview, resolved_files, shared_root.parent, request.app.state.osii_root)
     add_extractor_plan(preview, resolved_files, extractor_overrides)
     add_processing_plan(

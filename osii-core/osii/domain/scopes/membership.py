@@ -5,6 +5,7 @@ from pathlib import Path
 from osii.domain.scopes.collections import list_collection_documents
 from osii.domain.read.catalog import load_files_catalog, load_folders_catalog
 from osii.domain.read.folders import get_folder_manifest
+from osii.domain.read.root import get_root_descriptor
 from osii.domain.scopes.scopes import (
     SCOPE_COLLECTION,
     SCOPE_FOLDER,
@@ -18,7 +19,7 @@ def _normalize_relpath(value: str | None) -> str:
     return (value or "").strip().replace("\\", "/").strip("/")
 
 
-def _folder_scope_match(source_relpath: str, folder_relpath: str) -> bool:
+def _folder_scope_match(source_relpath: str, folder_relpath: str, source_namespace: str = "") -> bool:
     folder_relpath = _normalize_relpath(folder_relpath)
     source_relpath = _normalize_relpath(source_relpath)
 
@@ -33,7 +34,7 @@ def _folder_scope_match(source_relpath: str, folder_relpath: str) -> bool:
     # folder manifests are rooted inside that namespace. Keep the canonical
     # identity unchanged and compare the folder-relative portion here.
     namespace, separator, relative_path = source_relpath.partition("/")
-    if separator and namespace in {"source", "my_data", "uploaded_data"}:
+    if separator and namespace in {"source", "my_data", "uploaded_data", source_namespace}:
         return relative_path == folder_relpath or relative_path.startswith(folder_relpath + "/")
     return False
 
@@ -74,13 +75,16 @@ def list_scope_file_ids(osii_root: Path, scope: dict) -> list[str]:
         if folder_relpath is None:
             return []
 
+        descriptor = get_root_descriptor(osii_root) or {}
+        source_path = str(descriptor.get("data_root", {}).get("container_path") or "")
+        source_namespace = Path(source_path.replace("\\", "/")).name
         results = []
         for entry in load_files_catalog(osii_root):
             file_id = entry.get("file_id")
             source_relpath = entry.get("source_relpath", "")
             if not file_id:
                 continue
-            if _folder_scope_match(source_relpath, folder_relpath):
+            if _folder_scope_match(source_relpath, folder_relpath, source_namespace):
                 results.append(file_id)
         return results
 

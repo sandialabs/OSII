@@ -5,6 +5,7 @@ from osii.expert_context import resolve_expert_context
 import sqlite3
 
 from fastapi import APIRouter, HTTPException, Request
+from osii.api.intake_routes import resolve_requested_path
 
 from osii.domain.processing.capability_readiness import embedding_readiness
 from osii.domain.catalog_db import rebuild_catalog, upsert_document
@@ -37,7 +38,7 @@ from osii.domain.storage.folders import folder_stats, get_or_create_folder_id, w
 from osii.domain.storage.synth import write_folder_synth_text
 from osii.domain.storage.ids import compute_file_id
 from osii.domain.storage.store import ensure_osii_store_layout
-from osii.domain.processing.pathing import display_rel, path_within
+from osii.domain.processing.pathing import display_rel, path_within, source_relpath
 from osii.domain.processor_settings import merged_processor_settings
 from osii.domain.processing.extractor_selection import extractor_routes_path
 from osii.extraction.dispatcher import dispatch_extract
@@ -88,25 +89,6 @@ def _honor_run_control(run_id: str) -> bool:
         append_log(run_id, "Run cancelled after the current file completed.")
         return True
     return False
-
-
-def normalize_user_path(raw: str | None) -> Path | None:
-    if not raw:
-        return None
-    cleaned = str(raw).strip().strip('"').strip("'")
-    if not cleaned:
-        return None
-    return Path(cleaned).expanduser()
-
-
-def safe_resolve_user_path(raw: str | None, fallback: Path) -> Path:
-    p = normalize_user_path(raw)
-    if p is None:
-        return fallback.resolve()
-    try:
-        return p.resolve()
-    except Exception:
-        return fallback.resolve()
 
 
 def load_parser_routes(config_path: Path) -> list[dict]:
@@ -174,19 +156,33 @@ def build_folder_artifacts(
     shared_root: Path,
     osii_store: Path,
     root_folder_id: str,
+    upload_root: Path | None = None,
+    source_roots: list[Path] | None = None,
 ) -> tuple[int, int]:
     folders_to_docs: dict[str, list[Path]] = {}
     folders_to_subfolders: dict[str, set[Path]] = {}
-    all_folders: set[Path] = set()
+    all_folders: set[Path] = {shared_root.resolve()}
+    boundaries: set[Path] = set()
 
     for file_path in resolved_files:
         parent = file_path.parent.resolve()
         all_folders.add(parent)
+        roots = [shared_root, *(source_roots or [])]
+        if upload_root is not None:
+            roots.append(upload_root)
+        matching_roots = [root.resolve() for root in roots if path_within(root, file_path)]
+        if path_within(shared_root, file_path):
+            boundary = shared_root.resolve()
+        elif upload_root is not None and path_within(upload_root, file_path):
+            boundary = upload_root.resolve()
+        else:
+            boundary = max(matching_roots, key=lambda root: len(root.parts)) if matching_roots else parent
+        boundaries.add(boundary)
 
         cursor = parent
         while True:
             all_folders.add(cursor)
-            if cursor == shared_root.resolve():
+            if cursor == boundary:
                 break
             if cursor.parent == cursor:
                 break
@@ -205,10 +201,18 @@ def build_folder_artifacts(
         parent = folder.parent.resolve()
         if str(parent) in folders_to_subfolders:
             folders_to_subfolders[str(parent)].add(folder)
+    for boundary in boundaries:
+        if not path_within(shared_root, boundary):
+            folders_to_subfolders[str(shared_root.resolve())].add(boundary)
+
+    def folder_path(folder: Path) -> str:
+        if path_within(shared_root, folder):
+            return relpath_under(shared_root, folder)
+        return source_relpath(folder, data_volume_root)
 
     folder_id_map: dict[str, str] = {}
     for folder in sorted(all_folders):
-        relpath = relpath_under(shared_root, folder)
+        relpath = folder_path(folder)
         if folder == shared_root.resolve():
             folder_id_map[str(folder)] = root_folder_id
         else:
@@ -216,7 +220,7 @@ def build_folder_artifacts(
 
     for folder in sorted(all_folders):
         folder_id = folder_id_map[str(folder)]
-        relpath = relpath_under(shared_root, folder)
+        relpath = folder_path(folder)
         path_hint = relpath
 
         direct_docs = folders_to_docs[str(folder)]
@@ -226,7 +230,7 @@ def build_folder_artifacts(
         for doc in sorted(direct_docs, key=lambda p: p.name.lower()):
             docs_payload.append(
                 {
-                    "source_relpath": relpath_under(data_volume_root, doc),
+                    "source_relpath": source_relpath(doc, data_volume_root),
                     "file_id": compute_file_id(doc),
                 }
             )
@@ -236,7 +240,7 @@ def build_folder_artifacts(
             subfolders_payload.append(
                 {
                     "folder_id": folder_id_map[str(sub)],
-                    "path_hint": relpath_under(shared_root, sub),
+                    "path_hint": folder_path(sub),
                 }
             )
 
@@ -529,6 +533,8 @@ def run_worker(
                 shared_root=shared_root,
                 osii_store=osii_store,
                 root_folder_id=root_folder_id,
+                upload_root=upload_root,
+                source_roots=[Path(item["path"]) for item in queue_items if item.get("kind") == "folder"],
             )
             append_log(run_id, "Folder manifests and synthesis updated.")
             write_collection_synthesis(
@@ -643,7 +649,7 @@ async def start_run(request: Request, payload: dict):
 
     queue_items = []
     for raw in queue_paths:
-        p = safe_resolve_user_path(raw, shared_root)
+        p = resolve_requested_path(request, raw)
         if p.exists():
             queue_items.append(
                 {
@@ -664,7 +670,11 @@ async def start_run(request: Request, payload: dict):
         max_total_size=max_total_size,
         shared_root=shared_root,
         upload_root=upload_root,
+        excluded_paths=payload.get("excluded_paths", []),
     )
+    if getattr(request.app.state, "filesystem_mode", "local") == "mounted":
+        for file in preview["available_files"]:
+            resolve_requested_path(request, file["path"])
     add_processed_counts(preview, resolved_files, data_volume_root, osii_store)
     add_extractor_plan(preview, resolved_files, extractor_overrides)
     add_processing_plan(

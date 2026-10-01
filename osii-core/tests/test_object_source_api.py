@@ -59,3 +59,28 @@ def test_get_object_source_route_with_data_volume_relative_path(
     response = client.get(f"/api/objects/{file_id}/source")
     assert response.status_code == 200
     assert response.content == b"%PDF-1.4 data-volume-relative"
+
+
+def test_external_original_reopens_from_verified_hint_without_basename_collision(
+    client, tmp_path, temp_data_root, temp_osii_root,
+):
+    from osii.extraction.common import init_doc_context, initialize_bundle
+
+    first = tmp_path / "first" / "report.pdf"
+    second = tmp_path / "second" / "report.pdf"
+    first.parent.mkdir()
+    second.parent.mkdir()
+    first.write_bytes(b"%PDF-1.4 first original")
+    second.write_bytes(b"%PDF-1.4 second original")
+    first_context = init_doc_context(first, temp_data_root.parent)
+    second_context = init_doc_context(second, temp_data_root.parent)
+    assert first_context["source_relpath"] != second_context["source_relpath"]
+    for context in (first_context, second_context):
+        initialize_bundle(osii_store=temp_osii_root, doc_ctx=context)
+        response = client.get(f"/api/objects/{context['file_id']}/source")
+        assert response.status_code == 200
+        assert response.content == context["src"].read_bytes()
+    first.write_bytes(b"%PDF-1.4 changed original")
+    assert client.get(f"/api/objects/{first_context['file_id']}/source").json() == {
+        "error": "source file not found",
+    }

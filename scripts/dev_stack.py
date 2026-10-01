@@ -197,6 +197,7 @@ def build_environment(core_only: bool) -> dict[str, str]:
             "PYTHONPATH": workspace_python_path,
             "SHARED_VOLUME_ROOT": str(source_root),
             "SHARED_VOLUME_HOST_PATH": str(source_root),
+            "OSII_FILESYSTEM_MODE": "local",
             "OSII_SOURCE_KIND": env.get("OSII_SOURCE_KIND", "auto").strip().lower() or "auto",
             "OSII_RUNTIME_DIR": str(runtime_root),
             "OSII_ROOT": str(osii_root),

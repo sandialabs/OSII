@@ -27,6 +27,8 @@ services:
       OSII_MODEL_GATEWAY_PUBLIC_URL: http://model-provider-bridge:8095/v1
       OSII_MODEL_GATEWAY_SECRET: ${OSII_MODEL_GATEWAY_SECRET:-osii-compose-development}
       SHARED_VOLUME_ROOT: /data/source
+      SHARED_VOLUME_HOST_PATH: ${OSII_SOURCE_DIR:-}
+      OSII_FILESYSTEM_MODE: mounted
       OSII_SOURCE_KIND: ${OSII_SOURCE_KIND:-auto}
       UPLOAD_ORIGINALS_ROOT: /data/uploads
       OSII_PROCESSORS: ${OSII_PROCESSORS:-http://local-extractor:8092,http://tesseract:8080,http://local-synthesizer:8093,http://local-embedder:8085,http://local-enricher:8094,http://model-provider-bridge:8095/ollama/embedder,http://model-provider-bridge:8095/ollama/synthesizer,http://model-provider-bridge:8095/openai/synthesizer}

@@ -83,6 +83,16 @@ def test_catalog_rebuild_and_cursor_pagination(temp_osii_root):
     assert verify_catalog(temp_osii_root)["ok"] is True
 
 
+def test_duplicate_legacy_folder_paths_rebuild_without_deleting_manifests(temp_osii_root):
+    first = write_folder_manifest(temp_osii_root, "old-root", "", [], [], None, None)
+    newest = write_folder_manifest(temp_osii_root, "new-root", "", [], [], None, None)
+    result = rebuild_catalog(temp_osii_root)
+    assert result["counts"]["folders"] == 1
+    assert catalog_db.list_folders(temp_osii_root)[0]["folder_id"] == "new-root"
+    assert first.exists() and newest.exists()
+    assert verify_catalog(temp_osii_root)["ok"] is True
+
+
 def test_corrupt_catalog_is_quarantined_and_rebuilt(temp_osii_root):
     path = catalog_path(temp_osii_root)
     path.write_bytes(b"not sqlite")

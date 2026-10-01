@@ -1,5 +1,106 @@
 from pathlib import Path
 
+import pytest
+
+
+def test_local_folder_selection_includes_files_and_preserves_uploads(
+    client, tmp_path, temp_data_root, temp_upload_root,
+):
+    folder = tmp_path / "Research papers"
+    nested = folder / "reports"
+    nested.mkdir(parents=True)
+    first = folder / "first.txt"
+    second = nested / "second.txt"
+    ignored = nested / "notes.tmp"
+    uploaded = temp_upload_root / "upload.txt"
+    for path in (first, second, ignored, uploaded):
+        path.write_text(path.name, encoding="utf-8")
+
+    browse = client.get("/api/browse", params={"path": str(folder)})
+    assert browse.status_code == 200
+    assert browse.json()["current_path"] == str(folder)
+    assert browse.json()["folder_name"] == "Research papers"
+    assert browse.json()["display_path"] == folder.as_posix()
+    payload = {
+        "queue_paths": [str(folder), str(uploaded)],
+        "exclude_patterns": "reports/*.tmp",
+    }
+    preview = client.post("/api/resolve", json=payload)
+    assert preview.status_code == 200
+    assert {item["path"] for item in preview.json()["resolved_files"]} == {
+        str(first), str(second), str(uploaded),
+    }
+
+    payload["excluded_paths"] = [str(second)]
+    preview = client.post("/api/resolve", json=payload).json()
+    assert preview["preview"]["matched_count"] == 2
+    assert len(preview["preview"]["available_files"]) == 3  # Can re-check omitted files.
+    queued = client.post("/api/runs", json=payload)
+    assert queued.status_code == 200
+    from osii.domain.processing.jobs import get_run
+    run = get_run(queued.json()["id"])
+    assert {item["path"] for item in run["items"]} == {str(first), str(uploaded)}
+
+
+@pytest.mark.parametrize("host", ["/Users/researcher/Documents", r"C:\Users\researcher\Documents", r"\\server\share\Documents"])
+def test_mounted_selection_translates_host_path_and_requires_launcher_for_other_folders(
+    client, test_app, temp_data_root, tmp_path, monkeypatch, host,
+):
+    from pathlib import PureWindowsPath
+    monkeypatch.setattr(test_app.state, "filesystem_mode", "mounted")
+    monkeypatch.setattr(test_app.state, "shared_volume_host_path", host)
+    child = temp_data_root / "reports"
+    child.mkdir()
+    host_path = PureWindowsPath(host) if PureWindowsPath(host).drive else Path(host)
+    response = client.get("/api/browse", params={"path": str(host_path / "reports")})
+    assert response.status_code == 200
+    assert response.json()["current_path"] == str(child)
+    assert response.json()["host_path"] == str(host_path / "reports")
+    assert client.get("/api/browse").json()["parent_path"] is None
+    different_host_folder = str(host_path.parent / "Other documents")
+    assert client.get("/api/browse", params={"path": different_host_folder}).status_code == 403
+
+    outside = tmp_path / "unconnected"
+    outside.mkdir()
+    denied = client.get("/api/browse", params={"path": str(outside)})
+    assert denied.status_code == 403
+    assert "Launcher" in denied.json()["detail"]
+    assert client.post("/api/resolve", json={"queue_paths": [str(outside)]}).status_code == 403
+    assert client.post("/api/runs", json={"queue_paths": [str(outside)]}).status_code == 403
+
+
+def test_folder_errors_are_explicit_not_silent_fallbacks(client, temp_data_root, monkeypatch):
+    missing = temp_data_root / "missing"
+    assert client.get("/api/browse", params={"path": str(missing)}).status_code == 404
+    assert client.post("/api/resolve", json={"queue_paths": [str(missing)]}).status_code == 404
+    file = temp_data_root / "not-a-folder.txt"
+    file.write_text("hello", encoding="utf-8")
+    assert client.get("/api/browse", params={"path": str(file)}).status_code == 422
+    original_iterdir = Path.iterdir
+
+    def denied_iterdir(path):
+        if path == temp_data_root:
+            raise PermissionError("Access denied")
+        return original_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", denied_iterdir)
+    error = client.get("/api/browse")
+    assert error.status_code == 403
+    assert "cannot read" in error.json()["detail"]
+
+
+def test_mounted_folder_does_not_follow_symlink_outside_connected_roots(
+    client, test_app, temp_data_root, tmp_path, monkeypatch,
+):
+    monkeypatch.setattr(test_app.state, "filesystem_mode", "mounted")
+    original = tmp_path / "outside.txt"
+    original.write_text("outside", encoding="utf-8")
+    try:
+        (temp_data_root / "linked.txt").symlink_to(original)
+    except OSError:
+        pytest.skip("Creating symlinks requires permission on this platform")
+    assert client.post("/api/resolve", json={"queue_paths": [str(temp_data_root)]}).status_code == 403
+
 
 def test_browse_and_preview_report_processed_files(
     client,

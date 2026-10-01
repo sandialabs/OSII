@@ -239,10 +239,10 @@ def upsert_document(osii_root: Path, file_id: str) -> bool:
 
 
 def _scan_folders(osii_root: Path) -> list[dict[str, Any]]:
-    folders: list[dict[str, Any]] = []
+    folders: dict[str, dict[str, Any]] = {}
     directory = osii_root / "folders"
     if not directory.exists():
-        return folders
+        return []
     for path in sorted(directory.glob("folder-*.toml")):
         if path.name.endswith((".overview.toml", ".synth.toml")):
             continue
@@ -252,15 +252,19 @@ def _scan_folders(osii_root: Path) -> list[dict[str, Any]]:
         relpath = _normalize(node.get("path_hint"))
         if not folder_id:
             continue
-        folders.append(
-            {
-                "folder_id": str(folder_id),
-                "path": relpath,
-                "parent_path": str(Path(relpath).parent).replace("\\", "/") if relpath else None,
-                "indexed_utc": node.get("indexed_utc") or "",
-            }
-        )
-    return folders
+        folder = {
+            "folder_id": str(folder_id),
+            "path": relpath,
+            "parent_path": str(Path(relpath).parent).replace("\\", "/") if relpath else None,
+            "indexed_utc": node.get("indexed_utc") or "",
+        }
+        # Older upload runs could write multiple manifests for the same path.
+        # The catalog is derived: retain the newest entry without deleting any
+        # canonical manifests or the artifacts attached to their folder IDs.
+        previous = folders.get(relpath)
+        if previous is None or (folder["indexed_utc"], folder["folder_id"]) > (previous["indexed_utc"], previous["folder_id"]):
+            folders[relpath] = folder
+    return list(folders.values())
 
 
 def _scan_collections(osii_root: Path) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:

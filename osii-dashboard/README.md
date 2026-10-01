@@ -8,6 +8,22 @@ The dashboard is intentionally modular. It is a standalone frontend that talks t
 
 In packaged OSII, the **launcher** chooses the source folder, image release, and optional services, then starts the library. **Setup** in the dashboard is optional: it manages model connections and processing rules, not deployment. **Intake** selects files, processing steps, and starts a reviewed run. Informational source and service status is shown as context; controls that require a decision stay in the corresponding step. Local development uses `make dev` or `scripts/osii.ps1 dev` in place of the launcher.
 
+In **Intake**, paste a document folder and select **Use folder**, or use **Browse**.
+All matching files are included automatically, including subfolders by default.
+File-type and wildcard filters live beside the selection; uncheck individual
+files to leave them out. **Add files from elsewhere** adds uploads without
+clearing the folder. Processing options start collapsed, with defaults selected.
+Starting a run queues a snapshot of the selection; it does not continuously
+watch the folder. Return to Intake to process newly added files.
+
+On bare metal, you can select any folder readable by the OSII process. Containers
+can only read connected folders: the dashboard translates the launcher's host
+folder path into its container mount, but cannot create new mounts. To choose an
+unconnected folder, change the **Document folder** in the launcher, test access,
+save the library, and restart OSII. Intake reports that requirement instead of
+silently substituting the default folder. Existing artifacts stay in OSII's
+separate data folder; originals stay in place.
+
 ---
 
 ## What you can do

@@ -87,3 +87,19 @@ def test_folder_scope_matches_current_and_legacy_source_namespaces(temp_osii_roo
         temp_osii_root,
         {"scope_type": "folder", "folder_id": "folder-reports"},
     ) == ["file-current", "file-legacy", "file-upload"]
+
+
+def test_folder_scope_uses_the_actual_recorded_document_folder_name(temp_osii_root):
+    from osii.domain.storage.root_descriptor import write_root_toml
+
+    write_root_toml(temp_osii_root, "root", container_path="/home/user/Research papers")
+    write_folder_manifest(
+        temp_osii_root, "folder-reports", "reports",
+        [
+            {"source_relpath": "Research papers/reports/current.txt", "file_id": "current"},
+            {"source_relpath": "Unrelated/reports/other.txt", "file_id": "other"},
+        ], [],
+    )
+    assert list_scope_file_ids(
+        temp_osii_root, {"scope_type": "folder", "folder_id": "folder-reports"},
+    ) == ["current"]

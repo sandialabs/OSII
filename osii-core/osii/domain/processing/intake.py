@@ -9,7 +9,7 @@ from osii.indexing.common import embeddings_mapping_path
 from osii.domain.read.catalog import load_files_catalog
 
 from .extractor_selection import extractor_chain_for_path, load_extractor_routes
-from .pathing import display_rel, path_within
+from .pathing import display_rel, path_within, source_relpath as canonical_source_relpath
 
 
 def is_hidden(path: Path) -> bool:
@@ -55,16 +55,7 @@ def processed_source_relpaths(osii_root: Path) -> set[str]:
 
 
 def source_relpath(path: Path, data_volume_root: Path) -> str:
-    try:
-        return (
-            path.resolve()
-            .relative_to(data_volume_root.resolve())
-            .as_posix()
-            .strip("/")
-            .lower()
-        )
-    except ValueError:
-        return path.name.lower()
+    return canonical_source_relpath(path, data_volume_root).strip("/").lower()
 
 
 def is_source_processed(
@@ -262,11 +253,14 @@ def expand_queue_to_files(
     max_total_size: int | None,
     shared_root: Path,
     upload_root: Path,
+    excluded_paths: list[str] | None = None,
 ) -> tuple[list[Path], dict]:
     resolved_files: list[Path] = []
     seen = set()
     total_size = 0
     stopped_reason = None
+    omitted = {str(Path(path).resolve()) for path in (excluded_paths or [])}
+    available_files: list[dict] = []
 
     for item in queue_items:
         p = Path(item["path"]).resolve()
@@ -277,38 +271,35 @@ def expand_queue_to_files(
             candidates = [p]
         elif p.is_dir():
             iterator = p.rglob("*") if include_subfolders else p.glob("*")
-            candidates = [c for c in iterator if c.is_file()]
+            candidates = sorted((c for c in iterator if c.is_file()), key=lambda c: c.as_posix())
         else:
             continue
 
         for f in candidates:
-            try:
-                rel_hidden = f.relative_to(f.anchor) if f.is_absolute() else f
-            except Exception:
-                rel_hidden = f
+            rel_hidden = f.relative_to(p if p.is_dir() else p.parent)
 
             if not show_hidden and is_hidden(rel_hidden):
                 continue
 
-            if path_within(shared_root, f):
-                rel = f.relative_to(shared_root).as_posix()
-            elif path_within(upload_root, f):
-                rel = f.relative_to(upload_root).as_posix()
-            else:
-                rel = f.name
+            rel = rel_hidden.as_posix()
 
             if include_patterns and not match_any(rel, include_patterns):
                 continue
             if exclude_patterns and excluded(rel, exclude_patterns):
                 continue
 
-            key = str(f.resolve()).lower()
+            key = str(f.resolve())
             if key in seen:
                 continue
 
             try:
                 size = f.stat().st_size
             except Exception:
+                continue
+
+            seen.add(key)
+            available_files.append({"path": key, "display": display_rel(f, shared_root, upload_root), "size_bytes": size})
+            if key in omitted:
                 continue
 
             if max_files is not None and len(resolved_files) >= max_files:
@@ -322,6 +313,7 @@ def expand_queue_to_files(
                         for p in resolved_files[:50]
                     ],
                     "stopped_reason": stopped_reason,
+                    "available_files": available_files,
                 }
 
             if max_total_size is not None and total_size + size > max_total_size:
@@ -335,10 +327,10 @@ def expand_queue_to_files(
                         for p in resolved_files[:50]
                     ],
                     "stopped_reason": stopped_reason,
+                    "available_files": available_files,
                 }
 
-            seen.add(key)
-            resolved_files.append(f)
+            resolved_files.append(f.resolve())
             total_size += size
 
     preview = {
@@ -350,5 +342,6 @@ def expand_queue_to_files(
             for p in resolved_files[:50]
         ],
         "stopped_reason": stopped_reason,
+        "available_files": available_files,
     }
     return resolved_files, preview

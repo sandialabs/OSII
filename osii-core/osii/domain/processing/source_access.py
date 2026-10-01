@@ -2,6 +2,49 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from pathlib import PureWindowsPath
+
+from .pathing import path_within
+
+MOUNTED_FOLDER_HELP = (
+    "This folder is not connected to OSII's containers. Open OSII Launcher, "
+    "choose it as the Document folder, test container access, save the library, "
+    "and restart OSII. Then return to Intake. Your current selection is unchanged."
+)
+
+def resolve_intake_path(
+    raw: str | None,
+    source_root: Path,
+    upload_root: Path,
+    *,
+    filesystem_mode: str = "local",
+    host_root: str = "",
+) -> Path:
+    """Resolve only an explicitly requested location and report access failures."""
+    cleaned = str(raw or "").strip().strip('"').strip("'")
+    source_root = source_root.resolve()
+    path = Path(cleaned).expanduser() if cleaned else source_root
+    if filesystem_mode == "mounted" and cleaned and host_root:
+        # The dashboard shows host paths; the API and worker use the mounted path.
+        windows = bool(PureWindowsPath(host_root).drive)
+        host = PureWindowsPath(host_root) if windows else Path(host_root)
+        requested = PureWindowsPath(cleaned) if windows else Path(cleaned)
+        if host.is_absolute() and requested.is_absolute():
+            try:
+                path = source_root.joinpath(*requested.relative_to(host).parts)
+            except ValueError:
+                if windows:
+                    raise PermissionError(MOUNTED_FOLDER_HELP)
+    if not path.is_absolute():
+        path = source_root / path
+    path = path.resolve()
+    if filesystem_mode == "mounted" and not any(
+        path_within(root, path) for root in (source_root, upload_root)
+    ):
+        raise PermissionError(MOUNTED_FOLDER_HELP)
+    if not path.exists():
+        raise FileNotFoundError(f"Folder or file not found: {cleaned or path}")
+    return path
 
 
 def _windows_drive_is_remote(path: Path) -> bool:
