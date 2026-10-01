@@ -97,7 +97,7 @@ def _load(osii_root) -> list[dict[str, Any]]:
 def _with_runtime_defaults(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     result = list(records)
     if not any(item.get("type") == "ollama" for item in result):
-        result.append({"id": "ollama-local", "type": "ollama", "base_url": os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/"), "enabled": True, "priority": 100, "embedding_model": os.getenv("OLLAMA_EMBEDDING_MODEL", "").strip() or DEFAULT_OLLAMA_EMBEDDING_MODEL, "synthesis_model": os.getenv("OLLAMA_SYNTHESIS_MODEL", "").strip() or DEFAULT_OLLAMA_CHAT_MODEL, "chat_model": os.getenv("OLLAMA_CHAT_MODEL", "").strip() or DEFAULT_OLLAMA_CHAT_MODEL, "credential_env": "", "default_chat": True, "default_embedding": True, "implicit": True})
+        result.append({"id": "ollama-local", "type": "ollama", "base_url": os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/"), "enabled": True, "priority": 100, "embedding_model": os.getenv("OLLAMA_EMBEDDING_MODEL", "").strip() or DEFAULT_OLLAMA_EMBEDDING_MODEL, "synthesis_model": os.getenv("OLLAMA_SYNTHESIS_MODEL", "").strip() or DEFAULT_OLLAMA_CHAT_MODEL, "chat_model": os.getenv("OLLAMA_CHAT_MODEL", "").strip() or DEFAULT_OLLAMA_CHAT_MODEL, "credential_env": "", "default_chat": False, "default_embedding": False, "implicit": True})
     openai_configured = bool(os.getenv("OPENAI_BASE_URL", "").strip())
     if openai_configured and not any(item.get("type") == "openai" for item in result):
         result.append({
@@ -107,11 +107,12 @@ def _with_runtime_defaults(records: list[dict[str, Any]]) -> list[dict[str, Any]
             "enabled": True,
             "priority": 10,
             "embedding_model": os.getenv("OPENAI_EMBEDDING_MODEL", "").strip(),
-            "synthesis_model": os.getenv("OPENAI_SYNTHESIS_MODEL", "").strip(),
+            "synthesis_model": os.getenv("OPENAI_SYNTHESIS_MODEL", "").strip() or os.getenv("OPENAI_CHAT_MODEL", "").strip(),
             "chat_model": os.getenv("OPENAI_CHAT_MODEL", "").strip(),
             "credential_env": "OPENAI_API_KEY",
-            "default_chat": True,
-            "default_embedding": bool(os.getenv("OPENAI_EMBEDDING_MODEL", "").strip()),
+            # An environment suggestion must not claim to replace a saved choice.
+            "default_chat": False,
+            "default_embedding": False,
             "implicit": True,
         })
     return result
@@ -200,6 +201,18 @@ def _validate(payload: dict[str, Any], provider_id: str | None = None) -> dict[s
     }
 
 
+def _credential_help(name: str, source: str | None) -> str:
+    if source == "environment":
+        return (
+            f"OSII is using {name} from its startup environment (which can include root .env). "
+            "This is not a connection-test result. Update that value and restart OSII, "
+            f"or remove {name} from root .env and your shell, then restart to save a key here."
+        )
+    if source == "secret_file":
+        return f"OSII is using the secret file configured by {name}_FILE. Update that file to change the key."
+    return "Saved locally in this profile's deployment/secrets.env; never stored in a library or sent to Toolbox processors."
+
+
 def _public(record: dict[str, Any]) -> dict[str, Any]:
     credential_env = record.get("credential_env") or ("" if record.get("type") == "ollama" else "OPENAI_API_KEY")
     credential, source = resolve_env_value(str(credential_env))
@@ -208,7 +221,8 @@ def _public(record: dict[str, Any]) -> dict[str, Any]:
         "credential_required": record.get("type") != "ollama",
         "credential_present": bool(credential),
         "credential_source": source,
-        "credential_writable": local_config_writable() and source != "environment",
+        "credential_writable": local_config_writable() and source not in {"environment", "secret_file"},
+        "credential_help": _credential_help(str(credential_env), source),
         "credential_value": None,
     }
 
@@ -475,8 +489,8 @@ def save_provider_credential(request: Request, provider_id: str, payload: dict):
         raise HTTPException(status_code=422, detail="Ollama does not use an API key")
     current_name = str(record.get("credential_env") or "OPENAI_API_KEY")
     _, current_source = resolve_env_value(current_name)
-    if current_source == "environment":
-        raise HTTPException(status_code=409, detail="This credential is managed by the process environment")
+    if current_source in {"environment", "secret_file"}:
+        raise HTTPException(status_code=409, detail=_credential_help(current_name, current_source))
     name = _saved_credential_name(record)
     value = str(payload.get("api_key") or "")
     if not value:
@@ -500,8 +514,8 @@ def delete_provider_credential(request: Request, provider_id: str):
         raise HTTPException(status_code=404, detail="model provider not found")
     current_name = str(record.get("credential_env") or "OPENAI_API_KEY")
     _, current_source = resolve_env_value(current_name)
-    if current_source == "environment":
-        raise HTTPException(status_code=409, detail="This credential is managed by the process environment")
+    if current_source in {"environment", "secret_file"}:
+        raise HTTPException(status_code=409, detail=_credential_help(current_name, current_source))
     name = _saved_credential_name(record)
     try:
         write_env_value(name, None)

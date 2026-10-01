@@ -87,6 +87,25 @@ def test_invalid_toml_retains_last_valid_generation_and_reports_line(monkeypatch
     assert "line 2" in status["errors"]["models"]
 
 
+def test_external_defaults_seed_profile_once_without_persisting_credentials(monkeypatch):
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://models.example.test/api/v1/")
+    monkeypatch.setenv("OPENAI_CHAT_MODEL", "language-v1")
+    monkeypatch.setenv("OPENAI_EMBEDDING_MODEL", "embedding-v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "never-persist-this")
+    config = load_models_config()
+    assert config["defaults"] == {
+        "chat": "openai-compatible", "synthesis": "openai-compatible",
+        "embedding": "openai-compatible-embedding",
+    }
+    assert config["models"]["openai-compatible"]["model"] == "language-v1"
+    assert config["models"]["openai-compatible-embedding"]["model"] == "embedding-v1"
+    assert config["models"]["openai-compatible"]["base_url"] == "https://models.example.test/api/v1"
+    path = Path(configuration_status()["files"]["models"])
+    assert "never-persist-this" not in path.read_text(encoding="utf-8")
+    monkeypatch.setenv("OPENAI_CHAT_MODEL", "language-v2")
+    assert load_models_config()["models"]["openai-compatible"]["model"] == "language-v1"
+
+
 def test_legacy_yaml_migrates_to_toml_without_overwriting_existing(tmp_path, monkeypatch):
     config_dir = tmp_path / "deployment"
     config_dir.mkdir()

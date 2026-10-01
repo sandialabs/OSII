@@ -54,8 +54,9 @@ def active_profile() -> str:
 
 
 def default_models_config() -> dict[str, Any]:
+    """Seed a new profile from workstation defaults; saved profiles remain authoritative."""
     ollama_url = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_URL).rstrip("/")
-    return {
+    config: dict[str, Any] = {
         "version": CONFIG_VERSION,
         "models": {
             "base": {
@@ -75,6 +76,27 @@ def default_models_config() -> dict[str, Any]:
         },
         "defaults": {"chat": "base", "synthesis": "base", "embedding": "minilm"},
     }
+    base_url = os.getenv("OPENAI_BASE_URL", "").strip().rstrip("/")
+    if base_url:
+        language = (os.getenv("OPENAI_CHAT_MODEL", "").strip()
+                    or os.getenv("OPENAI_SYNTHESIS_MODEL", "").strip())
+        embedding = os.getenv("OPENAI_EMBEDDING_MODEL", "").strip()
+        common = {
+            "type": "openai-compatible", "base_url": base_url,
+            "api_key_env": "OPENAI_API_KEY", "enabled": True, "priority": 10,
+        }
+        config["models"]["openai-compatible"] = {
+            **common, "model": language,
+            "capabilities": ["chat", "synthesis"] if language else [],
+        }
+        if language:
+            config["defaults"].update({"chat": "openai-compatible", "synthesis": "openai-compatible"})
+        if embedding:
+            config["models"]["openai-compatible-embedding"] = {
+                **common, "model": embedding, "capabilities": ["embedding"],
+            }
+            config["defaults"]["embedding"] = "openai-compatible-embedding"
+    return config
 
 
 def builtin_tools_config() -> dict[str, Any]:

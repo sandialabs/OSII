@@ -192,6 +192,48 @@ def test_openai_environment_exposes_generic_runtime_defaults(client, monkeypatch
     assert provider["embedding_model"] == "embed-v1"
     assert provider["chat_model"] == "chat-v1"
     assert provider["credential_present"] is True
+    assert provider["default_chat"] is True
+    assert provider["default_embedding"] is True
+    assert selected_processor("embedder") == "openai.embedder"
+    assert selected_processor("synthesizer") == "openai.synthesizer"
+    assert provider["credential_writable"] is False
+    assert "OPENAI_API_KEY" in provider["credential_help"]
+    assert "restart" in provider["credential_help"]
+    assert "alias-key" not in str(payload)
+
+    blocked = client.put("/api/admin/model-providers/openai-compatible/credential",
+                         json={"api_key": "replacement"})
+    assert blocked.status_code == 409
+    assert "OPENAI_API_KEY" in blocked.json()["detail"]
+    assert "alias-key" not in blocked.text
+
+
+def test_environment_suggestion_does_not_claim_to_override_saved_defaults(client, monkeypatch):
+    client.get("/api/admin/model-providers")  # Save the initial local profile.
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://models.example.test/v1")
+    monkeypatch.setenv("OPENAI_CHAT_MODEL", "chat-v1")
+    monkeypatch.setenv("OPENAI_EMBEDDING_MODEL", "embed-v1")
+    providers = client.get("/api/admin/model-providers").json()["providers"]
+    suggestion = next(item for item in providers if item["id"] == "openai-compatible")
+    assert suggestion["default_chat"] is False
+    assert suggestion["default_embedding"] is False
+    assert selected_processor("synthesizer") == "ollama.synthesizer"
+
+
+def test_new_external_default_accepts_setup_key_when_environment_key_is_empty(client, monkeypatch):
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://models.example.test/v1")
+    monkeypatch.setenv("OPENAI_CHAT_MODEL", "chat-v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.delenv("OPENAI_API_KEY_FILE", raising=False)
+    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
+    providers = client.get("/api/admin/model-providers").json()["providers"]
+    provider = next(item for item in providers if item["id"] == "openai-compatible")
+    assert provider["credential_writable"] is True
+    saved = client.put("/api/admin/model-providers/openai-compatible/credential",
+                       json={"api_key": "local-key"})
+    assert saved.status_code == 200
+    assert saved.json()["credential_source"] == "repo_env"
+    assert "local-key" not in saved.text
 
 
 def test_openai_environment_accepts_container_secret_file(client, monkeypatch, tmp_path):
@@ -206,6 +248,13 @@ def test_openai_environment_accepts_container_secret_file(client, monkeypatch, t
 
     assert provider["credential_present"] is True
     assert "mounted-secret" not in str(payload)
+    assert provider["credential_source"] == "secret_file"
+    assert provider["credential_writable"] is False
+    assert "OPENAI_API_KEY_FILE" in provider["credential_help"]
+    blocked = client.put("/api/admin/model-providers/openai-compatible/credential",
+                         json={"api_key": "replacement"})
+    assert blocked.status_code == 409
+    assert "OPENAI_API_KEY_FILE" in blocked.json()["detail"]
 
 
 def test_openai_health_validates_selected_embedding_model(client, monkeypatch):

@@ -201,6 +201,46 @@ only the intended differences. A new release tag must not reset users' source
 folders, saved connections or library data. `write` refuses to overwrite a
 different existing file; it does not merge or erase local settings.
 
+### How model defaults reach a developer's Workbench
+
+`make dev` reads root `.env`; it does **not** fetch GitLab CI/CD variables or
+read `corporate/osii.toml` directly. The corporate generator translates these
+non-secret settings when you run `corporate_config.py write`:
+
+| Corporate TOML / release setting | Root `.env` setting used by Workbench |
+| --- | --- |
+| `OSII_MODEL_BASE_URL` | `OPENAI_BASE_URL` |
+| `OSII_EMBEDDING_MODEL` | `OPENAI_EMBEDDING_MODEL` |
+| `OSII_CHAT_MODEL` | `OPENAI_CHAT_MODEL` (also used for synthesis) |
+
+For host development alone, edit those three `OPENAI_*` entries directly in
+root `.env`; no release configuration or generation step is required. Use the
+corporate service's exact model IDs. The example files are templates, not loaded
+configuration. Existing shell variables override `.env` until you unset them.
+
+On a **new profile**, `configuration.default_models_config()` uses those values
+to create the `openai-compatible` connection and its embedding connection in
+`models.toml`, selecting the configured models as defaults. Without an external
+endpoint, the starter connections use local Ollama. Displaying a connection does
+not prove its URL, credentials, TLS trust, or model permissions work.
+
+Once `models.toml` exists, its saved choices take precedence over these initial
+defaults. Edit the existing connection in Workbench Setup and enable its default
+chat/synthesis and semantic-embedding switches to change that profile; restarting
+with a new `.env` does not erase saved choices. A fresh clone can still reuse an
+existing profile outside the repository. On macOS the normal `make dev` location
+is `~/Library/Application Support/org.osii.launcher/profiles/development/deployment/`.
+`OSII_CONFIG_DIR` or `OSII_CONFIG_DIR_HOST` can select another location.
+
+Credentials are separate. A nonempty key variable (normally `OPENAI_API_KEY`)
+in the startup environment, including root `.env`, is used automatically and
+cannot be replaced in Setup. To manage the key in Setup, remove it from root
+`.env`, unset it in the shell, and restart `make dev`. Save it in the connection
+dialog; OSII writes the profile's `secrets.env`, not `models.toml`. A configured
+`OPENAI_API_KEY_FILE` instead points to an externally managed secret file.
+The credential-management notice is not a connection test: use **Test** to see
+endpoint/authentication errors and verify the selected embedding model.
+
 ### Configuration ownership and precedence
 
 | File or location | Used by | Rule |
@@ -216,9 +256,9 @@ different existing file; it does not merge or erase local settings.
 
 Do not combine the host and container examples: `127.0.0.1` means this process's
 machine; containers use `host.containers.internal` for a model server on the
-workstation. The examples and generated deployment settings select model-free
-processing by default; development launch scripts also apply their selected
-provider profile. Configure and test the desired model explicitly in Setup.
+workstation. Generated corporate model settings seed new profiles as described
+above; existing profiles retain their saved choices. Configure and test the
+desired model explicitly in Setup.
 
 Corporate generated settings include the writable `/config` mount, opt-in
 Setup writes for a personal workstation, and approved model defaults. A managed

@@ -534,6 +534,10 @@ export type QueueBrowseEntry = {
 export type QueueBrowseResponse = {
   current_path: string;
   display_path: string;
+  folder_name?: string;
+  host_path?: string;
+  parent_path?: string | null;
+  filesystem_mode?: "local" | "mounted";
   entries: QueueBrowseEntry[];
 };
 
@@ -548,6 +552,7 @@ export type IntakePreview = {
   total_size: number;
   total_size_human: string;
   sample: Array<{ path: string; display: string }>;
+  available_files?: Array<{ path: string; display: string; size_bytes: number }>;
   extractor_plan: Array<{
     extension: string;
     extractor: string;
@@ -755,8 +760,9 @@ export type ModelProvider = {
   default_embedding?: boolean;
   credential_required?: boolean;
   credential_present?: boolean;
-  credential_source?: "environment" | "repo_env" | null;
+  credential_source?: "environment" | "secret_file" | "repo_env" | null;
   credential_writable?: boolean;
+  credential_help?: string;
   implicit?: boolean;
 };
 
