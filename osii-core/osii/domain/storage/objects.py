@@ -22,6 +22,15 @@ def iso_mtime_utc(path: Path) -> str | None:
         return None
 
 
+def iso_birthtime_utc(path: Path) -> str | None:
+    """Record filesystem creation only when available; ctime is not creation on Unix."""
+    try:
+        timestamp = getattr(path.stat(), "st_birthtime", None)
+        return datetime.fromtimestamp(timestamp, UTC).isoformat() if timestamp is not None else None
+    except (OSError, ValueError, OverflowError):
+        return None
+
+
 def ensure_object_bundle(osii_store: Path, file_id: str) -> Path:
     obj_dir = object_dir(osii_store, file_id)
     obj_dir.mkdir(parents=True, exist_ok=True)
@@ -40,6 +49,7 @@ def write_meta_toml(
     mtime_utc: str | None,
     sha256_hex: str,
     extra_meta: dict | None = None,
+    birthtime_utc: str | None = None,
 ) -> Path:
     ensure_object_bundle(osii_store, file_id)
     path = meta_toml_path(osii_store, file_id)
@@ -57,6 +67,8 @@ def write_meta_toml(
         },
     }
 
+    if birthtime_utc is not None:
+        payload["file"]["birthtime_utc"] = birthtime_utc
     if extra_meta:
         payload["meta"] = extra_meta
 

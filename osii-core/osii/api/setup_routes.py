@@ -11,6 +11,7 @@ import requests
 from osii.api.model_provider_routes import _load, _public, _with_runtime_defaults
 from osii.domain.processing.capability_readiness import intake_capability_readiness
 from osii.configuration import configuration_status
+from osii.domain.processing.source_access import source_access_summary
 
 
 router = APIRouter(prefix="/api/admin", tags=["setup"])
@@ -132,6 +133,10 @@ def _selected_method(readiness: dict[str, Any], kind: str) -> dict[str, Any]:
 def setup_summary(request: Request):
     osii_root = request.app.state.osii_root.resolve()
     readiness = intake_capability_readiness(osii_root)
+    readiness["source"] = source_access_summary(
+        request.app.state.shared_volume_root, osii_root,
+        configured_kind=getattr(request.app.state, "source_kind", "auto"),
+    )
     service_control_available, services = _services()
     if not service_control_available:
         services = _health_only_services(readiness)
@@ -141,11 +146,9 @@ def setup_summary(request: Request):
     )
     providers = [_public(item) for item in records]
     extraction_ready = any(item.get("available") for item in readiness["extractors"])
-    ai_ready = any(
-        item.get("available") and not str(item.get("id", "")).startswith("local.")
-        for key in ("synthesizers", "embedders")
-        for item in readiness[key]
-    )
+    embedding = next((item for item in readiness["embedders"] if item.get("id") == readiness["defaults"].get("embedder")), None)
+    embedding_ready = bool(embedding and embedding.get("available") and not embedding.get("lexical") and embedding.get("id") != "local.hashing")
+    ai_ready = embedding_ready and bool(readiness.get("language_model", {}).get("available"))
     if not extraction_ready:
         overall = "action_required"
         headline = "Document reading needs attention"
@@ -154,7 +157,7 @@ def setup_summary(request: Request):
         headline = "Ready for Intake"
     else:
         overall = "ready_optional"
-        headline = "Connect AI to complete setup"
+        headline = "Complete model setup for semantic search and AI chat"
     return {
         "overall_status": overall,
         "headline": headline,

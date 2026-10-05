@@ -7,6 +7,7 @@ from osii.domain.storage.objects import (
     append_manifest_record,
     append_text_file,
     iso_mtime_utc,
+    iso_birthtime_utc,
     write_artifact_bytes,
     write_meta_toml,
     write_provenance_toml,
@@ -35,6 +36,7 @@ def init_doc_context(source_path: Path, data_volume_root: Path) -> dict:
         "sha256_hex": sha256_hex(src),
         "size_bytes": size_bytes,
         "mtime_utc": iso_mtime_utc(src),
+        "birthtime_utc": iso_birthtime_utc(src),
         "mime": guess_mime(src),
     }
 
@@ -54,6 +56,7 @@ def initialize_bundle(
         mtime_utc=doc_ctx["mtime_utc"],
         sha256_hex=doc_ctx["sha256_hex"],
         extra_meta={"source_path": str(doc_ctx["src"])},
+        birthtime_utc=doc_ctx.get("birthtime_utc"),
     )
 
 

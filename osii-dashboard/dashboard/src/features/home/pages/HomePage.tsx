@@ -7,6 +7,7 @@ import { toFileCardModel } from "../../../domain/files";
 import { FileGrid } from "../../files/components/FileGrid";
 import { buildFileRoute } from "../../../utils/routes";
 import { LibraryInsights } from "../components/LibraryInsights";
+import { ScopeOverviewPanel } from "../../../components/discovery/ScopeOverviewPanel";
 
 export function HomePage() {
   const navigate = useNavigate();
@@ -38,6 +39,7 @@ export function HomePage() {
         </Paper>
       ) : null}
 
+      <ScopeOverviewPanel scope={{ scope_type: "root" }} />
       <LibraryInsights />
 
       <Stack spacing={0.5}>

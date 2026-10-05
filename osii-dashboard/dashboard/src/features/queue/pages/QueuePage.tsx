@@ -43,7 +43,9 @@ import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { WorkflowProgress } from "../../../components/discovery/WorkflowProgress";
+import type { WorkflowStepId } from "../../../domain/workflow";
 
 import {
   browseIntake,
@@ -136,6 +138,8 @@ function parentDisplay(display: string): string {
 export function QueuePage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedStep = searchParams.get("step");
   const [path, setPath] = useState("");
   const [selectedFolder, setSelectedFolder] =
     useState<QueueBrowseResponse | null>(null);
@@ -154,18 +158,18 @@ export function QueuePage() {
   const [excludePatterns, setExcludePatterns] = useState("");
   const [includeSubfolders, setIncludeSubfolders] = useState(true);
   const [showHidden, setShowHidden] = useState(false);
-  const [section, setSection] = useState<"add" | "process" | "activity">("add");
+  const [section, setSection] = useState<"add" | "process" | "activity">(requestedStep === "index" ? "process" : "add");
   const [libraryGoal, setLibraryGoal] = useState<
     "embed" | "synthesize" | "reextract" | "enrich" | "custom"
   >("embed");
-  const [runExtraction, setRunExtraction] = useState(true);
+  const [runExtraction, setRunExtraction] = useState(requestedStep !== "index");
   const [extractMode, setExtractMode] = useState<"missing" | "reprocess">(
     "missing",
   );
   const [extractionPolicy, setExtractionPolicy] = useState<
     "make_primary" | "save_variant"
   >("make_primary");
-  const [synthesize, setSynthesize] = useState(true);
+  const [synthesize, setSynthesize] = useState(requestedStep !== "index");
   const [embed, setEmbed] = useState(true);
   const [chunkingMethod, setChunkingMethod] =
     useState<ChunkingMethod>("sentence_window");
@@ -239,6 +243,7 @@ export function QueuePage() {
     queryKey: ["intake", "readiness"],
     queryFn: getIntakeReadiness,
     staleTime: 30_000,
+    refetchInterval: 15_000,
   });
   const sourceStatus = readiness.data?.source;
   const availableSynthesizers =
@@ -567,23 +572,8 @@ export function QueuePage() {
   const embeddingStatus =
     readiness.data?.embedders.find(
       (embedder) => embedder.id === readiness.data?.defaults.embedder,
-    ) ?? readiness.data?.embedders[0];
-  const embeddingAvailable = Boolean(embeddingStatus?.available);
-  useEffect(() => {
-    if (section === "add" && readiness.data && !embeddingAvailable && embed) {
-      setEmbed(false);
-    }
-  }, [section, readiness.data, embeddingAvailable, embed]);
-  useEffect(() => {
-    if (
-      section === "add" &&
-      readiness.data &&
-      !availableSynthesizers.length &&
-      synthesize
-    ) {
-      setSynthesize(false);
-    }
-  }, [section, readiness.data, availableSynthesizers.length, synthesize]);
+    );
+  const embeddingAvailable = Boolean(embeddingStatus?.available && !embeddingStatus.lexical && embeddingStatus.id !== "local.hashing");
   const extractorStatus = (name: string) =>
     readiness.data?.extractors.find(
       (extractor) => extractor.id === name || extractor.aliases?.includes(name),
@@ -624,6 +614,24 @@ export function QueuePage() {
       .filter(Boolean)
       .join(" · ") || "No processing selected";
 
+  const followWorkflowStep = (step: WorkflowStepId) => {
+    if (["embedding", "language", "extractor"].includes(step)) {
+      navigate(`/admin/processors?step=${step}`);
+    } else if (step === "index") {
+      setSection("process");
+      setLibraryGoal("embed");
+      chooseLibraryGoal("embed");
+    } else {
+      changeSection("add");
+    }
+  };
+
+  const useTextOnlyIntake = () => {
+    changeSection("add");
+    setRunExtraction(true); setSynthesize(false); setEmbed(false); setEnrich(false);
+    setNotice({ severity: "info", text: "Text-only intake selected explicitly. Browsing and keyword search can work after extraction; semantic search and AI chat still need the remaining checkpoints." });
+  };
+
   return (
     <Stack spacing={2.5} sx={{ maxWidth: 1100, mx: "auto" }}>
       <Stack spacing={0.5}>
@@ -635,6 +643,9 @@ export function QueuePage() {
           original files.
         </Typography>
       </Stack>
+
+      <WorkflowProgress readiness={readiness.data} checking={readiness.isLoading} failed={readiness.isError} sourceReady={Boolean((selectedFolder || uploadedItems.length) && !folderChanged && !selectingFolder && !folderError && sourceStatus?.osii_writable !== false)} onStep={followWorkflowStep} />
+      {readiness.data && (!embeddingAvailable || !readiness.data.language_model?.available) && section !== "activity" ? <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }}><Typography variant="body2" color="text.secondary">Finish model setup for the full experience, or choose a deliberate first pass.</Typography><Button variant="outlined" sx={{ flexShrink: 0 }} onClick={useTextOnlyIntake}>Use text-only intake</Button></Stack> : null}
 
       <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
         <Tabs
@@ -1607,6 +1618,7 @@ export function QueuePage() {
                   summaries under Change processing options.
                 </Alert>
               ) : null}
+              {readiness.data && embed && !embeddingAvailable ? <Alert severity="warning" action={<Button color="inherit" onClick={() => navigate("/admin/processors?step=embedding")}>Set up embeddings</Button>}>Semantic embeddings are selected, but the default embedding model is unavailable. {embeddingStatus?.detail} Configure it in Setup or explicitly choose text-only intake above.</Alert> : null}
               {preview.data && matchedCount === 0 ? (
                 <Alert severity="warning">
                   No files match the current source scope and intake rules.
@@ -1788,6 +1800,12 @@ export function QueuePage() {
                     label={run.status}
                   />
                 </Stack>
+              </Stack>
+              <Stack spacing={0.5} sx={{ mt: 1.5 }}>
+                <Typography variant="caption">File processing: {run.completed ?? 0} of {run.total ?? 0} finished{itemErrors.length ? ` · ${itemErrors.length} with errors` : ""}</Typography>
+                <LinearProgress aria-label={`File progress for run ${run.id}`} variant="determinate" value={(run.total ?? 0) > 0 ? Math.min(100, (run.completed ?? 0) / (run.total ?? 1) * 100) : 0} color={itemErrors.length || run.status === "error" ? "error" : "secondary"} sx={{ height: 7, borderRadius: 1 }} />
+                {run.operations?.embed ? <Typography variant="caption" color={run.indexing_status === "error" ? "error.main" : "text.secondary"}>Semantic index: {run.indexing_status === "done" ? "saved — library checkpoints will refresh" : run.indexing_status === "running" ? "building; finished files do not mean the index is ready yet" : run.indexing_status === "error" ? "failed — retry before relying on semantic search" : "waiting for file processing"}</Typography> : null}
+                {run.indexing_status === "running" ? <LinearProgress aria-label="Building semantic index" /> : null}
               </Stack>
               {run.started_at ? (
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>

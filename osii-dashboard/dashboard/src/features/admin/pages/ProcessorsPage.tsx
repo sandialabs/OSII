@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip,
   Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel,
@@ -11,7 +11,7 @@ import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import HubOutlinedIcon from "@mui/icons-material/HubOutlined";
 import ExtensionOutlinedIcon from "@mui/icons-material/ExtensionOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import {
   checkModelProvider, checkProcessorEndpoint, controlCapabilityService,
@@ -130,6 +130,9 @@ function ServiceRow({ service, busy, onAction, onLogs }: {
 export function ProcessorsPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedStep = searchParams.get("step");
+  const focusedWorkflowStep = useRef<string | null>(null);
   const setup = useQuery({ queryKey: ["admin", "setup"], queryFn: getSetupSummary, refetchInterval: 5000 });
   const providerData = useQuery({ queryKey: ["admin", "model-providers"], queryFn: listModelProviders, refetchInterval: 5000 });
   const processors = useQuery({ queryKey: ["admin", "processors"], queryFn: listProcessorEndpoints, refetchInterval: 5000 });
@@ -476,6 +479,12 @@ export function ProcessorsPage() {
   };
 
   const data = setup.data;
+  useEffect(() => {
+    if (!providerData.data || !data || !requestedStep || focusedWorkflowStep.current === requestedStep) return;
+    if (!["embedding", "language", "extractor"].includes(requestedStep)) return;
+    focusedWorkflowStep.current = requestedStep;
+    followWorkflowStep(requestedStep as WorkflowStepId);
+  }, [requestedStep, providerData.data, data]);
   const configurationErrors = Object.entries(data?.configuration?.errors ?? {});
   const discoveredModels = providerHealth[providerForm.id]?.models ?? [];
 

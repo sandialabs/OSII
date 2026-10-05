@@ -11,7 +11,8 @@ from osii.domain.catalog_db import list_semantic_indexes
 from osii.domain.model_provider_config import processor_model, selected_processor
 from osii.indexing.common import embeddings_meta_path
 from osii.processors.remote import discover_remote_processors
-from osii.configuration import configured_tools, load_tools_config, models_path, tools_path
+from osii.configuration import configured_tools, load_models_config, load_tools_config, model_connection, models_path, tools_path
+from osii.domain.env_credentials import resolve_env_value
 from osii.domain.processing.extractor_selection import load_extractor_routes
 
 
@@ -261,6 +262,37 @@ def embedding_readiness(osii_root: Path | None = None) -> dict[str, Any]:
     return _embedding_probe(osii_root)
 
 
+def language_model_readiness(osii_root: Path) -> dict[str, Any]:
+    """Check the selected chat model's listing without issuing a paid generation."""
+    alias = str(load_models_config(osii_root).get("defaults", {}).get("chat") or "")
+    connection = model_connection(alias, osii_root) if alias else None
+    result: dict[str, Any] = {"available": False, "connection": alias, "model": "", "detail": "Choose a default language connection in Setup."}
+    if not connection or "chat" not in connection.get("capabilities", []):
+        return result
+    model = str(connection.get("model") or "").strip()
+    base_url = str(connection.get("base_url") or "").rstrip("/")
+    result.update({"model": model, "base_url": base_url})
+    if not model or not base_url:
+        result["detail"] = "The default language connection needs a URL and model name."
+        return result
+    ollama = connection.get("type") == "ollama-local"
+    key, _ = resolve_env_value(str(connection.get("api_key_env") or ""))
+    try:
+        response = requests.get(
+            f"{base_url}/api/tags" if ollama else f"{base_url}/models",
+            headers={"Authorization": f"Bearer {key}"} if key else {}, timeout=(3, 5),
+        )
+        response.raise_for_status()
+        payload = response.json()
+        rows = payload.get("models" if ollama else "data") or []
+        names = [str(row.get("model") or row.get("name") or "") if ollama else str(row.get("id") or "") for row in rows if isinstance(row, dict)]
+        available = any(_model_name_matches(name, model) if ollama else name == model for name in names)
+        result.update({"available": available, "detail": f"Model {model!r} is listed by the endpoint. Generation has not been tested." if available else f"Model {model!r} is not listed by this endpoint. Check its name and your access permissions."})
+    except (requests.RequestException, ValueError, AttributeError) as exc:
+        result["detail"] = f"Language connection check failed: {exc}"
+    return result
+
+
 def _registered_endpoints(osii_root: Path) -> list[dict[str, Any]]:
     records = []
     for tool_id, tool in configured_tools(osii_root).items():
@@ -501,6 +533,7 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
         "embedders": embedders,
         "enrichers": remote_by_kind["enricher"] + compatibility_enrichers,
         "external": external,
+        "language_model": language_model_readiness(osii_root),
         "semantic_indexes": list_semantic_indexes(osii_root),
     }
     saved_tools = load_tools_config(osii_root).get("tools", {})

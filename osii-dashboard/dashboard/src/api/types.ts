@@ -116,6 +116,37 @@ export type ScopeSummariesResponse = {
   summaries: ObjectSummary[];
 };
 
+export type ScopeOverview = {
+  scope: ScopeDescribeRequest;
+  file_count: number;
+  size_known_count: number;
+  total_size_bytes: number;
+  average_size_bytes: number | null;
+  missing_metadata_count: number;
+  file_types: Array<{ label: string; count: number }>;
+  dates: Record<"created" | "modified", {
+    recorded_count: number;
+    missing_count: number;
+    earliest: string | null;
+    latest: string | null;
+    buckets: Array<{ label: string; count: number }>;
+  }>;
+  processing: {
+    text_count: number;
+    synthesis_count: number;
+    enrichment_count: number;
+    indexed_count: number;
+    semantic_index: {
+      status: "ready" | "missing" | "incompatible" | "invalid";
+      detail: string;
+      model?: string;
+      provider?: string;
+      dimensions?: number;
+    };
+  };
+  warnings: string[];
+};
+
 export type ObjectSummariesRequest = {
   file_ids: string[];
 };
@@ -633,6 +664,13 @@ export type ProcessorConfigSchema = {
 };
 
 export type IntakeReadiness = {
+  language_model?: {
+    available: boolean;
+    connection: string;
+    model: string;
+    detail: string;
+    base_url?: string;
+  };
   defaults: {
     extractor: string;
     synthesizer: string;
