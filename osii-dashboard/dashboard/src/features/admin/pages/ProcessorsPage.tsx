@@ -25,6 +25,8 @@ import type {
   ModelProviderHealth, ModelPullJob, OllamaRecommendation,
   ProcessorConfigProperty, ProcessorEndpoint, ExtractorRoute,
 } from "../../../api/types";
+import { WorkflowProgress } from "../../../components/discovery/WorkflowProgress";
+import type { WorkflowStepId } from "../../../domain/workflow";
 
 const DEFAULT_EMBEDDING_MODEL = "all-minilm";
 const DEFAULT_CHAT_MODEL = "llama3.2:1b";
@@ -42,7 +44,7 @@ const CAPABILITY_ICONS = {
 };
 const BUNDLED_FALLBACKS = new Set(["native_text", "local.native-text", "local.extractive-preview", "local.hashing", "local.stats-keywords"]);
 
-function blankProvider(type: ModelProvider["type"] | "corporate"): ModelProvider {
+function blankProvider(type: ModelProvider["type"]): ModelProvider {
   if (type === "openai") {
     return {
       id: "openai-compatible", type, base_url: "", enabled: true,
@@ -51,18 +53,11 @@ function blankProvider(type: ModelProvider["type"] | "corporate"): ModelProvider
       default_chat: false, default_embedding: false,
     };
   }
-  if (type === "ollama") {
-    return {
-      id: "ollama-local", type, base_url: "http://127.0.0.1:11434", enabled: true,
-      priority: 100, embedding_model: DEFAULT_EMBEDDING_MODEL,
-      synthesis_model: DEFAULT_CHAT_MODEL, chat_model: DEFAULT_CHAT_MODEL, credential_env: "",
-      default_chat: false, default_embedding: false,
-    };
-  }
   return {
-    id: "corporate-endpoint", type: "openai", preset: "corporate", base_url: "", enabled: true,
-    priority: 10, embedding_model: "", synthesis_model: "", chat_model: "",
-    credential_env: "OSII_CORPORATE_API_KEY", default_chat: false, default_embedding: false,
+    id: "ollama-local", type, base_url: "http://127.0.0.1:11434", enabled: true,
+    priority: 100, embedding_model: DEFAULT_EMBEDDING_MODEL,
+    synthesis_model: DEFAULT_CHAT_MODEL, chat_model: DEFAULT_CHAT_MODEL, credential_env: "",
+    default_chat: false, default_embedding: false,
   };
 }
 
@@ -191,7 +186,7 @@ export function ProcessorsPage() {
     }
   };
 
-  const openNewConnection = (type: ModelProvider["type"] | "corporate") => {
+  const newConnectionProvider = (type: ModelProvider["type"]) => {
     const existingOllama = type === "ollama"
       ? providerData.data?.providers.find((provider) => provider.type === "ollama")
       : undefined;
@@ -203,8 +198,11 @@ export function ProcessorsPage() {
       while (existingIds.has(`${provider.id}-${suffix}`)) suffix += 1;
       provider.id = `${provider.id}-${suffix}`;
     }
+    return provider;
+  };
+  const openNewConnection = () => {
     setEditingProviderId(null);
-    setProviderForm(provider);
+    setProviderForm(newConnectionProvider("openai"));
     setApiKey("");
     setConnectionOpen(true);
   };
@@ -213,6 +211,19 @@ export function ProcessorsPage() {
     setProviderForm(provider);
     setApiKey("");
     setConnectionOpen(true);
+  };
+
+  const followWorkflowStep = (step: WorkflowStepId) => {
+    if (step === "embedding" || step === "language") {
+      const provider = (providerData.data?.providers ?? []).find((item) => item.enabled && (step === "embedding" ? item.default_embedding : item.default_chat));
+      if (provider) openExistingConnection(provider);
+      else document.getElementById("setup-model-connections")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else if (step === "extractor") {
+      setExpandedCapability("extractor");
+      document.getElementById("setup-extractor-heading")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else {
+      navigate(`/intake?step=${step}`);
+    }
   };
 
   const saveConnection = async (event: FormEvent) => {
@@ -588,6 +599,8 @@ export function ProcessorsPage() {
       <Typography color="text.secondary">Choose the model connections and processing defaults this library will use. Basic document reading works without AI setup.</Typography>
     </Stack>
 
+    <WorkflowProgress readiness={data?.readiness} checking={setup.isLoading} failed={setup.isError} onStep={followWorkflowStep} />
+
     <Box sx={{ borderLeft: 3, borderColor: "secondary.main", pl: 2, py: 0.5 }}>
       <Typography variant="body2" fontWeight={700}>Where each step belongs</Typography>
       <Typography variant="body2" color="text.secondary">For packaged OSII, the launcher owns the source folder, images, optional services, and startup. Setup owns model connections and extraction rules. Intake chooses files and starts processing. Change a source or service in the launcher; local developers use their development configuration.</Typography>
@@ -600,7 +613,7 @@ export function ProcessorsPage() {
     <Box sx={{ py: 0.5 }}>
       <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1.5} alignItems={{ md: "center" }}>
         <Stack spacing={0.25}>
-          <Typography variant="h6" fontWeight={750}>{!data ? "Checking OSII…" : !data.extraction_ready ? "Document reading needs attention" : "Ready for Intake"}</Typography>
+          <Typography variant="h6" fontWeight={750}>{!data ? "Checking OSII…" : !data.extraction_ready ? "Document reading needs attention" : data.ai_ready ? "Model connections ready" : "Basic reading ready · AI setup incomplete"}</Typography>
           <Typography variant="body2" color="text.secondary">
             {data?.extraction_ready === false ? "Check the extractor status below before starting a run." : data?.ai_ready ? "AI methods are available. You can review or change them below." : "AI is optional. You can add a model connection now or start with the bundled methods."}
           </Typography>
@@ -612,14 +625,14 @@ export function ProcessorsPage() {
     </Box>
 
     <Stack spacing={1.25}>
-      <Stack spacing={0.25}><Typography variant="overline" color="secondary.main" fontWeight={700}>Optional configuration</Typography><Typography variant="h6" fontWeight={700}>Model connections</Typography></Stack>
+      <Stack id="setup-model-connections" spacing={0.25}><Typography variant="overline" color="secondary.main" fontWeight={700}>Model setup</Typography><Typography variant="h6" fontWeight={700}>Model connections</Typography></Stack>
     <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}><Stack spacing={1.25}>
       <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1} alignItems={{ md: "center" }}>
-        <Stack spacing={0.2}><Typography fontWeight={700}>Add or test a connection</Typography><Typography variant="body2" color="text.secondary">A model connection enables generated summaries, chat, and/or semantic search. Use a shared endpoint or Ollama; neither is required for your first Intake.</Typography></Stack>
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap><Button variant="contained" color="secondary" disabled={!providerData.data} onClick={() => openNewConnection("openai")}>Add OpenAI-compatible</Button><Button variant="outlined" color="secondary" disabled={!providerData.data} onClick={() => openNewConnection("ollama")}>Add Ollama connection</Button><Button variant="outlined" color="secondary" disabled={!providerData.data} onClick={() => openNewConnection("corporate")}>Add corporate endpoint</Button></Stack>
+        <Stack spacing={0.2}><Typography fontWeight={700}>Add or test a connection</Typography><Typography variant="body2" color="text.secondary">Connect a language model for summaries and chat, or an embedding model for semantic search. Models are optional for your first Intake.</Typography></Stack>
+        <Button variant="contained" color="secondary" disabled={!providerData.data} onClick={openNewConnection} sx={{ flexShrink: 0 }}>Add LLM</Button>
       </Stack>
-      {(data?.providers ?? []).filter((provider) => provider.enabled).map((provider) => <Stack key={provider.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1} alignItems={{ sm: "center" }}><Stack><Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap><Typography variant="body2" fontWeight={700}>{provider.type === "ollama" ? "Ollama" : provider.preset === "corporate" ? "Corporate endpoint" : "OpenAI-compatible"} · {provider.id}</Typography>{provider.default_chat ? <Chip size="small" label="Default language" /> : null}{provider.default_embedding ? <Chip size="small" label="Default embedding" /> : null}</Stack><Typography variant="caption" color="text.secondary">{provider.embedding_model ? `Embedding: ${provider.embedding_model}` : "Embedding: not selected"} · {provider.synthesis_model ? `Synthesis: ${provider.synthesis_model}` : "Synthesis: not selected"}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => openExistingConnection(provider)}>Configure</Button><Button size="small" onClick={() => void checkConnection(provider)}>Test</Button></Stack></Stack>)}
-      {!data?.providers?.some((provider) => provider.enabled) ? <Typography variant="body2" color="text.secondary">No enabled connections. OSII will use its no-AI methods.</Typography> : null}
+      {(data?.providers ?? []).filter((provider) => provider.enabled && !(provider.type === "ollama" && provider.implicit)).map((provider) => <Stack key={provider.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1} alignItems={{ sm: "center" }}><Stack><Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap><Typography variant="body2" fontWeight={700}>{provider.type === "ollama" ? "Ollama" : "OpenAI-compatible"} · {provider.id}</Typography>{provider.default_chat ? <Chip size="small" label="Default language" /> : null}{provider.default_embedding ? <Chip size="small" label="Default embedding" /> : null}</Stack><Typography variant="caption" color="text.secondary">{provider.embedding_model ? `Embedding: ${provider.embedding_model}` : "Embedding: not selected"} · {provider.synthesis_model ? `Synthesis: ${provider.synthesis_model}` : "Synthesis: not selected"}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => openExistingConnection(provider)}>Configure</Button><Button size="small" onClick={() => void checkConnection(provider)}>Test</Button></Stack></Stack>)}
+      {!data?.providers?.some((provider) => provider.enabled && !(provider.type === "ollama" && provider.implicit)) ? <Typography variant="body2" color="text.secondary">No enabled connections. OSII will use its no-AI methods.</Typography> : null}
     </Stack></Paper></Stack>
 
     <Stack spacing={1.25}>
@@ -659,11 +672,10 @@ export function ProcessorsPage() {
     </Accordion>
 
     <Dialog open={connectionOpen} onClose={() => setConnectionOpen(false)} fullWidth maxWidth="sm"><Box component="form" onSubmit={(event) => void saveConnection(event)}>
-      <DialogTitle>Configure model connection</DialogTitle><DialogContent>
+      <DialogTitle>{editingProviderId ? "Configure LLM" : "Add LLM"}</DialogTitle><DialogContent>
       {connectionOpen && !serviceLogs ? renderNotice() : null}
       <Stack spacing={1.5} sx={{ pt: 0.5 }}>
-        <TextField select label="Connection" value={providerForm.preset === "corporate" ? "corporate" : providerForm.type} disabled={Boolean(editingProviderId)} onChange={(event) => setProviderForm(blankProvider(event.target.value as ModelProvider["type"] | "corporate"))}><MenuItem value="ollama">Ollama</MenuItem><MenuItem value="openai">OpenAI-compatible endpoint</MenuItem><MenuItem value="corporate">Corporate endpoint (OpenAI-compatible)</MenuItem></TextField>
-        {providerForm.preset === "corporate" ? <Typography variant="body2" color="text.secondary">Use the URL, model names, and key supplied by your organization. This is an OpenAI-compatible connection, not a separate protocol. Corporate certificate trust must be configured in OSII&apos;s startup environment.</Typography> : null}
+        <TextField select label="Connection" value={providerForm.type} disabled={Boolean(editingProviderId)} onChange={(event) => { setProviderForm(newConnectionProvider(event.target.value as ModelProvider["type"])); setApiKey(""); }} helperText="Use your endpoint's URL, model names, and API key. For a local model server, choose Ollama."><MenuItem value="openai">OpenAI-compatible endpoint</MenuItem><MenuItem value="ollama">Ollama (local model server)</MenuItem></TextField>
         <TextField label="Connection name" required disabled={Boolean(editingProviderId)} value={providerForm.id} onChange={(event) => setProviderForm({ ...providerForm, id: event.target.value.trim().toLowerCase() })} helperText="A reusable name such as base, mid, or top. Tools refer to this name, so it stays fixed after creation." />
         <TextField label="Endpoint URL" required value={providerForm.base_url} onChange={(event) => setProviderForm({ ...providerForm, base_url: event.target.value })} helperText={providerForm.type === "ollama" ? "Use an address reachable by the OSII backend. In containers, 127.0.0.1 means the container itself; use the host address supplied by your deployment." : "Use the OpenAI-compatible /v1 base address."} />
         {providerForm.type !== "ollama" ? <TextField type="password" label={providerForm.credential_present ? "API key (already configured)" : "API key"} value={apiKey} onChange={(event) => setApiKey(event.target.value)} helperText={providerForm.credential_help ?? `Saved locally in ${data?.configuration.files.secrets ?? "the active configuration directory's secrets.env"}. Never stored in .osii or sent to Toolbox processors.`} disabled={providerForm.credential_writable === false} /> : <Alert severity="info" icon={false}>Install and start Ollama yourself. OSII can inspect installed models and download the approved starters; use the Ollama CLI for other models and advanced options.</Alert>}

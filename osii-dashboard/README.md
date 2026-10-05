@@ -8,6 +8,10 @@ The dashboard is intentionally modular. It is a standalone frontend that talks t
 
 In packaged OSII, the **launcher** chooses the source folder, image release, and optional services, then starts the library. **Setup** in the dashboard is optional: it manages model connections and processing rules, not deployment. **Intake** selects files, processing steps, and starts a reviewed run. Informational source and service status is shown as context; controls that require a decision stay in the corresponding step. Local development uses `make dev` or `scripts/osii.ps1 dev` in place of the launcher.
 
+In **Setup**, **Add LLM** opens one connection form, defaulting to an
+OpenAI-compatible endpoint. Ollama is an optional choice in the **Connection**
+dropdown, not a separate setup action. Existing saved connections remain editable.
+
 In **Intake**, paste a document folder and select **Use folder**, or use **Browse**.
 All matching files are included automatically, including subfolders by default.
 **Include patterns** and **Exclude patterns** are always visible beside the
