@@ -586,6 +586,14 @@ export type CapabilityReadiness = {
   available: boolean;
   detail: string;
   bundled: boolean;
+  origin?: {
+    label: string;
+    description: string;
+    implementation?: string;
+    endpoint_source?: string;
+    configuration_file?: string;
+    configuration_key?: string;
+  };
   model?: string;
   base_url?: string;
   lexical?: boolean;
@@ -749,6 +757,7 @@ export type ProcessorEndpoint = {
 export type ModelProvider = {
   id: string;
   type: "ollama" | "openai";
+  preset?: "corporate";
   base_url: string;
   enabled: boolean;
   priority: number;

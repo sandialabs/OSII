@@ -3,6 +3,7 @@ import json
 import tomllib
 
 from osii.configuration import (
+    config_directory,
     configuration_status,
     configured_tools,
     load_models_config,
@@ -12,6 +13,25 @@ from osii.configuration import (
 )
 from osii.domain.processing.extractor_selection import load_extractor_routes
 from osii.domain.processor_settings import load_processor_settings
+
+
+def test_core_configuration_defaults_to_checkout_not_launcher_home(monkeypatch):
+    monkeypatch.delenv("OSII_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("OSII_RUNTIME_DIR", raising=False)
+    checkout = Path(__file__).resolve().parents[2]
+    assert config_directory() == checkout / "osii-data" / "config"
+
+
+def test_core_configuration_honors_explicit_runtime_directory(monkeypatch, tmp_path):
+    monkeypatch.delenv("OSII_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("OSII_RUNTIME_DIR", str(tmp_path / "runtime"))
+    assert config_directory() == tmp_path / "runtime" / "config"
+
+
+def test_configuration_status_reports_actual_secret_file_override(monkeypatch, tmp_path):
+    secret = tmp_path / "managed-secrets.env"
+    monkeypatch.setenv("OSII_ENV_FILE", str(secret))
+    assert configuration_status()["files"]["secrets"] == str(secret)
 
 
 class FakeDescriptorResponse:

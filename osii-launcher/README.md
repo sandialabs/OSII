@@ -151,6 +151,13 @@ profiles.
 Profiles contain non-secret launcher settings and are stored outside the source
 repository in the operating system's application-data directory:
 
+This is deliberate for an installed launcher: signed macOS app bundles and
+Windows installation directories are not writable configuration workspaces.
+Configuration remains together in each profile's `deployment/` directory,
+not scattered across application locations. Source development is separate:
+`make dev` and `.\scripts\osii.ps1 dev` default to the checkout's ignored
+`osii-data/config/`, unless an explicit configuration/runtime path overrides it.
+
 Each profile has sibling `data/` (writable `.osii` state) and `deployment/`
 (editable TOML and local secrets) directories. The original source folder can
 be elsewhere, including a read-only shared drive. **Export profile** saves a

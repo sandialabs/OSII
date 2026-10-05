@@ -248,6 +248,7 @@ def test_intake_readiness_reports_bundled_tools(
     )
     monkeypatch.delenv("OSII_EMBEDDING_BASE_URL", raising=False)
     monkeypatch.delenv("OSII_MODEL_BASE_URL", raising=False)
+    monkeypatch.delenv("NEMOTRON_BASE_URL", raising=False)
 
     response = client.get("/api/intake/readiness")
 
@@ -257,8 +258,65 @@ def test_intake_readiness_reports_bundled_tools(
     assert payload["extractors"][0]["available"] is True
     tika = next(item for item in payload["extractors"] if item["id"] == "tika")
     assert tika["available"] is True
+    assert tika["bundled"] is False
+    assert tika["origin"]["label"] == "Optional Apache service"
+    assert tika["origin"]["implementation"] == "compose.yaml: services.tika"
+    assert payload["extractors"][0]["origin"]["label"] == "Bundled Core"
+    assert payload["extractors"][0]["origin"]["configuration_file"].endswith("tools.toml")
+    assert not any(item["id"] == "pdf_default" for item in payload["extractors"])
     assert payload["synthesizers"] == []
     assert payload["embedders"][0]["available"] is False
+
+
+def test_nemotron_appears_only_when_explicitly_configured(client, monkeypatch):
+    from osii.domain.processing import capability_readiness
+    from osii.configuration import save_tools_config
+
+    monkeypatch.setattr(capability_readiness, "_service_probe", lambda _: (True, "Connected"))
+    monkeypatch.setattr(capability_readiness, "discover_remote_processors", lambda **_: [])
+    monkeypatch.setattr(capability_readiness, "embedding_readiness", lambda _: {})
+    monkeypatch.delenv("NEMOTRON_BASE_URL", raising=False)
+    save_tools_config({"version": 1, "routes": {"extractor": [
+        {"extractor": "banyan", "extensions": [".pdf"], "fallbacks": []},
+    ]}})
+
+    payload = client.get("/api/intake/readiness").json()
+    legacy = next(item for item in payload["extractors"] if item["id"] == "pdf_default")
+    assert legacy["available"] is False
+    assert legacy["origin"]["label"] == "Configured legacy adapter"
+
+    save_tools_config({"version": 1})
+    monkeypatch.setenv("NEMOTRON_BASE_URL", "http://models.example.test/v1")
+    payload = client.get("/api/intake/readiness").json()
+    assert next(item for item in payload["extractors"] if item["id"] == "pdf_default")["available"] is True
+
+
+def test_processor_origins_point_to_registration_or_model_configuration(client, monkeypatch):
+    from osii.domain.processing import capability_readiness
+    from osii.configuration import save_tools_config
+
+    monkeypatch.setattr(capability_readiness, "_service_probe", lambda _: (True, "Connected"))
+    monkeypatch.setattr(capability_readiness, "embedding_readiness", lambda _: {})
+    monkeypatch.setattr(capability_readiness, "processor_model", lambda *_, **__: "chat-v1")
+    save_tools_config({"version": 1, "tools": {"custom": {
+        "processor_id": "example.custom", "kind": "enricher", "enabled": True,
+        "runtime": {"endpoint": "http://custom.example.test"},
+    }}})
+    descriptors = [
+        {"name": "example.custom", "kind": "enricher", "base_url": "http://custom.example.test"},
+        {"name": "toolbox.readable-wiki", "kind": "enricher", "base_url": "http://127.0.0.1:8099"},
+        {"name": "openai.synthesizer", "kind": "synthesizer", "base_url": "http://127.0.0.1:8095/openai/synthesizer"},
+        {"name": "local.custom", "kind": "enricher", "base_url": "http://unknown.example.test"},
+    ]
+    monkeypatch.setattr(capability_readiness, "discover_remote_processors", lambda **_: descriptors)
+
+    payload = client.get("/api/intake/readiness").json()
+    enrichers = {item["id"]: item for item in payload["enrichers"]}
+    assert enrichers["example.custom"]["origin"]["configuration_key"] == "tools.custom"
+    assert enrichers["toolbox.readable-wiki"]["origin"]["label"] == "Optional Toolbox service"
+    assert "builtin_tools_config" in enrichers["toolbox.readable-wiki"]["origin"]["implementation"]
+    assert enrichers["local.custom"]["bundled"] is False
+    assert payload["synthesizers"][0]["origin"]["configuration_file"].endswith("models.toml")
 
 
 def test_intake_readiness_hides_compatibility_duplicates_and_labels_model(

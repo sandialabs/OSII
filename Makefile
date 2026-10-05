@@ -17,11 +17,7 @@ OSII_IMAGE_PREFIX ?= localhost/osii
 OSII_IMAGE_TAG ?= latest
 OSII_BASE_IMAGE ?= registry.access.redhat.com/ubi9/ubi:latest
 OSII_PYTHON_VERSION ?= 3.12
-ifeq ($(shell uname -s),Darwin)
-OSII_CONFIG_DIR_HOST ?= $(if $(OSII_CONFIG_DIR),$(OSII_CONFIG_DIR),$(HOME)/Library/Application Support/org.osii.launcher/profiles/development/deployment)
-else
-OSII_CONFIG_DIR_HOST ?= $(if $(OSII_CONFIG_DIR),$(OSII_CONFIG_DIR),$(or $(XDG_DATA_HOME),$(HOME)/.local/share)/org.osii.launcher/profiles/development/deployment)
-endif
+OSII_CONFIG_DIR_HOST ?= $(if $(OSII_CONFIG_DIR),$(OSII_CONFIG_DIR),$(or $(OSII_RUNTIME_DIR),./osii-data)/config)
 OSII_CA_BUNDLE ?=
 SHARED_DRIVE_PATH ?=
 SHARED_DRIVE_DATA ?= ./osii-data/shared-drive

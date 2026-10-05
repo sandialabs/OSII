@@ -6,7 +6,6 @@ import json
 import os
 from pathlib import Path
 import re
-import sys
 import tempfile
 import tomllib
 from typing import Any
@@ -25,16 +24,16 @@ _CONFIG_ERRORS: dict[Path, str] = {}
 
 
 def config_directory() -> Path:
+    """Use an explicit deployment workspace or keep source development in its checkout."""
     explicit = os.getenv("OSII_CONFIG_DIR", "").strip()
     if explicit:
         return Path(explicit).expanduser().resolve()
-    if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "org.osii.launcher" / "profiles" / "development" / "deployment"
-    if os.name == "nt":
-        root = Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming"))
-        return root / "org.osii.launcher" / "profiles" / "development" / "deployment"
-    root = Path(os.getenv("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return root / "org.osii.launcher" / "profiles" / "development" / "deployment"
+    checkout = Path(__file__).resolve().parents[2]
+    workspace = checkout if (checkout / "compose.yaml").is_file() else Path.cwd()
+    runtime = Path(os.getenv("OSII_RUNTIME_DIR", "osii-data")).expanduser()
+    if not runtime.is_absolute():
+        runtime = workspace / runtime
+    return (runtime / "config").resolve()
 
 
 def models_path() -> Path:
@@ -414,7 +413,11 @@ def tool_for_processor(processor_id: str, osii_root: Path | None = None) -> tupl
 
 def configuration_status() -> dict[str, Any]:
     """Return paths and parse failures without exposing any secret values."""
-    files = {"models": models_path(), "tools": tools_path(), "secrets": secrets_path()}
+    secret_file = os.getenv("OSII_ENV_FILE", "").strip()
+    files = {
+        "models": models_path(), "tools": tools_path(),
+        "secrets": Path(secret_file).expanduser().resolve() if secret_file else secrets_path(),
+    }
     return {
         "directory": str(config_directory()),
         "active_profile": active_profile(),

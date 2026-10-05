@@ -16,11 +16,12 @@ from osii.domain.model_provider_config import (
     DEFAULT_OLLAMA_EMBEDDING_MODEL,
 )
 from osii.domain.env_credentials import (
+    configured_env_file,
     local_config_writable,
     resolve_env_value,
     write_env_value,
 )
-from osii.configuration import load_models_config, save_models_config
+from osii.configuration import load_models_config, save_models_config, secrets_path
 
 
 router = APIRouter(prefix="/api/admin/model-providers", tags=["model-provider-administration"])
@@ -69,6 +70,7 @@ def _load(osii_root) -> list[dict[str, Any]]:
             "credential_env": str(connection.get("api_key_env") or ""),
             "default_chat": str(defaults.get("chat") or "") == str(alias),
             "default_embedding": str(defaults.get("embedding") or "") == str(alias),
+            **({"preset": connection["preset"]} if connection.get("preset") else {}),
         })
     by_id = {str(item["id"]): item for item in records}
     merged: list[dict[str, Any]] = []
@@ -136,6 +138,8 @@ def _save(osii_root, records: list[dict[str, Any]]) -> None:
             "priority": int(record.get("priority", 100)),
         }
         credential_env = str(record.get("credential_env") or "").strip()
+        if record.get("preset"):
+            common["preset"] = record["preset"]
         if credential_env:
             common["api_key_env"] = credential_env
         language = str(record.get("chat_model") or record.get("synthesis_model") or "").strip()
@@ -180,6 +184,9 @@ def _validate(payload: dict[str, Any], provider_id: str | None = None) -> dict[s
     provider_type = str(payload.get("type") or "").strip().lower()
     if provider_type not in VALID_TYPES:
         raise HTTPException(status_code=422, detail=f"type must be one of {sorted(VALID_TYPES)}")
+    preset = str(payload.get("preset") or "").strip()
+    if preset not in {"", "corporate"} or (preset == "corporate" and provider_type != "openai"):
+        raise HTTPException(status_code=422, detail="The corporate preset requires an OpenAI-compatible endpoint")
     base_url = str(payload.get("base_url") or "").strip().rstrip("/")
     if not base_url.startswith(("http://", "https://")):
         raise HTTPException(status_code=422, detail="base_url must start with http:// or https://")
@@ -189,6 +196,7 @@ def _validate(payload: dict[str, Any], provider_id: str | None = None) -> dict[s
     return {
         "id": identifier,
         "type": provider_type,
+        **({"preset": preset} if preset else {}),
         "base_url": base_url,
         "enabled": bool(payload.get("enabled", False)),
         "priority": int(payload.get("priority", 100)),
@@ -210,7 +218,8 @@ def _credential_help(name: str, source: str | None) -> str:
         )
     if source == "secret_file":
         return f"OSII is using the secret file configured by {name}_FILE. Update that file to change the key."
-    return "Saved locally in this profile's deployment/secrets.env; never stored in a library or sent to Toolbox processors."
+    path = configured_env_file() or secrets_path()
+    return f"Saved locally in {path}; never stored in .osii or sent to Toolbox processors."
 
 
 def _public(record: dict[str, Any]) -> dict[str, Any]:

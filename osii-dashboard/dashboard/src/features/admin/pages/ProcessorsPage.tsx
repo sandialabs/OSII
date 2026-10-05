@@ -42,7 +42,7 @@ const CAPABILITY_ICONS = {
 };
 const BUNDLED_FALLBACKS = new Set(["native_text", "local.native-text", "local.extractive-preview", "local.hashing", "local.stats-keywords"]);
 
-function blankProvider(type: ModelProvider["type"]): ModelProvider {
+function blankProvider(type: ModelProvider["type"] | "corporate"): ModelProvider {
   if (type === "openai") {
     return {
       id: "openai-compatible", type, base_url: "", enabled: true,
@@ -60,9 +60,9 @@ function blankProvider(type: ModelProvider["type"]): ModelProvider {
     };
   }
   return {
-    id: "openai-compatible", type, base_url: "https://", enabled: true,
-    priority: 50, embedding_model: "", synthesis_model: "", chat_model: "",
-    credential_env: "OSII_MODEL_API_KEY", default_chat: false, default_embedding: false,
+    id: "corporate-endpoint", type: "openai", preset: "corporate", base_url: "", enabled: true,
+    priority: 10, embedding_model: "", synthesis_model: "", chat_model: "",
+    credential_env: "OSII_CORPORATE_API_KEY", default_chat: false, default_embedding: false,
   };
 }
 
@@ -182,7 +182,16 @@ export function ProcessorsPage() {
     ]);
   };
 
-  const openNewConnection = (type: ModelProvider["type"]) => {
+  const copyConfigurationPath = async (path: string) => {
+    try {
+      await navigator.clipboard.writeText(path);
+      notify(`Copied configuration path: ${path}`, "success");
+    } catch {
+      notify(`Copy this path manually: ${path}`, "info");
+    }
+  };
+
+  const openNewConnection = (type: ModelProvider["type"] | "corporate") => {
     const existingOllama = type === "ollama"
       ? providerData.data?.providers.find((provider) => provider.type === "ollama")
       : undefined;
@@ -538,18 +547,20 @@ export function ProcessorsPage() {
             (id) => id === item.id || item.aliases?.includes(id),
           ))
           : selected?.id === item.id || item.aliases?.includes(selected?.id ?? "");
-        return <Box key={item.id} sx={{ py: 0.5 }}><Stack spacing={0.6}>
+        return <Box key={item.id} sx={{ py: 1, borderBottom: "1px solid", borderColor: "divider", "&:last-child": { borderBottom: 0 } }}><Stack spacing={0.6}>
           <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
             <Typography variant="body2" fontWeight={700}>{item.display_name}</Typography>
             {isSelected ? <Chip size="small" color="primary" label={kind === "extractor" ? "In routing" : "Default"} /> : null}
-            {BUNDLED_FALLBACKS.has(item.id) ? <Chip size="small" variant="outlined" label="Bundled fallback" /> : null}
+            {item.origin ? <Chip size="small" variant="outlined" label={item.origin.label} /> : null}
             <Chip size="small" color={item.available ? "success" : "default"} label={item.available ? "Available" : "Unavailable"} />
           </Stack>
           <Typography variant="caption" color="text.secondary">{item.description}</Typography>
+          {item.origin ? <Typography variant="caption" color="text.secondary">{item.origin.description}</Typography> : null}
+          {item.origin?.configuration_file ? <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap><Typography variant="caption" color="text.secondary">Configuration: <code>{item.origin.configuration_file.split(/[\\/]/).pop()}</code> · {item.origin.configuration_key}</Typography><Button size="small" title={item.origin.configuration_file} onClick={() => void copyConfigurationPath(item.origin!.configuration_file!)}>Copy path</Button></Stack> : null}
           {!item.available ? <Typography variant="caption" color="text.secondary">{item.detail}</Typography> : null}
           {Object.keys(schema?.properties ?? {}).length ? <Button size="small" sx={{ alignSelf: "flex-start", px: 0 }} onClick={() => editingCapability === item.id ? setEditingCapability(null) : editCapability(item)}>{editingCapability === item.id ? "Hide settings" : "Settings"}</Button> : null}
           {editingCapability === item.id ? <Stack spacing={1}>{Object.entries(schema?.properties ?? {}).map(([name, property]) => <ConfigInput key={name} name={name} property={property} value={capabilityDraft[name]} onChange={(value) => setCapabilityDraft((current) => ({ ...current, [name]: value }))} />)}<Button variant="contained" size="small" onClick={() => void saveCapability(item)} sx={{ alignSelf: "flex-start" }}>Save settings</Button></Stack> : null}
-          <Box component="details"><Typography component="summary" variant="caption" sx={{ cursor: "pointer" }}>Technical identity</Typography><Typography variant="caption" component="div"><code>{item.id}</code>{item.base_url ? <> · <code>{item.base_url}</code></> : null}</Typography></Box>
+          <Box component="details" sx={{ overflowWrap: "anywhere" }}><Typography component="summary" variant="caption" sx={{ cursor: "pointer" }}>Implementation and configuration source</Typography><Typography variant="caption" component="div">Processor: <code>{item.id}</code>{item.base_url ? <> · <code>{item.base_url}</code></> : null}</Typography>{item.origin?.implementation ? <Typography variant="caption" component="div">Implementation: <code>{item.origin.implementation}</code></Typography> : null}{item.origin?.endpoint_source ? <Typography variant="caption" component="div">Endpoint: {item.origin.endpoint_source}</Typography> : null}{item.origin?.configuration_file ? <Typography variant="caption" component="div">Configuration: <code>{item.origin.configuration_file}</code></Typography> : null}</Box>
         </Stack></Box>;
       })}
       {!methods.length ? <Typography variant="body2" color="text.secondary">Checking methods…</Typography> : null}
@@ -605,14 +616,14 @@ export function ProcessorsPage() {
     <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}><Stack spacing={1.25}>
       <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1} alignItems={{ md: "center" }}>
         <Stack spacing={0.2}><Typography fontWeight={700}>Add or test a connection</Typography><Typography variant="body2" color="text.secondary">A model connection enables generated summaries, chat, and/or semantic search. Use a shared endpoint or Ollama; neither is required for your first Intake.</Typography></Stack>
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap><Button variant="contained" color="secondary" disabled={!providerData.data} onClick={() => openNewConnection("openai")}>Add OpenAI-compatible</Button><Button variant="outlined" color="secondary" disabled={!providerData.data} onClick={() => openNewConnection("ollama")}>Add Ollama connection</Button></Stack>
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap><Button variant="contained" color="secondary" disabled={!providerData.data} onClick={() => openNewConnection("openai")}>Add OpenAI-compatible</Button><Button variant="outlined" color="secondary" disabled={!providerData.data} onClick={() => openNewConnection("ollama")}>Add Ollama connection</Button><Button variant="outlined" color="secondary" disabled={!providerData.data} onClick={() => openNewConnection("corporate")}>Add corporate endpoint</Button></Stack>
       </Stack>
-      {(data?.providers ?? []).filter((provider) => provider.enabled).map((provider) => <Stack key={provider.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1} alignItems={{ sm: "center" }}><Stack><Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap><Typography variant="body2" fontWeight={700}>{provider.type === "ollama" ? "Ollama" : "OpenAI-compatible"} · {provider.id}</Typography>{provider.default_chat ? <Chip size="small" label="Default language" /> : null}{provider.default_embedding ? <Chip size="small" label="Default embedding" /> : null}</Stack><Typography variant="caption" color="text.secondary">{provider.embedding_model ? `Embedding: ${provider.embedding_model}` : "Embedding: not selected"} · {provider.synthesis_model ? `Synthesis: ${provider.synthesis_model}` : "Synthesis: not selected"}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => openExistingConnection(provider)}>Configure</Button><Button size="small" onClick={() => void checkConnection(provider)}>Test</Button></Stack></Stack>)}
+      {(data?.providers ?? []).filter((provider) => provider.enabled).map((provider) => <Stack key={provider.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1} alignItems={{ sm: "center" }}><Stack><Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap><Typography variant="body2" fontWeight={700}>{provider.type === "ollama" ? "Ollama" : provider.preset === "corporate" ? "Corporate endpoint" : "OpenAI-compatible"} · {provider.id}</Typography>{provider.default_chat ? <Chip size="small" label="Default language" /> : null}{provider.default_embedding ? <Chip size="small" label="Default embedding" /> : null}</Stack><Typography variant="caption" color="text.secondary">{provider.embedding_model ? `Embedding: ${provider.embedding_model}` : "Embedding: not selected"} · {provider.synthesis_model ? `Synthesis: ${provider.synthesis_model}` : "Synthesis: not selected"}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => openExistingConnection(provider)}>Configure</Button><Button size="small" onClick={() => void checkConnection(provider)}>Test</Button></Stack></Stack>)}
       {!data?.providers?.some((provider) => provider.enabled) ? <Typography variant="body2" color="text.secondary">No enabled connections. OSII will use its no-AI methods.</Typography> : null}
     </Stack></Paper></Stack>
 
     <Stack spacing={1.25}>
-      <Stack spacing={0.25}><Typography variant="overline" color="secondary.main" fontWeight={700}>Processing preferences</Typography><Typography variant="h6" fontWeight={700}>How OSII works with files</Typography><Typography variant="body2" color="text.secondary">The available methods reflect services chosen in the launcher. Open a method only if you need to change settings or file-type routing.</Typography></Stack>
+      <Stack spacing={0.25}><Typography variant="overline" color="secondary.main" fontWeight={700}>Processing preferences</Typography><Typography variant="h6" fontWeight={700}>How OSII works with files</Typography><Typography variant="body2" color="text.secondary">Methods come from bundled Core code, optional services, and configured endpoints. Each entry identifies its source. Open a method to review its settings or file-type routing.</Typography></Stack>
       {renderCapabilityDrawer("extractor")}
       {renderCapabilityDrawer("synthesizer")}
       {renderCapabilityDrawer("embedder")}
@@ -623,7 +634,7 @@ export function ProcessorsPage() {
     <Accordion variant="outlined" disableGutters elevation={0} sx={{ borderRadius: "12px !important", overflow: "hidden" }}>
       <AccordionSummary expandIcon={<ExpandMoreIcon />}><Stack><Typography fontWeight={700}>Advanced &amp; diagnostics</Typography><Typography variant="caption" color="text.secondary">Technical status, connection maintenance, custom Processor APIs, and logs.</Typography></Stack></AccordionSummary>
       <AccordionDetails><Stack spacing={2}>
-        {data?.configuration ? <Typography variant="body2" color="text.secondary">This library&apos;s editable configuration: <code>{data.configuration.directory}</code> (models.toml, tools.toml, secrets.env). Originals and the portable .osii sidecar are separate.</Typography> : null}
+        {data?.configuration ? <Stack spacing={0.75}><Typography variant="body2" fontWeight={700}>Active configuration · {data.configuration.active_profile}</Typography><Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere" }}><code>{data.configuration.directory}</code></Typography><Typography variant="body2" color="text.secondary">Development defaults to the checkout&apos;s ignored osii-data/config/ directory. Installed launchers use a writable profile workspace. OSII_CONFIG_DIR overrides either location. Originals and portable .osii artifacts are separate.</Typography>{Object.entries(data.configuration.files).map(([name, path]) => <Stack key={name} direction="row" spacing={1} alignItems="center"><Typography variant="caption" sx={{ overflowWrap: "anywhere", flex: 1 }}><code>{path}</code></Typography><Button size="small" sx={{ flexShrink: 0 }} onClick={() => void copyConfigurationPath(path)}>Copy path</Button></Stack>)}</Stack> : null}
         <Accordion variant="outlined" disableGutters><AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>Service status</Typography></AccordionSummary><AccordionDetails><Stack divider={<Divider flexItem />}>
           <Typography variant="body2" color="text.secondary">The launcher normally starts and stops container services. The controls below apply only to a local development session.</Typography>
           {(data?.services ?? []).map((service) => <ServiceRow key={service.id} service={service} busy={serviceBusy === service.id} onAction={(action) => void runServiceAction(service, action)} onLogs={() => void showLogs(service)} />)}
@@ -651,10 +662,11 @@ export function ProcessorsPage() {
       <DialogTitle>Configure model connection</DialogTitle><DialogContent>
       {connectionOpen && !serviceLogs ? renderNotice() : null}
       <Stack spacing={1.5} sx={{ pt: 0.5 }}>
-        <TextField select label="Connection" value={providerForm.type} disabled={Boolean(editingProviderId)} onChange={(event) => setProviderForm(blankProvider(event.target.value as ModelProvider["type"]))}><MenuItem value="ollama">Ollama</MenuItem><MenuItem value="openai">OpenAI-compatible endpoint</MenuItem></TextField>
+        <TextField select label="Connection" value={providerForm.preset === "corporate" ? "corporate" : providerForm.type} disabled={Boolean(editingProviderId)} onChange={(event) => setProviderForm(blankProvider(event.target.value as ModelProvider["type"] | "corporate"))}><MenuItem value="ollama">Ollama</MenuItem><MenuItem value="openai">OpenAI-compatible endpoint</MenuItem><MenuItem value="corporate">Corporate endpoint (OpenAI-compatible)</MenuItem></TextField>
+        {providerForm.preset === "corporate" ? <Typography variant="body2" color="text.secondary">Use the URL, model names, and key supplied by your organization. This is an OpenAI-compatible connection, not a separate protocol. Corporate certificate trust must be configured in OSII&apos;s startup environment.</Typography> : null}
         <TextField label="Connection name" required disabled={Boolean(editingProviderId)} value={providerForm.id} onChange={(event) => setProviderForm({ ...providerForm, id: event.target.value.trim().toLowerCase() })} helperText="A reusable name such as base, mid, or top. Tools refer to this name, so it stays fixed after creation." />
         <TextField label="Endpoint URL" required value={providerForm.base_url} onChange={(event) => setProviderForm({ ...providerForm, base_url: event.target.value })} helperText={providerForm.type === "ollama" ? "Use an address reachable by the OSII backend. In containers, 127.0.0.1 means the container itself; use the host address supplied by your deployment." : "Use the OpenAI-compatible /v1 base address."} />
-        {providerForm.type !== "ollama" ? <TextField type="password" label={providerForm.credential_present ? "API key (already configured)" : "API key"} value={apiKey} onChange={(event) => setApiKey(event.target.value)} helperText={providerForm.credential_help ?? "Saved locally in this profile's deployment/secrets.env. It is never stored in a library or sent to Toolbox processors."} disabled={providerForm.credential_writable === false} /> : <Alert severity="info" icon={false}>Install and start Ollama yourself. OSII can inspect installed models and download the approved starters; use the Ollama CLI for other models and advanced options.</Alert>}
+        {providerForm.type !== "ollama" ? <TextField type="password" label={providerForm.credential_present ? "API key (already configured)" : "API key"} value={apiKey} onChange={(event) => setApiKey(event.target.value)} helperText={providerForm.credential_help ?? `Saved locally in ${data?.configuration.files.secrets ?? "the active configuration directory's secrets.env"}. Never stored in .osii or sent to Toolbox processors.`} disabled={providerForm.credential_writable === false} /> : <Alert severity="info" icon={false}>Install and start Ollama yourself. OSII can inspect installed models and download the approved starters; use the Ollama CLI for other models and advanced options.</Alert>}
         <TextField label="Language model" value={providerForm.chat_model} onChange={(event) => setProviderForm({ ...providerForm, chat_model: event.target.value, synthesis_model: event.target.value })} helperText="Used for chat, summaries, and wiki generation." inputProps={{ list: "osii-model-options" }} />
         <FormControlLabel control={<Switch checked={Boolean(providerForm.default_chat)} disabled={!providerForm.chat_model} onChange={(event) => setProviderForm({ ...providerForm, default_chat: event.target.checked })} />} label="Use this connection by default for chat and synthesis" />
         <TextField label="Embedding model" value={providerForm.embedding_model} onChange={(event) => setProviderForm({ ...providerForm, embedding_model: event.target.value })} helperText="Powers semantic search. If this connection has no embedding model, configure one on another connection; BM25 is the keyword fallback." inputProps={{ list: "osii-model-options" }} />

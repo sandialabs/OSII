@@ -76,8 +76,9 @@ Host Python 3.12 dependencies live in the ignored `osii-env/` directory. OSII us
 that visible name because current macOS Python releases can skip editable
 package path files beneath a hidden `.venv` directory.
 
-Normal `make dev` reads model connections from the platform application-data
-`profiles/development/deployment/models.toml` file. Add an OpenAI-compatible endpoint from **Setup**, or
+Normal `make dev` reads model connections from the checkout's ignored
+`osii-data/config/models.toml` file, unless a configuration or runtime directory
+is explicitly selected. Add an OpenAI-compatible or corporate endpoint from **Setup**, or
 use a separately installed Ollama service. **OSII does not install or launch
 Ollama:** manage the separate application yourself when you use it, then open it or run `ollama serve`. In
 **Setup → Model connections**, OSII queries `/api/tags` and shows
@@ -151,8 +152,9 @@ recovery confusing. Container deployments report capability health but disable
 local lifecycle controls.
 
 For host development, **Setup → AI model connections** can save an API key in the
-platform application-data `profiles/development/deployment/secrets.env`. The file is plaintext and kept outside the repository; it
-must not be copied or shared. Only the key's environment-variable name enters
+checkout's ignored `osii-data/config/secrets.env`. The file is plaintext and
+must not be committed or shared. Installed launchers instead use their writable
+profile workspace. Only the key's environment-variable name enters
 `models.toml`; neither the key nor its name needs to enter `.osii`. The backend and model-provider bridge reread the file as needed.
 Process environment values take precedence, and file writes are disabled in
 container or administrator-managed deployments.

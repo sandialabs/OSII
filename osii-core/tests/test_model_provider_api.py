@@ -39,6 +39,33 @@ def test_default_ollama_provider_uses_small_us_models(client):
     assert {item["model"] for item in payload["ollama_recommendations"]} == {"all-minilm", "llama3.2:1b"}
 
 
+def test_corporate_preset_roundtrips_without_a_new_protocol(client):
+    response = client.put("/api/admin/model-providers/corporate-endpoint", json={
+        "type": "openai", "preset": "corporate",
+        "base_url": "https://models.example.test/v1", "enabled": True,
+        "chat_model": "chat-v1", "embedding_model": "embed-v1",
+        "credential_env": "OSII_CORPORATE_API_KEY",
+    })
+    assert response.status_code == 200
+    providers = client.get("/api/admin/model-providers").json()["providers"]
+    saved = next(item for item in providers if item["id"] == "corporate-endpoint")
+    assert saved["preset"] == "corporate"
+    assert saved["type"] == "openai"
+    assert saved["chat_model"] == "chat-v1"
+    assert saved["embedding_model"] == "embed-v1"
+    config = (Path(os.environ["OSII_CONFIG_DIR"]) / "models.toml").read_text()
+    assert 'type = "openai-compatible"' in config
+    assert 'preset = "corporate"' in config
+    assert str(Path(os.environ["OSII_CONFIG_DIR"]) / "secrets.env") in saved["credential_help"]
+
+
+def test_corporate_preset_rejects_incompatible_transport(client):
+    response = client.put("/api/admin/model-providers/corporate-endpoint", json={
+        "type": "ollama", "preset": "corporate", "base_url": "http://localhost:11434",
+    })
+    assert response.status_code == 422
+
+
 def test_explicitly_disabling_model_providers_restores_local_baselines(client, temp_osii_root):
     response = client.put("/api/admin/model-providers/base", json={
         "type": "ollama",

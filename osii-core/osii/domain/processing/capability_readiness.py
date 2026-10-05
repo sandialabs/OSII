@@ -11,7 +11,89 @@ from osii.domain.catalog_db import list_semantic_indexes
 from osii.domain.model_provider_config import processor_model, selected_processor
 from osii.indexing.common import embeddings_meta_path
 from osii.processors.remote import discover_remote_processors
-from osii.configuration import configured_tools
+from osii.configuration import configured_tools, load_tools_config, models_path, tools_path
+from osii.domain.processing.extractor_selection import load_extractor_routes
+
+
+CORE_SERVICES = {
+    "local.native-text": "local-extractor",
+    "local.tesseract-page-ocr": "local-tesseract",
+    "local.extractive-preview": "local-synthesizer",
+    "local.hashing": "local-embedder",
+    "local.stats-keywords": "local-enricher",
+}
+CORE_IMPLEMENTATIONS = {
+    "native_text": "osii-core/osii/extraction/native_text_extractor.py",
+    "stats_keywords": "osii-core/osii/enrichment/stats_keywords.py",
+    "noun_adjective_ngrams": "osii-core/osii/enrichment/linguistic_examples.py",
+    "entity_candidates": "osii-core/osii/enrichment/linguistic_examples.py",
+}
+
+
+def _processor_origin(
+    item: dict[str, Any], registrations: list[dict[str, Any]], saved_tools: dict[str, Any],
+) -> dict[str, str]:
+    """Explain implementation and configuration separately from availability."""
+    identifier = str(item["id"])
+    if identifier in CORE_SERVICES or identifier in CORE_IMPLEMENTATIONS:
+        implementation = CORE_IMPLEMENTATIONS.get(identifier) or f"osii-core/services/{CORE_SERVICES[identifier]}"
+        return {
+            "label": "Bundled Core",
+            "description": "OSII's own local implementation; no external model required.",
+            "implementation": implementation,
+            "configuration_file": str(tools_path()),
+            "configuration_key": "routes / processor_settings",
+        }
+    if identifier == "tika":
+        return {
+            "label": "Optional Apache service",
+            "description": "Apache Tika runs separately. Compose supplies apache/tika in the optional ocr profile; make dev can start it from diagnostics.",
+            "implementation": "compose.yaml: services.tika",
+            "endpoint_source": "TIKA_URL (startup environment)",
+            "configuration_file": str(tools_path()),
+            "configuration_key": "routes.extractor",
+        }
+    if identifier == "pdf_default":
+        return {
+            "label": "Configured legacy adapter",
+            "description": "An older model-backed PDF integration, not a bundled Nemotron model or a default service.",
+            "implementation": "osii-core/osii/extraction/banyan_extractor.py",
+            "endpoint_source": "NEMOTRON_BASE_URL (startup environment)",
+            "configuration_file": str(tools_path()),
+            "configuration_key": "routes.extractor / processor_settings.pdf_default",
+        }
+    if identifier.startswith(("ollama.", "openai.")):
+        return {
+            "label": "Model connection",
+            "description": "OSII's bundled bridge calls a separately hosted model; the model is not included in Core.",
+            "implementation": "osii-core/services/model-provider-bridge",
+            "configuration_file": str(models_path()),
+            "configuration_key": "models / defaults",
+        }
+    if identifier == "embedding":
+        return {
+            "label": "External embedding endpoint",
+            "description": "Embedding API selected through startup settings, not a bundled model.",
+            "endpoint_source": "OSII_EMBEDDING_BASE_URL / OSII_MODEL_BASE_URL and EMBEDDING_MODEL",
+        }
+    endpoint = str(item.get("base_url") or "").rstrip("/")
+    for registration in registrations:
+        if registration["base_url"] != endpoint or not endpoint:
+            continue
+        tool_id = str(registration["id"])
+        saved = tool_id in saved_tools
+        return {
+            "label": "Configured processor" if saved else "Optional Toolbox service",
+            "description": "Separately deployed Processor API service." if saved else "Development registration supplied by OSII; availability depends on starting this optional service.",
+            "implementation": "Service descriptor at " + endpoint + "/v1/descriptor" if saved else "osii-core/osii/configuration.py: builtin_tools_config",
+            "configuration_file": str(tools_path()),
+            "configuration_key": f"tools.{tool_id} (saved override)" if not saved else f"tools.{tool_id}",
+        }
+    return {
+        "label": "External endpoint",
+        "description": "Discovered from a configured endpoint; this service is not identified as a bundled Core component.",
+        "endpoint_source": "OSII_PROCESSORS (startup environment) or legacy endpoint registration",
+    }
 
 
 def _service_probe(url: str, *, timeout: float = 3.0) -> tuple[bool, str]:
@@ -111,7 +193,7 @@ def _embedding_probe(osii_root: Path | None = None) -> dict[str, Any]:
                 "provider": provider,
                 "dimensions": dimensions,
                 "base_url": descriptor.get("base_url"),
-                "bundled": selected.startswith("local."),
+                "bundled": selected in CORE_SERVICES,
                 "lexical": selected == "local.hashing",
             }
     base_url = (
@@ -220,46 +302,53 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
             "description": "General text extraction for PDFs, Office files, and catch-all formats.",
             "available": tika_available,
             "detail": tika_detail,
-            "bundled": True,
-        },
-        {
-            "id": "pdf_default",
-            "aliases": [
-                "pdf_default",
-                "banyan",
-                "banyan_ingest",
-                "banyan-extract",
-            ],
-            "display_name": "Nemotron PDF parser",
-            "description": "Model-backed page parsing for PDFs.",
-            "available": nemotron_available,
-            "detail": nemotron_detail,
             "bundled": False,
-            "config_schema": {
-                "type": "object",
-                "properties": {
-                    "temperature": {
-                        "type": "number",
-                        "title": "VLM temperature",
-                        "description": "Controls sampling for the Nemotron page parser.",
-                        "minimum": 0,
-                        "maximum": 2,
-                        "default": 0,
-                    },
-                    "page_limit": {
-                        "type": "integer",
-                        "title": "Page limit",
-                        "description": "Optional demo/debug limit. Leave blank to process every page.",
-                        "minimum": 1,
-                    },
-                },
-                "additionalProperties": False,
-            },
+            "base_url": tika_url,
         },
     ]
+    nemotron_aliases = {"pdf_default", "banyan", "banyan_ingest", "banyan-extract"}
+    configured_extractors = {
+        name
+        for route in load_extractor_routes()
+        for name in [route.get("extractor"), *(route.get("fallbacks") or [])]
+    }
+    if nemotron_url or configured_extractors & nemotron_aliases:
+        extractors.append(
+            {
+                "id": "pdf_default",
+                "aliases": sorted(nemotron_aliases),
+                "display_name": "Nemotron PDF parser",
+                "description": "Model-backed page parsing for PDFs.",
+                "available": nemotron_available,
+                "detail": nemotron_detail,
+                "bundled": False,
+                "base_url": nemotron_url,
+                "config_schema": {
+                    "type": "object",
+                    "properties": {
+                        "temperature": {
+                            "type": "number",
+                            "title": "VLM temperature",
+                            "description": "Controls sampling for the Nemotron page parser.",
+                            "minimum": 0,
+                            "maximum": 2,
+                            "default": 0,
+                        },
+                        "page_limit": {
+                            "type": "integer",
+                            "title": "Page limit",
+                            "description": "Optional demo/debug limit. Leave blank to process every page.",
+                            "minimum": 1,
+                        },
+                    },
+                    "additionalProperties": False,
+                },
+            }
+        )
 
+    registrations = _registered_endpoints(osii_root)
     external = []
-    for endpoint in _registered_endpoints(osii_root):
+    for endpoint in registrations:
         if not endpoint.get("enabled"):
             continue
         base_url = str(endpoint.get("base_url") or "").rstrip("/")
@@ -300,7 +389,7 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
                 if not descriptor.get("error")
                 else descriptor["error"],
                 "base_url": descriptor.get("base_url"),
-                "bundled": str(descriptor.get("name", "")).startswith("local."),
+                "bundled": name in CORE_SERVICES,
                 "descriptor": descriptor if not descriptor.get("error") else None,
                 **({"model": model} if model else {}),
             }
@@ -400,7 +489,7 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
             item for item in compatibility_enrichers if item["id"] != "stats_keywords"
         ]
 
-    return {
+    result = {
         "defaults": {
             "extractor": os.getenv("OSII_DEFAULT_EXTRACTOR", "native_text"),
             "synthesizer": selected_processor("synthesizer", osii_root=osii_root),
@@ -414,3 +503,8 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
         "external": external,
         "semantic_indexes": list_semantic_indexes(osii_root),
     }
+    saved_tools = load_tools_config(osii_root).get("tools", {})
+    for group in ("extractors", "synthesizers", "embedders", "enrichers", "external"):
+        for item in result[group]:
+            item["origin"] = _processor_origin(item, registrations, saved_tools)
+    return result

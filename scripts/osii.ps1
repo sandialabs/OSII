@@ -94,8 +94,8 @@ if (-not $env:OSII_CONFIG_DIR_HOST) {
     if ($env:OSII_CONFIG_DIR) {
         $env:OSII_CONFIG_DIR_HOST = $env:OSII_CONFIG_DIR
     } else {
-        $ApplicationConfigRoot = if ($env:APPDATA) { $env:APPDATA } else { Join-Path $HOME "AppData\Roaming" }
-        $env:OSII_CONFIG_DIR_HOST = Join-Path $ApplicationConfigRoot "org.osii.launcher\profiles\development\deployment"
+        $ConfigurationRuntimeRoot = if ($env:OSII_RUNTIME_DIR) { $env:OSII_RUNTIME_DIR } else { Join-Path $RepositoryRoot "osii-data" }
+        $env:OSII_CONFIG_DIR_HOST = Join-Path $ConfigurationRuntimeRoot "config"
     }
 }
 

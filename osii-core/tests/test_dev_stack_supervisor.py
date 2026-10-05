@@ -149,3 +149,50 @@ def test_shared_drive_environment_does_not_create_missing_source(monkeypatch, tm
         DEV_STACK.build_environment(core_only=True)
 
     assert not source.exists()
+
+
+@pytest.mark.parametrize("wrapper_default", [False, True])
+def test_development_configuration_stays_in_checkout_and_imports_once(monkeypatch, tmp_path, wrapper_default):
+    checkout = tmp_path / "checkout"
+    source = checkout / "osii-data" / "source"
+    source.mkdir(parents=True)
+    monkeypatch.setattr(DEV_STACK, "REPOSITORY_ROOT", checkout)
+    monkeypatch.setattr(DEV_STACK, "load_dotenv", lambda _path: {})
+    monkeypatch.setattr(DEV_STACK.Path, "home", lambda: tmp_path / "home")
+    monkeypatch.setattr(DEV_STACK.sys, "platform", "darwin")
+    for name in ("OSII_CONFIG_DIR", "OSII_CONFIG_DIR_HOST", "OSII_RUNTIME_DIR", "OSII_SOURCE_DIR", "OSII_ROOT", "UPLOAD_ORIGINALS_ROOT"):
+        monkeypatch.delenv(name, raising=False)
+    if wrapper_default:
+        monkeypatch.setenv("OSII_CONFIG_DIR_HOST", "./osii-data/config")
+    previous = tmp_path / "home" / "Library" / "Application Support" / "org.osii.launcher" / "profiles" / "development" / "deployment"
+    previous.mkdir(parents=True)
+    (previous / "models.toml").write_text('version = 1\n', encoding="utf-8")
+    (previous / "secrets.env").write_text('TEST_KEY="test-value"\n', encoding="utf-8")
+
+    env = DEV_STACK.build_environment(core_only=True)
+
+    destination = checkout / "osii-data" / "config"
+    assert env["OSII_CONFIG_DIR"] == str(destination)
+    assert env["OSII_ENV_FILE"] == str(destination / "secrets.env")
+    assert (destination / "secrets.env").read_text() == (previous / "secrets.env").read_text()
+    if DEV_STACK.os.name != "nt":
+        assert (destination / "secrets.env").stat().st_mode & 0o777 == 0o600
+    (destination / "models.toml").write_text('version = 2\n', encoding="utf-8")
+    DEV_STACK.build_environment(core_only=True)
+    assert (destination / "models.toml").read_text() == 'version = 2\n'
+    assert (previous / "models.toml").read_text() == 'version = 1\n'
+
+
+def test_relative_configuration_override_is_checkout_relative(monkeypatch, tmp_path):
+    checkout = tmp_path / "checkout"
+    (checkout / "osii-data" / "source").mkdir(parents=True)
+    monkeypatch.setattr(DEV_STACK, "REPOSITORY_ROOT", checkout)
+    monkeypatch.setattr(DEV_STACK, "load_dotenv", lambda _path: {})
+    monkeypatch.setenv("OSII_CONFIG_DIR", "custom-config")
+    for name in ("OSII_RUNTIME_DIR", "OSII_SOURCE_DIR", "OSII_ROOT", "UPLOAD_ORIGINALS_ROOT"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    env = DEV_STACK.build_environment(core_only=True)
+
+    assert env["OSII_CONFIG_DIR"] == str(checkout / "custom-config")

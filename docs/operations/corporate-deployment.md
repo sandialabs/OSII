@@ -227,10 +227,11 @@ not prove its URL, credentials, TLS trust, or model permissions work.
 Once `models.toml` exists, its saved choices take precedence over these initial
 defaults. Edit the existing connection in Workbench Setup and enable its default
 chat/synthesis and semantic-embedding switches to change that profile; restarting
-with a new `.env` does not erase saved choices. A fresh clone can still reuse an
-existing profile outside the repository. On macOS the normal `make dev` location
-is `~/Library/Application Support/org.osii.launcher/profiles/development/deployment/`.
-`OSII_CONFIG_DIR` or `OSII_CONFIG_DIR_HOST` can select another location.
+with a new `.env` does not erase saved choices. Normal `make dev` configuration
+stays inside the checkout at the ignored `osii-data/config/` directory. An empty
+default directory imports prior development settings once without deleting the
+originals. `OSII_CONFIG_DIR` or `OSII_CONFIG_DIR_HOST` can select another location;
+installed launchers use their separate writable profile workspace.
 
 Credentials are separate. A nonempty key variable (normally `OPENAI_API_KEY`)
 in the startup environment, including root `.env`, is used automatically and
