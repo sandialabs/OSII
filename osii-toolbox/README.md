@@ -107,11 +107,19 @@ Open each service's `/health`, `/v1/descriptor`, and `/docs`, for example
 extraction accuracy; exercise one document in `/docs` or Intake before
 publishing.
 
-In **Setup → Register running processor**, paste a service URL. OSII reads its
-descriptor and writes the registration to the active `tools.toml` profile. For
+In **Setup → Advanced & diagnostics → Custom Processor API services**, paste
+the service base URL and select **Discover and register**. Do not append the
+operation path, such as `/v1/extract`. OSII reads its `/v1/descriptor` and writes
+the registration to the active `tools.toml` profile. For
 model-backed tools, choose a named connection from `models.toml`; self-contained
 tools require no connection. Developers may edit `tools.toml` directly and the
 Workbench will reflect it without a restart.
+
+**Starting is not registration; registration is not selection.** The service
+must be running when OSII calls it. For a new extractor, select it under
+**Extractors → Extraction routing**, save the rules, and test one file in
+Intake. The [developer startup checklist](../docs/operations/runbook-development.md#connect-an-optional-tool-or-your-own-processor)
+also explains `.env` discovery through `OSII_PROCESSORS`.
 
 Do not mount `.osii` or your document directories into these containers. Core
 sends the selected bytes/text and saves returned artifacts. Container-to-container

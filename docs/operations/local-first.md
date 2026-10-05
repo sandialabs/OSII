@@ -29,6 +29,9 @@ make demo
 
 For your own files already placed in `osii-data/source`, use:
 
+Corporate developers should first [copy and review `.env` once](runbook-development.md#first-start-in-a-corporate-checkout).
+That checklist also explains model defaults and connecting optional processors.
+
 ```bash
 make dev
 ```
@@ -78,7 +81,8 @@ package path files beneath a hidden `.venv` directory.
 
 Normal `make dev` reads model connections from the checkout's ignored
 `osii-data/config/models.toml` file, unless a configuration or runtime directory
-is explicitly selected. Add an OpenAI-compatible or corporate endpoint from **Setup**, or
+is explicitly selected. Use **Setup → Add LLM** for an OpenAI-compatible
+endpoint, or choose Ollama in the connection dropdown to
 use a separately installed Ollama service. **OSII does not install or launch
 Ollama:** manage the separate application yourself when you use it, then open it or run `ollama serve`. In
 **Setup → Model connections**, OSII queries `/api/tags` and shows
@@ -172,6 +176,46 @@ text side by side and wraps each pane's controls within its own column. On
 narrow screens, the panes stack so neither source content nor text is squeezed.
 
 ## Add and reprocess documents
+
+### Follow the setup and intake guide
+
+**Setup** and **Intake** share a six-checkpoint guide: choose a source folder,
+connect a document reader, validate an embedding model, connect a language
+model, read documents, and build a matching semantic index. Select a checkpoint
+or the **Next** action to reach the relevant settings or intake step. The guide
+tracks the whole recorded library, not only the currently selected files.
+
+A running endpoint alone is not enough. OSII tests an actual embedding vector
+and checks that the selected chat model is listed by its endpoint; the first
+chat request still tests generation. Changing the embedding model requires a
+matching index. Partial, stale, or incompatible vectors do not complete the
+index checkpoint. Summaries and enrichments are optional, not prerequisites
+for search and chat.
+
+You can deliberately choose **Use text-only intake** while setting up models.
+Source browsing and keyword search remain available, but that choice does not
+enable semantic search or AI-generated answers. Intake does not silently turn
+off selected AI processing when a model is unavailable. **Activity** shows file
+processing progress and a separate semantic-index phase.
+
+### Understand the collection at a glance
+
+The **Library** landing page and each named **Collection** show an overview:
+file count, recorded total and average source-file size, saved-text coverage,
+file formats, creation/modification timelines, and current semantic-index
+coverage. These statistics describe registered documents in OSII, not every
+unprocessed file in the source folder. Missing sizes are excluded from the
+average and explicitly counted.
+
+New intake records filesystem birth time when the operating system supplies
+it. That is not an authored document date, and copying a file can change it.
+Older or unsupported records remain missing; OSII does not substitute Unix
+`ctime` or intake time. Use **Last modified** when creation dates are missing.
+
+**Reveal topics** runs the existing bundled, model-free noun/adjective keyword
+enricher for this scope. Saved phrases are statistical clues, not verified
+themes; selecting one searches its sources. No model download or automatic
+AI summary is required.
 
 The Intake page separates **Add files**, **Process library**, and **Activity**.
 File-extension routing is intentionally not edited there; use **Setup →

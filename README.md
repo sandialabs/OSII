@@ -98,6 +98,10 @@ In **Intake**, process the included example files; then explore **Files**,
 **Search**, and **Collections**. Stop with Ctrl+C. To run against your own
 files later, use `make dev` or `.\scripts\osii.ps1 dev` and follow the
 [host-Python runbook](docs/operations/runbook-development.md#host-python-development).
+Corporate developers: [copy and review `.env` once before your first
+start](docs/operations/runbook-development.md#first-start-in-a-corporate-checkout).
+To add a Toolbox service or your own extractor, follow the short
+[start, register, and select checklist](docs/operations/runbook-development.md#connect-an-optional-tool-or-your-own-processor).
 
 ### Direct containers
 

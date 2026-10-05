@@ -3,6 +3,12 @@
 For the short action checklist, start with [What are you trying to do?](runbooks.md).
 This page is the one-time setup and policy reference, not a daily runbook.
 
+**Just starting development on a corporate workstation?** Follow the
+[first-start checklist](runbook-development.md#first-start-in-a-corporate-checkout):
+copy `.env.example` to `.env` once, edit your document folder and optional model
+endpoint, then run `make dev` or `.\scripts\osii.ps1 dev`. No release generator
+or container build is required. Installed launcher users do not need this step.
+
 **Current operating mode: manual releases, no corporate runners.** Follow the
 [manual release checklist](runbook-releases.md). GitLab stores reviewed source,
 packages and release downloads; your workstations perform the builds. The CI
@@ -213,8 +219,10 @@ non-secret settings when you run `corporate_config.py write`:
 | `OSII_EMBEDDING_MODEL` | `OPENAI_EMBEDDING_MODEL` |
 | `OSII_CHAT_MODEL` | `OPENAI_CHAT_MODEL` (also used for synthesis) |
 
-For host development alone, edit those three `OPENAI_*` entries directly in
-root `.env`; no release configuration or generation step is required. Use the
+For host development alone, copy `.env.example` to root `.env` if it does not
+already exist, then edit those three `OPENAI_*` entries directly; no release
+configuration or generation step is required. Keep an existing `.env` rather
+than overwriting it on startup or when pulling updates. Use the
 corporate service's exact model IDs. The example files are templates, not loaded
 configuration. Existing shell variables override `.env` until you unset them.
 

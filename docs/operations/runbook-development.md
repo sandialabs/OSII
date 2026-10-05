@@ -14,22 +14,71 @@ containers. This is the “bare metal” path, not a second production installer
 manage `osii-env`; do not activate another virtual environment. For native OCR,
 install the Tesseract program on the host.
 
-**Do:** From the repository root, use one command and keep its terminal open:
+### First start in a corporate checkout
+
+For developers, **yes: copy `.env.example` to `.env` once and edit it before
+starting OSII**. The filename is `.env`, not `.end`. This is workstation
+configuration, not a release/build step. A public demo can run without it;
+installed launcher users do not need a repository `.env`.
+
+From the repository root, create the file only if it is missing:
 
 ```bash
-# macOS/Linux: first demo, or later starts with your own files
-make demo
-# make dev
+# macOS/Linux
+test -f .env || cp .env.example .env
 ```
 
 ```powershell
-# Windows PowerShell: first demo, or later starts with your own files
-.\scripts\osii.ps1 demo
-# .\scripts\osii.ps1 dev
+# Windows PowerShell
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
+Open `.env` in a text editor and review just the settings you need:
+
+- **Your documents:** set `OSII_SOURCE_DIR` to an existing readable folder.
+  Quote paths with spaces; on Windows use forward slashes, for example
+  `OSII_SOURCE_DIR="C:/Users/Heidi/My Documents"`.
+- **Your model endpoint, if wanted:** for an approved OpenAI-compatible service,
+  set `OPENAI_BASE_URL` to its supplied API base address (usually ending
+  in `/v1`) and `OPENAI_CHAT_MODEL` to its exact model ID. Set
+  `OPENAI_EMBEDDING_MODEL` only if the service provides embeddings. Leave
+  `OPENAI_API_KEY` blank to enter the key later through **Setup → Add LLM**;
+  a nonempty startup key takes precedence over keys entered in Setup.
+- **Your custom processors, if wanted:** `OSII_PROCESSORS` accepts
+  comma-separated OSII Processor API base URLs. These are not LLM URLs. See
+  [Connect an optional tool or your own processor](#connect-an-optional-tool-or-your-own-processor).
+
+Keep the other defaults unless your deployment requires a change. Ensure
+IT-approved package mirrors, certificate trust, and proxy settings are in place
+before the first dependency installation. Never commit `.env` or API keys.
+
+Start with `make dev` or `.\scripts\osii.ps1 dev` below; no virtual-environment
+activation or container build is needed. After editing `.env`, stop with Ctrl+C
+and start again. **Copy once, edit as needed—not on every start or update.**
+Shell variables can override `.env`. Existing model choices in
+`osii-data/config/models.toml` remain saved; change those through Setup instead
+of expecting a new `.env` to replace them.
+
+### Start and check
+
+**Do:** From the repository root, start with your own files and keep the
+terminal open:
+
+```bash
+# macOS/Linux
+make dev
+```
+
+```powershell
+# Windows PowerShell
+.\scripts\osii.ps1 dev
+```
+
+For a public introduction with example files, use `make demo` or
+`.\scripts\osii.ps1 demo` instead.
+
 **Check:** Open `http://localhost:5173` and `http://localhost:8511/health`.
-Process one demonstration file. Stop with Ctrl+C in the launch terminal.
+Process one small file in Intake. Stop with Ctrl+C in the launch terminal.
 
 **If it fails:** Run the environment checks in [local-first operation](local-first.md).
 Host Ollama uses `http://127.0.0.1:11434`; that address is *not* right from
@@ -39,13 +88,62 @@ inside a container.
 `git pull --ff-only` on your development branch and repeat `make dev` (or
 `.\scripts\osii.ps1 dev`). The launch script refreshes its managed dependencies;
 you do not rebuild images or publish a package to test local Python changes.
-The root `.env.example` is optional host configuration, not the container
-example. Host launch profiles prefer a configured OpenAI-compatible endpoint,
+Use the [first-start checklist](#first-start-in-a-corporate-checkout) for host
+configuration; `.env.containers.example` is for the separate container path.
+Host launch profiles prefer a configured OpenAI-compatible endpoint,
 otherwise Ollama; choose/test processing methods in Setup. A running host
 Ollama must have the models selected in that profile. For reproducible use of
 a released source version, use a clean checkout of its `vX.Y.Z` tag instead of
 pulling an unrelated branch. See the release's Python-package version before
 installing `osii` into a separate notebook environment.
+
+### Connect an optional tool or your own processor
+
+**Start it → register its address → choose when OSII uses it.** OSII connects
+to configured addresses; it does not scan `osii-toolbox/` for services.
+`make dev` starts and supplies the baseline service addresses automatically.
+Optional tools are not all started by default.
+
+1. **Start only the tool you need.** For a published Toolbox image, leave
+   `make dev` running and use a second terminal:
+
+   ```bash
+   make toolbox-run TOOL=tabular
+   ```
+
+   ```powershell
+   .\scripts\osii.ps1 toolbox-run -Tool tabular
+   ```
+
+   This needs Podman, its Compose provider, and the approved image prefix/tag
+   configured in `.env`; it pulls a missing image but does not build one.
+   See [optional Toolbox images](publishing-images.md#publish-and-run-optional-toolbox-images).
+   For your own processor, start its service using its own instructions instead.
+2. **Register the running service.** In **Setup → Advanced & diagnostics →
+   Custom Processor API services**, paste its base URL, for example
+   `http://127.0.0.1:8097`, and select **Discover and register**. Do not append
+   `/v1/extract`. OSII reads `/v1/descriptor` to learn its name, kind, settings,
+   and model requirements. Choose a model connection only when required.
+3. **Choose when to use it.** For an extractor, open **Extractors → Extraction
+   routing**, choose it for the relevant file types, and **Save routes**. Test
+   one file in Intake. Registration alone does not replace existing routes.
+
+The registration is saved in the active `tools.toml`, normally
+`osii-data/config/tools.toml`, and survives restarts. Registration does not
+start the service: it must still be running when OSII calls it. A multi-service
+tool, such as Tabular, has separate extractor and enricher URLs; register each
+capability you want to use.
+
+For startup-configured discovery instead of UI registration, put a service base
+URL in root `.env`, for example `OSII_PROCESSORS=http://127.0.0.1:8097`, and
+restart `make dev`. Append additional URLs with commas. This also does not
+start the service or select extraction routes. These host addresses are for
+bare-metal Core; containerized Core needs a reachable container-network or
+host address, not its own `127.0.0.1`.
+
+The currently supported commands are `make dev` and a separate
+`make toolbox-run TOOL=...`. `make dev toolbox` and `make dev TOOLBOX=...` are
+not implemented startup options.
 
 ## Direct Compose development
 
