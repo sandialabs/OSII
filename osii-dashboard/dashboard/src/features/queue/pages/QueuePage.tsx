@@ -832,6 +832,22 @@ export function QueuePage() {
                       </MenuItem>
                     ))}
                   </TextField>
+                </Stack>
+                <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="Include patterns (optional)"
+                    value={includePatterns}
+                    onChange={(event) => {
+                      setCustomIncludes(event.target.value);
+                      setFilterPreset("custom");
+                    }}
+                    placeholder={"*.pdf\nreports/*.csv"}
+                    helperText="One wildcard pattern per line. Blank includes all files; File types fills these patterns."
+                    multiline
+                    maxRows={4}
+                  />
                   <TextField
                     fullWidth
                     size="small"
@@ -839,24 +855,14 @@ export function QueuePage() {
                     value={excludePatterns}
                     onChange={(event) => setExcludePatterns(event.target.value)}
                     placeholder={"*.tmp\narchive/**"}
-                    helperText="One wildcard pattern per line, for example *.tmp or archive/**."
+                    helperText="One wildcard pattern per line. Exclusions take priority over includes."
                     multiline
                     maxRows={4}
                   />
                 </Stack>
-                {filterPreset === "custom" ? (
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="Include patterns"
-                    value={customIncludes}
-                    onChange={(event) => setCustomIncludes(event.target.value)}
-                    placeholder={"*.pdf\nreports/**/*.csv"}
-                    multiline
-                    maxRows={4}
-                    helperText="One wildcard pattern per line. These rules apply to the folder and uploads."
-                  />
-                ) : null}
+                <Typography variant="caption" color="text.secondary">
+                  Patterns apply to the selected folder and added uploads.
+                </Typography>
                 <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                   <FormControlLabel
                     control={

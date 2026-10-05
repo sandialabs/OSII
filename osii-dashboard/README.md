@@ -10,8 +10,10 @@ In packaged OSII, the **launcher** chooses the source folder, image release, and
 
 In **Intake**, paste a document folder and select **Use folder**, or use **Browse**.
 All matching files are included automatically, including subfolders by default.
-File-type and wildcard filters live beside the selection; uncheck individual
-files to leave them out. **Add files from elsewhere** adds uploads without
+**Include patterns** and **Exclude patterns** are always visible beside the
+selection. Enter one wildcard per line; a blank include field includes all
+files, and exclusions take priority. File-type presets fill the include field.
+You can also uncheck individual files. **Add files from elsewhere** adds uploads without
 clearing the folder. Processing options start collapsed, with defaults selected.
 Starting a run queues a snapshot of the selection; it does not continuously
 watch the folder. Return to Intake to process newly added files.
