@@ -14,9 +14,17 @@ Start with the question you want to answer:
 | How can we compare these texts numerically? | [Embedder](embedding.md) | Identified text inputs | A vector for each input, in order |
 | What useful knowledge can we add? | [Enricher](enrichment.md) | Text from an explicit scope | Tables, graphs, entities, or a cited wiki |
 
-Each linked page has a complete, small Python example, an input/output
-reference, a service endpoint, and troubleshooting. None of the teaching
-examples needs a model, a running Core, or containers.
+Each linked Markdown file is one operation's specification: endpoint, paired
+JSON examples, typed fields/defaults, edge cases, errors, and a compliance
+checklist first; a small working Python implementation follows. You can review
+the contract without assembling a tutorial. None of the teaching examples
+needs a model, a running Core, or containers.
+
+For shared envelopes and deployment behavior, read
+[the shared contract](#the-shared-contract) and
+[errors and transport limits](#errors-and-transport-limits).
+To assess backend stability, start with
+[what is enforced today](#backend-review-what-is-enforced-today).
 
 ## Why four separate building blocks?
 
@@ -30,8 +38,8 @@ table. An embedder can support vector retrieval when that method is useful.
 They do not all have to run, and they do not form a mandatory four-step pipeline.
 
 The useful boundary is **explicit input → understandable computation → typed
-output**. Core chooses the source or scope, supplies the evidence, validates
-the response, and persists it. A processor owns its domain method; it does
+output**. Core chooses the source or scope, supplies the evidence, integrates
+the response, and owns persistence. A processor owns its domain method; it does
 not choose an unseen corpus or write the canonical `.osii` store.
 
 This is also the basis for agent workflows: an agent can request a bounded
@@ -115,54 +123,218 @@ for registration and deployment details.
 
 ## The shared contract
 
-All request and response envelopes carry `api_version="v1"` and a
-`request_id`. Python supplies the API-version default for you. Return the
-request ID unchanged and include your `ProcessorDescriptor` in the response.
+All operation requests and responses carry `api_version` (optional, default
+`"v1"`) and required string `request_id`. These defaults apply to HTTP as
+well as Python. Return the ID unchanged. It is a correlation identifier:
+the SDK does not make repeated IDs idempotent or deduplicate work.
 
-| Shared field | Meaning |
-| --- | --- |
-| `request_id` | Caller-chosen identifier for this operation |
-| `config` | Non-secret method settings; defaults to an empty dictionary |
-| `expert_context` | Optional human guidance on extraction, synthesis and enrichment |
-| `model_context` | Optional short-lived model-gateway access; normally supplied by Core |
-| `processor` | Response descriptor identifying the method and its version |
+All SDK model objects reject unknown fields, including nested typed objects.
+This is not Pydantic strict-type mode: supported coercions can still occur.
+Free dictionaries (`config`, `metadata`, `source_origin`, properties) accept
+method-specific content. Required string fields generally have no nonempty
+constraint; the descriptor name has the pattern shown below.
 
-SDK models reject unknown top-level fields. Dictionaries such as `metadata`,
-`config`, and `source_origin` deliberately hold method-specific information.
-`expert_context` is guidance, not source evidence or a citation. Core resolves
-saved context for a requested scope; a direct SDK call supplies only what
-you put in the request.
+### ProcessorDescriptor
 
-A descriptor needs `name`, `version`, `display_name`, `description`, and
-`kind`. Give it a stable lowercase namespaced name, such as
-`my-team.lab-measurements`. Declare supported file types, scopes and output
-kinds through `Capability`; these declarations describe suitability, but your
-method must still validate its inputs.
+Every response contains this object; `GET /v1/descriptor` returns it directly.
 
-`config_schema` describes a non-secret settings form using JSON Schema.
-The service helper does not automatically enforce that schema on the
-contents of `request.config`: validate method settings in your implementation.
-The examples omit tunable settings so you can see the contract first.
+| Field | Type | Required / default | Meaning |
+| --- | --- | --- | --- |
+| `api_version` | string | No; `"v1"` | Only v1 |
+| `name` | string | Yes | Stable ID matching `^[a-z0-9][a-z0-9_.-]*$` |
+| `version` | string | Yes | Implementation version; semver is a convention, not schema-enforced |
+| `display_name` | string | Yes | Human-readable method name |
+| `description` | string | Yes | What it does, including experimental/model-backed limits |
+| `kind` | string | Yes | `extractor`, `synthesizer`, `embedder`, or `enricher` |
+| `capabilities` | Capability | No; empty lists | Advertised input/scope/output suitability |
+| `config_schema` | object | No; `{}` | JSON Schema for non-secret settings |
+| `model_requirements` | object | No; `{}` | Keys `chat`/`embedding`; values `required`/`optional` |
+
+`Capability` has `media_types: string[]`, `file_extensions: string[]`,
+`scope_types: ("object" | "folder" | "collection" | "root")[]`, and
+`output_kinds: string[]`, all defaulting to `[]`. Empty lists mean no
+declaration, not proof of universal support. The helper checks the class's
+descriptor kind at startup; capabilities are descriptive, not enforced input
+filters.
+
+`config_schema` describes a settings form. The helper does not enforce it
+against `request.config`, insert its defaults, or validate the schema itself.
+Validate settings in the method. Human `expert_context` is optional guidance
+on extraction, synthesis, and enrichment; it is not evidence, and embedding
+does not have that field.
+
+### DocumentInput and ScopeInput
+
+The operation pages list these nested fields in full. `DocumentInput`
+requires only a filename: bytes, text, and segments are independent optional
+representations, not a one-of payload. State which your method consumes and
+how it handles absent or conflicting representations. `ScopeInput` requires
+a scope type and ID; its documents default to an empty list. A scope is not
+permission to discover additional sources.
+
+### ModelContext
+
+| Field | Type | Required / default | Meaning |
+| --- | --- | --- | --- |
+| `gateway_url` | string | Yes | Core's short-lived OpenAI-compatible gateway URL |
+| `token` | string | Yes | Ephemeral access credential; do not log or persist |
+| `bindings` | object | No; `{}` | `chat`/`embedding` keys mapped to gateway model IDs |
+
+This is normally supplied by Core, not a user's upstream provider key.
+The SDK schema does not validate URL safety or token expiry. Processors must
+not retain it in artifacts, provenance, logs, or configuration.
+
+### Artifact envelope
+
+Extraction may return source-derived artifacts. Enrichment must return
+standard derived artifacts. Both use this envelope:
+
+| Field | Type | Required / default | Meaning |
+| --- | --- | --- | --- |
+| `id` | string | Yes | Processor-local artifact identity |
+| `kind` | string | Yes | Descriptive method label, not the format discriminator |
+| `media_type` | string | Yes | Payload MIME type |
+| `data_base64` | string or null | No; `null` | Binary payload encoded as base64 |
+| `text` | string or null | No; `null` | Text payload |
+| `json_data` | JSON value or null | No; `null` | Arbitrary source-derived JSON payload |
+| `standard_data` | StandardArtifactData or null | No; `null` | One of the four [standard formats](standard-artifacts.md) |
+| `source_origin` | object | No; `{}` | Source location |
+| `metadata` | object | No; `{}` | Non-secret method/payload details |
+
+Exactly one payload must be non-null. Empty text/empty objects count as
+payloads; `json_data: null` does not. Enrichment additionally requires
+`standard_data` and unique artifact IDs. Extraction does not check artifact
+ID uniqueness. The schema does not validate encoded bytes or MIME/payload
+agreement. Core's remote extraction path persists artifact payload and
+`source_origin`, but does not forward artifact `metadata` to its persistence
+call. Verify the stored representation if you rely on optional envelope fields.
+
+### Provenance and source locations
+
+`ProvenanceRef` is fully listed on the [synthesizer page](synthesis.md#provenanceref)
+and reused by all standard artifacts. It has optional source/segment IDs,
+one-based page, nonnegative character offsets, and free `source_origin`.
+Use `[char_start, char_end)` against the exact supplied text. None of those
+fields is required by the schema, so a syntactically valid reference may still
+be ungrounded.
+
+`TextSegment.source_origin` is also free-form, not a typed geometry or quality
+standard. The [extractor OCR section](extraction.md#ocr-confidence-and-geometry)
+documents the existing Tesseract/OpenCV convention and its limits.
 
 ## Call an existing service
 
-`ProcessorClient(base_url, timeout=120.0)` wraps HTTP with the same typed
-requests and responses. Each processor page gives the matching client call.
-It reads the descriptor through `client.descriptor()`.
+`ProcessorClient(base_url, timeout=120.0)` wraps synchronous HTTP with the
+same typed models. Use `client.descriptor()` to inspect a running method,
+then the matching operation. It validates response shape, not the semantic
+relationship to the request; check echoed IDs, evidence, and completeness.
 
-| Situation | What happens |
+## Errors and transport limits
+
+The following describes the class-based `create_processor_app` helper.
+A custom server must document any differences.
+
+| HTTP status | Meaning | Response |
+| --- | --- | --- |
+| `200` | Operation returned a schema-valid result | Operation-specific JSON |
+| `422` | Request parsing/schema failure | `{"detail": [validation errors]}` |
+| `422` | Processor raised `ValueError` | `{"detail": "actionable explanation"}` |
+| `500` | Unhandled error or invalid returned response | No stable JSON error envelope is guaranteed |
+| `404` / `405` | Wrong route / method | Framework error; check the processor's base URL |
+
+For example, the UTF-8 teaching extractor rejects an absent payload with:
+
+```json
+{"detail": "Supply the source bytes in document.content_base64."}
+```
+
+A missing `request_id` produces a validation error shaped like:
+
+```json
+{
+  "detail": [{
+    "type": "missing",
+    "loc": ["body", "request_id"],
+    "msg": "Field required",
+    "input": {"document": {"filename": "sensor.txt"}}
+  }]
+}
+```
+
+Validation details can echo input, potentially including text or credentials.
+Treat diagnostic responses and logs as sensitive. A Pydantic validation
+failure raised while constructing a response inside the method is also a
+`ValueError`, so the helper may return `422` for that producer bug.
+Response validation after the method returns normally becomes `500`.
+Do not copy another API's `{"error": "..."}` envelope here.
+
+| Concern | Current v1 behavior |
 | --- | --- |
-| Malformed request JSON or invalid SDK fields | FastAPI returns HTTP 422 |
-| Your class-based processor raises `ValueError` | `create_processor_app` returns HTTP 422 with the error detail |
-| HTTP/network error or invalid JSON response | The client raises `ProcessorClientError` |
-| Response JSON violates the typed contract | Pydantic raises `ValidationError` |
-| An unexpected implementation error | Treat as a server failure; inspect service logs |
+| Encoding | Inline JSON; binary bytes use base64, not multipart/path references |
+| Execution | Synchronous operation; no job polling, streaming, or cancellation contract |
+| Timeout | Client default 120 seconds; no SDK server-side operation deadline |
+| Retries | Client has no built-in retry; a timeout does not prove server work stopped |
+| Idempotency | No deduplication guarantee; repeated calls can compute again |
+| Limits | No SDK byte, document-count, batch-size, or concurrency ceiling |
+| Authentication | The helper has no built-in processor-service authentication or TLS |
+| Model access | `model_context.token` authorizes model-gateway access, not incoming processor requests |
+| Health | `/health` proves liveness only, not model readiness or output correctness |
 
-The client validates response shape. It does not automatically check every
-relationship to the original request or persist the result; for direct callers,
-check the echoed ID and operation-specific invariants. Core's adapters add
-request/response checks when committing results. A green `/health` indicates
-liveness, not proof of correct output or available model access.
+Use an approved network boundary, TLS/authentication at the deployment edge,
+and explicit resource limits before exposing a processor beyond trusted local
+use. These are deployment obligations, not features that the helper silently
+provides. The OpenAI handler adapter differs from the class helper on some
+error paths: required missing bindings return `422`, but its optional
+no-model branch calls the handler without the same `ValueError` wrapper.
+
+The client wraps HTTP/network errors and invalid JSON as
+`ProcessorClientError`; invalid response fields raise Pydantic
+`ValidationError`. It has no automatic persistence.
+
+## Backend review: what is enforced today
+
+This is a source-checked review, not a declaration that the backend is frozen.
+“Should” in a checklist is an implementation obligation; it is not necessarily
+an automatic validator.
+
+| Boundary | Enforced today | Still requires review or hardening |
+| --- | --- | --- |
+| SDK envelopes | v1 literal, typed fields, unknown fields rejected | Nonempty IDs/version policy, descriptor identity/kind agreement with the operation, semantic compatibility, resource ceilings |
+| Extraction | Unique segment IDs | Geometry/quality conventions, related IDs, artifact ID uniqueness; Core rejects empty segments |
+| Synthesis | Markdown shape, citation field types/minimum offsets | Citation/source membership, span bounds, claim-to-citation mapping and support |
+| Embedding | Unique output IDs, consistent positive dimensions matching lengths | Input ID uniqueness, finite values, correct normalization/model space; Core adds ID coverage and reordering |
+| Enrichment | SDK requires unique IDs, nonempty artifacts, typed standard data | Core's remote enricher uses raw JSON/legacy fallbacks, not full `EnrichmentResponse` validation or echoed-ID checks; response warnings are not propagated in its result |
+| Tables | Unique column keys; populated row provenance matches row count | Row keys and values are not validated against column types; real provenance |
+| Graphs/entities | Unique graph/entity IDs; edges reference existing nodes | Correct relationships, source membership, confidence semantics |
+| Quality | Free metadata can carry method-specific scores | No universal typed confidence, quality policy, or calibration guarantee |
+| Transport | Synchronous helper, typed requests/responses, liveness | Uniform error policy, authentication, deadlines, limits, retry/idempotency policy |
+
+Source of truth: `osii-core/osii/processor_sdk/models.py`,
+`service.py`, `client.py`, and Core integration in
+`osii-core/osii/processors/remote.py`. A running service's
+`/openapi.json` describes its deployed schema; it cannot prove semantic
+correctness or that it matches a different release's code.
+
+### Decisions before calling the contract stable
+
+These are review recommendations, **not implemented changes**:
+
+1. Align Core's remote enricher with the typed v1 envelope and request-ID
+   checks; decide when legacy fallback support ends.
+2. Define an optional OCR quality/location convention with score method,
+   granularity, missing/unknown values, and coordinate frame. Preserve old
+   stored output; missing confidence must not become “certain.”
+3. Define completeness rules and limits for all four operations, including
+   empty extraction/embedding and partial results.
+4. Add semantic checks for finite vectors, source membership, and character
+   spans. Decide whether claim-level citation links need a future contract.
+5. Agree on compatibility/version policy and deployment auth, timeout, retry,
+   and error behavior before exposing external processors.
+
+Do not add a new top-level `confidence` field casually: current v1 models
+reject unknown fields, so typed schema additions require a compatibility
+decision. Documented optional keys inside free metadata can be introduced
+without that schema change, but consumers still need agreed semantics.
 
 ## Add a model when your method needs one
 

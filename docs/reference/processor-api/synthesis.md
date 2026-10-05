@@ -23,6 +23,161 @@ Core supplies an explicit scope. A synthesizer does not secretly search for
 more files or walk the library itself. That makes the result's evidence
 boundary understandable to a researcher reviewing it later.
 
+## Endpoint
+
+`POST /v1/synthesize`
+
+Request and response `Content-Type: application/json`. Success: `200 OK`.
+The Python method and the HTTP route use the same typed contract.
+Unknown model fields are rejected; dictionaries such as `config` remain
+method-specific. Omitted optional fields use the defaults below.
+
+## Request format
+
+### Example request
+
+This is the exact request used by the Python example later on this page.
+
+```json
+{
+  "api_version": "v1",
+  "request_id": "explain-1",
+  "scope": {
+    "scope_type": "object",
+    "scope_id": "file-1",
+    "documents": [{
+      "file_id": "file-1",
+      "filename": "sensor.txt",
+      "text": "The sensor passed."
+    }]
+  }
+}
+```
+
+| Field | Type | Required / default | Meaning |
+| --- | --- | --- | --- |
+| `api_version` | string | No; `"v1"` | Only v1 is accepted |
+| `request_id` | string | Yes | Caller-generated operation ID; echo unchanged |
+| `scope` | ScopeInput | Yes | Explicit evidence boundary |
+| `scope.scope_type` | string | Yes | `object`, `folder`, `collection`, or `root` |
+| `scope.scope_id` | string | Yes | Caller-selected scope identity |
+| `scope.documents` | DocumentInput[] | No; `[]` | Documents to analyze; no automatic discovery |
+| `scope.metadata` | object | No; `{}` | Explicit scope/representation metadata |
+| `scope.documents[].filename` | string | Yes per document | Source label |
+| `scope.documents[].file_id` | string or null | No; `null` | Identity to cite |
+| `scope.documents[].text` | string or null | No; `null` | Exact supplied text |
+| `scope.documents[].segments` | TextSegment[] | No; `[]` | Identified evidence segments, when supplied |
+| `scope.documents[].media_type` | string | No; `"application/octet-stream"` | MIME type |
+| `scope.documents[].content_base64` | string or null | No; `null` | Shared model allows bytes; do not assume Core sends them |
+| `scope.documents[].metadata` | object | No; `{}` | Explicit document metadata |
+| `expert_context` | string or null | No; `null` | Human guidance, not citable evidence |
+| `config` | object | No; `{}` | Non-secret settings validated by the method |
+| `model_context` | ModelContext or null | No; `null` | Short-lived gateway access, normally supplied by Core |
+
+The schema permits empty scopes and absent document text. Your method decides
+whether to return an empty result with a warning or reject missing evidence.
+The example reads only `document.text`; it never invents missing content.
+
+## Response format
+
+### Example response
+
+This is the matching example result. Optional nulls and some default-valued
+nested fields are omitted for readability; the SDK HTTP helper normally
+serializes those defaults too. This is valid response JSON, not a schematic
+with placeholders.
+
+```json
+{
+  "api_version": "v1",
+  "request_id": "explain-1",
+  "processor": {
+    "name": "demo.excerpts",
+    "version": "1.0.0",
+    "display_name": "Cited excerpt preview",
+    "description": "Quotes supplied text; makes no new claims.",
+    "kind": "synthesizer",
+    "capabilities": {
+      "scope_types": [
+        "object",
+        "folder",
+        "collection",
+        "root"
+      ],
+      "output_kinds": [
+        "markdown"
+      ]
+    }
+  },
+  "markdown": "## sensor.txt\n\nThe sensor passed.",
+  "citations": [
+    {
+      "file_id": "file-1",
+      "char_start": 0,
+      "char_end": 18
+    }
+  ],
+  "metadata": {},
+  "warnings": []
+}
+```
+
+| Field | Type | Required / default | Meaning |
+| --- | --- | --- | --- |
+| `api_version` | string | No; `"v1"` | Protocol version |
+| `request_id` | string | Yes | Unchanged request ID |
+| `processor` | ProcessorDescriptor | Yes | Method identity and version |
+| `markdown` | string | Yes; may be empty | Readable, derived explanation |
+| `citations` | ProvenanceRef[] | No; `[]` | Supporting source locations |
+| `metadata` | object | No; `{}` | Method/run details |
+| `warnings` | string[] | No; `[]` | Missing evidence, truncation, or other limitations |
+
+### ProvenanceRef
+
+| Field | Type | Required / default | Meaning |
+| --- | --- | --- | --- |
+| `file_id` | string or null | No; `null` | Supplied source identity |
+| `segment_id` | string or null | No; `null` | Supplied segment identity |
+| `page` | integer or null | No; `null` | One-based page, minimum 1 |
+| `char_start` | integer or null | No; `null` | Zero-based, inclusive start |
+| `char_end` | integer or null | No; `null` | Zero-based, exclusive end |
+| `source_origin` | object | No; `{}` | More precise source location |
+
+Offsets refer to the exact supplied text, not PDF bytes, normalized whitespace,
+or output Markdown. Use segment identity for a segment-relative span; document
+identity for a span in the supplied document text. State that choice.
+
+The schema allows an empty reference and checks only types/minimum values.
+It does not enforce `char_end >= char_start`, bounds, source membership, or
+claim support. v1 citations are a result-level list: there is no typed mapping
+from a Markdown claim to its citation. Those are review/test responsibilities.
+
+Empty Markdown and citations are schema-valid. Return an explanatory warning
+when there is no evidence. Do not equate `200` with a grounded conclusion.
+
+## Errors and operational behavior
+
+These are synchronous JSON endpoints, not multipart uploads or background
+job submissions. `200` returns the result, not a saved Core object.
+The SDK helper returns `422` for malformed/invalid requests or a method's
+`ValueError`; unhandled failures normally return `500`.
+See [error examples and transport limits](index.md#errors-and-transport-limits)
+for exact shapes, timeouts, authentication, and retry limits.
+
+## Compliance checklist
+
+- [ ] Consume only supplied scope evidence; handle absent text explicitly.
+- [ ] Echo the request ID and identify the synthesizer/version.
+- [ ] Return Markdown and defensible source references.
+- [ ] Test offsets against exact input and verify every cited source exists.
+- [ ] Distinguish generated interpretation from evidence and human guidance.
+- [ ] Surface empty evidence, truncation, and contradictions.
+
+These are implementation obligations, not a claim that every rule is
+automatically enforced by the SDK. The
+[backend review](index.md#backend-review-what-is-enforced-today) separates
+schema checks from remaining hardening decisions.
+
 ## A small working example
 
 This method quotes up to 160 characters per document and cites those exact
@@ -117,26 +272,21 @@ to the method. The end offset is exclusive.
 app = create_processor_app(processor)
 ```
 
-[Run the service](index.md#run-your-processor) and open
-`http://127.0.0.1:8091/docs`. Send this to `POST /v1/synthesize`:
+With blocks 1–4 saved as `my_processor.py`, install the package from the
+OSII checkout root in your active Python environment, then start the service
+from the folder containing that file (same commands on Mac, Windows, Linux):
 
-```json
-{
-  "api_version": "v1",
-  "request_id": "explain-1",
-  "scope": {
-    "scope_type": "object",
-    "scope_id": "file-1",
-    "documents": [{
-      "file_id": "file-1",
-      "filename": "sensor.txt",
-      "text": "The sensor passed."
-    }]
-  }
-}
+```sh
+python -m pip install ./osii-core
+python -m uvicorn my_processor:app --host 127.0.0.1 --port 8091
 ```
 
-The Python HTTP call uses the same request:
+If you have already installed `osii`, skip the install command.
+Open `http://127.0.0.1:8091/docs`, choose the operation's **Try it out**,
+and paste the request JSON above. Stop with Ctrl+C.
+[Shared setup](index.md#run-your-processor) also covers `uv` and registration.
+
+The same request can be sent through the typed HTTP client:
 
 ```python
 from osii.processor_sdk import ProcessorClient
@@ -145,47 +295,6 @@ client = ProcessorClient("http://127.0.0.1:8091")
 remote_result = client.synthesize(request)
 print(remote_result.markdown)
 ```
-
-## Request reference
-
-| Field | Required? | Meaning |
-| --- | --- | --- |
-| `request_id` | Yes | Caller-generated operation ID |
-| `scope.scope_type` | Yes | `object`, `folder`, `collection` or `root` |
-| `scope.scope_id` | Yes | Identity of the selected scope |
-| `scope.documents` | No in the schema | Explicit documents to analyze; defaults to an empty list |
-| `documents[].filename` | Yes per document | Human-readable document name |
-| `documents[].text` | No | Supplied text representation; may be absent |
-| `documents[].segments` | No | Supplied identified segments; available when the caller includes them |
-| `documents[].file_id` | No | Source identity to use in citations |
-| `scope.metadata`, document `metadata` | No | Explicit scope/representation metadata |
-| `expert_context` | No | Human guidance, such as “compare calibration changes” |
-| `config` | No | Validated method settings; defaults to `{}` |
-| `api_version`, `model_context` | No in Python | See the [shared contract](index.md#the-shared-contract) |
-
-The shape permits empty scopes. Your method decides whether to return an empty
-result with a warning or reject missing evidence. Do not invent content to fill
-the gap. The example consumes only `document.text`.
-
-## Response reference
-
-| Field | Meaning |
-| --- | --- |
-| `request_id`, `processor`, `api_version` | Unchanged request ID, your descriptor, and `"v1"` |
-| `markdown` | Required readable output |
-| `citations` | Optional list of `ProvenanceRef`; supply defensible evidence for claims |
-| `metadata` | Optional method details, such as document count |
-| `warnings` | Missing evidence, truncation or other limitations |
-
-A `ProvenanceRef` can carry `file_id`, `segment_id`, one-based `page`,
-zero-based `char_start`/`char_end`, and `source_origin`.
-Use the narrowest location you can defend. Character offsets refer to the
-**exact supplied text**, not the original PDF bytes, cleaned whitespace or
-your output Markdown. A file-level citation alone can be useful, but is less
-precise than a supported segment or character span.
-
-The SDK validates field types and nonnegative offsets; it does not prove a
-claim is supported or that a span is in range. Test grounding explicitly.
 
 ## Models, context and storage
 

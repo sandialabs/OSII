@@ -23,6 +23,148 @@ An embedder does not decide which files to search, change source text, or split
 the corpus into chunks. See [retrieval chunking](../../concepts/retrieval-chunking.md)
 for Core's chunking boundary.
 
+## Endpoint
+
+`POST /v1/embed`
+
+Request and response `Content-Type: application/json`. Success: `200 OK`.
+The Python method and the HTTP route use the same typed contract.
+Unknown model fields are rejected; dictionaries such as `config` remain
+method-specific. Omitted optional fields use the defaults below.
+
+## Request format
+
+### Example request
+
+This is the exact request used by the Python example later on this page.
+
+```json
+{
+  "api_version": "v1",
+  "request_id": "vectors-1",
+  "inputs": [
+    {"id": "chunk-1", "text": "The sensor passed."},
+    {"id": "chunk-2", "text": "Sensor failed."}
+  ]
+}
+```
+
+| Field | Type | Required / default | Meaning |
+| --- | --- | --- | --- |
+| `api_version` | string | No; `"v1"` | Only v1 is accepted |
+| `request_id` | string | Yes | Caller-generated operation ID; echo unchanged |
+| `inputs` | EmbeddingInput[] | Yes; at least one | Explicit text batch |
+| `inputs[].id` | string | Yes | Identity to preserve in the response |
+| `inputs[].text` | string | Yes | Exact text to represent; empty string is schema-valid |
+| `inputs[].metadata` | object | No; `{}` | Explicit source/context metadata |
+| `config` | object | No; `{}` | Non-secret settings validated by the method |
+| `model_context` | ModelContext or null | No; `null` | Short-lived gateway access, normally supplied by Core |
+
+There is no `expert_context` field on this request. Use unique input IDs: the
+schema checks a nonempty batch but not ID uniqueness. State model text/batch
+limits, truncation rules, and query/document preprocessing; never silently
+drop an input.
+
+## Response format
+
+### Example response
+
+This is the matching example result. Optional nulls and some default-valued
+nested fields are omitted for readability; the SDK HTTP helper normally
+serializes those defaults too. This is valid response JSON, not a schematic
+with placeholders.
+
+```json
+{
+  "api_version": "v1",
+  "request_id": "vectors-1",
+  "processor": {
+    "name": "demo.text-lengths",
+    "version": "1.0.0",
+    "display_name": "Text lengths (teaching example)",
+    "description": "Returns word and character counts; not semantic embeddings.",
+    "kind": "embedder",
+    "capabilities": {
+      "output_kinds": [
+        "embedding_vector"
+      ]
+    }
+  },
+  "model": "demo-word-character-counts-v1",
+  "vectors": [
+    {
+      "id": "chunk-1",
+      "vector": [
+        3,
+        18
+      ],
+      "dimensions": 2
+    },
+    {
+      "id": "chunk-2",
+      "vector": [
+        2,
+        14
+      ],
+      "dimensions": 2
+    }
+  ],
+  "normalized": false,
+  "metadata": {}
+}
+```
+
+| Field | Type | Required / default | Meaning |
+| --- | --- | --- | --- |
+| `api_version` | string | No; `"v1"` | Protocol version |
+| `request_id` | string | Yes | Unchanged request ID |
+| `processor` | ProcessorDescriptor | Yes | Method identity and version |
+| `model` | string | Yes | Vector representation identity |
+| `vectors` | EmbeddingVector[] | Yes | One per input in request order |
+| `vectors[].id` | string | Yes | Matching input identity |
+| `vectors[].vector` | number[] | Yes | Vector values |
+| `vectors[].dimensions` | integer | Yes; greater than 0 | Must equal vector length |
+| `normalized` | boolean | No; `false` | Producer's normalization claim |
+| `metadata` | object | No; `{}` | Method/provider information |
+
+The SDK checks unique output IDs, vector lengths, and consistent dimensions.
+It permits an empty `vectors` list and does not check input coverage/order,
+finite values, or actual normalization. A successful batch should not be empty:
+validate one finite vector for every input. Core's remote adapter checks exact
+ID coverage and reorders by input ID; this does not replace producer checks.
+
+There is no `warnings` field. Fail a batch you cannot satisfy rather than
+returning a silently incomplete result. Method-specific notices can be placed
+in documented `metadata`, but there is no standardized partial-success format.
+
+Use the same representation for queries and indexed text. Equal dimensions
+alone do not make models compatible. State normalization (for example, L2 unit
+length) and distance metric; v1 does not specify either. Changing model,
+preprocessing, or dimensions requires rebuilding affected derived vectors.
+
+## Errors and operational behavior
+
+These are synchronous JSON endpoints, not multipart uploads or background
+job submissions. `200` returns the result, not a saved Core object.
+The SDK helper returns `422` for malformed/invalid requests or a method's
+`ValueError`; unhandled failures normally return `500`.
+See [error examples and transport limits](index.md#errors-and-transport-limits)
+for exact shapes, timeouts, authentication, and retry limits.
+
+## Compliance checklist
+
+- [ ] Reject duplicate input IDs and unsupported text/batch sizes.
+- [ ] Echo the request ID and identify processor plus representation.
+- [ ] Return exactly one finite vector per input in the same order.
+- [ ] Verify positive, matching, consistent dimensions.
+- [ ] Document preprocessing, model revision, metric, and normalization.
+- [ ] Reject an unsatisfied batch rather than silently dropping inputs.
+
+These are implementation obligations, not a claim that every rule is
+automatically enforced by the SDK. The
+[backend review](index.md#backend-review-what-is-enforced-today) separates
+schema checks from remaining hardening decisions.
+
 ## A small working example
 
 This **teaching example** returns two values: word count and character count.
@@ -109,21 +251,21 @@ automatic indexing or persistence in this direct call.
 app = create_processor_app(processor)
 ```
 
-[Run the service](index.md#run-your-processor) and open
-`http://127.0.0.1:8091/docs`. Send this to `POST /v1/embed`:
+With blocks 1–4 saved as `my_processor.py`, install the package from the
+OSII checkout root in your active Python environment, then start the service
+from the folder containing that file (same commands on Mac, Windows, Linux):
 
-```json
-{
-  "api_version": "v1",
-  "request_id": "vectors-1",
-  "inputs": [
-    {"id": "chunk-1", "text": "The sensor passed."},
-    {"id": "chunk-2", "text": "Sensor failed."}
-  ]
-}
+```sh
+python -m pip install ./osii-core
+python -m uvicorn my_processor:app --host 127.0.0.1 --port 8091
 ```
 
-From a Python caller:
+If you have already installed `osii`, skip the install command.
+Open `http://127.0.0.1:8091/docs`, choose the operation's **Try it out**,
+and paste the request JSON above. Stop with Ctrl+C.
+[Shared setup](index.md#run-your-processor) also covers `uv` and registration.
+
+The same request can be sent through the typed HTTP client:
 
 ```python
 from osii.processor_sdk import ProcessorClient
@@ -132,46 +274,6 @@ client = ProcessorClient("http://127.0.0.1:8091")
 remote_result = client.embed(request)
 print(remote_result.model, remote_result.vectors[0].dimensions)
 ```
-
-## Request reference
-
-| Field | Required? | Meaning |
-| --- | --- | --- |
-| `request_id` | Yes | Caller-generated operation ID |
-| `inputs` | Yes | Nonempty list of `EmbeddingInput` |
-| `inputs[].id` | Yes | Identity to preserve in the response |
-| `inputs[].text` | Yes | Exact text to represent |
-| `inputs[].metadata` | No | Explicit context, such as source identity; defaults to `{}` |
-| `config` | No | Non-secret model/method settings |
-| `api_version`, `model_context` | No in Python | See the [shared contract](index.md#the-shared-contract) |
-
-Use unique input IDs. The request model checks that the list is nonempty;
-it does not enforce uniqueness, so validate it in a production method.
-If a model has a text or batch limit, report that limit clearly rather than
-silently dropping an input.
-
-## Response reference
-
-| Field | Meaning |
-| --- | --- |
-| `request_id`, `processor`, `api_version` | Unchanged request ID, your descriptor, and `"v1"` |
-| `model` | Required identity of the vector representation |
-| `vectors` | One `EmbeddingVector` per input, in the same order |
-| `vectors[].id` | Matching input ID |
-| `vectors[].vector` | Numeric list |
-| `vectors[].dimensions` | Positive integer equal to the vector's length |
-| `normalized` | Whether your output is normalized; defaults to `false` |
-| `metadata` | Optional method/provider information |
-
-All output IDs must be unique and all vectors must have the same dimension.
-The SDK checks those properties. It does not check that the response covers
-the request in order, that numbers are finite, or that the claimed normalization
-is correct. Production methods and direct callers should test those invariants.
-There is no `warnings` field on `EmbeddingResponse`.
-
-Use the same representation for queries and indexed text. Equal dimensions
-alone do not make two models compatible. Changing the model, preprocessing
-or dimensions requires rebuilding affected derived vectors/indexes.
 
 ## Choose a real implementation
 
