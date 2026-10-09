@@ -1,4 +1,4 @@
-"""Core traversal logic for OSII MCP.
+"""Documentation assistant operations backed by OSII Core.
 
 This file contains pure Python helper functions that call the installed `osii`
 package directly. The MCP server in `main.py` simply exposes these as tools.
@@ -7,10 +7,26 @@ package directly. The MCP server in `main.py` simply exposes these as tools.
 from pathlib import Path
 from typing import Any
 
-from osii.domain.artifacts.object_summaries import get_object_summaries
+from osii.domain.artifacts.documentation_wiki import (
+    DocumentationCitation,
+    DocumentationWikiPage,
+    documentation_scope,
+    get_documentation_wiki,
+    read_documentation_evidence,
+    save_documentation_wiki,
+    search_documentation_wiki,
+)
+from osii.domain.artifacts.object_artifacts import get_object_artifact_summary
+from osii.domain.artifacts.object_processing import get_object_processing_metadata
+from osii.domain.artifacts.read_enrichments import (
+    get_scope_enrichment_payload,
+    list_scope_enrichments,
+)
 from osii.domain.artifacts.scope_artifacts import get_scope_artifact_summary
+from osii.domain.artifacts.text_representations import get_preferred_text_representation
 from osii.domain.artifacts.text_spans import get_text_context_by_span
 from osii.domain.read.catalog import load_folders_catalog
+from osii.domain.read.docs import get_doc_meta, get_doc_overview
 from osii.domain.scopes.collections import (
     get_collection,
     list_collection_documents,
@@ -20,15 +36,6 @@ from osii.domain.scopes.descriptors import describe_scope
 from osii.domain.scopes.membership import list_scope_file_ids
 from osii.domain.scopes.summaries import get_scope_object_summaries
 from osii.domain.services.search import dashboard_search
-from osii.api.objects_routes import get_object  # not ideal to call route layer
-from osii.domain.read.docs import get_doc_meta, get_doc_overview
-from osii.domain.artifacts.object_artifacts import get_object_artifact_summary
-from osii.domain.artifacts.object_processing import get_object_processing_metadata
-from osii.domain.artifacts.read_enrichments import (
-    get_scope_enrichment_payload,
-    list_scope_enrichments,
-)
-from osii.domain.artifacts.text_representations import get_preferred_text_representation
 
 
 def _osii_root() -> Path:
@@ -173,7 +180,9 @@ def get_object_preferred_text(file_id: str) -> dict[str, Any]:
     }
 
 
-def get_object_text_span_context(file_id: str, char_start: int, char_end: int, context_chars: int = 200) -> dict[str, Any]:
+def get_object_text_span_context(
+    file_id: str, char_start: int, char_end: int, context_chars: int = 200
+) -> dict[str, Any]:
     osii_root = _osii_root()
     result = get_text_context_by_span(
         osii_root,
@@ -187,7 +196,13 @@ def get_object_text_span_context(file_id: str, char_start: int, char_end: int, c
     return result
 
 
-def search_scope(query: str, scope: dict[str, Any], mode: str = "hybrid", top_k: int = 10, group_by: str | None = "file") -> dict[str, Any]:
+def search_scope(
+    query: str,
+    scope: dict[str, Any],
+    mode: str = "hybrid",
+    top_k: int = 10,
+    group_by: str | None = "file",
+) -> dict[str, Any]:
     osii_root = _osii_root()
     retrieval_mode_used, results = dashboard_search(
         osii_root,
@@ -206,3 +221,119 @@ def search_scope(query: str, scope: dict[str, Any], mode: str = "hybrid", top_k:
         "group_by": group_by,
         "results": results,
     }
+
+
+def search_documentation(
+    query: str,
+    scope: dict[str, Any] | None = None,
+    *,
+    mode: str = "hybrid",
+    top_k: int = 5,
+    prefer_wiki: bool = True,
+    software: str = "",
+    software_version: str = "",
+) -> dict[str, Any]:
+    """Reuse current wiki matches, falling back to ungrouped source passages."""
+    root = _osii_root()
+    scope = documentation_scope(root, scope)
+    if not query.strip() or len(query) > 2000:
+        raise ValueError("query must contain 1–2000 characters")
+    if mode not in {"hybrid", "lexical", "semantic"}:
+        raise ValueError("mode must be hybrid, lexical or semantic")
+    matches = search_documentation_wiki(
+        root,
+        scope,
+        query=query,
+        top_k=top_k,
+        software=software,
+        software_version=software_version,
+    )
+    reusable = any(
+        item["freshness"]["status"] == "current" and item["match_coverage"] == 1.0
+        for item in matches
+    )
+    used_wiki = prefer_wiki and reusable
+    source_query = " ".join(
+        part for part in (query, software, software_version) if part
+    )
+    sources = (
+        None
+        if used_wiki
+        else search_scope(source_query, scope, mode=mode, top_k=top_k, group_by=None)
+    )
+    return {
+        "query": query,
+        "scope": scope,
+        "wiki_matches": matches,
+        "source_results": sources["results"] if sources else [],
+        "retrieval_mode_used": "wiki" if used_wiki else sources["retrieval_mode_used"],
+        "source_search_performed": not used_wiki,
+        "wiki_match_method": "heuristic_token_coverage",
+        "guidance": "Read matching wiki pages and check applicability; use prefer_wiki=false for original evidence or incomplete coverage. Source software/version context expands the query; it is not a metadata filter.",
+    }
+
+
+def get_documentation_evidence(
+    file_id: str, char_start: int, char_end: int, context_chars: int = 200
+) -> dict[str, Any]:
+    return read_documentation_evidence(
+        _osii_root(),
+        DocumentationCitation(
+            file_id=file_id, char_start=char_start, char_end=char_end
+        ),
+        context_chars=context_chars,
+    )
+
+
+def list_wiki_pages(
+    scope: dict[str, Any] | None = None,
+    query: str = "",
+    top_k: int = 10,
+    software: str = "",
+    software_version: str = "",
+) -> dict[str, Any]:
+    root = _osii_root()
+    scope = documentation_scope(root, scope)
+    return {
+        "scope": scope,
+        "pages": search_documentation_wiki(
+            root,
+            scope,
+            query=query,
+            top_k=top_k,
+            software=software,
+            software_version=software_version,
+        ),
+    }
+
+
+def _wiki_response(
+    result: dict[str, Any], *, include_history: bool = False
+) -> dict[str, Any]:
+    info = result["documentation_wiki"]
+    info["retained_revision_count"] = len(info.get("history", []))
+    if not include_history:
+        info.pop("history", None)
+    return result
+
+
+def get_wiki_page(
+    page_id: str, scope: dict[str, Any] | None = None, include_history: bool = False
+) -> dict[str, Any]:
+    return _wiki_response(
+        get_documentation_wiki(_osii_root(), scope, page_id),
+        include_history=include_history,
+    )
+
+
+def save_wiki_page(
+    page_id: str,
+    page: DocumentationWikiPage,
+    expected_revision: int,
+    scope: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return _wiki_response(
+        save_documentation_wiki(
+            _osii_root(), scope, page_id, page, expected_revision=expected_revision
+        )
+    )

@@ -144,7 +144,7 @@ services:
     ports:
       - "${OSII_MCP_PORT:-8022}:8022"
     volumes:
-      - osii-data:/data:ro
+      - osii-data:/data
     depends_on:
       api:
         condition: service_healthy

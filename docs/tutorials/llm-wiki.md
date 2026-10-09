@@ -68,3 +68,20 @@ Every wiki payload uses the canonical `wiki_markdown` format. The
 concept/entity processor additionally uses `entity_list` and `table`. Review
 [canonical Processor API outputs](../reference/processor-api/canonical-outputs.md)
 for the distinction between extraction outputs and enrichment artifact types.
+
+## Reuse and improve knowledge from a coding harness
+
+The `osii-mcp` documentation assistant also supports a harness-driven wiki loop.
+Search with `search_documentation`, inspect original passages with
+`get_documentation_evidence`, then capture reusable coding guidance or
+experimental lessons with `save_wiki_page`. The connected harness supplies the
+LLM synthesis; Core validates citation spans and persists standard
+`wiki_markdown` artifacts. No additional model connection is required.
+
+Pages record software/version applicability, source fingerprints and revisions.
+Current matching pages can avoid repeated source searches; stale or untracked
+pages trigger source retrieval. Matching is heuristic and all generated pages
+are unreviewed, so verify applicability and distinguish reported observations
+from inferred advice. Use `get_wiki_page` to read a page before revising it;
+updates require its current revision to avoid overwriting another contribution.
+The MCP package's `README.md` documents STDIO/HTTP setup and request formats.

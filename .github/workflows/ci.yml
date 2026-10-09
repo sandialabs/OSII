@@ -29,6 +29,8 @@ jobs:
       - uses: astral-sh/setup-uv@v10.1.0
       - name: Core, SDK, and packaging tests
         run: uv run --frozen --python 3.12 --package osii --extra dev python -m pytest osii-core/tests osii-core/processor-sdk/tests osii-toolbox/tests/test_packaging.py -q
+      - name: MCP documentation assistant and coding harness workflow
+        run: uv run --frozen --python 3.12 --package osii-mcp --extra dev python -m pytest osii-mcp/tests -q
       - name: Isolated processor contracts
         run: |
           for service in local-extractor local-tesseract local-synthesizer local-embedder local-enricher model-provider-bridge; do

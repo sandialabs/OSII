@@ -6,9 +6,9 @@
       "groups": [
         "users"
       ],
-      "description": "OSII traversal MCP server",
+      "description": "OSII coding documentation assistant with source retrieval and a cited wiki",
       "author": "Heidi Komkov",
-      "short_description": "Traverse and inspect OSII stores",
+      "short_description": "Consult documentation and improve reusable coding knowledge",
       "help_email": "hbkomko@sandia.gov",
       "compliance_level": "All",
       "auth_token": "${ATLAS_MCP_TOKEN}"
