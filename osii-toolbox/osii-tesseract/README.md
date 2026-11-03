@@ -153,35 +153,8 @@ on macOS, Linux, or Windows:
 uv run --no-project --python 3.12 --with-editable osii-core --with-editable osii-toolbox/osii-tesseract python -m uvicorn app.main:app --app-dir osii-toolbox/osii-tesseract --host 127.0.0.1 --port 8081
 ```
 
-Build the image from the OSII repository root. It includes Tesseract, so the
-container path does not need a host installation. Both build and runtime stages
-use the shared RHEL/UBI base. Tesseract 5.5.3, Leptonica 1.87.0, and eight
-`tessdata_fast` 4.1.0 languages are downloaded as pinned, checksum-verified
-build artifacts. See [Quay publishing](../README.md).
-
-```bash
-make toolbox-build TOOL=tesseract-opencv
-make toolbox-run TOOL=tesseract-opencv
-```
-
-Corporate builds can set `OSII_TESSERACT_SOURCE_URL`,
-`OSII_LEPTONICA_SOURCE_URL`, and `OSII_TESSDATA_BASE_URL` in the root `.env` to
-use byte-identical copies from an approved artifact mirror. Use the explicit
-Toolbox commands above; normal `make build` builds the simpler baseline OCR
-instead. Do not change checksums to accommodate a repacked or unreviewed artifact.
-
-Open:
-
-```text
-http://127.0.0.1:8081/docs
-http://127.0.0.1:8081/demo
-```
-
-Contract tests (mocked OCR; no model downloads) run from this component directory:
-
-```sh
-uv run --no-project --python 3.12 --with-editable ../../osii-core --with-editable . --with pytest python -m pytest tests -q
-```
+Container builds and publication are archived on
+`archive/workstation-deployment-2026-11-03`. Use the host commands above.
 
 ## Configuration
 

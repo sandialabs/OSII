@@ -37,23 +37,10 @@ normalization metadata. Switching vector spaces requires rebuilding.
 
 The experimental OpenCV/Tesseract region extractor and
 tabular processors live in `osii-toolbox/` in
-this repository; see [image publishing](publishing-images.md). Their dependencies and
-images remain separate from Core's lockfile, baseline images, and default host
-runtime. The Toolbox guide covers explicit builds and Quay publishing; review
-their dependencies independently.
-
-## Moving a processor to its own repository
-
-Each `osii-core/services/local-*` directory is a self-contained Python package. The
-component-export script supplies a standalone Dockerfile when copying one into
-its own repository; the monorepo itself uses the shared baseline image. Publish
-the `osii` package in the destination environment and replace the workspace dependency
-with that published version. Configure core with its URL in `OSII_PROCESSORS`
-and select it with `OSII_DEFAULT_EXTRACTOR`, `OSII_DEFAULT_SYNTHESIZER`,
-`OSII_DEFAULT_EMBEDDER`, or `OSII_DEFAULT_ENRICHER`.
-
-The HTTP contract remains Processor API v1; no OSII-core import is required by
-the extracted service.
+this repository. Their dependencies remain separate from Core's lockfile and
+default host runtime. Use the per-tool Python source commands and register the
+running Processor API endpoint in Setup. Container builds and component export
+are archived on `archive/workstation-deployment-2026-11-03`.
 
 ## Minimal API examples
 

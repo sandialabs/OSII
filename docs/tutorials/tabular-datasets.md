@@ -56,16 +56,9 @@ Python package may still require access to the configured package repository on
 the first run.
 
 The CSV extractor and collection enricher are optional Tool Chest services, not
-part of OSII Core's default development stack. Build and run
-`osii-toolbox/tabular-dataset-processors` from this repository (see
-[image publishing](../operations/publishing-images.md) for the deployment model):
-
-```bash
-# Run from the OSII repository root.
-podman build --format docker -f osii-toolbox/tabular-dataset-processors/Dockerfile -t osii-tabular-dataset-processors:0.1.0 .
-podman run -d --name osii-csv-table-extractor -p 8097:8097 osii-tabular-dataset-processors:0.1.0 extractor
-podman run -d --name osii-collection-table-enricher -p 8098:8098 osii-tabular-dataset-processors:0.1.0 enricher
-```
+part of OSII Core's default development stack. Use the isolated source commands
+in `osii-toolbox/tabular-dataset-processors/README.md` to run the extractor and
+enricher in separate terminals.
 
 Before starting OSII Core, add the following to its `.env` (use deployment
 network addresses rather than `127.0.0.1` when the services are separate):
@@ -115,7 +108,7 @@ rather than the incidental layout of a drive.
 The complete, containerized reference implementation is the
 `osii-toolbox/tabular-dataset-processors/` component in this repository. It
 contains one extractor and one enricher built only against the public Processor
-SDK, with a Dockerfile, direct tests, and an API contract embedded in the
+SDK, with direct tests and an API contract embedded in the
 image. A subject-matter expert can copy that component into an independent
 repository, replace the CSV parser with a laboratory or domain parser, and
 retain the same descriptors, typed requests, provenance, and standard table

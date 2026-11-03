@@ -28,9 +28,8 @@ The agent's job is to execute the human's command—nothing more.
   configuration explicit.
 - The dashboard and MCP server are Core clients. Guaranteed baseline Processor
   API hosts live under `osii-core/services/`. `osii-toolbox/` owns separately
-  deployable tools: only an explicitly designated bundled, default-swappable
-  service may appear in the default packaged Compose stack; every other Toolbox
-  processor is enabled only through explicit deployment configuration.
+  deployable tools. Toolbox processors are enabled only through explicit
+  configuration and do not join the default host stack automatically.
 - Treat `osii.processor_sdk` as the public boundary for external processors.
   Preserve standard artifact formats so people, the dashboard, and agents can
   inspect the same results.
@@ -49,47 +48,25 @@ The agent's job is to execute the human's command—nothing more.
   changes. Keep examples and demonstrations small and inspectable; do not
   create new example material unless explicitly requested.
 
-## Container policy
+## Current delivery scope
 
-- Every OSII-authored builder and runtime stage must derive from the approved
-  RHEL/UBI image supplied through the shared `OSII_BASE_IMAGE`. Do not introduce
-  Fedora, Debian, Ubuntu, Alpine, or a service-specific base-image argument.
-- A missing RPM is not justification for changing distributions. Build missing
-  software from pinned, checksum-verified source artifacts on RHEL/UBI. If the
-  approved repositories and artifact sources cannot satisfy the build, stop
-  and report the dependency instead of silently choosing another base.
-- Corporate source downloads must work through the configured artifact mirror
-  and `OSII_CA_BUNDLE`. Install corporate trust before any package, source,
-  Python, Node, or model download.
-- Keep final runtime stages minimal and non-root. Published builds must use an
-  approved immutable RHEL/UBI base reference; the public development default
-  may use the designated UBI 9 tag.
-- Preserve the simple `make build` and `make run` interface. Keep Make and
-  PowerShell container workflows equivalent when container policy changes.
-
-## Public and corporate delivery
-
-- Treat public GitHub as the portable development and validation repository.
-  Routine GitHub pushes run focused Linux/Python 3.12 and frontend checks;
-  reserve cross-platform installation checks for tags or manual runs, and do
-  not publish corporate images, installers, endpoints, or credentials there.
-- Treat corporate GitLab as the release authority. Import public changes on a
-  branch, preserve the corporate configuration layer, and merge through a
-  reviewed GitLab merge request before creating a protected `vX.Y.Z` tag.
-- Corporate tags build from approved mirrors and an immutable RHEL/UBI base,
-  publish or reuse verified AMD64/ARM64 images in corporate Quay, and attach
-  signed launcher installers to the GitLab Release. Publish a new internal
-  `osii` Python package only when Core/SDK changes.
-- Keep stack releases immutable. A component-only release may reuse a prior
-  package version and image digests; every new stack release still gets a
-  launcher pinned to its version. Never reuse a published tag.
-- Corporate Quay `:latest` is a separately approved alias of a tested
-  immutable release, never a build target or launcher default.
-- Preserve a simple non-developer path: install the signed launcher, choose a
-  source folder, pull tested images, and open the dashboard. Validate that path
-  on a clean workstation before announcing a release.
-- Keep `.github/workflows/ci.yml`, `.gitlab-ci.yml`, `release.toml`, and the
-  operations runbooks consistent when release behavior changes.
+- The supported startup path on main is `make dev` (Windows:
+  `.\\scripts\\osii.ps1 dev`). Keep automatic dependency setup, logs, health
+  checks, and Ctrl+C shutdown working. Do not add alternative startup menus.
+- Product direction is one shared OpenShift deployment, one configured model
+  endpoint, and one shared database. This does not authorize an implicit
+  database migration or claim that hosted authentication is implemented.
+- Desktop installers, workstation catalogs, Compose, component splitting, and
+  image publishing are archived on `archive/workstation-deployment-2026-11-03`.
+  Do not reintroduce them without an explicit human request.
+- Preserve Core, dashboard, SDK, and processor boundaries while simplifying
+  delivery. Optional tools stay optional. Do not replace existing persistence
+  or delete user data as part of deployment cleanup.
+- Keep CI focused on product tests, dashboard builds, and documentation. Future
+  OpenShift delivery should target the shared service, not workstation installs.
+- If containers are introduced for the hosted service, use the shared approved
+  RHEL/UBI base, minimal non-root runtimes, pinned verified dependencies, and
+  corporate certificate/mirror support. Stop on unavailable approved dependencies.
 
 ## Validation and handoff
 

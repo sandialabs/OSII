@@ -39,8 +39,8 @@ distribution to PyPI or a configured corporate Python registry, installation
 becomes `python -m pip install osii`. Registry publishing is a separate release
 step; the local command above works before publication.
 
-This installs Python code and dependencies. Launch the dashboard and optional
-processor containers through the normal OSII launcher.
+This installs Python code and dependencies. Start the complete application with `make dev` from the repository root
+(Windows: `.\\scripts\\osii.ps1 dev`).
 
 ## Human-readable overview
 

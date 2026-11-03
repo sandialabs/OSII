@@ -22,13 +22,9 @@ enricher and remains the only component that writes `.osii`.
 3. Start the optional wiki processors from **Setup → Advanced & diagnostics →
    Local capability services**. Or use a separate terminal:
 
-   ```bash
-   make toolbox-build TOOL=llm-wikis
-   make toolbox-run TOOL=llm-wikis
-   ```
-
-   PowerShell uses `toolbox-build -Tool llm-wikis` and
-   `toolbox-run -Tool llm-wikis` through `scripts\osii.ps1`.
+   Use the source commands in
+   `osii-toolbox/llm-wiki-enrichers/README.md`. Container build commands
+   are archived; local capability controls start the Python services.
 4. In **Setup → Register running processor**, register
    `http://127.0.0.1:8099` and `http://127.0.0.1:8100`.
 

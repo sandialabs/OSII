@@ -72,14 +72,14 @@ A-102 | 24.1 | 100.8
 ```
 
 Copy the SDK example into its own service repository, add its package metadata
-and a small FastAPI entry point using `create_processor_app`, then build its
-container. The example is intentionally not an OSII-managed container: it is
+and a small FastAPI entry point using `create_processor_app`, then run its
+Python service. The example is intentionally not an OSII-managed container: it is
 your service, with its own repository and release cycle.
 
 Start OSII separately:
 
 ```bash
-make run
+make dev
 ```
 
 ## 3. Register and test the processor

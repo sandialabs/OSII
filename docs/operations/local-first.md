@@ -45,7 +45,7 @@ the lightweight provider bridge from editable source. The processors are the
 Python text-layer PDF/Office extractor, ordinary full-page Tesseract OCR, the
 no-AI cited source-excerpt preview, lexical token/word-pair hashing vectors,
 and deterministic document statistics/frequent keywords. Bare-metal Tesseract
-requires its native executable; the packaged baseline image contains it. The bridge makes no
+requires its native executable on the host. The bridge makes no
 generation request until that capability is used. Setup performs model
 discovery and, when an embedding model is selected, validates one real vector
 so a model that merely appears in `/models` is not incorrectly offered to
@@ -53,14 +53,9 @@ Intake.
 
 This is the complete guaranteed baseline. It does not silently install or
 launch optional system software. After the dashboard opens, use **Setup** to
-connect Ollama or another AI endpoint or to start Apache Tika.
+connect the team's model endpoint.
 
-For the packaged Podman stack, `make run DISABLE_CONTAINER_PROXIES=true` or
-`.\scripts\osii.ps1 run -DisableContainerProxies` starts in direct-network mode
-while retaining the image's corporate certificate trust. The normal commands
-inherit host proxy behavior. See [Corporate pilot images and Quay
-releases](publishing-images.md#keep-corporate-certificates-but-disable-inherited-proxies)
-for build commands and exact scope.
+Workstation container workflows are archived; use `make dev`.
 
 The host launcher starts the dashboard only after `http://127.0.0.1:8511/health`
 responds. This is especially important on Windows, where several simultaneous
@@ -317,34 +312,12 @@ size, and overlap. Both BM25 and vector search consume the same manifest, and
 search carries page/segment provenance into document navigation. See
 [retrieval chunking and overlap](../concepts/retrieval-chunking.md).
 
-## Optional containers
+## External services
 
-Use `make build && make run` to test locally built images; corporate pilot hosts
-set their approved image tag and use `make run` without a local build. See
-[Corporate pilot images and Quay releases](publishing-images.md).
-Ollama and the upstream OpenAI-compatible service remain separately managed endpoints.
-OSII images contain only their lightweight HTTP adapters, not private packages
-or model files.
-
-To add Apache Tika while the editable stack runs, select **Start** beside
-**Apache Tika** in Setup. OSII invokes its fixed Compose service and reports
-the actual Podman/Docker failure when the runtime or image is unavailable. The
-equivalent two-terminal workflow remains:
-
-```bash
-# Terminal 1
-make dev
-
-# Terminal 2
-podman-compose --profile ocr up -d tika
-```
-
-The existing `TIKA_URL` configuration lets the running host services detect it
-on port 9998.
-
-When a Podman registry must be contacted without verifiable TLS certificates,
-consult the registry administrator. OSII does not make insecure registry access
-part of its normal launch workflow.
+Use `make dev` for the application. Connect the team's model endpoint in Setup.
+Optional processors and Tika must already be running before registering their
+URLs. Workstation container orchestration is archived on
+`archive/workstation-deployment-2026-11-03`.
 
 ## Storage and disk diagnostics
 

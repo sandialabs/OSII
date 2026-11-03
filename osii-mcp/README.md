@@ -102,15 +102,9 @@ uv run --package osii-mcp osii-mcp
 
 The standalone default is `http://127.0.0.1:8021/mcp`; `MCP_HOST` and `MCP_PORT`
 override it. `DEBUG=true` retains the existing development authentication bypass.
-The packaged Compose `agents` profile uses port 8022 by default. Rebuild and
-restart MCP after upgrading:
-
-```bash
-docker compose --profile agents up -d --build mcp
-```
-
-Wiki saving requires write access to the OSII store. The MCP Compose mount is
-writable; the MCP remains a Core client and writes only derived wiki artifacts.
+The host `make dev` workflow starts MCP on port 8022. Restart that terminal
+after upgrading. Wiki saving requires write access to the OSII store and writes
+only derived wiki artifacts. Compose deployment is archived.
 
 ## Storage, freshness and limits
 

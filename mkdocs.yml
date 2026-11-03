@@ -37,9 +37,7 @@ nav:
       - Standard artifacts: reference/processor-api/standard-artifacts.md
   - Install and use:
       - What are you trying to do?: operations/runbooks.md
-      - Mac and Windows launchers: operations/runbook-desktop.md
-      - Development paths: operations/runbook-development.md
-      - Releases and rollback: operations/runbook-releases.md
+      - Start from source: operations/runbook-development.md
       - Python walkthrough: tutorials/python-demonstrations.md
       - Single-file walkthrough: tutorials/single-file.md
       - Generate an LLM wiki: tutorials/llm-wiki.md
@@ -67,9 +65,8 @@ nav:
       - Guaranteed local processors: operations/local-processors.md
       - Extractor routing: reference/extractor-routing.md
       - Sensitive data and transfer: operations/sensitive-data.md
-      - Export components: operations/component-export.md
-      - Publish images to Quay: operations/publishing-images.md
-      - Public and corporate releases: operations/corporate-deployment.md
+  - Planning:
+      - Corporate hosted service: planning/hosted-service.md
   - API and formats:
       - REST API:
           - Overview: reference/api/index.md

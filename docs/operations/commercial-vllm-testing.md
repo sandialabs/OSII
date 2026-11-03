@@ -81,9 +81,8 @@ verify these stages in order:
    stop or delete the Runpod endpoint, revoke its API key, and remove the key
    from `.env` or the secret manager.
 
-For container parity, configure the same connection after `make build` and
-`make run`. The mounted application configuration remains outside the images
-and every `.osii` library.
+Use the same connection through `make dev`; keep credentials in ignored local
+configuration outside the `.osii` library.
 
 ## What this validates
 

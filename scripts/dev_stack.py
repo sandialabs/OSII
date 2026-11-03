@@ -282,6 +282,7 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str]) -> None:
     sync_command = [
             uv,
             "sync",
+            "--frozen",
             "--package",
             "osii",
             "--package",
@@ -551,28 +552,12 @@ class CapabilitySupervisor:
             return self.processes[service.name]
 
     def _compose_command(self) -> list[str] | None:
-        configured = self.env.get("OSII_COMPOSE_COMMAND", "").strip()
-        if configured:
-            return shlex.split(configured, posix=os.name != "nt")
-        if shutil.which("podman-compose"):
-            return ["podman-compose"]
-        if shutil.which("docker"):
-            return ["docker", "compose"]
+        # Workstation container orchestration is archived. Tika may still be
+        # supplied externally; the supervisor owns host Python processes only.
         return None
 
     def _compose(self, *arguments: str) -> subprocess.CompletedProcess[str]:
-        command = self._compose_command()
-        if command is None:
-            raise RuntimeError("Podman Compose or Docker Compose is required to start Apache Tika.")
-        return subprocess.run(
-            [*command, "--profile", "ocr", *arguments],
-            cwd=REPOSITORY_ROOT,
-            env=self.env,
-            text=True,
-            capture_output=True,
-            timeout=180,
-            check=False,
-        )
+        raise RuntimeError("Container startup is archived. Configure an already-running Tika endpoint instead.")
 
     def status(self, service_id: str) -> dict[str, object]:
         if service_id not in {*self.services, "tika"}:
@@ -593,7 +578,7 @@ class CapabilitySupervisor:
             port = self.tika_port if service_id == "tika" else self.services[service_id].port
             prerequisite = None
             if service_id == "tika" and self._compose_command() is None:
-                prerequisite = "Install Podman Compose or Docker Compose to run Apache Tika."
+                prerequisite = "Configure an already-running Tika endpoint; container startup is archived."
             elif service_id in {"ocr", "tesseract-opencv"} and shutil.which("tesseract") is None:
                 prerequisite = "Install the native Tesseract program, then restart OSII."
             return {
@@ -880,7 +865,7 @@ def run(
                 print("[dev] OCR needs the native Tesseract program. Install it, then restart OSII.")
             else:
                 print("[dev] Baseline full-page Tesseract OCR is ready.")
-            print("[dev] Open Dashboard → Setup to connect AI or start optional Apache Tika.")
+            print("[dev] Open Dashboard → Setup to connect the team's model endpoint.")
             print("[dev] Setup → Advanced & diagnostics contains processor URLs, settings, controls, and logs.")
             if provider_profile == "openai":
                 print("[dev] OpenAI-compatible profile: the configured endpoint is preferred, with Ollama and extractive fallbacks.")

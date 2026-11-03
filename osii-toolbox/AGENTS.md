@@ -7,10 +7,9 @@ the baseline image, or the host development launcher implicitly.
 - Core owns canonical `.osii` storage. Tools receive bounded requests and return
   typed results; never mount or browse the library from a processor.
 - Use the shared `osii.processor_sdk` contract included in `osii`, not a copied SDK.
-- Keep per-tool dependencies, container definitions, tests, and API documentation.
+- Keep per-tool dependencies, tests, and API documentation.
   Run tests separately: several independent services use an `app` package name.
-- Build SDK-dependent images from the repository root. Keep commands accurate
-  in `README.md` when paths change.
+- Container packaging is archived. Maintain host commands and Processor API contracts.
 - Never commit environments, model weights/caches, secrets, or processing data.
   Model-backed tools require explicit selection and independent security review.
 - Support macOS and Windows; use `python -m uvicorn` for host commands.

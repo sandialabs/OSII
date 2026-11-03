@@ -1,6 +1,6 @@
 # OSII tabular dataset processors
 
-Two optional, containerized OSII Processor API services for grounded tabular
+Two optional, Python OSII Processor API services for grounded tabular
 data. Their source lives in `osii-toolbox/` in the main OSII repository, separately
 from Core's runtime dependencies: an organization may run them by default, replace
 them with a domain-specific implementation, or leave them out entirely.
@@ -15,37 +15,6 @@ them with a domain-specific implementation, or leave them out entirely.
 Neither service reads an OSII directory or writes `.osii` storage. OSII Core
 passes an explicit request, validates the typed result, and commits it.
 See [the embedded Processor API contract](docs/OSII_PROCESSOR_API.md).
-
-## Build one image
-
-From the OSII repository root (see [deployment and Quay publishing](../README.md)):
-
-```bash
-podman build --format docker \
-  -f osii-toolbox/tabular-dataset-processors/Dockerfile \
-  -t osii-tabular-dataset-processors:0.1.0 .
-```
-
-The image runs one service per container. Start both only when you want both
-table extraction and collection enrichment:
-
-```bash
-podman run -d --name osii-csv-table-extractor -p 8097:8097 \
-  osii-tabular-dataset-processors:0.1.0 extractor
-podman run -d --name osii-collection-table-enricher -p 8098:8098 \
-  osii-tabular-dataset-processors:0.1.0 enricher
-```
-
-For a developer running OSII on the same host, append both URLs to its `.env`
-before starting the normal `make dev` stack:
-
-```dotenv
-OSII_PROCESSORS=http://127.0.0.1:8097,http://127.0.0.1:8098
-```
-
-In a Podman deployment, use the service's reachable host or container-network
-address instead. Confirm each capability with `/health`, `/v1/descriptor`, or
-`/docs` before configuring OSII.
 
 ## Development and tests
 

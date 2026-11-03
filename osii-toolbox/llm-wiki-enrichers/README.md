@@ -44,33 +44,7 @@ http://127.0.0.1:8100
 Each service provides `/health`, `/v1/descriptor`, `/v1/enrich`, `/docs`,
 `/redoc`, and `/openapi.json`.
 
-## Containers
+## Deployment status
 
-From the repository root:
-
-```bash
-make toolbox-build TOOL=llm-wikis
-make toolbox-run TOOL=llm-wikis
-```
-
-PowerShell:
-
-```powershell
-.\scripts\osii.ps1 toolbox-build -Tool llm-wikis
-.\scripts\osii.ps1 toolbox-run -Tool llm-wikis
-```
-
-The image runs as two containers because each URL describes exactly one
-Processor API implementation. Both containers use the shared image, so it is
-downloaded only once. Core gives each operation short-lived access to the
-configured model connection through its internal Model Gateway; provider URLs
-and API keys are not passed into these containers.
-
-Run isolated tests without starting a model:
-
-```bash
-uv run --python 3.12 --project osii-toolbox/llm-wiki-enrichers --extra dev pytest osii-toolbox/llm-wiki-enrichers/tests
-```
-
-The tests inject a normal OpenAI-compatible test client; no model download or network
-connection is required.
+Container workflows are archived on `archive/workstation-deployment-2026-11-03`.
+Use the source commands above while hosted delivery is developed.

@@ -8,7 +8,7 @@ matches what you want to do.
 
 - Read the repository README included with your checkout for the first-run path.
 - [Choose a deployment or release runbook](operations/runbooks.md)
-- [Run the corporate pilot bundle](operations/publishing-images.md)
+- [Start OSII from source](operations/runbook-development.md)
 - [Use a shared drive or Samba share](operations/shared-drives.md)
 - [Follow the friendly Python walkthrough](tutorials/python-demonstrations.md)
 - [Process one file through the CLI](tutorials/single-file.md)
@@ -20,8 +20,7 @@ specific boundary rather than from top to bottom.
 
 After starting OSII, the dashboard's **Setup** page lists every extractor,
 synthesizer, embedder, and enricher; configures extension-based extraction
-routes and fallbacks; connects optional model providers; starts optional Tika
-or Tesseract capabilities; and reaches advanced processor diagnostics.
+routes and fallbacks; connects optional model providers; controls host Tesseract capabilities; and reaches advanced processor diagnostics.
 
 ## The four processor APIs
 
@@ -46,6 +45,7 @@ as a service. Core handles storing the results when invoked through its workflow
 - [Extraction architecture](concepts/extraction.md)
 - [Synthesis architecture](concepts/synthesis.md)
 - [OSII store structure](reference/osii-store.md)
+- [Corporate hosted service feasibility and plan](planning/hosted-service.md)
 
 ## Extend OSII
 
@@ -57,7 +57,7 @@ as a service. Core handles storing the results when invoked through its workflow
 4. [Implement the Processor API v1 contract](reference/processor-api/index.md).
 5. [Return a standard dashboard and agent artifact](reference/processor-api/standard-artifacts.md).
 
-OSII extension services are ordinary Python HTTP containers. A subject-matter
+OSII extension services are ordinary Python HTTP services. A subject-matter
 expert owns the domain logic; the OSII SDK supplies validated request and
 response models plus the FastAPI endpoints.
 
@@ -71,9 +71,6 @@ the `.osii` store directly.
 - [Shared drives and Samba](operations/shared-drives.md)
 - [Guaranteed container-free processor services](operations/local-processors.md)
 - [Extractor routing](reference/extractor-routing.md)
-- [Export components for separate repositories](operations/component-export.md)
-- [Publish the consolidated images to Quay](operations/publishing-images.md)
-- [Deploy Toolbox OCR, table, and embedding images](operations/publishing-images.md)
 - [Sensitive data, OSII package transfer, and deletion](operations/sensitive-data.md)
 
 ## API and file-format reference
