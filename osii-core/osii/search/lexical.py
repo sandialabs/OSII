@@ -149,11 +149,11 @@ def lexical_search_chunks(osii_root: Path, query: str, top_k: int = 10) -> list[
     if k <= 0:
         return []
 
-    scores, doc_ids = retriever.retrieve([query_tokens], k=k)
+    doc_ids, scores = retriever.retrieve([query_tokens], k=k)
 
     results = []
     for score, idx in zip(scores[0], doc_ids[0]):
-        if idx is None:
+        if idx is None or not float(score) > 0:
             continue
         idx = int(idx)
         if idx < 0 or idx >= len(rows):
