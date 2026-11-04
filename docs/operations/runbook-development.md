@@ -40,6 +40,69 @@ For the shared model endpoint set `OPENAI_BASE_URL`, `OPENAI_CHAT_MODEL`, and
 Setup or inject `OPENAI_API_KEY`. Existing saved model settings are retained;
 change them in Setup rather than expecting new defaults to overwrite them.
 
+## Work on local and server together
+
+Keep each chat and terminal in its own existing worktree:
+
+| Application | Checkout | Branch | API / dashboard | Python environment |
+| --- | --- | --- | --- | --- |
+| OSII-local | `/Users/heidi/Projects/OSII/osii` | `main` | `8511` / `5173` | `osii-env/` |
+| OSII-server | `/Users/heidi/Projects/OSII/osii-server` | `osii-server` | `8512` / `5174` | `.venv/` |
+
+Each checkout owns its `.env`, configuration, dependencies, and runtime data.
+Local's baseline extractor uses `8092`; server's uses `8192`. Use checkout-local
+settings rather than exporting OSII paths or ports globally across terminals.
+Keep local filesystem storage separate from the server's PostgreSQL database.
+Preserve in-progress work in each worktree; branch switching is unnecessary.
+Transfer portable fixes in focused commits only after committing is authorized,
+review and test each cherry-pick, and avoid whole-branch merges between products.
+
+## Use shared source documents
+
+Mount the share through the operating system, then set these values in the
+local checkout's `.env` (adapt the source path for your machine):
+
+```dotenv
+OSII_SOURCE_DIR=/Volumes/home/hk
+OSII_SOURCE_KIND=shared
+OSII_RUNTIME_DIR=./osii-data/nas-hk
+OSII_CONFIG_DIR=./osii-data/config
+```
+
+Run the same `make dev` or PowerShell command. Originals are read in place;
+the `.osii` store, catalog, jobs, indexes, and uploads stay on the workstation.
+The explicit config path retains existing Setup settings when changing the
+runtime directory. Existing data in other runtime directories is retained.
+Do not put `OSII_RUNTIME_DIR` or `OSII_ROOT` on the share: the catalog uses
+[SQLite WAL, which does not support network filesystems](https://sqlite.org/wal.html).
+This configuration supports one local instance; simultaneous instances sharing
+a writable store have not been verified.
+
+Repeat the isolated PDF ingest/search/restart check from the local checkout:
+
+```bash
+OSII_TEST_SHARED_DIR=/Volumes/home/hk UV_PROJECT_ENVIRONMENT="$PWD/osii-env" uv run --frozen --python 3.12 --package osii --extra dev python -m pytest osii-core/tests/test_source_access.py -q
+```
+
+```powershell
+$env:OSII_TEST_SHARED_DIR = '//server/share/documents'
+$env:UV_PROJECT_ENVIRONMENT = "$PWD/osii-env"
+uv run --frozen --python 3.12 --package osii --extra dev python -m pytest osii-core/tests/test_source_access.py -q
+```
+
+The test creates and removes only its own temporary corpus on the share, uses
+temporary local state and available ports, and restarts API, worker, and text
+extractor processes. It checks original hashes, extracted text, search results,
+persisted runs, and SQLite integrity. It simulates loss of the source path by
+renaming its test folder and restoring it; it never unmounts the user's share.
+Permission failures and interrupted scans are injected in separate regression
+tests. A failed rescan must return an error without marking documents missing.
+
+On November 4, 2026, this check passed against the NAS at `192.168.1.150`,
+mounted at `/Volumes/home` over SMB 3.1.1, using `/Volumes/home/hk` for the test
+corpus. Actual network interruption, NAS ACL enforcement, concurrent OSII
+instances, Windows execution, and a large PDF corpus remain unverified.
+
 ## Start and check
 
 Run `make dev` (Windows: `.\\scripts\\osii.ps1 dev`). This installs locked

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import stat
 import tomllib
 
-from osii.domain.processing.intake import expand_queue_to_files
+from osii.domain.processing.intake import excluded, match_any
 from osii.domain.storage.ids import compute_file_id
 from osii.domain.read.catalog import load_files_catalog
 from osii.domain.storage.store import meta_toml_path
@@ -28,27 +30,25 @@ def scan_source_files(
     exclude_patterns: list[str],
     show_hidden: bool = False,
 ) -> list[Path]:
-    queue_items = [
-        {
-            "path": str(data_root),
-            "display": str(data_root),
-            "kind": "folder",
-            "source": "shared",
-        }
-    ]
+    # A partial scan must never be interpreted as deleted source documents.
+    # pathlib globbing and the intake preview can silently skip unreadable paths.
+    def fail_scan(error: OSError) -> None:
+        raise error
 
-    resolved_files, _ = expand_queue_to_files(
-        queue_items=queue_items,
-        include_subfolders=True,
-        include_patterns=include_patterns,
-        exclude_patterns=exclude_patterns,
-        show_hidden=show_hidden,
-        max_files=None,
-        max_total_size=None,
-        shared_root=data_root,
-        upload_root=data_root,
-    )
-    return resolved_files
+    files: list[Path] = []
+    for directory, subdirectories, filenames in os.walk(data_root, onerror=fail_scan):
+        if not show_hidden:
+            subdirectories[:] = [name for name in subdirectories if not name.startswith(".")]
+        for name in filenames:
+            if not show_hidden and name.startswith("."):
+                continue
+            path = Path(directory) / name
+            relative = path.relative_to(data_root).as_posix()
+            if not match_any(relative, include_patterns) or excluded(relative, exclude_patterns):
+                continue
+            if stat.S_ISREG(path.stat().st_mode):
+                files.append(path.resolve())
+    return sorted(files)
 
 
 def reconcile_osii_with_source(

@@ -69,14 +69,24 @@ def rescan_sources(request: Request, payload: dict):
     # The filesystem is canonical; make sure a stale/empty derived catalog
     # cannot hide objects from the hash comparison.
     rebuild_catalog(osii_root)
-    result = reconcile_osii_with_source(
-        osii_root=osii_root,
-        data_root=shared_root,
-        relpath_root=data_volume_root,
-        include_patterns=[],
-        exclude_patterns=[],
-        show_hidden=bool(payload.get("show_hidden", False)),
-    )
+    try:
+        result = reconcile_osii_with_source(
+            osii_root=osii_root,
+            data_root=shared_root,
+            relpath_root=data_volume_root,
+            include_patterns=[],
+            exclude_patterns=[],
+            show_hidden=bool(payload.get("show_hidden", False)),
+        )
+    except OSError as exc:
+        raise HTTPException(
+            status_code=403 if isinstance(exc, PermissionError) else 503,
+            detail=(
+                f"Cannot finish scanning documents at {shared_root}: {exc}. "
+                "Reconnect the shared drive or restore read permission, then retry. "
+                "Stored source paths and statuses have not been changed."
+            ),
+        ) from exc
     if bool(payload.get("apply", False)):
         result["applied"] = apply_source_path_reconciliation(
             reconcile_result=result,
