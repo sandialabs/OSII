@@ -1,0 +1,16 @@
+**/.git
+**/.env*
+**/secrets.env
+**/osii-data
+**/.osii
+**/.venv
+**/osii-env
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/dist
+**/*.ipynb
+**/*.key
+**/*.pem
+**/output
+**/.playwright-cli

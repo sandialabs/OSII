@@ -1,5 +1,9 @@
 # OSII documentation
 
+On `osii-server`, start with the [server deployment runbook](operations/runbook-server.md).
+Historical local-first instructions describe `main`; they do not enable
+filesystem persistence or public setup here.
+
 OSII turns local files into grounded, inspectable information that people can
 browse, search, enrich, and use through AI agents. Start with the path that
 matches what you want to do.

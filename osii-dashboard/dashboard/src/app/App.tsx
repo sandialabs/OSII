@@ -1,6 +1,6 @@
 // src/app/App.tsx
-import { AppRouter } from "./router";
+import { ServerApp } from "../features/server/ServerApp";
 
 export function App() {
-  return <AppRouter />;
+  return <ServerApp />;
 }

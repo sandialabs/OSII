@@ -17,9 +17,11 @@ The agent's job is to execute the human's command—nothing more.
 
 ## Architecture
 
-- OSII is local-first. Preserve original source identity, extracted text,
-  locations, scopes, provenance, and portable `.osii` sidecars. Catalogs,
-  indexes, caches, and model output are derived and rebuildable.
+- `main` is OSII-local: standalone and filesystem-backed. This branch,
+  `osii-server`, is the hosted PostgreSQL application. Preserve source identity,
+  text, locations, scopes, and provenance in PostgreSQL. Never fall back to a
+  `.osii` directory or SQLite here. Retrieval caches are derived and rebuildable.
+- Only Core API/worker access PostgreSQL; the UI and processors never do.
 - The Core owns canonical persistence, RAG orchestration, and grounded chat.
   Processors receive explicit bounded requests and return typed output; they do
   not browse a corpus or write the canonical store.
@@ -53,9 +55,10 @@ The agent's job is to execute the human's command—nothing more.
 - The supported startup path on main is `make dev` (Windows:
   `.\\scripts\\osii.ps1 dev`). Keep automatic dependency setup, logs, health
   checks, and Ctrl+C shutdown working. Do not add alternative startup menus.
-- Product direction is one shared OpenShift deployment, one configured model
-  endpoint, and one shared database. This does not authorize an implicit
-  database migration or claim that hosted authentication is implemented.
+- This branch implements one shared OpenShift deployment, one configured model
+  endpoint, and PostgreSQL. Migrations and administrator bootstrap are explicit
+  CLI operations. Keep password authentication and server permission checks on
+  every corpus/admin API; never expose a development authentication bypass.
 - Desktop installers, workstation catalogs, Compose, component splitting, and
   image publishing are archived on `archive/workstation-deployment-2026-11-03`.
   Do not reintroduce them without an explicit human request.

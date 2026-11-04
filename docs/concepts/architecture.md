@@ -1,5 +1,11 @@
 # OSII architecture
 
+**Server branch:** PostgreSQL is authoritative for Core persistence; originals
+are a read-only dataset. Dashboard and processors do not access the database.
+Core owns authentication, permission checks, retrieval, citations, and canonical
+commits. The filesystem descriptions below are standalone references for `main`.
+See the [server runbook](../operations/runbook-server.md).
+
 ## Design rule
 
 The OSII core owns canonical persistence. Processors are replaceable compute

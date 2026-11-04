@@ -1,0 +1,660 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: osii-server
+parameters:
+- name: CORE_IMAGE
+  required: true
+- name: DASHBOARD_IMAGE
+  required: true
+- name: DATABASE_IMAGE
+  required: true
+- name: APP_HOST
+  required: true
+- name: MODEL_BASE_URL
+  value: https://openrouter.ai/api/v1
+- name: DATABASE_STORAGE_CLASS
+  value: gp3
+- name: SOURCE_STORAGE_CLASS
+  value: efs-sc
+objects:
+- apiVersion: v1
+  kind: ServiceAccount
+  metadata:
+    name: osii
+    labels:
+      app: osii
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: osii-database
+    labels:
+      app: osii
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    storageClassName: ${DATABASE_STORAGE_CLASS}
+    resources:
+      requests:
+        storage: 20Gi
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: osii-sources
+    labels:
+      app: osii
+  spec:
+    accessModes:
+    - ReadWriteMany
+    storageClassName: ${SOURCE_STORAGE_CLASS}
+    resources:
+      requests:
+        storage: 5Gi
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: osii-config
+    labels:
+      app: osii
+  data:
+    OSII_SOURCE_DIR: /data/source
+    OSII_EXTRACTOR_URL: http://osii-extractor:8192
+    OPENAI_BASE_URL: ${MODEL_BASE_URL}
+    OSII_MODEL_API_KEY_FILE: /run/osii-model/key
+    OSII_ORIGINS: https://${APP_HOST}
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: osii-api
+    labels:
+      app: osii
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        component: osii-api
+    template:
+      metadata:
+        labels:
+          app: osii
+          component: osii-api
+      spec:
+        serviceAccountName: osii
+        automountServiceAccountToken: false
+        securityContext:
+          seccompProfile:
+            type: RuntimeDefault
+        containers:
+        - name: api
+          image: ${CORE_IMAGE}
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: '1'
+              memory: 4Gi
+          volumeMounts:
+          - name: temp
+            mountPath: /tmp
+          - name: sources
+            mountPath: /data/source
+            readOnly: true
+          - name: model-key
+            mountPath: /run/osii-model
+            readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+              - ALL
+          envFrom:
+          - configMapRef:
+              name: osii-config
+          env:
+          - name: DATABASE_URL
+            valueFrom:
+              secretKeyRef:
+                name: osii-database
+                key: url
+          ports:
+          - containerPort: 8512
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8512
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8512
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+        volumes:
+        - name: temp
+          emptyDir: {}
+        - name: sources
+          persistentVolumeClaim:
+            claimName: osii-sources
+        - name: model-key
+          secret:
+            secretName: osii-model
+            defaultMode: 288
+    strategy:
+      type: Recreate
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: osii-api
+    labels:
+      app: osii
+  spec:
+    selector:
+      component: osii-api
+    ports:
+    - port: 8512
+      targetPort: 8512
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: osii-worker
+    labels:
+      app: osii
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        component: osii-worker
+    template:
+      metadata:
+        labels:
+          app: osii
+          component: osii-worker
+      spec:
+        serviceAccountName: osii
+        automountServiceAccountToken: false
+        securityContext:
+          seccompProfile:
+            type: RuntimeDefault
+        containers:
+        - name: worker
+          image: ${CORE_IMAGE}
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: '1'
+              memory: 4Gi
+          volumeMounts:
+          - name: temp
+            mountPath: /tmp
+          - name: sources
+            mountPath: /data/source
+            readOnly: true
+          - name: model-key
+            mountPath: /run/osii-model
+            readOnly: true
+          command:
+          - python3.12
+          - -m
+          - osii.server.worker
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+              - ALL
+          envFrom:
+          - configMapRef:
+              name: osii-config
+          env:
+          - name: DATABASE_URL
+            valueFrom:
+              secretKeyRef:
+                name: osii-database
+                key: url
+        volumes:
+        - name: temp
+          emptyDir: {}
+        - name: sources
+          persistentVolumeClaim:
+            claimName: osii-sources
+        - name: model-key
+          secret:
+            secretName: osii-model
+            defaultMode: 288
+    strategy:
+      type: Recreate
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: osii-extractor
+    labels:
+      app: osii
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        component: osii-extractor
+    template:
+      metadata:
+        labels:
+          app: osii
+          component: osii-extractor
+      spec:
+        serviceAccountName: osii
+        automountServiceAccountToken: false
+        securityContext:
+          seccompProfile:
+            type: RuntimeDefault
+        containers:
+        - name: extractor
+          image: ${CORE_IMAGE}
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: '1'
+              memory: 2Gi
+          volumeMounts:
+          - name: temp
+            mountPath: /tmp
+          command:
+          - python3.12
+          - -m
+          - uvicorn
+          - app.main:app
+          - --app-dir
+          - /app/osii-core/services/local-extractor
+          - --host
+          - 0.0.0.0
+          - --port
+          - '8192'
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+              - ALL
+          ports:
+          - containerPort: 8192
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8192
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8192
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+        volumes:
+        - name: temp
+          emptyDir: {}
+    strategy:
+      type: Recreate
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: osii-extractor
+    labels:
+      app: osii
+  spec:
+    selector:
+      component: osii-extractor
+    ports:
+    - port: 8192
+      targetPort: 8192
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: osii-dashboard
+    labels:
+      app: osii
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        component: osii-dashboard
+    template:
+      metadata:
+        labels:
+          app: osii
+          component: osii-dashboard
+      spec:
+        serviceAccountName: osii
+        automountServiceAccountToken: false
+        securityContext:
+          seccompProfile:
+            type: RuntimeDefault
+        containers:
+        - name: dashboard
+          image: ${DASHBOARD_IMAGE}
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 2Gi
+          volumeMounts:
+          - name: temp
+            mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+              - ALL
+          ports:
+          - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+        volumes:
+        - name: temp
+          emptyDir: {}
+    strategy:
+      type: Recreate
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: osii-dashboard
+    labels:
+      app: osii
+  spec:
+    selector:
+      component: osii-dashboard
+    ports:
+    - port: 8080
+      targetPort: 8080
+- apiVersion: apps/v1
+  kind: StatefulSet
+  metadata:
+    name: osii-database
+    labels:
+      app: osii
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        component: osii-database
+    template:
+      metadata:
+        labels:
+          app: osii
+          component: osii-database
+      spec:
+        serviceAccountName: osii
+        automountServiceAccountToken: false
+        securityContext:
+          seccompProfile:
+            type: RuntimeDefault
+        containers:
+        - name: database
+          image: ${DATABASE_IMAGE}
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: '1'
+              memory: 2Gi
+          volumeMounts:
+          - name: temp
+            mountPath: /tmp
+          - name: database
+            mountPath: /var/lib/pgsql/data
+          env:
+          - name: POSTGRESQL_USER
+            valueFrom:
+              secretKeyRef:
+                name: osii-database
+                key: username
+          - name: POSTGRESQL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: osii-database
+                key: password
+          - name: POSTGRESQL_DATABASE
+            valueFrom:
+              secretKeyRef:
+                name: osii-database
+                key: database
+          ports:
+          - containerPort: 5432
+          readinessProbe:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - pg_isready -U "$POSTGRESQL_USER" -d "$POSTGRESQL_DATABASE"
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+        volumes:
+        - name: temp
+          emptyDir: {}
+        - name: database
+          persistentVolumeClaim:
+            claimName: osii-database
+    serviceName: osii-database
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: osii-database
+    labels:
+      app: osii
+  spec:
+    selector:
+      component: osii-database
+    ports:
+    - port: 5432
+      targetPort: 5432
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+    name: osii
+    labels:
+      app: osii
+  spec:
+    host: ${APP_HOST}
+    to:
+      kind: Service
+      name: osii-dashboard
+    port:
+      targetPort: 8080
+    tls:
+      termination: edge
+      insecureEdgeTerminationPolicy: Redirect
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: osii-ingress
+    labels:
+      app: osii
+  spec:
+    podSelector:
+      matchLabels:
+        app: osii
+    policyTypes:
+    - Ingress
+    ingress:
+    - from:
+      - podSelector:
+          matchLabels:
+            app: osii
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            policy-group.network.openshift.io/ingress: ''
+      ports:
+      - protocol: TCP
+        port: 8080
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: osii-api-egress
+  spec:
+    podSelector:
+      matchLabels:
+        component: osii-api
+    policyTypes:
+    - Egress
+    egress:
+    - to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: openshift-dns
+      ports:
+      - protocol: UDP
+        port: 53
+      - protocol: UDP
+        port: 5353
+      - protocol: TCP
+        port: 53
+      - protocol: TCP
+        port: 5353
+    - to:
+      - podSelector:
+          matchLabels:
+            component: osii-database
+      ports:
+      - protocol: TCP
+        port: 5432
+    - to:
+      - podSelector:
+          matchLabels:
+            component: osii-extractor
+      ports:
+      - protocol: TCP
+        port: 8192
+    - to:
+      - ipBlock:
+          cidr: 0.0.0.0/0
+          except:
+          - 10.0.0.0/8
+          - 172.16.0.0/12
+          - 192.168.0.0/16
+          - 127.0.0.0/8
+          - 169.254.0.0/16
+      ports:
+      - protocol: TCP
+        port: 443
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: osii-worker-egress
+  spec:
+    podSelector:
+      matchLabels:
+        component: osii-worker
+    policyTypes:
+    - Egress
+    egress:
+    - to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: openshift-dns
+      ports:
+      - protocol: UDP
+        port: 53
+      - protocol: UDP
+        port: 5353
+      - protocol: TCP
+        port: 53
+      - protocol: TCP
+        port: 5353
+    - to:
+      - podSelector:
+          matchLabels:
+            component: osii-database
+      ports:
+      - protocol: TCP
+        port: 5432
+    - to:
+      - podSelector:
+          matchLabels:
+            component: osii-extractor
+      ports:
+      - protocol: TCP
+        port: 8192
+    - to:
+      - ipBlock:
+          cidr: 0.0.0.0/0
+          except:
+          - 10.0.0.0/8
+          - 172.16.0.0/12
+          - 192.168.0.0/16
+          - 127.0.0.0/8
+          - 169.254.0.0/16
+      ports:
+      - protocol: TCP
+        port: 443
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: osii-extractor-egress
+  spec:
+    podSelector:
+      matchLabels:
+        component: osii-extractor
+    policyTypes:
+    - Egress
+    egress: []
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: osii-dashboard-egress
+  spec:
+    podSelector:
+      matchLabels:
+        component: osii-dashboard
+    policyTypes:
+    - Egress
+    egress:
+    - to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: openshift-dns
+      ports:
+      - protocol: UDP
+        port: 53
+      - protocol: UDP
+        port: 5353
+      - protocol: TCP
+        port: 53
+      - protocol: TCP
+        port: 5353
+    - to:
+      - podSelector:
+          matchLabels:
+            component: osii-api
+      ports:
+      - protocol: TCP
+        port: 8512
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: osii-database-egress
+  spec:
+    podSelector:
+      matchLabels:
+        component: osii-database
+    policyTypes:
+    - Egress
+    egress: []

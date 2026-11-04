@@ -2,7 +2,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [osii-server]
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,10 +16,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.1.0
-      - name: Core and SDK
-        run: uv run --frozen --python 3.12 --package osii --extra dev python -m pytest osii-core/tests osii-core/processor-sdk/tests -q
-      - name: MCP
-        run: uv run --frozen --python 3.12 --package osii-mcp --extra dev python -m pytest osii-mcp/tests -q
+      - name: Isolated PostgreSQL test database
+        run: |
+          sudo systemctl start postgresql
+          sudo -u postgres psql -c "CREATE ROLE osii_test LOGIN PASSWORD 'osii-test-only';"
+          sudo -u postgres createdb -O osii_test osii_server_test
+      - name: Server, retrieval, and SDK
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://osii_test:osii-test-only@localhost:5432/osii_server_test
+        run: uv run --frozen --python 3.12 --package osii --extra server --extra dev python -m pytest osii-core/server-tests osii-core/processor-sdk/tests -q
       - name: Processor contracts
         run: |
           for service in local-extractor local-tesseract local-synthesizer local-embedder local-enricher model-provider-bridge; do

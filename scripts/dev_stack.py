@@ -1,921 +1,195 @@
-#!/usr/bin/env python3
-"""Run the editable OSII application stack directly on the host."""
-
+"""Run OSII-server locally; database migration/bootstrap remain explicit."""
 from __future__ import annotations
-
 import argparse
-from collections import defaultdict, deque
-from dataclasses import dataclass
-import hashlib
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import json
 import os
 from pathlib import Path
-import secrets
+import re
 import shlex
 import shutil
+import signal
 import socket
-from socketserver import TCPServer
 import subprocess
 import sys
-import threading
 import time
-import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 
-
-REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-SERVICE_DISPLAY_NAMES = {
-    "extractor": "Python text-layer PDF and Office extractor",
-    "ocr": "Tesseract OCR — full page",
-    "synthesizer": "cited source-excerpt preview (no AI)",
-    "embedder": "lexical hashing vectors (no AI model)",
-    "enricher": "document statistics and frequent keywords",
-    "model-bridge": "Ollama/OpenAI-compatible HTTP adapter (not Ollama itself)",
-    "readable-wiki": "Readable LLM Wiki",
-    "concept-entity-wiki": "Concept and Entity LLM Wiki",
-    "tesseract-opencv": "Tesseract OCR with OpenCV regions",
-    "api": "OSII backend API and grounded chat",
-    "worker": "sequential intake worker",
-    "mcp": "MCP server for agents",
-    "dashboard": "dashboard web interface",
-}
-
-
-@dataclass(frozen=True)
-class Service:
-    name: str
-    command: tuple[str, ...]
-    working_directory: Path
-    port: int
-    environment: tuple[tuple[str, str], ...] = ()
-    start_automatically: bool = True
-
-
-CAPABILITY_SERVICE_INFO = {
-    "extractor": ("Python document extractor", "Reads text-layer PDFs, Office files, and text formats.", "/health"),
-    "ocr": ("Tesseract OCR — full page", "Runs ordinary Tesseract once per complete PDF or image page.", "/health"),
-    "synthesizer": ("Source excerpt preview", "Creates a cited preview without an AI model.", "/health"),
-    "embedder": ("Lexical hashing compatibility embedder", "Optional lexical vectors; BM25 search works without it.", "/health"),
-    "enricher": ("Statistics and keywords enricher", "Creates local document statistics and keyword artifacts.", "/health"),
-    "model-bridge": ("AI provider bridge", "Connects OSII to Ollama or an OpenAI-compatible endpoint.", "/health"),
-    "readable-wiki": ("Readable LLM Wiki", "Creates a cited, reader-friendly Markdown wiki using a configured chat connection.", "/health"),
-    "concept-entity-wiki": ("Concept and Entity LLM Wiki", "Creates a wiki, entity list, and concept table using a configured chat connection.", "/health"),
-    "tesseract-opencv": ("Tesseract OCR with OpenCV regions", "Finds page regions with OpenCV and preserves OCR bounding boxes.", "/health"),
-    "tika": ("Apache Tika", "Adds broad document-format text extraction using Podman or Docker.", "/version"),
-}
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
-    """Read the small KEY=VALUE subset used by OSII's checked-in example."""
-    values: dict[str, str] = {}
-    if not path.exists():
-        return values
-
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, raw_value = line.split("=", 1)
-        key = key.strip()
-        value = raw_value.strip()
-        if value and value[0] in {"'", '"'}:
-            parsed = shlex.split(value, posix=True)
-            value = parsed[0] if parsed else ""
-        values[key] = value
-    return values
+    result = {}
+    if path.exists():
+        for line in path.read_text().splitlines():
+            if "=" in line and not line.lstrip().startswith("#"):
+                key, value = line.split("=", 1)
+                value = value.strip()
+                result[key.strip()] = value[1:-1] if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'" else value.split(" #", 1)[0].strip()
+    return result
 
 
-def command_path(name: str) -> str:
-    resolved = shutil.which(name)
-    if resolved is None:
-        raise RuntimeError(
-            f"Required command '{name}' was not found on PATH. "
-            "Starting OSII from source requires uv and Node.js/npm."
-        )
-    return resolved
-
-
-def build_environment(core_only: bool) -> dict[str, str]:
-    env = os.environ.copy()
-    env.pop("VIRTUAL_ENV", None)
-    for key, value in load_dotenv(REPOSITORY_ROOT / ".env").items():
-        env.setdefault(key, value)
-
-    runtime_value = env.get("OSII_RUNTIME_DIR", "./osii-data")
-    runtime_root = Path(runtime_value).expanduser()
-    if not runtime_root.is_absolute():
-        runtime_root = REPOSITORY_ROOT / runtime_root
-    runtime_root = runtime_root.resolve()
-
-    source_value = env.get("OSII_SOURCE_DIR", "./osii-data/source")
-    source_root = Path(source_value).expanduser()
-    if not source_root.is_absolute():
-        source_root = REPOSITORY_ROOT / source_root
-    source_root = source_root.resolve()
-    if not source_root.exists():
-        raise RuntimeError(
-            f"Documents folder is unavailable: {source_root}. "
-            "Connect or mount the shared drive, then start OSII again."
-        )
-    if not source_root.is_dir():
-        raise RuntimeError(f"Documents path is not a folder: {source_root}")
-    try:
-        with os.scandir(source_root) as entries:
-            next(entries, None)
-    except OSError as exc:
-        raise RuntimeError(f"Documents folder cannot be read: {source_root}: {exc}") from exc
-
-    osii_value = env.get("OSII_ROOT", "").strip()
-    osii_root = Path(osii_value).expanduser() if osii_value else runtime_root / ".osii"
-    if not osii_root.is_absolute():
-        osii_root = REPOSITORY_ROOT / osii_root
-    osii_root = osii_root.resolve()
-
-    uploads_value = env.get("UPLOAD_ORIGINALS_ROOT", "").strip()
-    uploads_root = Path(uploads_value).expanduser() if uploads_value else runtime_root / "uploads"
-    if not uploads_root.is_absolute():
-        uploads_root = REPOSITORY_ROOT / uploads_root
-    uploads_root = uploads_root.resolve()
-    for path in (osii_root, uploads_root):
-        path.mkdir(parents=True, exist_ok=True)
-
-    configured_directory = (env.get("OSII_CONFIG_DIR", "") or env.get("OSII_CONFIG_DIR_HOST", "")).strip()
-    previous_configuration_root = None
-    if configured_directory:
-        configuration_root = Path(configured_directory).expanduser()
-        if not configuration_root.is_absolute():
-            configuration_root = REPOSITORY_ROOT / configuration_root
-    else:
-        configuration_root = runtime_root / "config"
-    configuration_root = configuration_root.resolve()
-    if configuration_root == runtime_root / "config":
-        if sys.platform == "darwin":
-            application_root = Path.home() / "Library" / "Application Support" / "org.osii.launcher"
-        elif os.name == "nt":
-            application_root = Path(env.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "org.osii.launcher"
-        else:
-            application_root = Path(env.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "org.osii.launcher"
-        previous_configuration_root = application_root / "profiles" / "development" / "deployment"
-    # Preserve a prior make-dev profile once, without changing or deleting it.
-    # Never import home-directory settings over a repository's existing config.
-    new_configuration = not any(
-        (configuration_root / name).exists()
-        for name in ("models.toml", "tools.toml", "models.yml", "tools.yml", "secrets.env")
-    )
-    configuration_root.mkdir(parents=True, exist_ok=True)
-    if new_configuration and previous_configuration_root is not None:
-        for name in ("models.toml", "tools.toml", "models.yml", "tools.yml", "secrets.env"):
-            previous = previous_configuration_root / name
-            if previous.is_file():
-                target = configuration_root / name
-                shutil.copy2(previous, target)
-                if os.name != "nt":
-                    target.chmod(0o600)
-        if any(configuration_root.iterdir()):
-            print(f"[dev] Copied previous development configuration to {configuration_root}; original files are unchanged.")
-
-    api_port = env.get("OSII_API_PORT", "8511")
-    embeddings_port = env.get("OSII_EMBEDDINGS_PORT", "8085")
-    tika_port = env.get("OSII_TIKA_PORT", "9998")
-    mcp_port = env.get("OSII_MCP_PORT", "8022")
-    workspace_python_path = os.pathsep.join(
-        (
-            str(REPOSITORY_ROOT / "osii-core"),
-            str(REPOSITORY_ROOT / "osii-mcp"),
-        )
-    )
-    if env.get("PYTHONPATH"):
-        workspace_python_path = os.pathsep.join(
-            (workspace_python_path, env["PYTHONPATH"])
-        )
-
-    python_version = env.get("OSII_PYTHON_VERSION", "3.12").strip() or "3.12"
-    env.update(
-        {
-            "PYTHONUNBUFFERED": "1",
-            # Pin the host workflow independently of whichever newer Python a
-            # developer's package manager currently exposes by default.
-            "UV_PYTHON": python_version,
-            # A visible name avoids macOS marking every .pth file beneath a
-            # dot-prefixed .venv as hidden and skipping editable packages.
-            "UV_PROJECT_ENVIRONMENT": str(REPOSITORY_ROOT / "osii-env"),
-            # The MCP package declares `osii` as a workspace dependency. Keep
-            # editable source importable even when an older uv-created .pth
-            # file is present in the shared development environment.
-            "PYTHONPATH": workspace_python_path,
-            "SHARED_VOLUME_ROOT": str(source_root),
-            "SHARED_VOLUME_HOST_PATH": str(source_root),
-            "OSII_FILESYSTEM_MODE": "local",
-            "OSII_SOURCE_KIND": env.get("OSII_SOURCE_KIND", "auto").strip().lower() or "auto",
-            "OSII_RUNTIME_DIR": str(runtime_root),
-            "OSII_ROOT": str(osii_root),
-            "UPLOAD_ORIGINALS_ROOT": str(uploads_root),
-            "TIKA_URL": f"http://127.0.0.1:{tika_port}",
-            "OSII_BACKEND_BASE_URL": f"http://127.0.0.1:{api_port}",
-            "MCP_HOST": "127.0.0.1",
-            "MCP_PORT": mcp_port,
-            "DEBUG": "true",
-            "OSII_CONFIG_DIR": str(configuration_root),
-            "OSII_ACTIVE_PROFILE": env.get("OSII_ACTIVE_PROFILE", "development"),
-            "OSII_ENV_FILE": str(configuration_root / "secrets.env"),
-            "OSII_ALLOW_LOCAL_CONFIG_WRITES": "true",
-            "OSII_MODEL_GATEWAY_PUBLIC_URL": f"http://127.0.0.1:{env.get('OSII_MODEL_BRIDGE_PORT', '8095')}/v1",
-        }
-    )
-    provider_profile = "openai" if env.get("OPENAI_BASE_URL", "").strip() else "ollama"
-    if not core_only:
-        ollama_embedding_model = env.get("OLLAMA_EMBEDDING_MODEL", "").strip() or "all-minilm"
-        ollama_chat_model = env.get("OLLAMA_CHAT_MODEL", "").strip() or "llama3.2:1b"
-        ollama_synthesis_model = env.get("OLLAMA_SYNTHESIS_MODEL", "").strip() or ollama_chat_model
-        env.update({
-            "OLLAMA_EMBEDDING_MODEL": ollama_embedding_model,
-            "OLLAMA_SYNTHESIS_MODEL": ollama_synthesis_model,
-            "OLLAMA_CHAT_MODEL": ollama_chat_model,
-        })
-        local_urls = [
-            f"http://127.0.0.1:{env.get('OSII_LOCAL_EXTRACTOR_PORT', '8092')}",
-            f"http://127.0.0.1:{env.get('OSII_LOCAL_SYNTHESIZER_PORT', '8093')}",
-            f"http://127.0.0.1:{embeddings_port}",
-            f"http://127.0.0.1:{env.get('OSII_LOCAL_ENRICHER_PORT', '8094')}",
-            "http://127.0.0.1:8095/ollama/embedder",
-            "http://127.0.0.1:8095/ollama/synthesizer",
-        ]
-        if shutil.which("tesseract") is not None:
-            local_urls.insert(
-                1,
-                f"http://127.0.0.1:{env.get('OSII_TESSERACT_PORT', '8080')}",
-            )
-        configured = [item for item in env.get("OSII_PROCESSORS", "").split(",") if item]
-        if provider_profile == "openai":
-            local_urls.extend([
-                "http://127.0.0.1:8095/openai/embedder",
-                "http://127.0.0.1:8095/openai/synthesizer",
-            ])
-        env.update({
-            "OSII_PROCESSORS": ",".join(local_urls + configured),
-            "OSII_DEFAULT_EXTRACTOR": "local.native-text",
-            "OSII_DEFAULT_SYNTHESIZER": (
-                "openai.synthesizer" if provider_profile == "openai"
-                else "ollama.synthesizer"
-            ),
-            "OSII_DEFAULT_EMBEDDER": "openai.embedder" if provider_profile == "openai" else "ollama.embedder",
-            "OSII_DEFAULT_ENRICHER": "local.stats-keywords",
-            "EMBEDDING_MODEL": ollama_embedding_model,
-        })
-        if provider_profile in {"baseline", "ollama"}:
-            env.update({"CHAT_PROVIDER": "ollama", "CHAT_PROVIDER_CHAIN": "ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "ollama.synthesizer,local.extractive-preview"})
-        elif provider_profile == "openai":
-            env.update({"CHAT_PROVIDER": "openai", "CHAT_PROVIDER_CHAIN": "openai,ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "openai.synthesizer,ollama.synthesizer,local.extractive-preview"})
-    return env
-
-
-def prepare_dependencies(uv: str, npm: str, env: dict[str, str]) -> None:
-    print(
-        "[setup] Preparing OSII packages. The first start can take a few minutes; "
-        "later starts reuse this environment."
-    )
-    print(
-        f"[setup] Python {env.get('UV_PYTHON', '3.12')} application environment: "
-        f"{env['UV_PROJECT_ENVIRONMENT']}"
-    )
-    sync_command = [
-            uv,
-            "sync",
-            "--frozen",
-            "--package",
-            "osii",
-            "--package",
-            "osii-mcp",
-            "--package", "osii-local-extractor",
-            "--package", "osii-local-tesseract",
-            "--package", "osii-local-synthesizer",
-            "--package", "osii-local-embedder",
-            "--package", "osii-local-enricher",
-            "--package", "osii-model-provider-bridge",
-        ]
-    subprocess.run(
-        sync_command,
-        cwd=REPOSITORY_ROOT,
-        env=env,
-        check=True,
-    )
-    dashboard_root = REPOSITORY_ROOT / "osii-dashboard" / "dashboard"
-    package_lock = dashboard_root / "package-lock.json"
-    dependency_stamp = dashboard_root / "node_modules" / ".osii-package-lock.sha256"
-    package_lock_hash = hashlib.sha256(package_lock.read_bytes()).hexdigest()
-    installed_hash = (
-        dependency_stamp.read_text(encoding="utf-8").strip()
-        if dependency_stamp.exists()
-        else ""
-    )
-    if installed_hash != package_lock_hash:
-        print("[setup] Installing dashboard packages...")
-        subprocess.run(
-            [npm, "ci", "--no-audit", "--no-fund"],
-            cwd=dashboard_root,
-            env=env,
-            check=True,
-        )
-        dependency_stamp.write_text(package_lock_hash + "\n", encoding="utf-8")
-    else:
-        print("[setup] Dashboard packages are current.")
-
-
-def service_commands(
-    uv: str,
-    npm: str,
-    env: dict[str, str],
-    core_only: bool,
-) -> list[Service]:
-    api_port = env.get("OSII_API_PORT", "8511")
-    dashboard_port = env.get("OSII_DASHBOARD_PORT", "5173")
-    mcp_port = env.get("OSII_MCP_PORT", "8022")
-    embeddings_port = env.get("OSII_EMBEDDINGS_PORT", "8085")
-
-    services = [
-        Service(
-            "api",
-            (
-                uv,
-                "run",
-                "--no-sync",
-                "--package",
-                "osii",
-                "python",
-                "-m",
-                "uvicorn",
-                "osii.main:app",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                api_port,
-                "--reload",
-                "--reload-dir",
-                "osii",
-            ),
-            REPOSITORY_ROOT / "osii-core",
-            int(api_port),
-        ),
-        Service(
-            "worker",
-            (
-                uv,
-                "run",
-                "--no-sync",
-                "--package",
-                "osii",
-                "python",
-                "-m",
-                "watchfiles",
-                "--filter",
-                "python",
-                "python -m osii.worker",
-                "osii",
-            ),
-            REPOSITORY_ROOT / "osii-core",
-            0,
-        ),
-        Service(
-            "mcp",
-            (
-                uv,
-                "run",
-                "--no-sync",
-                "--package",
-                "osii-mcp",
-                "osii-mcp",
-            ),
-            REPOSITORY_ROOT / "osii-mcp",
-            int(mcp_port),
-        ),
-        Service(
-            "dashboard",
-            (
-                npm,
-                "run",
-                "dev",
-                "--",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                dashboard_port,
-            ),
-            REPOSITORY_ROOT / "osii-dashboard" / "dashboard",
-            int(dashboard_port),
-        ),
-    ]
-    if not core_only:
-        processors = (
-            ("extractor", "osii-local-extractor", "8092", "OSII_LOCAL_EXTRACTOR_PORT", "local-extractor"),
-            ("ocr", "osii-local-tesseract", "8080", "OSII_TESSERACT_PORT", "local-tesseract"),
-            ("synthesizer", "osii-local-synthesizer", "8093", "OSII_LOCAL_SYNTHESIZER_PORT", "local-synthesizer"),
-            ("embedder", "osii-local-embedder", "8085", "OSII_EMBEDDINGS_PORT", "local-embedder"),
-            ("enricher", "osii-local-enricher", "8094", "OSII_LOCAL_ENRICHER_PORT", "local-enricher"),
-        )
-        for name, package, default_port, env_name, directory in reversed(processors):
-            port = env.get(env_name, default_port)
-            services.insert(0, Service(name, (uv, "run", "--no-sync", "--package", package, "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "osii-core" / "services" / directory, int(port)))
-        bridge_port = env.get("OSII_MODEL_BRIDGE_PORT", "8095")
-        services.insert(4, Service("model-bridge", (uv, "run", "--no-sync", "--package", "osii-model-provider-bridge", "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", bridge_port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "osii-core" / "services" / "model-provider-bridge", int(bridge_port)))
-        services.extend([
-            Service(
-                "readable-wiki",
-                (uv, "run", "--python", env.get("UV_PYTHON", "3.12"), "--project", ".", "python", "run.py", "readable", "--host", "127.0.0.1", "--port", "8099"),
-                REPOSITORY_ROOT / "osii-toolbox" / "llm-wiki-enrichers",
-                8099,
-                start_automatically=False,
-            ),
-            Service(
-                "concept-entity-wiki",
-                (uv, "run", "--python", env.get("UV_PYTHON", "3.12"), "--project", ".", "python", "run.py", "concept-entity", "--host", "127.0.0.1", "--port", "8100"),
-                REPOSITORY_ROOT / "osii-toolbox" / "llm-wiki-enrichers",
-                8100,
-                start_automatically=False,
-            ),
-            Service(
-                "tesseract-opencv",
-                (uv, "run", "--python", env.get("UV_PYTHON", "3.12"), "--project", ".", "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8081"),
-                REPOSITORY_ROOT / "osii-toolbox" / "osii-tesseract",
-                8081,
-                start_automatically=False,
-            ),
-        ])
-    return services
-
-
-def ensure_ports_available(services: list[Service]) -> None:
-    occupied: list[Service] = []
-    for service in services:
-        if not service.start_automatically:
-            continue
-        if service.port <= 0:
-            continue
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-            probe.settimeout(0.2)
-            if probe.connect_ex(("127.0.0.1", service.port)) == 0:
-                occupied.append(service)
-
-    if occupied:
-        details = ", ".join(
-            f"{service.name} ({service.port})" for service in occupied
-        )
-        raise RuntimeError(
-            f"Cannot start because these ports are already in use: {details}. "
-            "Stop the previous OSII development stack, then run this command again."
-        )
-
-
-def render_command(service: Service) -> str:
-    command = subprocess.list2cmdline(service.command)
-    display_name = SERVICE_DISPLAY_NAMES.get(service.name, service.name)
-    return f"[{display_name}] ({service.working_directory}) {command}"
-
-
-def start_service(service: Service, env: dict[str, str]) -> subprocess.Popen[bytes]:
-    display_name = SERVICE_DISPLAY_NAMES.get(service.name, service.name)
-    print(f"[dev] Starting {display_name}...")
-    kwargs: dict[str, object] = {
-        "args": service.command,
-        "cwd": service.working_directory,
-        "env": {**env, **dict(service.environment)},
-    }
-    if os.name == "nt":
-        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-    return subprocess.Popen(**kwargs)  # type: ignore[arg-type]
-
-
-class CapabilitySupervisor:
-    """Own the optional/local processing processes exposed by the Setup UI."""
-
-    def __init__(
-        self,
-        *,
-        services: list[Service],
-        env: dict[str, str],
-        uv: str,
-        token: str,
-    ) -> None:
-        self.env = env
-        self.token = token
-        self.lock = threading.RLock()
-        self.processes: dict[str, subprocess.Popen] = {}
-        self.logs: dict[str, deque[str]] = defaultdict(lambda: deque(maxlen=250))
-        self.services = {
-            service.name: service
-            for service in services
-            if service.name in CAPABILITY_SERVICE_INFO
-        }
-        self.tika_port = int(env.get("OSII_TIKA_PORT", "9998"))
-        self.server: ThreadingHTTPServer | None = None
-
-    def _reachable(self, service_id: str) -> bool:
-        port = self.tika_port if service_id == "tika" else self.services[service_id].port
-        if port <= 0:
-            return False
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-            probe.settimeout(0.15)
-            return probe.connect_ex(("127.0.0.1", port)) == 0
-
-    def _capture_output(self, service_id: str, process: subprocess.Popen) -> None:
-        assert process.stdout is not None
-        for raw in iter(process.stdout.readline, b""):
-            line = raw.decode("utf-8", errors="replace").rstrip()
-            if line:
-                self.logs[service_id].append(line)
-                print(f"[{service_id}] {line}")
-
-    def _start_process(self, service_id: str) -> None:
-        service = self.services[service_id]
-        if self._reachable(service_id):
-            raise RuntimeError(f"{CAPABILITY_SERVICE_INFO[service_id][0]} is already running externally.")
-        kwargs: dict[str, object] = {
-            "args": service.command,
-            "cwd": service.working_directory,
-            "env": {**self.env, **dict(service.environment)},
-            "stdout": subprocess.PIPE,
-            "stderr": subprocess.STDOUT,
-        }
-        if os.name == "nt":
-            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-        process = subprocess.Popen(**kwargs)  # type: ignore[arg-type]
-        self.processes[service_id] = process
-        threading.Thread(
-            target=self._capture_output,
-            args=(service_id, process),
-            daemon=True,
-        ).start()
-
-    def start_initial(self, service: Service) -> subprocess.Popen:
-        with self.lock:
-            self._start_process(service.name)
-            return self.processes[service.name]
-
-    def _compose_command(self) -> list[str] | None:
-        # Workstation container orchestration is archived. Tika may still be
-        # supplied externally; the supervisor owns host Python processes only.
-        return None
-
-    def _compose(self, *arguments: str) -> subprocess.CompletedProcess[str]:
-        raise RuntimeError("Container startup is archived. Configure an already-running Tika endpoint instead.")
-
-    def status(self, service_id: str) -> dict[str, object]:
-        if service_id not in {*self.services, "tika"}:
-            raise KeyError(service_id)
-        with self.lock:
-            process = self.processes.get(service_id)
-            owned_running = process is not None and process.poll() is None
-            reachable = self._reachable(service_id)
-            if owned_running:
-                state, ownership = "running", "osii"
-            elif reachable:
-                state, ownership = "external", "external"
-            elif process is not None and process.returncode not in (None, 0):
-                state, ownership = "failed", "osii"
-            else:
-                state, ownership = "stopped", "none"
-            title, description, health_path = CAPABILITY_SERVICE_INFO[service_id]
-            port = self.tika_port if service_id == "tika" else self.services[service_id].port
-            prerequisite = None
-            if service_id == "tika" and self._compose_command() is None:
-                prerequisite = "Configure an already-running Tika endpoint; container startup is archived."
-            elif service_id in {"ocr", "tesseract-opencv"} and shutil.which("tesseract") is None:
-                prerequisite = "Install the native Tesseract program, then restart OSII."
-            return {
-                "id": service_id,
-                "display_name": title,
-                "description": description,
-                "status": state,
-                "ownership": ownership,
-                "url": f"http://127.0.0.1:{port}",
-                "health_path": health_path,
-                "can_start": state in {"stopped", "failed"} and prerequisite is None,
-                "can_stop": owned_running,
-                "can_restart": owned_running,
-                "prerequisite": prerequisite,
-                "detail": self.logs[service_id][-1] if self.logs[service_id] else None,
-            }
-
-    def list_status(self) -> list[dict[str, object]]:
-        return [self.status(item) for item in (*self.services.keys(), "tika")]
-
-    def action(self, service_id: str, action: str) -> dict[str, object]:
-        if service_id not in {*self.services, "tika"}:
-            raise KeyError(service_id)
-        if action not in {"start", "stop", "restart"}:
-            raise ValueError("Unsupported service action")
-        with self.lock:
-            if action in {"stop", "restart"}:
-                if service_id == "tika":
-                    result = self._compose("stop", "tika")
-                    if result.returncode != 0:
-                        raise RuntimeError((result.stderr or result.stdout).strip())
-                else:
-                    process = self.processes.get(service_id)
-                    if process is None or process.poll() is not None:
-                        raise RuntimeError("OSII does not own this service process.")
-                    stop_service(process)
-                    self.processes.pop(service_id, None)
-            if action in {"start", "restart"}:
-                if service_id == "tika":
-                    result = self._compose("up", "-d", "tika")
-                    self.logs[service_id].extend(
-                        line for line in (result.stdout + result.stderr).splitlines() if line
-                    )
-                    if result.returncode != 0:
-                        raise RuntimeError((result.stderr or result.stdout).strip())
-                else:
-                    self._start_process(service_id)
-            return self.status(service_id)
-
-    def service_logs(self, service_id: str) -> list[str]:
-        if service_id not in {*self.services, "tika"}:
-            raise KeyError(service_id)
-        if service_id == "tika" and self._compose_command() is not None:
-            result = self._compose("logs", "--tail", "200", "tika")
-            if result.stdout:
-                self.logs[service_id].extend(result.stdout.splitlines())
-        return list(self.logs[service_id])
-
-    def start_http(self, port: int) -> None:
-        supervisor = self
-
-        class LoopbackThreadingHTTPServer(ThreadingHTTPServer):
-            """Bind locally without a reverse-DNS lookup during startup."""
-
-            def server_bind(self) -> None:
-                # http.server.HTTPServer resolves the bound address through
-                # socket.getfqdn(). That lookup can stall indefinitely on
-                # offline or tightly managed networks even though the server
-                # only listens on loopback.
-                TCPServer.server_bind(self)
-                host, bound_port = self.server_address[:2]
-                self.server_name = host
-                self.server_port = bound_port
-
-        class Handler(BaseHTTPRequestHandler):
-            def _json(self, status: int, payload: object) -> None:
-                body = json.dumps(payload).encode("utf-8")
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-
-            def _authorized(self) -> bool:
-                return self.headers.get("Authorization") == f"Bearer {supervisor.token}"
-
-            def do_GET(self) -> None:  # noqa: N802
-                if not self._authorized():
-                    self._json(403, {"detail": "Forbidden"})
-                    return
-                parts = self.path.strip("/").split("/")
-                try:
-                    if self.path == "/services":
-                        self._json(200, {"services": supervisor.list_status()})
-                    elif len(parts) == 3 and parts[0] == "services" and parts[2] == "logs":
-                        self._json(200, {"service_id": parts[1], "lines": supervisor.service_logs(parts[1])})
-                    else:
-                        self._json(404, {"detail": "Not found"})
-                except KeyError:
-                    self._json(404, {"detail": "Unknown service"})
-
-            def do_POST(self) -> None:  # noqa: N802
-                if not self._authorized():
-                    self._json(403, {"detail": "Forbidden"})
-                    return
-                parts = self.path.strip("/").split("/")
-                try:
-                    if len(parts) == 3 and parts[0] == "services":
-                        self._json(200, supervisor.action(parts[1], parts[2]))
-                    else:
-                        self._json(404, {"detail": "Not found"})
-                except KeyError:
-                    self._json(404, {"detail": "Unknown service"})
-                except (RuntimeError, ValueError) as exc:
-                    self._json(409, {"detail": str(exc)})
-
-            def log_message(self, *_: object) -> None:
-                return
-
-        try:
-            self.server = LoopbackThreadingHTTPServer(("127.0.0.1", port), Handler)
-        except OSError as exc:
-            raise RuntimeError(
-                f"Cannot start the local capability supervisor on port {port}: {exc}"
-            ) from exc
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
-
-    def close(self) -> None:
-        if self.server is not None:
-            self.server.shutdown()
-            self.server.server_close()
-        with self.lock:
-            for process in reversed(list(self.processes.values())):
-                stop_service(process)
-            self.processes.clear()
-
-
-def stop_service(process: subprocess.Popen[bytes]) -> None:
-    if process.poll() is not None:
-        return
-    if os.name == "nt":
-        # uvicorn --reload, watchfiles, and npm/Vite all create child
-        # processes. Stopping only the uv/npm parent leaves those children
-        # listening on their ports on Windows. taskkill /T tears down the
-        # complete tree; /F is equivalent to the existing kill fallback and
-        # is necessary for reloaders that do not handle CTRL_BREAK reliably.
-        subprocess.run(
-            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=5)
-        return
-    try:
-        process.terminate()
-        process.wait(timeout=5)
-    except (OSError, subprocess.TimeoutExpired):
-        if process.poll() is None:
-            process.kill()
-            process.wait(timeout=5)
-
-
-def wait_for_http_service(
-    *,
-    service_name: str,
-    url: str,
-    processes: dict[str, tuple[Service, subprocess.Popen[bytes]]],
-    timeout_seconds: float = 90.0,
-) -> None:
-    """Wait for a required service without letting the UI race its startup."""
-    deadline = time.monotonic() + timeout_seconds
-    # Local readiness checks must never be routed through an external HTTP
-    # proxy, even when proxy environment variables are present.
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    print(f"[dev] Waiting for {service_name}: {url}")
-
-    while time.monotonic() < deadline:
-        for name, (_, process) in processes.items():
-            return_code = process.poll()
-            if return_code is not None:
-                raise RuntimeError(
-                    f"{name} exited with code {return_code} while waiting for "
-                    f"{service_name}. Review that service's error above."
-                )
-
-        try:
-            with opener.open(url, timeout=1.0) as response:
-                if 200 <= response.status < 300:
-                    print(f"[dev] {service_name} is ready.")
-                    return
-        except (OSError, urllib.error.URLError):
-            pass
-        time.sleep(0.25)
-
-    raise RuntimeError(
-        f"{service_name} did not become ready within {timeout_seconds:.0f} seconds at {url}. "
-        "Review the API startup output above; the dashboard was not started."
-    )
-
-
-def run(
-    core_only: bool,
-    dry_run: bool,
-    skip_setup: bool,
-) -> int:
-    try:
-        uv = command_path("uv")
-        npm = command_path("npm")
-        env = build_environment(core_only)
-        env.setdefault("OSII_MODEL_GATEWAY_SECRET", secrets.token_urlsafe(48))
-        provider_profile = "openai" if env.get("OPENAI_BASE_URL", "").strip() else "ollama"
-        services = service_commands(uv, npm, env, core_only)
-
-        supervisor: CapabilitySupervisor | None = None
-        if not core_only:
-            supervisor_token = secrets.token_urlsafe(32)
-            supervisor_port = int(env.get("OSII_SERVICE_SUPERVISOR_PORT", "8510"))
-            env.update(
-                {
-                    "OSII_SERVICE_SUPERVISOR_URL": f"http://127.0.0.1:{supervisor_port}",
-                    "OSII_SERVICE_SUPERVISOR_TOKEN": supervisor_token,
-                }
-            )
-            supervisor = CapabilitySupervisor(
-                services=services,
-                env=env,
-                uv=uv,
-                token=supervisor_token,
-            )
-
+def ensure_postgres(env: dict[str, str], *, dry_run: bool = False) -> None:
+    """Start only an explicitly configured, already initialized local cluster."""
+    directory = env.get("OSII_DEV_POSTGRES_DIR", "")
+    if not directory:
         if dry_run:
-            print("[dev] Bare-metal service plan:")
-            for service in services:
-                print(render_command(service))
-            return 0
-
-        ensure_ports_available(services)
-
-        if not skip_setup:
-            prepare_dependencies(uv, npm, env)
-
-        processes: dict[str, tuple[Service, subprocess.Popen[bytes]]] = {}
-        if supervisor is not None:
-            supervisor.start_http(int(env.get("OSII_SERVICE_SUPERVISOR_PORT", "8510")))
-        dashboard_service = next(service for service in services if service.name == "dashboard")
-        for service in services:
-            if service.name == "dashboard":
-                continue
-            if not service.start_automatically:
-                continue
-            if supervisor is not None and service.name in CAPABILITY_SERVICE_INFO:
-                processes[service.name] = (service, supervisor.start_initial(service))
-            else:
-                processes[service.name] = (service, start_service(service, env))
-        dashboard_port = env.get("OSII_DASHBOARD_PORT", "5173")
-        api_port = env.get("OSII_API_PORT", "8511")
-        wait_for_http_service(
-            service_name="OSII backend API",
-            url=f"http://127.0.0.1:{api_port}/health",
-            processes=processes,
-        )
-        processes[dashboard_service.name] = (
-            dashboard_service,
-            start_service(dashboard_service, env),
-        )
-        print()
-        print("[ready] OSII is running.")
-        print(f"[ready] Dashboard: http://localhost:{dashboard_port}")
-        print(f"[ready] Documents folder: {env['SHARED_VOLUME_ROOT']}")
-        print(f"[ready] OSII artifacts: {env['OSII_ROOT']}")
-        print(f"[ready] Editable configuration: {env['OSII_CONFIG_DIR']}")
-        if env.get("OSII_SOURCE_KIND") == "shared":
-            print("[ready] Shared-drive mode: originals are read in place; artifacts remain in the local OSII data folder.")
-        print(f"[dev] API health: http://localhost:{api_port}/health")
-        print(f"[dev] MCP: http://localhost:{env.get('OSII_MCP_PORT', '8022')}/mcp")
-        print("[ready] Keep this terminal open. Press Ctrl+C once to stop OSII.")
-        if not core_only:
-            if shutil.which("tesseract") is None:
-                print("[dev] OCR needs the native Tesseract program. Install it, then restart OSII.")
-            else:
-                print("[dev] Baseline full-page Tesseract OCR is ready.")
-            print("[dev] Open Dashboard → Setup to connect the team's model endpoint.")
-            print("[dev] Setup → Advanced & diagnostics contains processor URLs, settings, controls, and logs.")
-            if provider_profile == "openai":
-                print("[dev] OpenAI-compatible profile: the configured endpoint is preferred, with Ollama and extractive fallbacks.")
-
-        while True:
-            for name, (_, process) in processes.items():
-                return_code = process.poll()
-                if return_code is not None:
-                    if name in CAPABILITY_SERVICE_INFO:
-                        continue
-                    raise RuntimeError(
-                        f"{name} exited unexpectedly with code {return_code}"
-                    )
-            time.sleep(0.5)
-    except KeyboardInterrupt:
-        print("\n[dev] Stopping host processes...")
-        return 0
-    except (RuntimeError, subprocess.CalledProcessError) as exc:
-        print(f"[dev] {exc}", file=sys.stderr)
-        return 1
-    finally:
-        if "supervisor" in locals() and supervisor is not None:
-            supervisor.close()
-        if "processes" in locals():
-            for _, process in reversed(list(processes.values())):
-                stop_service(process)
+            print("PostgreSQL: externally managed (no local cluster configured)")
+        return
+    data = Path(directory).expanduser()
+    data = (data if data.is_absolute() else ROOT / data).resolve()
+    try:
+        url = urlsplit(env["DATABASE_URL"])
+        host, port = url.hostname, url.port or 5432
+    except ValueError:
+        raise RuntimeError("DATABASE_URL is invalid; check its host and port") from None
+    if url.scheme not in {"postgresql", "postgresql+psycopg"} or host not in {"localhost", "127.0.0.1", "::1"}:
+        raise RuntimeError("OSII_DEV_POSTGRES_DIR requires a loopback PostgreSQL DATABASE_URL; unset it for an externally managed database")
+    version_file = data / "PG_VERSION"
+    if not version_file.is_file():
+        raise RuntimeError(f"No initialized PostgreSQL cluster at {data}. Configure an existing cluster; make dev does not create databases.")
+    major = version_file.read_text().strip()
+    executable = "pg_ctl.exe" if os.name == "nt" else "pg_ctl"
+    configured_bin = env.get("OSII_DEV_POSTGRES_BIN", "")
+    if configured_bin:
+        binary = Path(configured_bin).expanduser()
+        binary = binary if binary.is_absolute() else ROOT / binary
+    else:
+        found = shutil.which(executable, path=env.get("PATH"))
+        binary = Path(found).parent if found else next((p for p in (
+            Path(f"/opt/homebrew/opt/postgresql@{major}/bin"),
+            Path(f"/usr/local/opt/postgresql@{major}/bin"),
+        ) if (p / executable).is_file()), Path("/not-configured"))
+    ctl = binary / executable
+    ready = binary / ("pg_isready.exe" if os.name == "nt" else "pg_isready")
+    if not ctl.is_file() or not ready.is_file():
+        raise RuntimeError("Install the matching PostgreSQL tools or set OSII_DEV_POSTGRES_BIN to their bin directory")
+    if dry_run:
+        print(f"PostgreSQL: reuse or start {data} on {host}:{port} with {ctl}")
+        return
+    version = subprocess.run([str(ctl), "--version"], capture_output=True, text=True, check=True, timeout=5)
+    installed_major = re.search(r"PostgreSQL\)\s+(\d+)", version.stdout)
+    if not installed_major or installed_major.group(1) != major:
+        raise RuntimeError(f"The configured PostgreSQL tools must match cluster version {major}")
+    status = subprocess.run([str(ctl), "-D", str(data), "status"], capture_output=True, timeout=5)
+    if status.returncode == 3:
+        log = data.parent / "postgres.log"
+        options = ["-p", str(port), "-h", "::1" if host == "::1" else "127.0.0.1"]
+        if os.name != "nt":
+            socket_dir = data.parent / "pg-socket"
+            socket_dir.mkdir(mode=0o700, exist_ok=True)
+            options += ["-k", str(socket_dir)]
+        quoted = subprocess.list2cmdline(options) if os.name == "nt" else shlex.join(options)
+        print(f"Starting PostgreSQL on {host}:{port}; log: {log}", flush=True)
+        result = subprocess.run([str(ctl), "-D", str(data), "-l", str(log), "-w", "-t", "30", "-o", quoted, "start"],
+            capture_output=True, timeout=40, start_new_session=os.name != "nt",
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0)
+        if result.returncode:
+            raise RuntimeError(f"PostgreSQL did not start. Inspect {log}; no application services were started.")
+    elif status.returncode != 0:
+        raise RuntimeError(f"Could not check PostgreSQL cluster status at {data}")
+    # Do not silently reuse a different server listening on DATABASE_URL's port.
+    actual_port = int((data / "postmaster.pid").read_text().splitlines()[3])
+    if actual_port != port:
+        raise RuntimeError(f"The local PostgreSQL cluster is running on port {actual_port}, but DATABASE_URL uses {port}")
+    probe = subprocess.run([str(ready), "-q", "-h", host, "-p", str(port), "-t", "3"], capture_output=True, timeout=5)
+    if probe.returncode:
+        raise RuntimeError(f"PostgreSQL is not accepting connections on {host}:{port}")
+    print(f"PostgreSQL ready on {host}:{port} (left running when OSII stops)", flush=True)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Run editable OSII services on the host."
-    )
-    parser.add_argument("--core-only", action="store_true", help="Start app services without local processors.")
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print the host service plan without installing or starting anything.",
-    )
-    parser.add_argument(
-        "--skip-setup",
-        action="store_true",
-        help="Skip Python and dashboard dependency checks.",
-    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--core-only", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--skip-setup", action="store_true")
     args = parser.parse_args()
-    return run(
-        args.core_only,
-        args.dry_run,
-        args.skip_setup,
-    )
-
+    env = {**load_dotenv(ROOT / ".env"), **os.environ}
+    env["UV_PROJECT_ENVIRONMENT"] = str(ROOT / ".venv")
+    env.setdefault("OSII_API_PORT", "8512")
+    env.setdefault("OSII_DASHBOARD_PORT", "5174")
+    env.setdefault("OSII_EXTRACTOR_URL", "http://127.0.0.1:8192")
+    env.setdefault("OSII_SOURCE_DIR", str(ROOT / "osii-data/source"))
+    for key in ("OSII_SOURCE_DIR", "OSII_MODEL_API_KEY_FILE"):
+        if env.get(key):
+            path = Path(env[key]).expanduser()
+            env[key] = str(path if path.is_absolute() else ROOT / path)
+    if not env.get("DATABASE_URL"):
+        print("Set DATABASE_URL in .env. Run the explicit migration and administrator bootstrap first.", file=sys.stderr)
+        return 1
+    uv = shutil.which("uv")
+    npm = shutil.which("npm")
+    if not uv or (not args.core_only and not npm):
+        print("Install uv and Node.js 22.18+ before make dev.", file=sys.stderr)
+        return 1
+    python = [str(ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python"))]
+    services = [
+        ("API", python + ["-m", "uvicorn", "osii.main:app", "--host", "127.0.0.1", "--port", env["OSII_API_PORT"]], ROOT / "osii-core"),
+        ("Worker", python + ["-m", "osii.server.worker"], ROOT),
+    ]
+    if not args.core_only:
+        services += [
+            ("Extractor", python + ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8192"], ROOT / "osii-core/services/local-extractor"),
+            ("Dashboard", [npm, "run", "dev", "--", "--host", "127.0.0.1", "--port", env["OSII_DASHBOARD_PORT"]], ROOT / "osii-dashboard/dashboard"),
+        ]
+    if args.dry_run:
+        try:
+            ensure_postgres(env, dry_run=True)
+        except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        for name, command, _ in services:
+            print(name + ": " + shlex.join(command))
+        return 0
+    if not args.skip_setup:
+        subprocess.run([uv, "sync", "--frozen", "--python", "3.12", "--package", "osii", "--extra", "server"], cwd=ROOT, env=env, check=True)
+        if not args.core_only and not (ROOT / "osii-dashboard/dashboard/node_modules").is_dir():
+            subprocess.run([npm, "ci"], cwd=ROOT / "osii-dashboard/dashboard", env=env, check=True)
+    processes = []
+    try:
+        ensure_postgres(env)
+        for name, command, cwd in services:
+            if name == "Dashboard":
+                for _ in range(80):
+                    try:
+                        with urllib.request.urlopen("http://127.0.0.1:" + env["OSII_API_PORT"] + "/ready", timeout=1):
+                            break
+                    except OSError:
+                        if any(p.poll() is not None for p in processes):
+                            raise RuntimeError("A service failed; check database migration and configuration above")
+                        time.sleep(.25)
+                else:
+                    raise RuntimeError("API readiness timed out")
+            print("Starting " + name, flush=True)
+            processes.append(subprocess.Popen(command, cwd=cwd, env=env,
+                start_new_session=os.name != "nt",
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0))
+        print("OSII-server dashboard: http://localhost:" + env["OSII_DASHBOARD_PORT"], flush=True)
+        print("Ctrl+C stops application services; PostgreSQL stays running.", flush=True)
+        while True:
+            if any(p.poll() is not None for p in processes):
+                raise RuntimeError("A service stopped unexpectedly")
+            time.sleep(.5)
+    except KeyboardInterrupt:
+        return 0
+    except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    finally:
+        for process in reversed(processes):
+            if process.poll() is None:
+                if os.name == "nt":
+                    subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], check=False, capture_output=True)
+                else:
+                    os.killpg(process.pid, signal.SIGTERM)
+        for process in processes:
+            try:
+                process.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                if os.name == "nt":
+                    process.kill()
+                else:
+                    os.killpg(process.pid, signal.SIGKILL)
+    return 0
 
 if __name__ == "__main__":
     raise SystemExit(main())
