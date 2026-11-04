@@ -144,6 +144,12 @@ in the JSON response.
 - `GET /api/embeddings/build/{job_id}`
 - `GET /api/embeddings/meta`
 
+`POST /api/resolve` supplies the detailed processing plan for Intake review.
+`POST /api/runs` queues the selected paths with a lightweight preview instead
+of rereading every original to repeat that plan. The worker owns content hashes
+and extraction; slow source-folder access during queueing does not block API
+health or Activity requests.
+
 ### Setup and local administration
 
 - `GET /api/admin/setup` returns the human-facing readiness summary, selected

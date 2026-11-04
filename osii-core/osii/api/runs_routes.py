@@ -5,6 +5,7 @@ from osii.expert_context import resolve_expert_context
 import sqlite3
 
 from fastapi import APIRouter, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 from osii.api.intake_routes import resolve_requested_path
 
 from osii.domain.processing.capability_readiness import embedding_readiness
@@ -14,7 +15,6 @@ from osii.domain.artifacts.extraction_variants import extract_document_variant
 from osii.domain.artifacts.text_representations import get_preferred_text_representation
 from osii.domain.processing.intake import (
     add_extractor_plan,
-    add_processing_plan,
     add_processed_counts,
     expand_queue_to_files,
     parse_patterns,
@@ -575,6 +575,10 @@ def run_worker(
 
 @router.post("/runs")
 async def start_run(request: Request, payload: dict):
+    return await run_in_threadpool(_start_run, request, payload)
+
+
+def _start_run(request: Request, payload: dict):
     shared_root = request.app.state.shared_volume_root.resolve()
     upload_root = request.app.state.upload_originals_root.resolve()
     osii_store = request.app.state.osii_root.resolve()
@@ -677,16 +681,10 @@ async def start_run(request: Request, payload: dict):
             resolve_requested_path(request, file["path"])
     add_processed_counts(preview, resolved_files, data_volume_root, osii_store)
     add_extractor_plan(preview, resolved_files, extractor_overrides)
-    add_processing_plan(
-        preview,
-        resolved_files,
-        osii_store,
-        run_extraction=run_extraction,
-        extract_mode=extract_mode,
-        synthesize=bool(synthesizer_name),
-        embed=build_embeddings,
-        enrich=bool(enricher_name),
-    )
+    # Intake review computes the detailed plan through /api/resolve. Starting
+    # the durable run must not reread every original just to repeat that plan;
+    # hashing and extraction belong to the worker. Folder I/O runs in FastAPI's
+    # thread pool so a slow shared drive cannot block health and activity reads.
 
     if workflow == "library" and not run_extraction:
         resolved_files = [

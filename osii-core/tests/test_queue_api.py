@@ -3,6 +3,50 @@ from pathlib import Path
 import pytest
 
 
+def test_starting_intake_does_not_read_all_original_bytes(client, temp_data_root, monkeypatch):
+    source = temp_data_root / "document.txt"
+    source.write_text("Worker reads these bytes after queueing.", encoding="utf-8")
+    original_open = Path.open
+
+    def defer_source_read(path, *args, **kwargs):
+        if path == source:
+            raise AssertionError("Intake start must not read source content before queueing")
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", defer_source_read)
+    response = client.post("/api/runs", json={"queue_paths": [str(source)]})
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "queued"
+    assert response.json()["resolved_count"] == 1
+
+
+def test_slow_shared_drive_does_not_block_health(client, temp_data_root, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    from osii.api import runs_routes
+
+    source = temp_data_root / "document.txt"
+    source.write_text("shared document", encoding="utf-8")
+    entered, release = threading.Event(), threading.Event()
+    expand = runs_routes.expand_queue_to_files
+
+    def slow_scan(**kwargs):
+        entered.set()
+        assert release.wait(timeout=10)
+        return expand(**kwargs)
+
+    monkeypatch.setattr(runs_routes, "expand_queue_to_files", slow_scan)
+    with client, ThreadPoolExecutor(max_workers=2) as pool:
+        queued = pool.submit(client.post, "/api/runs", json={"queue_paths": [str(source)]})
+        try:
+            assert entered.wait(timeout=5)
+            health = pool.submit(client.get, "/health")
+            assert health.result(timeout=2).status_code == 200
+        finally:
+            release.set()
+        assert queued.result(timeout=5).status_code == 200
+
+
 def test_local_folder_selection_includes_files_and_preserves_uploads(
     client, tmp_path, temp_data_root, temp_upload_root,
 ):

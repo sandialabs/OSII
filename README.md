@@ -1,5 +1,12 @@
 # OSII
 
+`main` is the standalone, filesystem-backed application. Hosted PostgreSQL,
+accounts, and OpenShift development live on the separate `osii-server` branch.
+Use separate worktrees and runtime configuration; transfer portable improvements
+deliberately rather than merging server persistence into this branch.
+Keep portable fixes in separate commits and cherry-pick them between branches;
+test each against its own persistence implementation.
+
 > Keep the evidence. Grow the intelligence.
 
 OSII (the On-Store Intelligence Index) turns documents and datasets into a

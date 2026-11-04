@@ -101,6 +101,14 @@ plane to evolve independently.
 
 ## Trust boundary
 
+Workbench tools register their routes and navigation in one typed frontend
+registry, load on demand, and have independent loading/error boundaries. Tools
+consume Core APIs through adapters and query hooks; they do not access stores
+or model endpoints directly. The topic explorer keeps projection and similarity
+in a read-only Core domain service. See
+[frontend extension architecture](../extending/frontend-tools.md) for the
+review findings, extension workflow, limits, and HTTP contracts.
+
 Processor services should be treated as untrusted compute:
 
 - no OSII data-volume mount;

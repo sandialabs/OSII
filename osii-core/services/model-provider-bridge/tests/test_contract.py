@@ -8,6 +8,13 @@ from osii.model_gateway_tokens import issue_model_gateway_token
 from tests.fake_openai_server import app as fake_openai_app
 
 
+@pytest.fixture(autouse=True)
+def isolated_model_configuration(monkeypatch, tmp_path):
+    """Contract tests must not read the developer's saved model connections."""
+    monkeypatch.setenv("OSII_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("OSII_ENV_FILE", str(tmp_path / "config" / "secrets.env"))
+
+
 def test_provider_client_preserves_ollama_context_error(monkeypatch):
     response = requests.Response()
     response.status_code = 400

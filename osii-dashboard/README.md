@@ -34,6 +34,7 @@ separate data folder; originals stay in place.
 
 - Browse documents across your indexed corpus
 - Search using semantic, lexical, or hybrid retrieval
+- Explore document embeddings in **Topic explorer**, select points to find related documents, and narrow exploration to folders or collections
 - Reuse or delete up to 20 recent browser-local searches and chat prompts; answers and results are never stored
 - Explore root or collection scopes through saved noun/adjective phrase suggestions
 - Open and inspect documents including source PDFs
@@ -204,6 +205,12 @@ Open that URL in your browser.
 ---
 
 ## Development notes
+
+For the frontend architecture review and a step-by-step extension guide, see
+[Extend the Workbench frontend](../docs/extending/frontend-tools.md). A single
+typed registry drives tool routes and sidebar entries; each tool loads on
+demand behind its own loading/error boundary. Topic explorer uses existing
+embeddings and shows guidance when the selected model has no complete index.
 
 ### API proxy
 

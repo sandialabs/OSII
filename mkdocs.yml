@@ -56,6 +56,7 @@ nav:
       - Rebuildable catalog: reference/catalog.md
   - Extend OSII:
       - Choose an extension: extending/index.md
+      - Frontend tools and topic explorer: extending/frontend-tools.md
       - Hello table enricher: extending/hello-enricher.md
       - Processor development: extending/processor-development.md
   - Operate offline:

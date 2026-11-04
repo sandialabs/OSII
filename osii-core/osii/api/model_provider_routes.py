@@ -279,11 +279,13 @@ def _model_details(payload: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             continue
         details = item.get("details") if isinstance(item.get("details"), dict) else {}
-        name = item.get("model") or item.get("name") or item.get("id")
+        name = item.get("model") or item.get("id") or item.get("name")
         if not name:
             continue
         result.append({
             "name": str(name),
+            "display_name": str(item.get("name") or name),
+            "capabilities": (["embedding"] if "embeddings" in (item.get("architecture") or {}).get("output_modalities", []) else ["chat"] if "text" in (item.get("architecture") or {}).get("output_modalities", []) else []),
             "size": item.get("size"),
             "digest": item.get("digest"),
             "modified_at": item.get("modified_at"),
@@ -471,6 +473,10 @@ def provider_health(request: Request, provider_id: str):
         response.raise_for_status()
         payload = response.json()
         model_details = _model_details(payload)
+        if record["base_url"].rstrip("/") == "https://openrouter.ai/api/v1":
+            embedding_response = requests.get(f"{record['base_url']}/embeddings/models", headers=headers, timeout=(3, 8))
+            embedding_response.raise_for_status()
+            model_details.extend(_model_details(embedding_response.json()))
         names = [item["name"] for item in model_details]
         selected = {record.get("embedding_model"), record.get("synthesis_model"), record.get("chat_model")} - {"", None}
         missing = sorted(

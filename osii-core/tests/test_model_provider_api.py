@@ -29,6 +29,14 @@ class FakeResponse:
         return False
 
 
+def test_catalog_uses_api_ids_and_preserves_display_labels():
+    from osii.api.model_provider_routes import _model_details
+    models = _model_details({"data": [{"id": "vendor/exact-api-id", "name": "Human readable name", "architecture": {"output_modalities": ["text"]}}]})
+    assert models[0]["name"] == "vendor/exact-api-id"
+    assert models[0]["display_name"] == "Human readable name"
+    assert models[0]["capabilities"] == ["chat"]
+
+
 def test_default_ollama_provider_uses_small_us_models(client):
     payload = client.get("/api/admin/model-providers").json()
     embedder = next(item for item in payload["providers"] if item["id"] == "minilm")

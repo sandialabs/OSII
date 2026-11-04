@@ -857,6 +857,8 @@ export type SetupSummary = {
 
 export type OllamaModelDetail = {
   name: string;
+  display_name?: string;
+  capabilities?: string[];
   size?: number | null;
   digest?: string | null;
   modified_at?: string | null;

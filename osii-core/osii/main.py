@@ -31,6 +31,7 @@ from osii.api.setup_routes import router as setup_router
 from osii.api.runs_routes import router as runs_router
 from osii.api.scopes_routes import router as scopes_router
 from osii.api.search_routes import router as search_router
+from osii.api.topics_routes import router as topics_router
 from osii.api.synthesis_routes import router as synthesis_router
 from osii.api.synthesizer_routes import router as synthesizer_router
 from osii.api.text_routes import router as text_router
@@ -76,6 +77,7 @@ app.include_router(synthesizer_router)
 app.include_router(folder_synthesizer_router)
 app.include_router(embedding_router)
 app.include_router(search_router)
+app.include_router(topics_router)
 app.include_router(scopes_router)
 app.include_router(objects_router)
 app.include_router(packages_router)

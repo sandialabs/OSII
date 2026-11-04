@@ -50,6 +50,11 @@ The agent's job is to execute the human's command—nothing more.
 
 ## Current delivery scope
 
+- `main` is the standalone, filesystem-backed application. `osii-server` is
+  developed separately for PostgreSQL, hosted accounts, and OpenShift. Keep
+  portable fixes isolated for transfer between the branches; never merge server
+  persistence or hosted startup into main implicitly.
+
 - The supported startup path on main is `make dev` (Windows:
   `.\\scripts\\osii.ps1 dev`). Keep automatic dependency setup, logs, health
   checks, and Ctrl+C shutdown working. Do not add alternative startup menus.
