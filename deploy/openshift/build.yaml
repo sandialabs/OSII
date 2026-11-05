@@ -1,0 +1,84 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: osii-build
+parameters:
+  - name: IMAGE_TAG
+    required: true
+  - name: SOURCE_REVISION
+    required: true
+objects:
+  - apiVersion: image.openshift.io/v1
+    kind: ImageStream
+    metadata:
+      name: osii-core
+      labels:
+        app: osii
+  - apiVersion: image.openshift.io/v1
+    kind: ImageStream
+    metadata:
+      name: osii-dashboard
+      labels:
+        app: osii
+  - apiVersion: build.openshift.io/v1
+    kind: BuildConfig
+    metadata:
+      name: osii-core
+      labels:
+        app: osii
+      annotations:
+        osii.source-revision: ${SOURCE_REVISION}
+    spec:
+      runPolicy: Serial
+      successfulBuildsHistoryLimit: 2
+      failedBuildsHistoryLimit: 2
+      triggers: []
+      source:
+        type: Binary
+        binary: {}
+      strategy:
+        type: Docker
+        dockerStrategy:
+          dockerfilePath: osii-core/Dockerfile
+      output:
+        to:
+          kind: ImageStreamTag
+          name: osii-core:${IMAGE_TAG}
+      resources:
+        requests:
+          cpu: 500m
+          memory: 512Mi
+        limits:
+          cpu: "2"
+          memory: 2Gi
+  - apiVersion: build.openshift.io/v1
+    kind: BuildConfig
+    metadata:
+      name: osii-dashboard
+      labels:
+        app: osii
+      annotations:
+        osii.source-revision: ${SOURCE_REVISION}
+    spec:
+      runPolicy: Serial
+      successfulBuildsHistoryLimit: 2
+      failedBuildsHistoryLimit: 2
+      triggers: []
+      source:
+        type: Binary
+        binary: {}
+      strategy:
+        type: Docker
+        dockerStrategy:
+          dockerfilePath: osii-dashboard/dashboard/Dockerfile
+      output:
+        to:
+          kind: ImageStreamTag
+          name: osii-dashboard:${IMAGE_TAG}
+      resources:
+        requests:
+          cpu: 500m
+          memory: 512Mi
+        limits:
+          cpu: "2"
+          memory: 2Gi

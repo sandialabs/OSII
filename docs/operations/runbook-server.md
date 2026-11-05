@@ -77,6 +77,42 @@ promotion. The current local integration tests run PostgreSQL 18.
 
 ## OpenShift resources
 
+### Build application images in the cluster
+
+`deploy/openshift/build.yaml` creates two binary Docker builds and ImageStreams
+in the selected project. The existing Dockerfiles retain the pinned UBI base;
+builds run on the cluster's architecture and publish to its internal registry.
+The project must allow Docker builds and internal-registry pushes. No application
+Secret or source dataset belongs in a build input.
+
+From a clean, committed server worktree, select the project and prepare a small
+archive of tracked application files. This excludes ignored `.env`, credentials,
+originals, local databases, dependency directories, and Git history. Inspect the
+archive before uploading; tracked files are still the operator's responsibility.
+
+```bash
+oc project heidikmkv-dev
+OSII_REVISION=$(git rev-parse HEAD)
+OSII_IMAGE_TAG=$(git rev-parse --short=12 HEAD)
+git archive --format=tar --output=osii-data/openshift-source.tar "$OSII_REVISION" \
+  osii-core osii-dashboard/dashboard deploy/openshift/nginx.conf .dockerignore
+tar -tf osii-data/openshift-source.tar
+oc process --local -f deploy/openshift/build.yaml \
+  -p IMAGE_TAG="$OSII_IMAGE_TAG" -p SOURCE_REVISION="$OSII_REVISION" | oc apply -f -
+oc start-build osii-core --from-archive=osii-data/openshift-source.tar --follow --wait
+oc start-build osii-dashboard --from-archive=osii-data/openshift-source.tar --follow --wait
+oc get builds
+oc get istag "osii-core:$OSII_IMAGE_TAG" "osii-dashboard:$OSII_IMAGE_TAG"
+```
+
+Binary builds require an explicit upload for each release; automatic triggers
+are disabled. Each build requests 500m CPU/512 MiB and permits up to 2 CPU/2 GiB.
+Check both builds are `Complete`, inspect their image architecture, and select
+the resulting image digests before deployment. Record the source revision and
+digests with the release. Never deploy a failed or still-running build tag.
+
+### Deploy the application
+
 `deploy/openshift/template.yaml` defines separate API, worker, extractor,
 dashboard, and database workloads. The database uses a block-backed PVC. API
 and worker mount a shared source PVC read-only; processors have neither source
