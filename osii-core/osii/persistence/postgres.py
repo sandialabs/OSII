@@ -244,6 +244,12 @@ class PostgresStore:
             c.execute(update(jobs).where(jobs.c.id == jid, jobs.c.worker_id == worker, jobs.c.status == "running")
                 .values(lease_until=now() + timedelta(minutes=5)))
 
+    def progress(self, jid: str, worker: str, entry: str) -> bool:
+        with self.transaction() as c:
+            result = c.execute(update(jobs).where(jobs.c.id == jid, jobs.c.worker_id == worker,
+                jobs.c.status == "running").values(logs=jobs.c.logs + [entry]))
+            return result.rowcount == 1
+
     def finish(self, jid: str, worker: str, logs: list[str], failed: bool = False) -> None:
         with self.transaction() as c:
             c.execute(update(jobs).where(jobs.c.id == jid, jobs.c.worker_id == worker)

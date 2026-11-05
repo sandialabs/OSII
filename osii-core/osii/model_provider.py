@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import requests
+import time
 
 
 class ProviderError(RuntimeError):
@@ -13,12 +14,26 @@ class ModelProvider:
         self.url, self.key = url.rstrip("/"), key
 
     def request(self, method: str, path: str, payload: dict | None = None) -> dict:
-        try:
-            response = requests.request(method, self.url + path,
-                headers={"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"},
-                json=payload, timeout=(5, 90))
-        except requests.RequestException:
-            raise ProviderError("The configured model endpoint could not be reached") from None
+        # Retry only embedding reads: retrying chat after a lost response can
+        # duplicate a generation and its charge. Each request has three attempts.
+        attempts = 3 if path == "/embeddings" else 1
+        for attempt in range(attempts):
+            try:
+                response = requests.request(method, self.url + path,
+                    headers={"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"},
+                    json=payload, timeout=(5, 90))
+            except requests.RequestException:
+                if attempt + 1 == attempts:
+                    raise ProviderError(f"The configured model endpoint could not be reached after {attempts} attempt(s)") from None
+                time.sleep(2 ** attempt)
+                continue
+            if response.ok or response.status_code not in (408, 429, 500, 502, 503, 504) or attempt + 1 == attempts:
+                break
+            try:
+                delay = min(30, max(2 ** attempt, float(response.headers.get("Retry-After", 0))))
+            except (ValueError, TypeError):
+                delay = 2 ** attempt
+            time.sleep(delay)
         if not response.ok:
             reasons = {401: "The provider rejected its API key", 402: "The provider reports insufficient credit",
                 403: "The provider denied access to this model", 404: "The model or endpoint was not found",

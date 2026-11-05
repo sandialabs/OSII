@@ -119,6 +119,27 @@ is not a generation or billing test. Provider keys are deployment Secrets.
 Curators process the fixed directory. Configure a bounded OCR extractor through
 `OSII_OCR_URL` for image-only files; native text extraction does not perform OCR.
 Inspect source pages, text, citations, and job results before retrieval evaluation.
+The worker commits each document and its embeddings together. A failed file is
+logged with its relative path and a sanitized reason; processing continues with
+the next file. Processing logs are saved before and after each document and are
+available through Processing or the curator-only `GET /api/runs` endpoint while
+the job runs. The final summary gives processed, unchanged, and failed counts.
+A completed scan with failed files has status `error`; this does not roll back
+successful documents. A database outage or worker shutdown stops the batch.
+After correcting the cause, choose **Process shared dataset** to retry: matching
+committed documents are skipped. **Reprocess all documents** deliberately repeats
+successful extraction and embedding calls too.
+
+Embedding requests retry network failures and HTTP 408, 429, 500, 502, 503, and
+504 up to three attempts, with exponential delay and numeric `Retry-After`
+capped at 30 seconds. Permanent failures are reported without repeated requests.
+Lost responses can still incur provider charges. Processor timeouts are not
+automatically retried because the processor may still be working. PDF extraction
+can contain NUL characters, which PostgreSQL cannot store. Before chunking, Core
+replaces each with U+FFFD, preserving character offsets, and records the count in
+document metadata under `normalization`. The stored extraction response uses the
+same normalized values; source PDFs are never changed.
+
 A changed original returns 409 on preview until re-ingestion, preventing a new
 PDF from being shown as evidence for old extracted content.
 

@@ -114,9 +114,12 @@ def test_jobs_leases_recovery_and_no_double_claim(store):
     jid = store.enqueue("ingest", {})
     first = store.claim("first")
     assert first["id"] == jid and store.claim("second") is None
+    assert store.progress(jid, "first", "processing: report.pdf")
+    assert store.job_records()[0]["logs"] == ["processing: report.pdf"]
     with store.transaction() as c:
         c.execute(update(jobs).where(jobs.c.id == jid).values(lease_until=now() - timedelta(seconds=1)))
     assert store.claim("second")["id"] == jid
+    assert not store.progress(jid, "first", "stale progress")
     store.finish(jid, "first", ["stale worker"])
     assert store.job_records()[0]["status"] == "running"
     store.finish(jid, "second", ["done"])
@@ -193,3 +196,88 @@ def test_paid_search_budget_keeps_lexical_search_available(client, app):
         assert app.state.store.login_allowed("search:" + user["id"], failed=True, maximum=20)
     assert client.post("/api/search", json={"query": "neutron", "mode": "hybrid"}).status_code == 429
     assert client.post("/api/search", json={"query": "neutron", "mode": "lexical"}).status_code == 200
+
+
+def test_nul_extraction_is_recorded_without_shifting_citations(store, tmp_path):
+    from sqlalchemy import select
+    from osii.persistence.postgres import extractions
+    from osii.processor_sdk.models import ExtractionResponse, ProcessorDescriptor, ProcessorKind, TextSegment
+    from osii.server.worker import ingest_file
+    from conftest import Provider
+
+    class Extractor:
+        def extract(self, request):
+            return ExtractionResponse(request_id=request.request_id, processor=ProcessorDescriptor(
+                name="test", version="1", display_name="Test", description="Test", kind=ProcessorKind.EXTRACTOR),
+                segments=[TextSegment(id="p1", text="Neutron\x00detector", source_origin={"label": "page\x001"}),
+                          TextSegment(id="p2", text="Second page", source_origin={"page": 2})])
+
+    path = tmp_path / "report.pdf"
+    original = b"original PDF bytes"
+    path.write_bytes(original)
+    store.save_configuration({"embedding_model": "test-model"})
+    assert ingest_file(store, Provider(), Extractor(), tmp_path, path) == "processed"
+    _, docs, rows = store.snapshot()
+    doc = docs[0]
+    assert doc["text"] == "Neutron\ufffddetector\nSecond page"
+    assert doc["metadata"]["normalization"] == {"nul_replacements": 2, "replacement": "U+FFFD"}
+    assert doc["metadata"]["segments"][1]["char_start"] == len("Neutron\x00detector\n")
+    assert all(doc["text"][row["char_start"]:row["char_end"]] == row["text"] for row in rows)
+    assert all(row["embedding"] for row in rows)
+    with store.engine.connect() as c:
+        response = c.execute(select(extractions.c.response)).scalar_one()
+    assert response["segments"][0]["source_origin"]["label"] == "page\ufffd1"
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("failure", ["extractor", "embedding"])
+def test_batch_continues_after_failed_pdf_and_resume_skips_successes(store, tmp_path, failure):
+    import threading
+    from conftest import Provider
+    from osii.model_provider import ProviderError
+    from osii.processor_sdk.client import ProcessorClientError
+    from osii.processor_sdk.models import ExtractionResponse, ProcessorDescriptor, ProcessorKind, TextSegment
+    from osii.server.worker import ingest_batch
+
+    class Extractor:
+        def extract(self, request):
+            if request.document.filename == "a-bad.pdf" and failure == "extractor":
+                raise ProcessorClientError("sensitive processor response must not be logged")
+            return ExtractionResponse(request_id=request.request_id, processor=ProcessorDescriptor(
+                name="test", version="1", display_name="Test", description="Test", kind=ProcessorKind.EXTRACTOR),
+                segments=[TextSegment(id="p1", text=request.document.filename, source_origin={"page": 1})])
+
+    class Embeddings(Provider):
+        def embed(self, model, texts):
+            if texts[0] == "a-bad.pdf":
+                raise ProviderError("The provider rate limit was reached")
+            return super().embed(model, texts)
+
+    for name in ("a-bad.pdf", "b-good.pdf", "c-good.pdf"):
+        (tmp_path / name).write_text(name)
+    store.save_configuration({"embedding_model": "test-model"})
+    jid = store.enqueue("ingest", {})
+    store.claim("test-worker")
+    logs = []
+    def report(entry):
+        logs.append(entry)
+        assert store.progress(jid, "test-worker", entry)
+    kwargs = dict(report=report, stopping=threading.Event())
+    assert ingest_batch(store, Embeddings(), Extractor(), tmp_path, **kwargs)
+    assert "failed: a-bad.pdf:" in logs[1]
+    assert "sensitive processor response" not in str(logs)
+    assert logs[-1] == "Batch completed: processed=2, unchanged=0, failed=1"
+    assert store.job_records()[0]["logs"] == logs
+    _, docs, rows = store.snapshot()
+    assert {d["filename"] for d in docs} == {"b-good.pdf", "c-good.pdf"}
+    assert len(rows) == 2 and all(row["embedding"] for row in rows)
+    assert ingest_batch(store, Embeddings(), Extractor(), tmp_path, **kwargs)
+    assert logs[-1] == "Batch completed: processed=0, unchanged=2, failed=1"
+
+
+def test_missing_shared_source_is_not_reported_as_success(store, tmp_path):
+    import threading
+    from osii.server.worker import IngestionError, ingest_batch
+    with pytest.raises(IngestionError, match="source directory is unavailable"):
+        ingest_batch(store, None, None, tmp_path / "disconnected", report=lambda entry: None,
+                     stopping=threading.Event())
