@@ -46,6 +46,16 @@ The agent's job is to execute the human's command—nothing more.
 - Keep normal commands and documentation cross-platform: macOS development and
   Windows use are both supported. Keep `Makefile` and `scripts/osii.ps1`
   workflows equivalent.
+- Keep README.md a concise, durable introduction to OSII: its purpose, major
+  capabilities, and how to get started.
+- Update it when a change affects that information. Don’t add branch-specific
+  implementation details, task summaries, temporary status, or a running list
+  of changes.
+- Put detailed technical explanations in docs/, decisions in an architecture
+  decision record, and change history in the changelog or pull request
+  description, as appropriate.
+- Before finishing, review the README diff for relevance, duplication, and
+  clarity to a new reader.
 - Update relevant documentation only when the requested behavior or workflow
   changes. Keep examples and demonstrations small and inspectable; do not
   create new example material unless explicitly requested.
@@ -78,6 +88,11 @@ The agent's job is to execute the human's command—nothing more.
 - Do not read, edit, format, or rewrite `.ipynb` files unless the human names
   the notebook. Use paired `.py` sources; use
   `osii-demo-notebooks/manage_notebooks.py` for intentional conversions.
-- Do not stage, commit, push, or open a pull request unless explicitly asked.
-- For a code change, end with concise commands to commit and to run or inspect
-  the result, including required rebuild or restart steps.
+- Automatically stage and commit completed, validated task changes locally.
+  Use focused commits, preserve unrelated work, and do not ask the user to
+  copy-paste commit commands. This is standing authorization for local commits.
+- Do not push or open a pull request unless the user explicitly asks. The user
+  currently handles upstream pushes.
+- Report local commit hashes and relevant validation results. Include run or
+  inspection instructions when needed, including required rebuild or restart
+  steps.

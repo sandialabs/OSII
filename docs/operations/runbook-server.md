@@ -20,6 +20,40 @@ The current Mac uses `/opt/homebrew/opt/postgresql@18/bin`, cluster directory
 cannot find the matching tools. Omit both dev variables for externally managed
 PostgreSQL. They are never needed by the OpenShift workloads.
 
+For development checks, set `TEST_DATABASE_URL` to an isolated PostgreSQL
+database ending in `_test`, then run `make test`. Tests recreate that database's
+public schema; never use the application database. The command runs Core/SDK
+tests and the dashboard tests and build.
+
+## Headless use and retrieval evaluation
+
+Install `osii[server]`, provide deployment configuration, and run
+`uvicorn osii.server.api:create_app --factory`. Run ingestion separately with
+`python -m osii.server.worker`. Node, the dashboard, MCP, and optional processors
+are not required to serve an already-ingested corpus.
+
+API clients call `/api/auth/login`, retain the session cookie, and send the
+returned `csrf_token` in `X-CSRF-Token` for writes. `/api/capabilities` describes
+supported workflows. OpenAPI documentation requires an administrator session.
+`/health` checks the process and `/ready` checks database/schema readiness.
+
+Search combines BM25, Unicode/numeric-aware normalization, bounded
+character-similarity expansion, and optional compatible semantic vectors. Source
+text and offsets remain unchanged by search. Private uploads, saved private
+conversations, Microsoft SSO, legacy package/editing workflows, and filesystem
+MCP are outside this server's supported workflows.
+
+To evaluate real OCR, prepare an ignored JSONL file containing `query` and
+`expected_sources` (relative source paths) per line. Use 30–50 labelled cases:
+
+```bash
+uv run --env-file .env --package osii --extra server python -m osii.server.evaluate osii-data/queries.jsonl
+```
+
+The evaluator reports source Recall@k and MRR. Semantic/hybrid modes require
+`--allow-paid-embeddings`. Synthetic regression tests do not establish quality
+on the real corpus.
+
 ## Images and configuration
 
 Build the hosted Core and dashboard Dockerfiles from the repository root. All
@@ -115,6 +149,9 @@ it writable. Do not grant source-write access to API/worker. Retain a source
 manifest with hashes and dataset version outside the sandbox. In Administration,
 discover models, save exact IDs, and explicitly test invocation. Catalog listing
 is not a generation or billing test. Provider keys are deployment Secrets.
+Changing the embedding model requires reprocessing the documents. Administrators
+manage accounts and model selections; curators ingest and manage collections;
+readers browse, search, and chat.
 
 Curators process the fixed directory. Configure a bounded OCR extractor through
 `OSII_OCR_URL` for image-only files; native text extraction does not perform OCR.
