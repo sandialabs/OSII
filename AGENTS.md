@@ -20,6 +20,12 @@ The agent's job is to execute the human's command—nothing more.
 - OSII is local-first. Preserve original source identity, extracted text,
   locations, scopes, provenance, and portable `.osii` sidecars. Catalogs,
   indexes, caches, and model output are derived and rebuildable.
+- On `osii-large`, `osii.volume` owns a separate canonical SQLite database on
+  local disk. Its inventory, extracted text, provenance, and operational state
+  are authoritative; only its search index is rebuildable. Never run sidecar
+  catalog rebuild/quarantine behavior against this database or fall back between
+  stores. The volume API and worker run on the same host; processors remain
+  bounded Processor API clients without database access.
 - The Core owns canonical persistence, RAG orchestration, and grounded chat.
   Processors receive explicit bounded requests and return typed output; they do
   not browse a corpus or write the canonical store.
@@ -65,6 +71,9 @@ The agent's job is to execute the human's command—nothing more.
   developed separately for PostgreSQL, hosted accounts, and OpenShift. Keep
   portable fixes isolated for transfer between the branches; never merge server
   persistence or hosted startup into main implicitly.
+- `osii-large` adds the explicit `OSII_STORAGE_MODE=volume` workstation/SSH
+  workflow while retaining OSII-local. Keep both startup modes working through
+  `make dev` and `scripts/osii.ps1`; see docs/operations/large-volumes.md.
 
 - The supported startup path on main is `make dev` (Windows:
   `.\\scripts\\osii.ps1 dev`). Keep automatic dependency setup, logs, health

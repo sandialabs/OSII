@@ -132,6 +132,10 @@ def build_environment(core_only: bool) -> dict[str, str]:
     env.pop("VIRTUAL_ENV", None)
     for key, value in load_dotenv(REPOSITORY_ROOT / ".env").items():
         env.setdefault(key, value)
+    storage_mode = env.get("OSII_STORAGE_MODE", "local").strip().lower()
+    if storage_mode not in {"local", "volume"}:
+        raise RuntimeError("OSII_STORAGE_MODE must be local or volume")
+    env["OSII_STORAGE_MODE"] = storage_mode
 
     runtime_value = env.get("OSII_RUNTIME_DIR", "./osii-data")
     runtime_root = Path(runtime_value).expanduser()
@@ -144,18 +148,26 @@ def build_environment(core_only: bool) -> dict[str, str]:
     if not source_root.is_absolute():
         source_root = REPOSITORY_ROOT / source_root
     source_root = source_root.resolve()
-    if not source_root.exists():
+    volume_mode = env.get("OSII_STORAGE_MODE", "local") == "volume"
+    volume_database = Path(env.get("OSII_VOLUME_DB", str(runtime_root / "volume.sqlite3"))).expanduser()
+    if not volume_database.is_absolute():
+        volume_database = REPOSITORY_ROOT / volume_database
+    volume_database = volume_database.resolve()
+    if volume_mode and (runtime_root.is_relative_to(source_root) or volume_database.is_relative_to(source_root)):
+        raise RuntimeError("Volume runtime and canonical database must be outside the read-only source root")
+    if not source_root.exists() and not volume_mode:
         raise RuntimeError(
             f"Documents folder is unavailable: {source_root}. "
             "Connect or mount the shared drive, then start OSII again."
         )
-    if not source_root.is_dir():
+    if source_root.exists() and not source_root.is_dir():
         raise RuntimeError(f"Documents path is not a folder: {source_root}")
     try:
         with os.scandir(source_root) as entries:
             next(entries, None)
     except OSError as exc:
-        raise RuntimeError(f"Documents folder cannot be read: {source_root}: {exc}") from exc
+        if not volume_mode:
+            raise RuntimeError(f"Documents folder cannot be read: {source_root}: {exc}") from exc
 
     osii_value = env.get("OSII_ROOT", "").strip()
     osii_root = Path(osii_value).expanduser() if osii_value else runtime_root / ".osii"
@@ -168,8 +180,9 @@ def build_environment(core_only: bool) -> dict[str, str]:
     if not uploads_root.is_absolute():
         uploads_root = REPOSITORY_ROOT / uploads_root
     uploads_root = uploads_root.resolve()
-    for path in (osii_root, uploads_root):
-        path.mkdir(parents=True, exist_ok=True)
+    if not volume_mode:
+        for path in (osii_root, uploads_root):
+            path.mkdir(parents=True, exist_ok=True)
 
     configured_directory = (env.get("OSII_CONFIG_DIR", "") or env.get("OSII_CONFIG_DIR_HOST", "")).strip()
     previous_configuration_root = None
@@ -240,6 +253,7 @@ def build_environment(core_only: bool) -> dict[str, str]:
             "OSII_FILESYSTEM_MODE": "local",
             "OSII_SOURCE_KIND": env.get("OSII_SOURCE_KIND", "auto").strip().lower() or "auto",
             "OSII_RUNTIME_DIR": str(runtime_root),
+            "OSII_VOLUME_DB": str(volume_database),
             "OSII_ROOT": str(osii_root),
             "UPLOAD_ORIGINALS_ROOT": str(uploads_root),
             "TIKA_URL": f"http://127.0.0.1:{tika_port}",
@@ -379,6 +393,7 @@ def service_commands(
     dashboard_port = env.get("OSII_DASHBOARD_PORT", "5173")
     mcp_port = env.get("OSII_MCP_PORT", "8022")
     embeddings_port = env.get("OSII_EMBEDDINGS_PORT", "8085")
+    volume_mode = env.get("OSII_STORAGE_MODE", "local") == "volume"
 
     services = [
         Service(
@@ -392,7 +407,8 @@ def service_commands(
                 "python",
                 "-m",
                 "uvicorn",
-                "osii.main:app",
+                "osii.volume.api:create_app" if volume_mode else "osii.main:app",
+                *(("--factory",) if volume_mode else ()),
                 "--host",
                 "127.0.0.1",
                 "--port",
@@ -417,7 +433,7 @@ def service_commands(
                 "watchfiles",
                 "--filter",
                 "python",
-                "python -m osii.worker",
+                "python -m osii.volume.worker" if volume_mode else "python -m osii.worker",
                 "osii",
             ),
             REPOSITORY_ROOT / "osii-core",
@@ -452,6 +468,9 @@ def service_commands(
             int(dashboard_port),
         ),
     ]
+    if volume_mode:
+        # The filesystem MCP adapter cannot read canonical volume evidence.
+        services = [service for service in services if service.name != "mcp"]
     if not core_only:
         processors = (
             ("extractor", "osii-local-extractor", "8092", "OSII_LOCAL_EXTRACTOR_PORT", "local-extractor"),
@@ -884,20 +903,27 @@ def run(
         print("[ready] OSII is running.")
         print(f"[ready] Dashboard: http://localhost:{dashboard_port}")
         print(f"[ready] Documents folder: {env['SHARED_VOLUME_ROOT']}")
-        print(f"[ready] OSII artifacts: {env['OSII_ROOT']}")
+        if env.get("OSII_STORAGE_MODE") == "volume":
+            print(f"[ready] Canonical volume database (local disk): {env['OSII_VOLUME_DB']}")
+        else:
+            print(f"[ready] OSII artifacts: {env['OSII_ROOT']}")
         print(f"[ready] Editable configuration: {env['OSII_CONFIG_DIR']}")
         if env.get("OSII_SOURCE_KIND") == "shared":
             print("[ready] Shared-drive mode: originals are read in place; artifacts remain in the local OSII data folder.")
         print(f"[dev] API health: http://localhost:{api_port}/health")
-        print(f"[dev] MCP: http://localhost:{env.get('OSII_MCP_PORT', '8022')}/mcp")
+        if env.get("OSII_STORAGE_MODE") != "volume":
+            print(f"[dev] MCP: http://localhost:{env.get('OSII_MCP_PORT', '8022')}/mcp")
         print("[ready] Keep this terminal open. Press Ctrl+C once to stop OSII.")
         if not core_only:
             if shutil.which("tesseract") is None:
                 print("[dev] OCR needs the native Tesseract program. Install it, then restart OSII.")
             else:
                 print("[dev] Baseline full-page Tesseract OCR is ready.")
-            print("[dev] Open Dashboard → Setup to connect the team's model endpoint.")
-            print("[dev] Setup → Advanced & diagnostics contains processor URLs, settings, controls, and logs.")
+            if env.get("OSII_STORAGE_MODE") == "volume":
+                print("[dev] Open the volume dashboard to inventory, select, and process bounded subsets.")
+            else:
+                print("[dev] Open Dashboard → Setup to connect the team's model endpoint.")
+                print("[dev] Setup → Advanced & diagnostics contains processor URLs, settings, controls, and logs.")
             if provider_profile == "openai":
                 print("[dev] OpenAI-compatible profile: the configured endpoint is preferred, with Ollama and extractive fallbacks.")
 

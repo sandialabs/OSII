@@ -110,6 +110,29 @@ def test_service_plan_uses_nested_components_without_concurrent_uv_sync():
     assert str(ROOT / "osii-env") not in environments
 
 
+def test_volume_service_plan_uses_canonical_api_worker_and_no_filesystem_mcp():
+    services = DEV_STACK.service_commands("uv", "npm", {"OSII_STORAGE_MODE": "volume"}, core_only=True)
+    by_name = {service.name: service for service in services}
+    assert set(by_name) == {"api", "worker", "dashboard"}
+    assert "osii.volume.api:create_app" in by_name["api"].command
+    assert "--factory" in by_name["api"].command
+    assert "python -m osii.volume.worker" in by_name["worker"].command
+
+
+def test_volume_environment_can_browse_catalog_when_source_is_disconnected(monkeypatch, tmp_path):
+    monkeypatch.setattr(DEV_STACK, "load_dotenv", lambda _path: {})
+    monkeypatch.setenv("OSII_STORAGE_MODE", "volume")
+    monkeypatch.setenv("OSII_SOURCE_DIR", str(tmp_path / "disconnected"))
+    monkeypatch.setenv("OSII_RUNTIME_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("OSII_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.delenv("OSII_VOLUME_DB", raising=False)
+    env = DEV_STACK.build_environment(core_only=True)
+    assert env["OSII_VOLUME_DB"] == str(tmp_path / "runtime" / "volume.sqlite3")
+    monkeypatch.setenv("OSII_RUNTIME_DIR", str(tmp_path / "disconnected" / "runtime"))
+    with pytest.raises(RuntimeError, match="outside"):
+        DEV_STACK.build_environment(core_only=True)
+
+
 def test_toolbox_opt_out_retains_manual_controls_and_core_only_omits_services():
     env = {"OSII_START_TOOLBOX": "false"}
     services = DEV_STACK.service_commands("uv", "npm", env, core_only=False)

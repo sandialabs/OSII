@@ -100,6 +100,11 @@ app.include_router(chat_router)
 async def health():
     return {"status": "ok"}
 
+
+@app.get("/api/runtime")
+async def runtime():
+    return {"storage_mode": "local"}
+
 @app.get("/artifact/{file_path:path}", name="download_artifact")
 async def download_artifact(file_path: str):
     target = (app.state.osii_root / file_path).resolve()

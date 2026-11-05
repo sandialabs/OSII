@@ -49,3 +49,8 @@ and [extension guides](docs/extending/index.md) for processors and frontend tool
 Use the `osii-server` branch for an authenticated library shared by a team;
 `archive/workstation-deployment-2026-11-03` preserves earlier workstation
 packaging workflows.
+
+For inventory-first work across large shared volumes, the database-backed
+workflow runs on a workstation or SSH-accessible node without a database
+service. It discovers metadata before selectively extracting and searching
+content. See [large-volume operation](docs/operations/large-volumes.md).

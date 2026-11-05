@@ -46,6 +46,7 @@ nav:
       - CLI cheat sheet: reference/cli.md
   - Understand OSII:
       - Architecture: concepts/architecture.md
+      - Volume-store decision: concepts/adr-volume-store.md
       - Extraction: concepts/extraction.md
       - Tables and tabular extraction: concepts/tabular-extraction.md
       - Collections and enrichments: concepts/collections-and-enrichments.md
@@ -62,6 +63,7 @@ nav:
   - Operate offline:
       - Local-first operation: operations/local-first.md
       - Shared drives and Samba: operations/shared-drives.md
+      - Large-volume inventories: operations/large-volumes.md
       - Commercial vLLM testing: operations/commercial-vllm-testing.md
       - Guaranteed local processors: operations/local-processors.md
       - Extractor routing: reference/extractor-routing.md

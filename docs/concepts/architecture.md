@@ -1,5 +1,11 @@
 # OSII architecture
 
+The optional volume workflow uses a separate canonical SQLite database and a
+streaming, metadata-first scanner. It does not rebuild canonical evidence from
+sidecars. See the [volume-store decision](adr-volume-store.md) and
+[large-volume operation](../operations/large-volumes.md). The filesystem design
+below continues to describe OSII-local.
+
 ## Design rule
 
 The OSII core owns canonical persistence. Processors are replaceable compute
