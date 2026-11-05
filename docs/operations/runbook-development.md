@@ -106,8 +106,24 @@ instances, Windows execution, and a large PDF corpus remain unverified.
 ## Start and check
 
 Run `make dev` (Windows: `.\\scripts\\osii.ps1 dev`). This installs locked
-Python dependencies and dashboard dependencies, then starts the application
-services on the host. Later starts reuse the environment and npm dependencies.
+Python dependencies and dashboard dependencies, then starts the application,
+baseline processors, and all Toolbox services on the host. Toolbox dependencies
+are prepared once per project in that project's ignored `osii-env/`, separately
+from Core. Later starts reuse those environments and npm dependencies.
+
+The Toolbox services are OpenCV/Tesseract region OCR (`8081`), CSV extraction
+(`8097`), collection-table enrichment (`8098`), Readable LLM Wiki (`8099`), and
+Concept and Entity LLM Wiki (`8100`). `.env.example` lists their port overrides.
+Baseline full-page Tesseract remains on `8080`. Install native Tesseract for
+either OCR service. All five Toolbox endpoints are registered with Core, and
+their health checks must pass before the dashboard starts.
+
+Set `OSII_START_TOOLBOX=false` in `.env` for baseline-only startup. The same
+setting works with `make dev`, `make demo`, and the PowerShell commands.
+Setup's service controls can start stopped tools on demand. Starting services
+does not change saved processing routes, invoke models, or download model
+weights. Select a tool and run processing explicitly; wiki enrichment requires
+a configured chat connection. Ctrl+C stops all services owned by the launcher.
 
 Open `http://localhost:5173` and check `http://localhost:8511/health`.
 In Intake process one small text file, then search for its text. The API must
@@ -141,10 +157,11 @@ runtime data before product changes that require a storage migration.
 
 ## Connect an optional tool or your own processor
 
-Optional processor implementations remain under `osii-toolbox/`; start their
-Python service using that tool's source instructions. Register its base URL in
-Setup's custom Processor API services, then choose its extraction/enrichment
-route. The default host baseline starts automatically. External Tika can be
+Toolbox implementations remain under `osii-toolbox/` and start automatically
+unless opted out as described above. To deploy a tool independently or connect
+your own processor, start its service using its source instructions, register
+its base URL in Setup's custom Processor API services, then choose its
+extraction/enrichment route. External Tika can be
 configured as an endpoint; the host workflow no longer starts containers.
 
 ## Verification

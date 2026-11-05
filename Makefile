@@ -7,7 +7,7 @@ unexport VIRTUAL_ENV
 .PHONY: help dev demo demo-data test docs doctor
 
 help:
-	@echo "make dev        Install dependencies and start OSII; Ctrl+C stops it"
+	@echo "make dev        Start OSII and all Toolbox services; Ctrl+C stops them"
 	@echo "make demo       Add sample data, then start the same application"
 	@echo "make test       Run Core, SDK, processor, and dashboard checks"
 	@echo "make docs       Check documentation"

@@ -2,7 +2,9 @@
 
 These optional processors live in the main repository but remain independently
 deployable. Do not add their dependencies to Core, the root uv workspace/lock,
-the baseline image, or the host development launcher implicitly.
+or the baseline image. The host development launcher starts them by default
+in independent environments; `OSII_START_TOOLBOX=false` opts out. Starting a
+service does not authorize processing or model invocation.
 
 - Core owns canonical `.osii` storage. Tools receive bounded requests and return
   typed results; never mount or browse the library from a processor.

@@ -93,7 +93,7 @@ def test_service_plan_uses_nested_components_without_concurrent_uv_sync():
     for service in services:
         if service.command[0] == "uv" and service.start_automatically:
             assert "--no-sync" in service.command
-    assert by_name["readable-wiki"].start_automatically is False
+    assert by_name["readable-wiki"].start_automatically is True
     assert by_name["readable-wiki"].working_directory == (
         ROOT / "osii-toolbox" / "llm-wiki-enrichers"
     )
@@ -102,6 +102,59 @@ def test_service_plan_uses_nested_components_without_concurrent_uv_sync():
     assert by_name["tesseract-opencv"].working_directory == (
         ROOT / "osii-toolbox" / "osii-tesseract"
     )
+    assert by_name["csv-extractor"].port == 8097
+    assert by_name["collection-table"].port == 8098
+    environments = {dict(service.environment)["UV_PROJECT_ENVIRONMENT"]
+                    for service in services if service.working_directory.is_relative_to(ROOT / "osii-toolbox")}
+    assert len(environments) == 3
+    assert str(ROOT / "osii-env") not in environments
+
+
+def test_toolbox_opt_out_retains_manual_controls_and_core_only_omits_services():
+    env = {"OSII_START_TOOLBOX": "false"}
+    services = DEV_STACK.service_commands("uv", "npm", env, core_only=False)
+    tools = [s for s in services if s.working_directory.is_relative_to(ROOT / "osii-toolbox")]
+    assert len(tools) == 5 and all(not s.start_automatically for s in tools)
+    assert all("--no-sync" not in s.command for s in tools)
+    core = DEV_STACK.service_commands("uv", "npm", {}, core_only=True)
+    assert {s.name for s in core} == {"api", "worker", "mcp", "dashboard"}
+
+
+def test_toolbox_environment_registers_custom_ports_without_changing_routes(monkeypatch, tmp_path):
+    (tmp_path / "source").mkdir()
+    monkeypatch.setattr(DEV_STACK, "load_dotenv", lambda _path: {})
+    monkeypatch.setenv("OSII_SOURCE_DIR", str(tmp_path / "source"))
+    monkeypatch.setenv("OSII_RUNTIME_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("OSII_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("OSII_START_TOOLBOX", "true")
+    monkeypatch.setenv("OSII_TESSERACT_OPENCV_PORT", "18081")
+    monkeypatch.setenv("OSII_PROCESSORS", "http://processor.test:9999")
+    env = DEV_STACK.build_environment(core_only=False)
+    urls = env["OSII_PROCESSORS"].split(",")
+    assert "http://127.0.0.1:18081" in urls
+    assert "http://127.0.0.1:8097" in urls
+    assert "http://127.0.0.1:8098" in urls
+    assert "http://processor.test:9999" in urls
+    assert env["OSII_DEFAULT_EXTRACTOR"] == "local.native-text"
+    monkeypatch.setenv("OSII_START_TOOLBOX", "false")
+    assert "http://127.0.0.1:18081" in DEV_STACK.build_environment(False)["OSII_PROCESSORS"].split(",")
+
+
+@pytest.mark.parametrize("enabled, core_only, expected", [(True, False, 3), (False, False, 0), (True, True, 0)])
+def test_toolbox_dependencies_prepare_once_per_isolated_environment(monkeypatch, tmp_path, enabled, core_only, expected):
+    dashboard = tmp_path / "osii-dashboard" / "dashboard"
+    dashboard.mkdir(parents=True)
+    (dashboard / "package-lock.json").write_text("{}")
+    (dashboard / "node_modules").mkdir()
+    monkeypatch.setattr(DEV_STACK, "REPOSITORY_ROOT", tmp_path)
+    calls = []
+    monkeypatch.setattr(DEV_STACK.subprocess, "run", lambda command, **kwargs: calls.append((command, kwargs)))
+    env = {"UV_PROJECT_ENVIRONMENT": str(tmp_path / "osii-env"), "OSII_START_TOOLBOX": str(enabled)}
+    DEV_STACK.prepare_dependencies("uv", "npm", env, core_only=core_only)
+    tool_calls = [(cmd, kw) for cmd, kw in calls if kw["cwd"].is_relative_to(tmp_path / "osii-toolbox")]
+    assert len(tool_calls) == expected
+    assert len({kw["env"]["UV_PROJECT_ENVIRONMENT"] for _, kw in tool_calls}) == expected
+    assert all(kw["env"]["UV_PROJECT_ENVIRONMENT"] != env["UV_PROJECT_ENVIRONMENT"] for _, kw in tool_calls)
 
 
 def test_host_environment_uses_shared_python_default(monkeypatch):

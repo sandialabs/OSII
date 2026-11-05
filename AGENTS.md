@@ -28,8 +28,9 @@ The agent's job is to execute the human's command—nothing more.
   configuration explicit.
 - The dashboard and MCP server are Core clients. Guaranteed baseline Processor
   API hosts live under `osii-core/services/`. `osii-toolbox/` owns separately
-  deployable tools. Toolbox processors are enabled only through explicit
-  configuration and do not join the default host stack automatically.
+  deployable tools. The host development stack starts Toolbox services by
+  default, with an explicit opt-out, using their independent environments.
+  Starting a tool does not select it for processing or invoke a model.
 - Treat `osii.processor_sdk` as the public boundary for external processors.
   Preserve standard artifact formats so people, the dashboard, and agents can
   inspect the same results.

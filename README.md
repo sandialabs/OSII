@@ -37,7 +37,9 @@ On Windows, install uv and Node.js and run:
 ```
 
 Open [the dashboard](http://localhost:5173), process your files, and explore the
-library. Keep the terminal open; **Ctrl+C** stops OSII. For sample files, use
+library. Toolbox services start automatically and are available in **Setup**;
+choose a tool when you want to use it. Keep the terminal open; **Ctrl+C** stops
+OSII. For sample files, use
 `make demo` (Windows: `.\scripts\osii.ps1 demo`). Install Tesseract for OCR;
 configure optional model connections in **Setup**. Keep credentials outside Git.
 

@@ -35,6 +35,8 @@ SERVICE_DISPLAY_NAMES = {
     "readable-wiki": "Readable LLM Wiki",
     "concept-entity-wiki": "Concept and Entity LLM Wiki",
     "tesseract-opencv": "Tesseract OCR with OpenCV regions",
+    "csv-extractor": "CSV table extractor",
+    "collection-table": "Collection table enricher",
     "api": "OSII backend API and grounded chat",
     "worker": "sequential intake worker",
     "mcp": "MCP server for agents",
@@ -62,8 +64,37 @@ CAPABILITY_SERVICE_INFO = {
     "readable-wiki": ("Readable LLM Wiki", "Creates a cited, reader-friendly Markdown wiki using a configured chat connection.", "/health"),
     "concept-entity-wiki": ("Concept and Entity LLM Wiki", "Creates a wiki, entity list, and concept table using a configured chat connection.", "/health"),
     "tesseract-opencv": ("Tesseract OCR with OpenCV regions", "Finds page regions with OpenCV and preserves OCR bounding boxes.", "/health"),
+    "csv-extractor": ("CSV table extractor", "Extracts CSV rows with source-line provenance.", "/health"),
+    "collection-table": ("Collection table enricher", "Combines compatible extracted tables within a selected scope.", "/health"),
     "tika": ("Apache Tika", "Adds broad document-format text extraction using Podman or Docker.", "/version"),
 }
+
+
+def toolbox_services(uv: str, env: dict[str, str]) -> list[Service]:
+    enabled = env.get("OSII_START_TOOLBOX", "true").strip().lower() not in {"false", "0", "no", "off"}
+    specifications = (
+        ("readable-wiki", "llm-wiki-enrichers", ("run.py", "readable"), "OSII_READABLE_WIKI_PORT", "8099"),
+        ("concept-entity-wiki", "llm-wiki-enrichers", ("run.py", "concept-entity"), "OSII_CONCEPT_ENTITY_WIKI_PORT", "8100"),
+        ("tesseract-opencv", "osii-tesseract", ("-m", "uvicorn", "app.main:app"), "OSII_TESSERACT_OPENCV_PORT", "8081"),
+        ("csv-extractor", "tabular-dataset-processors", ("run.py", "extractor"), "OSII_CSV_EXTRACTOR_PORT", "8097"),
+        ("collection-table", "tabular-dataset-processors", ("run.py", "enricher"), "OSII_COLLECTION_TABLE_PORT", "8098"),
+    )
+    services = []
+    for name, directory, entry, port_variable, default_port in specifications:
+        root = REPOSITORY_ROOT / "osii-toolbox" / directory
+        port = env.get(port_variable, default_port)
+        # Automatic startup prepares each independent environment first. On
+        # demand, uv prepares it when Setup starts a disabled Toolbox service.
+        sync_option = ("--no-sync",) if enabled else ()
+        services.append(Service(
+            name,
+            (uv, "run", *sync_option, "--python", env.get("UV_PYTHON", "3.12"),
+             "--project", ".", "python", *entry, "--host", "127.0.0.1", "--port", port),
+            root, int(port),
+            environment=(("UV_PROJECT_ENVIRONMENT", str(root / "osii-env")),),
+            start_automatically=enabled,
+        ))
+    return services
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
@@ -252,6 +283,10 @@ def build_environment(core_only: bool) -> dict[str, str]:
                 "http://127.0.0.1:8095/openai/embedder",
                 "http://127.0.0.1:8095/openai/synthesizer",
             ])
+        # Retain registrations when startup is disabled so Setup can start a
+        # tool on demand without requiring a Core restart or URL registration.
+        local_urls.extend(f"http://127.0.0.1:{service.port}"
+                          for service in toolbox_services("uv", env))
         env.update({
             "OSII_PROCESSORS": ",".join(local_urls + configured),
             "OSII_DEFAULT_EXTRACTOR": "local.native-text",
@@ -270,7 +305,7 @@ def build_environment(core_only: bool) -> dict[str, str]:
     return env
 
 
-def prepare_dependencies(uv: str, npm: str, env: dict[str, str]) -> None:
+def prepare_dependencies(uv: str, npm: str, env: dict[str, str], *, core_only: bool = False) -> None:
     print(
         "[setup] Preparing OSII packages. The first start can take a few minutes; "
         "later starts reuse this environment."
@@ -300,6 +335,18 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str]) -> None:
         env=env,
         check=True,
     )
+    prepared: set[Path] = set()
+    for service in ([] if core_only else toolbox_services(uv, env)):
+        if not service.start_automatically or service.working_directory in prepared:
+            continue
+        print(f"[setup] Preparing Toolbox environment: {service.working_directory.name}", flush=True)
+        subprocess.run(
+            [uv, "sync", "--python", env.get("UV_PYTHON", "3.12"), "--project", "."],
+            cwd=service.working_directory,
+            env={**env, **dict(service.environment)},
+            check=True,
+        )
+        prepared.add(service.working_directory)
     dashboard_root = REPOSITORY_ROOT / "osii-dashboard" / "dashboard"
     package_lock = dashboard_root / "package-lock.json"
     dependency_stamp = dashboard_root / "node_modules" / ".osii-package-lock.sha256"
@@ -418,29 +465,7 @@ def service_commands(
             services.insert(0, Service(name, (uv, "run", "--no-sync", "--package", package, "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "osii-core" / "services" / directory, int(port)))
         bridge_port = env.get("OSII_MODEL_BRIDGE_PORT", "8095")
         services.insert(4, Service("model-bridge", (uv, "run", "--no-sync", "--package", "osii-model-provider-bridge", "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", bridge_port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "osii-core" / "services" / "model-provider-bridge", int(bridge_port)))
-        services.extend([
-            Service(
-                "readable-wiki",
-                (uv, "run", "--python", env.get("UV_PYTHON", "3.12"), "--project", ".", "python", "run.py", "readable", "--host", "127.0.0.1", "--port", "8099"),
-                REPOSITORY_ROOT / "osii-toolbox" / "llm-wiki-enrichers",
-                8099,
-                start_automatically=False,
-            ),
-            Service(
-                "concept-entity-wiki",
-                (uv, "run", "--python", env.get("UV_PYTHON", "3.12"), "--project", ".", "python", "run.py", "concept-entity", "--host", "127.0.0.1", "--port", "8100"),
-                REPOSITORY_ROOT / "osii-toolbox" / "llm-wiki-enrichers",
-                8100,
-                start_automatically=False,
-            ),
-            Service(
-                "tesseract-opencv",
-                (uv, "run", "--python", env.get("UV_PYTHON", "3.12"), "--project", ".", "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8081"),
-                REPOSITORY_ROOT / "osii-toolbox" / "osii-tesseract",
-                8081,
-                start_automatically=False,
-            ),
-        ])
+        services.extend(toolbox_services(uv, env))
     return services
 
 
@@ -780,7 +805,7 @@ def wait_for_http_service(
 
     raise RuntimeError(
         f"{service_name} did not become ready within {timeout_seconds:.0f} seconds at {url}. "
-        "Review the API startup output above; the dashboard was not started."
+        "Review the service startup output above; the dashboard was not started."
     )
 
 
@@ -817,13 +842,13 @@ def run(
         if dry_run:
             print("[dev] Bare-metal service plan:")
             for service in services:
-                print(render_command(service))
+                print(render_command(service) + ("" if service.start_automatically else " (on demand)"))
             return 0
 
         ensure_ports_available(services)
 
         if not skip_setup:
-            prepare_dependencies(uv, npm, env)
+            prepare_dependencies(uv, npm, env, core_only=core_only)
 
         processes: dict[str, tuple[Service, subprocess.Popen[bytes]]] = {}
         if supervisor is not None:
@@ -845,6 +870,12 @@ def run(
             url=f"http://127.0.0.1:{api_port}/health",
             processes=processes,
         )
+        for service in services:
+            if service.start_automatically and service.working_directory.is_relative_to(REPOSITORY_ROOT / "osii-toolbox"):
+                wait_for_http_service(
+                    service_name=SERVICE_DISPLAY_NAMES[service.name],
+                    url=f"http://127.0.0.1:{service.port}/health", processes=processes,
+                )
         processes[dashboard_service.name] = (
             dashboard_service,
             start_service(dashboard_service, env),
