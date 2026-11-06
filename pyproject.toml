@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "banyan-extract"
+version = "1.2.5"
+license = { text = "BSD 3" }
+authors = [
+    { name="Sandia National Laboratories" },
+]
+requires-python = ">= 3.10"
+
+dependencies = [
+    "python-pptx",
+    "pandas",
+    "python-dotenv",
+    "opencv-python", 
+    "numpy",
+    "openai",
+    "pillow",
+    "pymupdf"
+    ]
+
+[project.optional-dependencies]
+marker = ["marker-pdf", "surya-ocr"]
+nemotronparse = ["openai"]
+autorotate = ["pytesseract"]
+osii = ["osii", "uvicorn[standard]>=0.35,<1"]
+
+[project.scripts]
+banyan-extract = "banyan_extract.cli:main"

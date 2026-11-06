@@ -1,0 +1,72 @@
+[
+  {
+    "bbox": {
+      "xmin": 0.11643893805309735,
+      "ymin": 0.0938,
+      "xmax": 0.2792596713021492,
+      "ymax": 0.1047
+    },
+    "text": "This is a document.",
+    "type": "Text"
+  },
+  {
+    "bbox": {
+      "xmin": 0.11643893805309735,
+      "ymin": 0.1258,
+      "xmax": 0.241653603034134,
+      "ymax": 0.1359
+    },
+    "text": "Here is a table:",
+    "type": "Text"
+  },
+  {
+    "bbox": {
+      "xmin": 0.11643893805309735,
+      "ymin": 0.1531,
+      "xmax": 0.881477623261694,
+      "ymax": 0.2117
+    },
+    "text": "\\begin{tabular}{ccc}\n**Some data** & **More data** & **Different data**\\\\\nA & 1 & Something\\\\\nb & 3 & Blah blah blah\\\\\n\\end{tabular}",
+    "type": "Table"
+  },
+  {
+    "bbox": {
+      "xmin": 0.11748065739570164,
+      "ymin": 0.2469,
+      "xmax": 0.2792596713021492,
+      "ymax": 0.2602
+    },
+    "text": "Here\u2019s an equation:",
+    "type": "Text"
+  },
+  {
+    "bbox": {
+      "xmin": 0.3209284450063211,
+      "ymin": 0.2758,
+      "xmax": 0.6759463969658661,
+      "ymax": 0.3234
+    },
+    "text": "\\(f(x)=a_0+\\sum_{n=1}^\\infty\\left(ancos\\frac{n\\pi x}{L}+b_nsin\\frac{n\\pi x}{L}\\right)\\)",
+    "type": "Formula"
+  },
+  {
+    "bbox": {
+      "xmin": 0.11748065739570164,
+      "ymin": 0.3406,
+      "xmax": 0.29957319848293296,
+      "ymax": 0.3539
+    },
+    "text": "Here\u2019s a figure/image:",
+    "type": "Text"
+  },
+  {
+    "bbox": {
+      "xmin": 0.11643893805309735,
+      "ymin": 0.3672,
+      "xmax": 0.6566745891276864,
+      "ymax": 0.6445
+    },
+    "text": "",
+    "type": "Picture"
+  }
+]
