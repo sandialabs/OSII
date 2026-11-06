@@ -1,0 +1,19 @@
+{
+  "pages": [
+    {
+      "page_number": 1,
+      "elements": [
+        {
+          "type": "text",
+          "content": "Sample text",
+          "position": {
+            "x": 10,
+            "y": 20,
+            "width": 100,
+            "height": 20
+          }
+        }
+      ]
+    }
+  ]
+}

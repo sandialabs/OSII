@@ -1,0 +1,52 @@
+[
+  {
+    "bbox": {
+      "xmin": 0.13575454545454546,
+      "ymin": 0.05877647058823526,
+      "xmax": 0.7408015151515152,
+      "ymax": 0.17071372549019612
+    },
+    "text": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Pellentesque eget eros erat. Quisque non vestibulum sapien, sed tristique nibh. Phasellus ac tellus eget sapien vehicula maximus sit amet eu lacus. Nullam lacinia dui bibendum iaculis malesuada. Aenean quis nisl sit amet nunc facilisis condimentum scelerisque vitae libero. Nulla fringilla hendrerit metus, in eleifend neque dapibus ut. Curabitur ultrices urna urna, pretium fringilla massa ultrices rhoncus.",
+    "type": "Text"
+  },
+  {
+    "bbox": {
+      "xmin": 0.13575454545454546,
+      "ymin": 0.1940549019607843,
+      "xmax": 0.7484484848484848,
+      "ymax": 0.417678431372549
+    },
+    "text": "Nunc eleifend condimentum lorem, at vulputate ante blandit in. Morbi eu eros venenatis, fermentum risus eget, ultrices ipsum. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; Nullam condimentum egestas eros, sodales commodo felis pretium ac. Integer nec metus dignissim, feugiat dolor sit amet, cursus urna. Fusce lobortis augue et mi commodo, sed condimentum orci finibus. Suspendisse nec ligula ut odio ullamcorper iaculis sodales eget tortor. Duis eu vestibulum mauris. Sed sodales lorem leo, congue imperdiet mi semper eget. Phasellus auctor, diam ac faucibus ultricies, leo dolor convallis est, ut sollicitudin lorem quam quis leo. Vivamus gravida viverra semper. Donec nulla neque, pretium nec pharetra non, mollis ut justo. Sed ut dignissim libero. Sed fringilla tristique ex, at maximus sem elementum quis. Morbi ornare sit amet odio at accumsan. Nulla varius ipsum a magna mollis, eget euismod erat vestibulum.",
+    "type": "Text"
+  },
+  {
+    "bbox": {
+      "xmin": 0.13575454545454546,
+      "ymin": 0.44302745098039215,
+      "xmax": 0.7484484848484848,
+      "ymax": 0.5981333333333334
+    },
+    "text": "Ut sed elit tortor. Nunc sapien orci, elementum ac purus quis, suscipit facilisis ligula. Sed ultricies libero velit. Vestibulum lobortis, nisi quis condimentum efficitur, eros arcu interdum sem, non gravida sapien arcu eu urna. Curabitur pulvinar dolor eu mollis rutrum. Aliquam nulla dolor, feugiat convallis massa id, aliquam placerat felis. Vivamus blandit sem non lorem pellentesque, quis tempor erat lobortis. Vivamus dignissim dolor ligula, quis mollis elit consectetur vel. Vivamus lobortis lacinia est, non tincidunt enim porttitor suscipit. Cras suscipit felis elit, sed efficitur lacus consectetur et.",
+    "type": "Text"
+  },
+  {
+    "bbox": {
+      "xmin": 0.13575454545454546,
+      "ymin": 0.6214745098039216,
+      "xmax": 0.7514136363636363,
+      "ymax": 0.7334117647058823
+    },
+    "text": "Cras in laoreet dolor. Duis ultrices feugiat convallis. Phasellus varius nec ligula sed lobortis. Nunc accumsan semper mollis. Ut faucibus arcu augue, eleifend facilisis nibh dignissim eget. Integer viverra vulputate eros. Cras risus metus, volutpat sit amet malesuada non, elementum eget nisi. Aenean convallis semper erat eget tristique. Vivamus laoreet urna id est aliquam, sed convallis quam luctus. Class apent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos.",
+    "type": "Text"
+  },
+  {
+    "bbox": {
+      "xmin": 0.13575454545454546,
+      "ymin": 0.7587607843137254,
+      "xmax": 0.750009090909091,
+      "ymax": 0.9372078431372549
+    },
+    "text": "Donec non ante scelerisque, aliquam libero sit amet, pellentesque justo. Integer sodales varius metus at pharetra. Donec maximus eleifend ante eu vehicula. Praesent fringilla gravida laoreet. Fusce risus nibh, portitor faucibus dignissim nec, ullamcorper at magna. Vestibulum in neque eget nulla bibendum condimentum. Interdum et malesuada fames ac ante ipsum primis in faucibus. Ut nec felis at nisi bibendum pretium. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Ut accumsan porta metus ut aliquam. Mauris vel orci urna. Suspendisse potenti. Proin blandit, libero non ornare congue, magna justo efficitur velit, sed iaculis metus sapien sit amet massa. Curabitur ac tortor dignissim, fermentum diam vel, sodales eros.",
+    "type": "Text"
+  }
+]
