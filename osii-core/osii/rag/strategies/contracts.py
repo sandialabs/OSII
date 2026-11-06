@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Callable, Literal, Mapping, Protocol, Sequence
 
 
@@ -139,3 +140,50 @@ class Result:
     model_calls: int
     elapsed_seconds: float
     strategy: str
+
+
+@dataclass(frozen=True)
+class RerankRequest:
+    """Already-authorized candidates, not a corpus handle or a retrieval tool."""
+    query: str
+    candidates: tuple[Evidence, ...]
+    top_k: int = 8
+
+    def __post_init__(self):
+        if not self.query.strip() or len(self.query) > 4000:
+            raise StrategyError("Reranking queries must contain 1–4,000 characters")
+        if not isinstance(self.candidates, tuple) or len(self.candidates) > 50:
+            raise StrategyError("Reranking requires an immutable tuple of at most 50 candidates")
+        if any(not isinstance(item, Evidence) for item in self.candidates):
+            raise StrategyError("Reranking candidates must be Evidence records")
+        if len({item.id for item in self.candidates}) != len(self.candidates):
+            raise StrategyError("Reranking candidate IDs must be unique")
+        if sum(len(item.text) for item in self.candidates) > 64000:
+            raise StrategyError("Reranking candidate text exceeds 64,000 characters")
+        if type(self.top_k) is not int or not 1 <= self.top_k <= 50:
+            raise StrategyError("Reranking top_k must be between 1 and 50")
+
+
+@dataclass(frozen=True)
+class RankedEvidence:
+    """A relevance score for an existing ID; scores are not probabilities."""
+    evidence_id: str
+    score: float
+
+    def __post_init__(self):
+        if not self.evidence_id:
+            raise StrategyError("A reranking score requires an evidence ID")
+        if type(self.score) not in {int, float} or not math.isfinite(self.score):
+            raise StrategyError("Reranking scores must be finite numbers")
+
+
+class Reranker(Protocol):
+    """Optional Core RAG computation, deliberately separate from Processor API."""
+    def __call__(self, request: RerankRequest) -> Sequence[RankedEvidence]: ...
+
+
+@dataclass(frozen=True)
+class RerankResult:
+    evidence: tuple[Evidence, ...]
+    ranking: tuple[RankedEvidence, ...]
+    applied: bool

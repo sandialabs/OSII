@@ -1,5 +1,9 @@
 # Extend OSII
 
+For retrieval, reranking, or iterative question-answering ideas, use the
+[Core RAG strategy authoring guide](rag-strategies.md). RAG extensions are separate
+from the four processor kinds below.
+
 An OSII processor is a small HTTP service that performs one specialized task.
 It receives a self-contained, validated request and returns grounded text or a
 standard artifact. It never writes directly to the OSII store.
