@@ -175,6 +175,9 @@ are preserved on `archive/workstation-deployment-2026-11-03`.
 
 ## Standalone shared RAG experiments
 
+For extension contracts and custom reranking, see the
+[RAG strategy authoring guide](../extending/rag-strategies.md).
+
 Install the optional Haystack extra from the repository root. It is not needed
 by normal startup and is not part of the baseline server image. The synthetic
 demo uses two small in-memory excerpts and deterministic decisions; it makes no
