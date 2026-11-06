@@ -41,7 +41,9 @@ library. Toolbox services start automatically and are available in **Setup**;
 choose a tool when you want to use it. Keep the terminal open; **Ctrl+C** stops
 OSII. For sample files, use
 `make demo` (Windows: `.\scripts\osii.ps1 demo`). Install Tesseract for OCR;
-configure optional model connections in **Setup**. Keep credentials outside Git.
+configure optional model connections in **Setup**. The
+[Banyan Toolbox extractor](osii-toolbox/banyan-nemotron-parse/README.md) uses its
+own local Nemotron endpoint configuration. Keep credentials outside Git.
 
 See the [startup guide](docs/operations/runbook-development.md) for setup and
 troubleshooting, [architecture](docs/concepts/architecture.md) for the design,

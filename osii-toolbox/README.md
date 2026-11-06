@@ -5,6 +5,7 @@ Processor API requests and return typed results; Core owns persistence. They
 start automatically with `make dev` and the equivalent PowerShell command.
 
 - [OpenCV/Tesseract region OCR](osii-tesseract/README.md): text with bounding boxes.
+- [Banyan Nemotron Parse](banyan-nemotron-parse/README.md): model-backed PDF/image parsing with element bounding boxes.
 - [Tabular processors](tabular-dataset-processors/README.md): CSV extraction and collection tables.
 - [LLM wiki enrichers](llm-wiki-enrichers/README.md): model-backed wiki artifacts.
 
@@ -13,6 +14,10 @@ registers the running services, and stops them with Ctrl+C. Choose their routes
 in Setup and test one document. Starting a service does not invoke a model;
 the wiki enrichers need a configured chat connection when used. Native Tesseract
 must be installed for OCR.
+
+Banyan source is included as a Git subtree. Copy
+`osii-toolbox/banyan-ingest/.env.example` to `.env` in that same directory and
+configure its Nemotron endpoint when access is available.
 
 Set `OSII_START_TOOLBOX=false` in `.env` to leave Toolbox services stopped at
 startup. Setup's service controls can start them on demand. Per-tool host

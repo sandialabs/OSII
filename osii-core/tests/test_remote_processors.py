@@ -43,6 +43,7 @@ def test_configured_processor_urls_includes_enabled_admin_registry(tmp_path, mon
         "http://127.0.0.1:8099",
         "http://127.0.0.1:8100",
         "http://127.0.0.1:8081",
+        "http://127.0.0.1:8101",
         "http://custom:8000",
     ]
 
@@ -63,6 +64,7 @@ def test_openai_provider_uses_standard_embedding_and_synthesis_adapters(tmp_path
         "http://127.0.0.1:8099",
         "http://127.0.0.1:8100",
         "http://127.0.0.1:8081",
+        "http://127.0.0.1:8101",
         "http://model-bridge:8095/openai/embedder",
         "http://model-bridge:8095/openai/synthesizer",
     ]

@@ -127,6 +127,15 @@ def builtin_tools_config() -> dict[str, Any]:
                 "runtime": {"mode": "external", "endpoint": "http://127.0.0.1:8081"},
                 "model_access": {"mode": "none"},
             },
+            "banyan-nemotron-parse": {
+                "enabled": True,
+                "processor_id": "banyan.nemotron-parse",
+                "display_name": "Banyan Nemotron Parse",
+                "kind": "extractor",
+                "runtime": {"mode": "external", "endpoint": "http://127.0.0.1:8101"},
+                # The tool owns its Nemotron configuration rather than using the chat gateway.
+                "model_access": {"mode": "none"},
+            },
         },
     }
 

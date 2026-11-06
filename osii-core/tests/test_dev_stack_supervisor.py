@@ -104,9 +104,12 @@ def test_service_plan_uses_nested_components_without_concurrent_uv_sync():
     )
     assert by_name["csv-extractor"].port == 8097
     assert by_name["collection-table"].port == 8098
+    assert by_name["banyan"].port == 8101
+    assert by_name["banyan"].working_directory == ROOT / "osii-toolbox" / "banyan-nemotron-parse"
+    assert "banyan_extract.integrations.osii_extractor:app" in by_name["banyan"].command
     environments = {dict(service.environment)["UV_PROJECT_ENVIRONMENT"]
                     for service in services if service.working_directory.is_relative_to(ROOT / "osii-toolbox")}
-    assert len(environments) == 3
+    assert len(environments) == 4
     assert str(ROOT / "osii-env") not in environments
 
 
@@ -114,7 +117,7 @@ def test_toolbox_opt_out_retains_manual_controls_and_core_only_omits_services():
     env = {"OSII_START_TOOLBOX": "false"}
     services = DEV_STACK.service_commands("uv", "npm", env, core_only=False)
     tools = [s for s in services if s.working_directory.is_relative_to(ROOT / "osii-toolbox")]
-    assert len(tools) == 5 and all(not s.start_automatically for s in tools)
+    assert len(tools) == 6 and all(not s.start_automatically for s in tools)
     assert all("--no-sync" not in s.command for s in tools)
     core = DEV_STACK.service_commands("uv", "npm", {}, core_only=True)
     assert {s.name for s in core} == {"api", "worker", "mcp", "dashboard"}
@@ -128,19 +131,21 @@ def test_toolbox_environment_registers_custom_ports_without_changing_routes(monk
     monkeypatch.setenv("OSII_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("OSII_START_TOOLBOX", "true")
     monkeypatch.setenv("OSII_TESSERACT_OPENCV_PORT", "18081")
+    monkeypatch.setenv("OSII_BANYAN_PORT", "18101")
     monkeypatch.setenv("OSII_PROCESSORS", "http://processor.test:9999")
     env = DEV_STACK.build_environment(core_only=False)
     urls = env["OSII_PROCESSORS"].split(",")
     assert "http://127.0.0.1:18081" in urls
     assert "http://127.0.0.1:8097" in urls
     assert "http://127.0.0.1:8098" in urls
+    assert "http://127.0.0.1:18101" in urls
     assert "http://processor.test:9999" in urls
     assert env["OSII_DEFAULT_EXTRACTOR"] == "local.native-text"
     monkeypatch.setenv("OSII_START_TOOLBOX", "false")
     assert "http://127.0.0.1:18081" in DEV_STACK.build_environment(False)["OSII_PROCESSORS"].split(",")
 
 
-@pytest.mark.parametrize("enabled, core_only, expected", [(True, False, 3), (False, False, 0), (True, True, 0)])
+@pytest.mark.parametrize("enabled, core_only, expected", [(True, False, 4), (False, False, 0), (True, True, 0)])
 def test_toolbox_dependencies_prepare_once_per_isolated_environment(monkeypatch, tmp_path, enabled, core_only, expected):
     dashboard = tmp_path / "osii-dashboard" / "dashboard"
     dashboard.mkdir(parents=True)

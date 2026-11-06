@@ -35,6 +35,7 @@ SERVICE_DISPLAY_NAMES = {
     "readable-wiki": "Readable LLM Wiki",
     "concept-entity-wiki": "Concept and Entity LLM Wiki",
     "tesseract-opencv": "Tesseract OCR with OpenCV regions",
+    "banyan": "Banyan Nemotron Parse",
     "csv-extractor": "CSV table extractor",
     "collection-table": "Collection table enricher",
     "api": "OSII backend API and grounded chat",
@@ -64,6 +65,7 @@ CAPABILITY_SERVICE_INFO = {
     "readable-wiki": ("Readable LLM Wiki", "Creates a cited, reader-friendly Markdown wiki using a configured chat connection.", "/health"),
     "concept-entity-wiki": ("Concept and Entity LLM Wiki", "Creates a wiki, entity list, and concept table using a configured chat connection.", "/health"),
     "tesseract-opencv": ("Tesseract OCR with OpenCV regions", "Finds page regions with OpenCV and preserves OCR bounding boxes.", "/health"),
+    "banyan": ("Banyan Nemotron Parse", "Parses PDFs and images using Banyan's locally configured Nemotron endpoint.", "/health"),
     "csv-extractor": ("CSV table extractor", "Extracts CSV rows with source-line provenance.", "/health"),
     "collection-table": ("Collection table enricher", "Combines compatible extracted tables within a selected scope.", "/health"),
     "tika": ("Apache Tika", "Adds broad document-format text extraction using Podman or Docker.", "/version"),
@@ -76,6 +78,7 @@ def toolbox_services(uv: str, env: dict[str, str]) -> list[Service]:
         ("readable-wiki", "llm-wiki-enrichers", ("run.py", "readable"), "OSII_READABLE_WIKI_PORT", "8099"),
         ("concept-entity-wiki", "llm-wiki-enrichers", ("run.py", "concept-entity"), "OSII_CONCEPT_ENTITY_WIKI_PORT", "8100"),
         ("tesseract-opencv", "osii-tesseract", ("-m", "uvicorn", "app.main:app"), "OSII_TESSERACT_OPENCV_PORT", "8081"),
+        ("banyan", "banyan-nemotron-parse", ("-m", "uvicorn", "banyan_extract.integrations.osii_extractor:app"), "OSII_BANYAN_PORT", "8101"),
         ("csv-extractor", "tabular-dataset-processors", ("run.py", "extractor"), "OSII_CSV_EXTRACTOR_PORT", "8097"),
         ("collection-table", "tabular-dataset-processors", ("run.py", "enricher"), "OSII_COLLECTION_TABLE_PORT", "8098"),
     )
