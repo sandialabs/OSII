@@ -224,6 +224,67 @@ managed. No private uploads, public registration, or Microsoft SSO is enabled.
 
 ## Backup and recovery
 
+### Wake an idled Developer Sandbox
+
+Developer Sandbox is a trial environment, not continuous hosting. Red Hat lists
+a 30-day trial and a 12-hour consecutive pod runtime limit in its
+[Sandbox FAQ](https://developers.redhat.com/developer-sandbox/FAQ). The Sandbox
+operator can scale Deployments and StatefulSets to zero. A Route can still exist
+and return HTTP 503 because no dashboard pod is running. This is independent of
+the CLI login token expiring. Inspect actual workloads after authenticating:
+
+```bash
+oc login --web --server=https://api.rm2.thpm.p1.openshiftapps.com:6443
+oc get deployment,statefulset,pods,pvc -n heidikmkv-dev
+```
+
+If the workloads have zero replicas and their PVCs remain bound, start the
+database first, then the application. Restarting a Deployment alone does not
+change a desired replica count of zero.
+
+```bash
+oc scale statefulset/osii-database --replicas=1 -n heidikmkv-dev
+oc rollout status statefulset/osii-database -n heidikmkv-dev --timeout=120s
+oc scale deployment/osii-api deployment/osii-worker deployment/osii-extractor deployment/osii-dashboard --replicas=1 -n heidikmkv-dev
+oc rollout status deployment/osii-api -n heidikmkv-dev --timeout=120s
+oc rollout status deployment/osii-dashboard -n heidikmkv-dev --timeout=120s
+```
+
+Verify the HTTPS dashboard, anonymous API rejection, schema readiness, and
+stored accounts/data. Do not rerun bootstrap, recreate Secrets, delete PVCs,
+or rebuild images just to wake an idled instance. PVC persistence survives pod
+replacement; it does not replace backups or extend the trial. Arrange a
+longer-lived OpenShift project for an always-on example.
+
+### Minimal independent deployment exercise
+
+This exercise reuses the already-built UBI Core image but overrides its command
+to run Python's small HTTP server against `/tmp`. It does not start Core, connect
+to PostgreSQL, mount source files, or use the provider key. It teaches the three
+basic pieces: a Deployment runs the process, a Service gives it an internal
+address, and a Route gives it an external HTTPS address.
+
+```bash
+oc project heidikmkv-dev
+OSII_TEST_IMAGE=$(oc get deployment osii-api -o jsonpath='{.spec.template.spec.containers[0].image}')
+oc create deployment osii-smoke --image="$OSII_TEST_IMAGE" -- python3.12 -m http.server 8080 --directory /tmp
+oc expose deployment osii-smoke --port=8080
+oc create route edge osii-smoke --service=osii-smoke --insecure-policy=Redirect
+oc rollout status deployment/osii-smoke --timeout=120s
+oc get route osii-smoke
+```
+
+Open `https://` followed by the Route's hostname. A directory-listing page is
+the expected result; this is a disposable HTTP exercise, not an OSII instance.
+Inspect it with `oc get pods` and `oc logs deployment/osii-smoke`. Remove only
+these exercise resources when finished:
+
+```bash
+oc delete route,service,deployment osii-smoke
+```
+
+### Database backup and restore
+
 Back up PostgreSQL with `pg_dump` and retain matching originals/source manifest
 and deployment configuration. Keep backups outside the disposable sandbox,
 encrypted under the permitted handling policy. Provider keys are restored from
