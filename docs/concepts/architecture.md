@@ -261,6 +261,11 @@ revision consistency when the API supplies a corpus revision. The local API does
 not yet return that revision; immutable local snapshots are a further adapter
 requirement, not a guarantee provided by this first client.
 
+The HTTP adapter currently targets the standalone/server `/api/search` contract.
+The workstation volume API has a distinct selection/search contract and needs an
+explicit scope-preserving adapter; there is no automatic fallback to sidecars.
+The offline demo is usable in all three branches.
+
 Limits cover retrieval count, decision calls, result count, evidence text size,
 output tokens, and cooperative elapsed time. Network timeouts remain separately
 configured; an in-flight request cannot be forcibly cancelled by the soft deadline.

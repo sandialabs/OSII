@@ -110,6 +110,10 @@ The iterative demo finds the missing isotope table on a second search and cites
 it. The single-pass demo abstains because that evidence was not yet retrieved.
 The JSON output includes evidence/provenance, steps, model usage, and stop reason.
 
+The HTTP client below targets standalone/server `/api/search`. Volume mode
+(`/api/volume/search`) needs a separate scope-preserving adapter; use the offline
+demo or explicit Python callbacks there for now.
+
 For an existing collection, use its Core collection ID and an explicit endpoint
 and model. Hosted Core uses the normal username/password login; the password is
 prompted invisibly. Omit `--username` for a local Core without hosted authentication.
