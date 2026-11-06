@@ -27,6 +27,7 @@ markdown_extensions:
 
 nav:
   - Hosted server: operations/runbook-server.md
+  - Single-server example: operations/runbook-droplet.md
   - Start here: index.md
   - Four processor APIs:
       - Start here — Python and HTTP: reference/processor-api/index.md
