@@ -25,6 +25,10 @@ jobs:
         env:
           TEST_DATABASE_URL: postgresql+psycopg://osii_test:osii-test-only@localhost:5432/osii_server_test
         run: uv run --frozen --python 3.12 --package osii --extra server --extra dev python -m pytest osii-core/server-tests osii-core/processor-sdk/tests -q
+      - name: Shared RAG strategies and hosted boundary
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://osii_test:osii-test-only@localhost:5432/osii_server_test
+        run: uv run --frozen --python 3.12 --package osii --extra server --extra rag-haystack --extra dev python -m pytest osii-core/rag-tests osii-core/server-tests/test_rag_strategies.py -q
       - name: Processor contracts
         run: |
           for service in local-extractor local-tesseract local-synthesizer local-embedder local-enricher model-provider-bridge; do

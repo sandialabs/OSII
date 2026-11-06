@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Chip, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
 import { api, type Scope } from "./api";
-import { EmbeddingMap } from "./EmbeddingMap";
-import type { RelatedDocuments, TopicMap } from "./topics";
+import { EmbeddingMap } from "../topics/components/DocumentEmbeddingMap";
+import type { RelatedDocuments, TopicMap } from "../topics/types";
 
 export function TopicExplorer({ scope, open, onSelect }: { scope: Scope; open: (id: string) => void; onSelect: (id: string) => void }) {
   const [map, setMap] = useState<TopicMap | null>(null);
