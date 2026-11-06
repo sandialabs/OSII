@@ -60,6 +60,7 @@ nav:
       - Frontend tools and topic explorer: extending/frontend-tools.md
       - Hello table enricher: extending/hello-enricher.md
       - Processor development: extending/processor-development.md
+      - RAG strategies and reranking: extending/rag-strategies.md
   - Operate offline:
       - Local-first operation: operations/local-first.md
       - Shared drives and Samba: operations/shared-drives.md

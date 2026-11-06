@@ -77,9 +77,10 @@ OSII Core owns the complete grounded-answer pipeline under `osii/rag`:
 
 The FastAPI `/api/chat` route is a thin transport adapter over this pipeline.
 The dashboard calls that route; there is no separate RAG service or RAG image.
-Basic reranking can be a bounded step in this Core pipeline, with a model-heavy
-implementation supplied by a stateless processor. Core keeps ownership of the
-scope, candidate evidence, provenance, and final citations.
+Reranking is an optional bounded step in Core RAG, not a Toolbox processor kind.
+Its implementation lives with the RAG strategy or a RAG endpoint adapter. Core
+keeps ownership of scope, candidate evidence, provenance, and final citations.
+See the [RAG authoring contract](../extending/rag-strategies.md).
 
 Bounded iterative retrieval is an experimental Core RAG strategy, using the same
 authorized evidence boundary as single-pass chat. Broader research agents that
@@ -189,7 +190,9 @@ before claiming model equivalence. Public free variants can have different
 capacity and quotas. Do not try to host a large Gemma model inside the existing
 4 GiB application Droplet.
 
-Toolbox remains the home of experimental implementations. Core owns orchestration,
+Toolbox contains implementations of the four processor kinds: extractor,
+synthesizer, enricher, and embedder. Custom RAG steps, including reranking, belong
+in Core RAG rather than Toolbox. Core owns orchestration,
 validation, identity, provenance, and commits. The baseline local hashing embedder
 is lexical hashing, not MiniLM. A sentence-transformer Toolbox service should
 have an explicit model allowlist, isolated dependencies/model cache, bounded
