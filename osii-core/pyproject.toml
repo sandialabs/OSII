@@ -32,6 +32,9 @@ dependencies = [
 openai = [
   "openai>=1,<3",
 ]
+rag-haystack = [
+  "haystack-ai==3.4.1",
+]
 dev = [
   "httpx>=0.27,<1",
   "pytest>=8,<9",
