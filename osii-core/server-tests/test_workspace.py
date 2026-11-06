@@ -195,3 +195,15 @@ def test_stale_shared_edit_cannot_republish_private_collection(client, app):
     assert not app.state.store.save_collection(previous, previous)
     assert not app.state.store.delete_collection(previous)
     assert app.state.store.collection_records() == []
+
+
+def test_collection_remains_editable_after_original_is_replaced(client, app):
+    store, root = app.state.store, app.state.settings.source_root
+    old = document(store, root)
+    login(client, "reader")
+    collection = client.post("/api/collections", json={"name": "Evidence", "members": [old["file_id"]]}).json()
+    document(store, root, content="Replacement neutron report")
+    r = client.put(f'/api/collections/{collection["id"]}', json={"name": "Renamed evidence", "members": collection["members"]})
+    assert r.status_code == 200 and r.json()["members"] == [old["file_id"]]
+    assert client.get("/api/catalog/files", params={"collection_id": collection["id"]}).json()["total"] == 0
+    assert client.put(f'/api/collections/{collection["id"]}', json={"name": "Renamed evidence", "members": []}).status_code == 200

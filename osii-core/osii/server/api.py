@@ -278,12 +278,15 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
             raise HTTPException(404, "Collection not found")
         return value
 
-    def validate_collection(payload, account):
+    def validate_collection(payload, account, previous=None):
         if not payload.name.strip():
             raise HTTPException(422, "A collection name is required")
         if payload.visibility == "shared" and account["role"] == "reader":
             raise HTTPException(403, "Only curators and administrators can publish shared collections")
         known = {d["file_id"] for d in store.snapshot()[1]}
+        # Preserve references to earlier document versions when editing metadata.
+        if previous:
+            known.update(previous["members"])
         if not set(payload.members) <= known:
             raise HTTPException(422, "Collection contains an unknown document")
         return {**payload.model_dump(), "name": payload.name.strip(), "members": list(dict.fromkeys(payload.members))}
@@ -306,7 +309,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
             raise HTTPException(403, "You cannot change this collection")
         if previous["visibility"] == "shared" and payload.visibility == "private" and previous["owner_id"] != account["id"]:
             raise HTTPException(403, "Only the owner can make a shared collection private")
-        value = {**previous, **validate_collection(payload, account)}
+        value = {**previous, **validate_collection(payload, account, previous)}
         if not store.save_collection(value, previous):
             raise HTTPException(409, "Collection changed; refresh before editing again")
         store.record("collection_changed", account["id"], cid)
