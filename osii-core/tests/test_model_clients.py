@@ -37,3 +37,16 @@ def test_openai_compatible_capabilities_do_not_require_gateway_sdk(monkeypatch):
     assert calls[0]["url"] == "https://models.example.test/v1/chat/completions"
     assert calls[1]["url"] == "https://models.example.test/v1/embeddings"
     assert calls[0]["headers"]["Authorization"] == "Bearer test-token"
+
+
+def test_distinct_endpoints_never_receive_the_shared_key(monkeypatch):
+    monkeypatch.setenv("OSII_MODEL_API_KEY", "must-not-leak")
+    monkeypatch.setenv("OSII_CHAT_BASE_URL", "https://chat.test/v1")
+    monkeypatch.setenv("OSII_CHAT_API_KEY", "chat-key")
+    monkeypatch.setenv("OSII_EMBEDDING_BASE_URL", "https://embed.test/v1")
+    monkeypatch.setenv("OSII_EMBEDDING_API_KEY", "embedding-key")
+    chat, embedding = create_chat_client(), create_embedding_client()
+    assert (chat.base_url, chat.api_key) == ("https://chat.test/v1", "chat-key")
+    assert (embedding.base_url, embedding.api_key) == ("https://embed.test/v1", "embedding-key")
+    monkeypatch.delenv("OSII_EMBEDDING_API_KEY")
+    assert create_embedding_client().api_key is None

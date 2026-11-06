@@ -81,7 +81,7 @@ def _load(osii_root) -> list[dict[str, Any]]:
             continue
         sibling_id = f"{identifier}-embedding"
         sibling = by_id.get(sibling_id)
-        if sibling and sibling.get("type") == record.get("type") and sibling.get("base_url") == record.get("base_url"):
+        if sibling and sibling.get("type") == record.get("type") and sibling.get("base_url") == record.get("base_url") and sibling.get("credential_env") == record.get("credential_env"):
             record = {
                 **record,
                 "embedding_model": sibling.get("embedding_model", ""),

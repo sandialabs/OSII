@@ -75,26 +75,24 @@ def default_models_config() -> dict[str, Any]:
         },
         "defaults": {"chat": "base", "synthesis": "base", "embedding": "minilm"},
     }
-    base_url = os.getenv("OPENAI_BASE_URL", "").strip().rstrip("/")
-    if base_url:
-        language = (os.getenv("OPENAI_CHAT_MODEL", "").strip()
-                    or os.getenv("OPENAI_SYNTHESIS_MODEL", "").strip())
-        embedding = os.getenv("OPENAI_EMBEDDING_MODEL", "").strip()
-        common = {
-            "type": "openai-compatible", "base_url": base_url,
-            "api_key_env": "OPENAI_API_KEY", "enabled": True, "priority": 10,
+    from osii.model_endpoints import endpoint_from_environment
+
+    for capability, alias in (("chat", "openai-compatible"), ("embedding", "openai-compatible-embedding")):
+        endpoint = endpoint_from_environment(capability)
+        if not endpoint.base_url:
+            continue
+        model = endpoint.model
+        if capability == "chat" and not model:
+            model = os.getenv("OPENAI_SYNTHESIS_MODEL", "").strip()
+        capabilities = ["chat", "synthesis"] if capability == "chat" else ["embedding"]
+        config["models"][alias] = {
+            "type": "openai-compatible", "base_url": endpoint.base_url,
+            "api_key_env": endpoint.credential_env, "enabled": True, "priority": 10,
+            "model": model, "capabilities": capabilities if model else [],
         }
-        config["models"]["openai-compatible"] = {
-            **common, "model": language,
-            "capabilities": ["chat", "synthesis"] if language else [],
-        }
-        if language:
-            config["defaults"].update({"chat": "openai-compatible", "synthesis": "openai-compatible"})
-        if embedding:
-            config["models"]["openai-compatible-embedding"] = {
-                **common, "model": embedding, "capabilities": ["embedding"],
-            }
-            config["defaults"]["embedding"] = "openai-compatible-embedding"
+        if model:
+            for name in capabilities:
+                config["defaults"][name] = alias
     return config
 
 

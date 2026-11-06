@@ -126,6 +126,32 @@ def test_external_defaults_seed_profile_once_without_persisting_credentials(monk
     assert load_models_config()["models"]["openai-compatible"]["model"] == "language-v1"
 
 
+def test_separate_endpoints_seed_separate_local_connections(monkeypatch):
+    for kind, model in (("CHAT", "chat-model"), ("EMBEDDING", "embed-model")):
+        monkeypatch.setenv(f"OSII_{kind}_BASE_URL", f"https://{kind.lower()}.test/v1")
+        monkeypatch.setenv(f"OSII_{kind}_MODEL", model)
+        monkeypatch.setenv(f"OSII_{kind}_API_KEY", f"{kind}-secret")
+    config = load_models_config()
+    for kind in ("chat", "embedding"):
+        connection = config["models"][config["defaults"][kind]]
+        assert connection["base_url"] == f"https://{kind}.test/v1"
+        assert connection["api_key_env"] == f"OSII_{kind.upper()}_API_KEY"
+    assert "CHAT-secret" not in Path(configuration_status()["files"]["models"]).read_text()
+
+
+def test_provider_edits_preserve_distinct_keys_even_at_the_same_url(client):
+    save_models_config({"version": 1, "models": {
+        "custom": {"type": "openai-compatible", "base_url": "https://same.test/v1",
+                   "model": "chat", "capabilities": ["chat", "synthesis"], "api_key_env": "OSII_CHAT_API_KEY"},
+        "custom-embedding": {"type": "openai-compatible", "base_url": "https://same.test/v1",
+                   "model": "embed", "capabilities": ["embedding"], "api_key_env": "OSII_EMBEDDING_API_KEY"}},
+        "defaults": {"chat": "custom", "synthesis": "custom", "embedding": "custom-embedding"}})
+    providers = client.get("/api/admin/model-providers").json()["providers"]
+    assert {p["id"] for p in providers if p["type"] == "openai"} == {"custom", "custom-embedding"}
+    assert client.put("/api/admin/model-providers/custom", json={"chat_model": "updated-chat"}).status_code == 200
+    assert load_models_config()["models"]["custom-embedding"]["api_key_env"] == "OSII_EMBEDDING_API_KEY"
+
+
 def test_legacy_yaml_migrates_to_toml_without_overwriting_existing(tmp_path, monkeypatch):
     config_dir = tmp_path / "deployment"
     config_dir.mkdir()

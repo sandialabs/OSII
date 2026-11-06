@@ -8,6 +8,19 @@ from osii.model_gateway_tokens import issue_model_gateway_token
 from tests.fake_openai_server import app as fake_openai_app
 
 
+def test_named_connection_does_not_inherit_another_providers_key(monkeypatch, tmp_path):
+    monkeypatch.setattr("app.main._configured_provider", lambda *a: {
+        "base_url": "https://embedding.test/v1", "credential_env": "OSII_EMBEDDING_API_KEY"})
+    monkeypatch.setenv("OSII_ENV_FILE", str(tmp_path / "empty.env"))
+    monkeypatch.setenv("OPENAI_API_KEY", "shared-must-not-leak")
+    monkeypatch.setenv("OSII_MODEL_API_KEY", "other-must-not-leak")
+    monkeypatch.delenv("OSII_EMBEDDING_API_KEY", raising=False)
+    monkeypatch.delenv("OSII_EMBEDDING_API_KEY_FILE", raising=False)
+    assert "Authorization" not in CLIENTS["openai"].headers(capability="embedding")
+    monkeypatch.setenv("OSII_EMBEDDING_API_KEY", "embedding-key")
+    assert CLIENTS["openai"].headers(capability="embedding")["Authorization"] == "Bearer embedding-key"
+
+
 @pytest.fixture(autouse=True)
 def isolated_model_configuration(monkeypatch, tmp_path):
     """Contract tests must not read the developer's saved model connections."""

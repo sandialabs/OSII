@@ -38,6 +38,7 @@ nav:
   - Install and use:
       - What are you trying to do?: operations/runbooks.md
       - Start from source: operations/runbook-development.md
+      - Model endpoints: operations/model-endpoints.md
       - Python walkthrough: tutorials/python-demonstrations.md
       - Single-file walkthrough: tutorials/single-file.md
       - Generate an LLM wiki: tutorials/llm-wiki.md

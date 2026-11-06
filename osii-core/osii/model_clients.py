@@ -13,7 +13,9 @@ from typing import Protocol, Sequence
 
 import requests
 
-from osii.domain.env_credentials import resolve_env_value
+from osii.model_endpoints import ModelEndpoint, endpoint_from_environment
+from osii.domain.env_credentials import read_env_value
+from osii.rag.strategies.http_reranker import create_reranker  # public Core RAG factory
 
 
 Message = dict[str, object]
@@ -76,38 +78,38 @@ class OpenAICompatibleClient:
             raise RuntimeError("Embedding service returned invalid vectors.") from exc
 
 
-def _configured_url(*names: str) -> str:
-    for name in names:
-        value = os.getenv(name, "").strip()
-        if value:
-            return value
-    return ""
+def _endpoint(capability: str) -> ModelEndpoint:
+    environment = dict(os.environ)
+    for name in (f"OSII_{capability.upper()}_API_KEY", "OSII_MODEL_API_KEY", "OPENAI_API_KEY"):
+        if not environment.get(name):
+            environment[name] = read_env_value(name)
+    return endpoint_from_environment(capability, environment=environment)
 
 
 def create_chat_client() -> ChatClient:
-    base_url = _configured_url("OSII_CHAT_BASE_URL", "OSII_MODEL_BASE_URL")
+    endpoint = _endpoint("chat")
+    base_url = endpoint.base_url
     if not base_url:
         raise ModelCapabilityUnavailable(
             "Model-backed chat and synthesis are not configured. Set "
             "OSII_CHAT_BASE_URL (or OSII_MODEL_BASE_URL) to an "
             "OpenAI-compatible /v1 endpoint."
         )
-    return OpenAICompatibleClient(base_url, resolve_env_value("OSII_MODEL_API_KEY")[0])
+    return OpenAICompatibleClient(base_url, endpoint.api_key)
 
 
 def create_embedding_client() -> EmbeddingClient:
     from osii.domain.model_provider_config import selected_processor
 
-    base_url = _configured_url("OSII_EMBEDDING_BASE_URL", "OSII_MODEL_BASE_URL")
-    if base_url and (os.getenv("OSII_EMBEDDING_BASE_URL", "").strip() or os.getenv("OSII_MODEL_BASE_URL", "").strip()):
-        return OpenAICompatibleClient(base_url, resolve_env_value("OSII_EMBEDDING_API_KEY", "OSII_MODEL_API_KEY")[0])
+    endpoint = _endpoint("embedding")
+    base_url = endpoint.base_url
+    if base_url:
+        return OpenAICompatibleClient(base_url, endpoint.api_key)
     processor_name = selected_processor("embedder")
     if processor_name:
         from osii.processors.remote import ProcessorEmbeddingClient, resolve_remote_processor
         return ProcessorEmbeddingClient(resolve_remote_processor(processor_name, "embedder"))
-    if not base_url:
-        raise ModelCapabilityUnavailable(
-            "Embeddings are not configured. Start the bundled embeddings service "
-            "or set OSII_EMBEDDING_BASE_URL to an OpenAI-compatible /v1 endpoint."
-        )
-    return OpenAICompatibleClient(base_url, resolve_env_value("OSII_EMBEDDING_API_KEY", "OSII_MODEL_API_KEY")[0])
+    raise ModelCapabilityUnavailable(
+        "Embeddings are not configured. Start the bundled embeddings service "
+        "or set OSII_EMBEDDING_BASE_URL to an OpenAI-compatible /v1 endpoint."
+    )

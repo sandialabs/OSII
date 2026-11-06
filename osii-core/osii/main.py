@@ -37,6 +37,7 @@ from osii.api.synthesizer_routes import router as synthesizer_router
 from osii.api.text_routes import router as text_router
 from osii.domain.processing.jobs import configure_job_store
 from osii.domain.catalog_db import ensure_catalog
+from osii.rag.strategies.http_reranker import create_reranker
 
 app = FastAPI(
     title="OSII Backend",
@@ -44,6 +45,7 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
     )
+app.state.rag_reranker = create_reranker()
 
 app.state.shared_volume_root = Path(
     os.getenv("SHARED_VOLUME_ROOT", "./data_volume/my_data")

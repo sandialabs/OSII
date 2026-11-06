@@ -84,10 +84,10 @@ class ProviderHTTP:
             return headers
         configured = _configured_provider(self.provider, capability) or {}
         configured_env = str(configured.get("credential_env") or "").strip()
-        env_names = [
-            configured_env,
-            "OPENAI_API_KEY",
-            os.getenv("OSII_MODEL_API_KEY_ENV", "OSII_MODEL_API_KEY"),
+        # A selected connection owns its credentials. Never leak a shared key
+        # to another endpoint when its explicitly named key is absent.
+        env_names = [configured_env] if configured_env else [
+            "OPENAI_API_KEY", os.getenv("OSII_MODEL_API_KEY_ENV", "OSII_MODEL_API_KEY"),
         ]
         key = resolve_secret(*env_names)
         if key:
