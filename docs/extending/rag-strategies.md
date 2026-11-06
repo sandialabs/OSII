@@ -17,6 +17,9 @@ components without becoming a processor itself.
 | `contracts.py` | Questions, evidence, scope, limits, decisions, results, and optional reranking contracts |
 | `haystack.py` | Bounded single-pass and iterative reference pipelines |
 | `reranking.py` | Validate candidate scores and select unchanged original evidence |
+| `profiles.py` | Versioned retrieval, reranking, and loop budgets |
+| `experiments.py` | Run a profile over explicit adapters; capture candidate/selected IDs and ranking scores |
+| `decisions.py` | Shared JSON decision prompt and parser, independent of model transport |
 | `adapters.py` | Explicit Core HTTP retrieval and compatible chat endpoint clients |
 | `__main__.py` | Offline demonstration and opt-in Core-API experiments |
 
@@ -140,11 +143,91 @@ def retrieve_for_rag(query, *, top_k):
 ```
 
 Then pass `retrieve_for_rag` to `haystack.run(..., retrieve=retrieve_for_rag)`.
-This seam is available now; the built-in CLI/chat UI does not yet have a reranker
-or profile selector. Preserve the ranking separately if your experiment needs
-score traces: the current reference `Step` records evidence IDs and decider
-usage, not reranker scores or model usage. Full profile/trace integration is a
-subsequent change, rather than an implied behavior of this helper.
+For profile execution and ranking traces, use `run_profile` instead:
+
+```python
+from osii.rag.strategies import Decision, Question, Scope
+from osii.rag.strategies.profiles import get_profile
+from osii.rag.strategies.experiments import run_profile
+
+def retrieve(query, *, top_k):
+    return candidates[:top_k]  # In real use, bind this adapter to an authorized scope.
+
+def decide(context):
+    if not context.evidence:
+        return Decision("abstain")
+    item = context.evidence[0]
+    return Decision("answer", answer=item.text, citation_ids=(item.id,))
+
+experiment = run_profile(
+    Question("Which isotope?", Scope("collection", "example")),
+    get_profile("hybrid-reranked-v1"), retrieve=retrieve, decide=decide, reranker=score,
+)
+assert experiment.retrieval[0].reranker_called
+```
+
+This example uses the deterministic candidates/scorer above. Its retrieval
+callable illustrates the interface; it does not implement hybrid search or
+authenticate the collection. The caller owns those adapter responsibilities.
+
+## Profiles and local comparison
+
+| Profile ID | Retrieval | Selection | Maximum rounds |
+| --- | --- | --- | --- |
+| `lexical-v1` | Keyword/BM25 | Up to 8 passages | 1 |
+| `hybrid-v1` | Keyword + vector | Up to 8 passages | 1 |
+| `hybrid-reranked-v1` | Hybrid | Up to 40 candidates, rerank to 8 | 1 |
+| `iterative-v1` | Hybrid and focused follow-up queries | Up to 8 per search, 24 retained | 3 |
+
+Profiles change query behavior, not ingestion or the selected embedding model.
+The reference runner also caps context at 24,000 characters and uses a 90-second
+cooperative deadline. Whole passages are retained or omitted; they are never
+silently truncated with unchanged source offsets. The ranking stage is bounded
+to 64,000 candidate-text characters. A required but missing reranker fails before
+retrieval. Changing an existing profile's meaning requires a new versioned ID.
+To try your own budgets, construct a `Profile` in Python; to expose a supported
+profile in the dashboard, add it explicitly to `PROFILES` and test it.
+
+`Experiment` wraps the normal `Result` with retrieval events: candidate IDs,
+selected IDs, validated ranking scores, and whether the ranker ran. `Result`
+retains evidence, citations, decisions, usage, stopping reason, and elapsed time.
+Decider calls are distinct from actual HTTP chat calls and from reranker calls.
+Custom adapters must account for any additional usage they incur.
+
+OSII-local's Chat page exposes the profiles and a two/three-mode comparison.
+`osii.rag.local_experiments` composes sidecar retrieval and configured chat over
+the shared runner; `/api/chat/profiles`, `/api/chat` with `profile_id`, and
+`/api/chat/compare` are thin transport boundaries. The configured/default chat
+path retains its prior behavior. The experiment path calls only the selected
+primary model and accepts strict JSON decisions; provider failures or malformed
+decisions are explicit errors, without another model being chosen automatically.
+With extractive-only settings, keyword/hybrid baselines work without chat calls;
+iterative planning is unavailable until a chat model is selected.
+
+The optional Core callable is `app.state.rag_reranker`. Deployment configuration
+can create it using the [independent endpoint settings](../operations/model-endpoints.md),
+or a Python composition root can supply a `Reranker` callable. The presentational
+`RagExperiments.tsx` components take typed data/callbacks and own no API calls;
+the local Chat panel supplies the client. Hosted PostgreSQL integration remains
+a separate adapter task, with authentication and permission checks preserved.
+The CLI still selects `--strategy` and `--mode`; it has no profile flag.
+
+Comparisons capture question, scope, history, and chat settings once. Each mode
+performs its own retrieval; sequential execution, provider variability, and warm
+search caches can affect elapsed times. The local adapter reads full indexed
+passage text, not the 400-character search preview, preserving its representation
+and extraction ID when available. Read guards detect observed index/config,
+scope membership, and selected document changes and reject a mixed comparison.
+This is **not a transactional snapshot** or a guarantee that the current index is
+up to date with every source file. Avoid processing/editing during comparisons.
+The older HTTP search adapter still consumes the API's preview contract; a remote
+full-passage adapter is separate work.
+
+Inspect traces and download comparison JSON in Chat. Chat token usage is reported
+when the provider supplies it; query-embedding and custom reranker token/cost
+accounting are not included. Exports contain retrieved text and should stay
+outside Git. These tools prepare experiments; they do not score answer quality
+or select a strategy automatically for a dataset.
 
 ## Tests and review expectations
 
