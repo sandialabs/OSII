@@ -24,8 +24,8 @@ demo-data:
 	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with 'scikit-learn>=1.5,<2' python scripts/import_example_data.py
 
 test:
-	$(UV) sync --frozen --python $(OSII_PYTHON_VERSION) --package osii --extra dev
-	$(UV) run --frozen --python $(OSII_PYTHON_VERSION) --package osii --extra dev python -m pytest osii-core/tests osii-core/processor-sdk/tests
+	$(UV) sync --frozen --python $(OSII_PYTHON_VERSION) --package osii --extra rag-haystack --extra dev
+	$(UV) run --frozen --python $(OSII_PYTHON_VERSION) --package osii --extra rag-haystack --extra dev python -m pytest osii-core/tests osii-core/processor-sdk/tests osii-core/rag-tests
 	@for service in local-extractor local-tesseract local-synthesizer local-embedder local-enricher model-provider-bridge; do \
 		$(UV) run --isolated --no-project --python $(OSII_PYTHON_VERSION) --with-editable osii-core --with-editable osii-core/services/$$service --with 'httpx>=0.27,<1' --with pytest python -m pytest osii-core/services/$$service/tests || exit $$?; \
 	done

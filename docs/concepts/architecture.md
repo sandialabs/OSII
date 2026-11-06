@@ -280,10 +280,14 @@ trigger silent paid fallback. Telemetry is disabled by default in this adapter.
 
 Delivery order and acceptance:
 
-1. **Shared foundation (this delivery):** portable RAG contracts, runnable offline
-   and Core-API experiments, bounded Haystack loop, shared topic rendering/PCA,
-   and regression tests. Existing dashboard chat remains on its current production
-   orchestration until the new strategies have been evaluated.
+1. **Shared foundation and local experiments:** portable RAG contracts, versioned
+   profiles, runnable offline and Core-API experiments, bounded Haystack loop,
+   shared topic rendering/PCA, and regression tests. Local Chat now offers opt-in
+   keyword, hybrid, reranked, and iterative modes, side-by-side comparisons, and
+   trace export. Configured/default chat keeps its current orchestration. The
+   local adapter reads indexed passages and guards observed filesystem changes;
+   it does not supply transactional snapshot semantics. Hosted integration needs
+   a PostgreSQL adapter enforcing the existing authentication and scope rules.
 2. **Intake/queue parity:** common plan/progress/control components backed by
    PostgreSQL job/item state; stage logical changes; pause/resume/cancel/retry;
    isolated re-embedding generations with atomic activation. Test lease recovery,
@@ -295,7 +299,8 @@ Delivery order and acceptance:
 4. **RAG evaluation and rollout:** run single-pass and iterative strategies against
    the same versioned collection and labelled questions. Compare source recall,
    supported citations, abstentions, latency, model calls/tokens, and cost. Add
-   decomposition/reranking only when measurements justify them. Opt in to the new
+   further decomposition or dataset-specific tuning when measurements justify
+   them. Opt in to the new
    strategy by a versioned configuration; retain the baseline for comparison.
 
 Framework reference: [Haystack pipeline loops](https://docs.haystack.deepset.ai/docs/pipeline-loops).

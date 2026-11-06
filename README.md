@@ -19,6 +19,7 @@ an AI model.
 - Browse files and collections, search by keywords or document meaning, and ask
   grounded questions with an optional model connection.
 - Explore related documents with the experimental Topic Explorer.
+- Compare experimental RAG strategies and inspect their evidence in Chat.
 - Extend processing and frontend tools through documented interfaces.
 
 ## Get started

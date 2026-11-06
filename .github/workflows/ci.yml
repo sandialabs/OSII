@@ -19,7 +19,7 @@ jobs:
       - name: Core and SDK
         run: uv run --frozen --python 3.12 --package osii --extra dev python -m pytest osii-core/tests osii-core/processor-sdk/tests -q
       - name: Shared RAG strategies
-        run: uv run --frozen --python 3.12 --package osii --extra rag-haystack --extra dev python -m pytest osii-core/rag-tests -q
+        run: uv run --frozen --python 3.12 --package osii --extra rag-haystack --extra dev python -m pytest osii-core/rag-tests osii-core/tests/test_rag_experiments_api.py -q
       - name: MCP
         run: uv run --frozen --python 3.12 --package osii-mcp --extra dev python -m pytest osii-mcp/tests -q
       - name: Processor contracts

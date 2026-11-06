@@ -46,7 +46,7 @@ Keep each chat and terminal in its own existing worktree:
 
 | Application | Checkout | Branch | API / dashboard | Python environment |
 | --- | --- | --- | --- | --- |
-| OSII-local | `/Users/heidi/Projects/OSII/osii` | `main` | `8511` / `5173` | `osii-env/` |
+| OSII-local | `/Users/heidi/Projects/OSII/osii-local` | `main` | `8511` / `5173` | `osii-env/` |
 | OSII-server | `/Users/heidi/Projects/OSII/osii-server` | `osii-server` | `8512` / `5174` | `.venv/` |
 
 Each checkout owns its `.env`, configuration, dependencies, and runtime data.
@@ -178,10 +178,37 @@ are preserved on `archive/workstation-deployment-2026-11-03`.
 For extension contracts and custom reranking, see the
 [RAG strategy authoring guide](../extending/rag-strategies.md).
 
-Install the optional Haystack extra from the repository root. It is not needed
-by normal startup and is not part of the baseline server image. The synthetic
-demo uses two small in-memory excerpts and deterministic decisions; it makes no
-network/model calls and is not evidence of real-corpus answer quality.
+Normal local startup now installs the locked `rag-haystack` extra for Chat's
+opt-in experiment controls. Restart `make dev` (Windows: `.\\scripts\\osii.ps1 dev`)
+after updating. The extra remains optional for standalone Python users and is
+not part of the baseline hosted image.
+
+In local **Chat**, keep **Configured chat** for existing behavior, or select
+**Keyword baseline**, **Hybrid baseline**, **Hybrid + reranker**, or
+**Iterative hybrid** before sending a question. Reranking requires a configured
+[Core endpoint](model-endpoints.md); iterative planning requires a selected
+chat model in Setup. Unavailable choices explain what is missing.
+
+For comparisons, choose a scope/collection, enter one question, select two or
+three profile chips, and click **Compare selected modes**. The same question,
+scope, history, and captured chat settings feed each mode. Inspect evidence and
+steps, actual retrieval fallback, call counts, timing, and available chat token
+usage; download the comparison JSON to retain results. Comparisons can make
+multiple model calls and incur their normal charges. Query-embedding/reranker
+token costs are not included in the displayed chat usage.
+
+Process documents in Intake first; selecting a profile does not re-extract or
+re-embed them. Ordinary search may initialize its derived keyword cache. Hybrid
+reports when it uses keyword fallback instead of vector results. Avoid changing
+models, collection membership, or processing while comparing: observed changes
+abort the comparison. The filesystem read guard is not a transactional snapshot.
+Switching profile or scope clears the displayed conversation to avoid mixing
+results. Experiments are local-first; hosted Chat activation needs its own
+PostgreSQL/authenticated adapter.
+
+The synthetic CLI demo below uses two small in-memory excerpts and deterministic
+decisions; it makes no network/model calls and is not evidence of real-corpus
+answer quality. Run it from the repository root:
 
 ```bash
 uv run --package osii --extra rag-haystack python -m osii.rag.strategies --demo

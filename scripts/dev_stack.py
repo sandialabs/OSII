@@ -323,6 +323,7 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str], *, core_only: b
             "--frozen",
             "--package",
             "osii",
+            "--extra", "rag-haystack",
             "--package",
             "osii-mcp",
             "--package", "osii-local-extractor",

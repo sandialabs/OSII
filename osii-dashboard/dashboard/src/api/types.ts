@@ -1025,12 +1025,16 @@ export type ChatCitation = {
 };
 
 export type ChatRequest = {
+  profile_id?: string;
   query: string;
   scope: ScopeDescribeRequest;
   history: ChatMessage[];
 };
 
 export type ChatResponse = {
+  profile_id: string;
+  model: string | null;
+  experiment: import("../features/chat/types").RagTrace | null;
   answer: string;
   citations: ChatCitation[];
   provider: string;
