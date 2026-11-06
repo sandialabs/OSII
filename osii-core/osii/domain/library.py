@@ -12,7 +12,7 @@ from osii.model_provider import ModelProvider, ProviderError
 class LibraryStore(Protocol):
     def snapshot(self) -> tuple[int, list[dict], list[dict]]: ...
     def configuration(self) -> dict: ...
-    def collection_records(self) -> list[dict]: ...
+    def collection_records(self, user_id: str | None = None) -> list[dict]: ...
 
 
 class Library:
@@ -20,7 +20,7 @@ class Library:
         self.store, self.provider = store, provider
         self.retrieval = RetrievalEngine()
 
-    def search(self, query: str, mode: str, top_k: int, scope: dict) -> dict:
+    def scoped(self, scope: dict, user_id: str | None = None):
         revision, documents, rows = self.store.snapshot()
         kind = scope.get("scope_type", "root")
         allowed = {document["file_id"] for document in documents}
@@ -31,13 +31,17 @@ class Library:
             if prefix not in {"", "."}:
                 allowed = {d["file_id"] for d in documents if str(Path(d["source_relpath"]).parent) == prefix or d["source_relpath"].startswith(prefix + "/")}
         elif kind == "collection":
-            collection = next((c for c in self.store.collection_records() if c["id"] == scope.get("collection_id")), None)
+            collection = next((c for c in self.store.collection_records(user_id) if c["id"] == scope.get("collection_id")), None)
             if not collection:
                 raise ValueError("Collection not found")
             allowed &= set(collection["members"])
         elif kind != "root":
             raise ValueError("Unsupported scope")
         rows = [row for row in rows if row["file_id"] in allowed]
+        return revision, [d for d in documents if d["file_id"] in allowed], rows
+
+    def search(self, query: str, mode: str, top_k: int, scope: dict, user_id: str | None = None) -> dict:
+        revision, documents, rows = self.scoped(scope, user_id)
         configuration = self.store.configuration()
         vector, warning = None, None
         embedding_model = configuration.get("embedding_model", "")
@@ -55,8 +59,8 @@ class Library:
         return {"query": query, "mode": mode, "retrieval_mode_used": "hybrid" if "semantic" in channels and len(channels) > 1 else "semantic" if channels == ["semantic"] else "lexical",
             "results": results, "channels_used": channels, "corpus_revision": revision, "warning": warning}
 
-    def chat(self, query: str, scope: dict, history: list[dict]) -> dict:
-        found = self.search(query, "hybrid", 8, scope)
+    def chat(self, query: str, scope: dict, history: list[dict], user_id: str | None = None) -> dict:
+        found = self.search(query, "hybrid", 8, scope, user_id)
         evidence = found["results"]
         citations = [{k: row.get(k) for k in ("file_id", "filename", "source_relpath", "snippet", "chunk_id", "char_start", "char_end", "source_origin")} for row in evidence]
         model = self.store.configuration().get("chat_model", "")

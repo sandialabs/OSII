@@ -19,6 +19,7 @@ from osii.persistence.postgres import PostgresStore, identifier
 from osii.processor_sdk.client import ProcessorClient, ProcessorClientError
 from osii.processor_sdk.models import DocumentInput, ExtractionRequest, ExtractionResponse
 from osii.server.config import Settings
+from osii.server.sources import resolve_directory
 from osii.model_provider import ModelProvider, ProviderError
 
 
@@ -126,11 +127,12 @@ def failure_reason(exc: Exception) -> str:
 
 def ingest_batch(store: PostgresStore, provider: ModelProvider, extractor: ProcessorClient,
                  root: Path, *, report: Callable[[str], None], stopping: threading.Event,
-                 ocr: ProcessorClient | None = None, force: bool = False) -> bool:
+                 ocr: ProcessorClient | None = None, force: bool = False, source_directory: str = ".") -> bool:
     if not root.is_dir():
         raise IngestionError("Configured source directory is unavailable; reconnect it and retry.")
     counts = {"processed": 0, "unchanged": 0, "failed": 0}
-    for path in sorted(root.rglob("*")):
+    scan_root = resolve_directory(root, source_directory)
+    for path in sorted(scan_root.rglob("*")):
         if stopping.is_set():
             raise IngestionError("Worker shutdown interrupted ingestion; committed documents are retained. Retry to resume.")
         relative = path.relative_to(root).as_posix()
@@ -192,7 +194,8 @@ def run(settings: Settings | None = None) -> None:
                 lock.execute(__import__("sqlalchemy").text("SELECT pg_advisory_lock(914035)"))
                 try:
                     failed = ingest_batch(store, provider, extractor, settings.source_root,
-                        report=report, stopping=stopping, ocr=ocr, force=bool(job["payload"].get("force")))
+                        report=report, stopping=stopping, ocr=ocr, force=bool(job["payload"].get("force")),
+                        source_directory=job["payload"].get("source_directory", "."))
                 finally:
                     lock.execute(__import__("sqlalchemy").text("SELECT pg_advisory_unlock(914035)"))
         except Exception as exc:

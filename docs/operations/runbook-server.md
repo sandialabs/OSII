@@ -219,8 +219,67 @@ PDF from being shown as evidence for old extracted content.
 Verify `/ready`, source previews, search, chat, and a separate reader login.
 Readers have no Setup, Processing, or Administration controls; direct forbidden
 API calls must return 403. Do not expose the filesystem MCP adapter or unported
-legacy routes. Conversations remain temporary and shared collections are curator
-managed. No private uploads, public registration, or Microsoft SSO is enabled.
+legacy routes. Conversations remain temporary. Collections are private by default; curators
+and administrators manage published shared collections. No private uploads, public registration, or Microsoft SSO is enabled.
+
+## Hosted library administration and collections
+
+The left sidebar exposes Library, Collections, Topic explorer, Search, and Chat.
+Curators also see Processing; administrators see Source & status, Models, and
+Users. These are authenticated Core clients, not separate filesystem/database
+interfaces. All corpus operations remain available through the Core API.
+
+**Source & status** shows the deployment's `OSII_SOURCE_DIR`, selected relative
+folder, availability/readability, indexed document/chunk/embedding counts, and
+model/extractor configuration. Its source browser lists originals before they
+have been processed. It hides dotfiles and symbolic links, returns 200 entries
+per page, and caps directory browsing at 20,000 entries. Files are never uploaded,
+modified, or deleted by this browser. Reading file names does not mean they have
+been extracted or embedded.
+
+Administrators can select a subfolder inside the mounted root using
+`PUT /api/admin/source` with `{"directory":"relative/subfolder"}`. The selection
+is stored in PostgreSQL. Absolute paths and paths outside that mount are refused.
+Changing the mount itself remains an operator/deployment task. On the current
+Droplet, host `/mnt/nfs-documents` maps read-only to application `/data/source`.
+
+The setting affects future Processing requests only. Each queued ingestion job
+captures its `source_directory`; changing the selection does not redirect queued
+jobs or remove previously indexed documents or collections. Source identities
+and preview paths stay relative to the mounted root, even when processing only a
+subfolder. Pre-upgrade jobs without the new field retain the original root scope.
+Moving/removing originals can make old previews unavailable; source hashes still
+prevent serving a replacement as evidence for the old extraction.
+
+Any reader can select individual documents in Library, search results, or Topic
+explorer, then create a private collection or add them to a collection they manage.
+Collections can be renamed, described, and deleted; members can be removed without
+removing source documents. Browse, search, chat, and topics share a scope selector.
+A private collection belongs to its creator and is absent from other users' API
+results, including administrators. This privacy concerns saved membership and
+metadata; the underlying fixed dataset remains shared. It is not a document ACL
+or protection against a database operator. Curators/administrators may publish
+their own collections and manage shared collections; only the owner can turn a
+shared collection private. Other users' private collections are not exposed to
+curators for review. Concurrent edits that race a privacy change are rejected.
+
+Migration `0002_workspace` preserves existing collections as shared, adds nullable
+ownership for those legacy rows, and makes new collections private by default.
+Names are unique per owner. Apply it explicitly before starting the matching API
+and worker. Downgrade is intentionally refused: restore a compatible backup for
+rollback rather than risk publishing private work.
+
+Topic explorer uses the selected embedding model's stored PostgreSQL chunk
+vectors. It normalizes chunks, averages each document's vectors, normalizes again,
+and projects the document vectors with deterministic PCA. It makes no provider
+calls, stores no secondary corpus, and does not use FAISS or `.osii` directories.
+The interactive map shows at most 500 documents in stable ID order; related
+ranking uses cosine similarity across the full selected scope. Exploration is
+bounded to 5,000 documents, 8,192 dimensions, and 64 MiB of document vectors. A
+mixed dimension index is refused. Missing and stale model vectors are reported;
+selecting another embedding model requires processing to populate compatible
+vectors. The map is experimental: 2D proximity is approximate, not evidence of a
+factual relationship or an automatically inferred topic label.
 
 ## Backup and recovery
 

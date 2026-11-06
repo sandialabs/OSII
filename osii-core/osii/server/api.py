@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 import secrets
 import hashlib
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -14,6 +15,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 
 from osii.domain.library import Library
+from osii.domain.topics import topic_map, related_documents, TopicIndexUnavailable
+from osii.server.sources import browse, resolve_directory
 from osii.persistence.postgres import PostgresStore, identifier
 from osii.server.auth import (COOKIE, CSRF_COOKIE, digest, origin_check, password_hash,
                               public_account, require, verify)
@@ -64,6 +67,19 @@ class Collection(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     description: str = Field(default="", max_length=4000)
     members: list[str] = Field(default_factory=list, max_length=10000)
+    visibility: Literal["private", "shared"] = "private"
+
+
+class SourceSelection(BaseModel):
+    directory: str = Field(default=".", max_length=4000)
+
+
+class TopicRequest(BaseModel):
+    scope: dict = Field(default_factory=lambda: {"scope_type": "root"})
+
+
+class RelatedRequest(TopicRequest):
+    file_id: str = Field(min_length=1, max_length=200)
 
 
 class Ingest(BaseModel):
@@ -172,12 +188,17 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
     @app.get("/api/capabilities")
     def capabilities(account=Depends(require())):
         return {"deployment": "server", "role": account["role"], "shared_dataset": True,
-            "workflows": ["browse", "search", "chat", "collections", "source-preview"],
-            "private_saved_work": False, "uploads": False}
+            "workflows": ["browse", "search", "chat", "collections", "source-preview", "topics"],
+            "private_saved_work": True, "uploads": False}
 
     @app.get("/api/catalog/files")
-    def files(limit: int = 100, cursor: str | None = None, account=Depends(require())):
-        _, documents, _ = store.snapshot()
+    def files(limit: int = 100, cursor: str | None = None, collection_id: str | None = None, folder_id: str | None = None, account=Depends(require())):
+        scope = {"scope_type": "root"}
+        if collection_id:
+            scope = {"scope_type": "collection", "collection_id": collection_id}
+        elif folder_id:
+            scope = {"scope_type": "folder", "folder_id": folder_id}
+        _, documents, _ = library.scoped(scope, account["id"])
         documents.sort(key=lambda d: d["source_relpath"])
         start = int(cursor or 0)
         if start < 0:
@@ -227,7 +248,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
         if payload.mode != "lexical" and store.configuration().get("embedding_model"):
             if not store.login_allowed("search:" + account["id"], failed=True, maximum=20) or not store.login_allowed("search:global", failed=True, maximum=200):
                 raise HTTPException(429, "Semantic search limit reached; use lexical search or try again in 15 minutes")
-        result = library.search(payload.query, payload.mode, payload.top_k, payload.scope)
+        result = library.search(payload.query, payload.mode, payload.top_k, payload.scope, account["id"])
         if payload.group_by == "file":
             seen = set()
             result["results"] = [r for r in result["results"] if not (r["file_id"] in seen or seen.add(r["file_id"]))]
@@ -245,21 +266,75 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
         budget = "chat:" + account["id"]
         if not store.login_allowed(budget, failed=True) or not store.login_allowed("chat:global", failed=True, maximum=100):
             raise HTTPException(429, "Chat limit reached; try again in 15 minutes")
-        return library.chat(payload.query, payload.scope, payload.history)
+        return library.chat(payload.query, payload.scope, payload.history, account["id"])
 
-    @app.get("/api/collections")
-    def list_collections(account=Depends(require())):
-        return {"items": store.collection_records()}
+    def collection_view(value, account):
+        return {**value, "can_manage": value["owner_id"] == account["id"] or
+            (value["visibility"] == "shared" and account["role"] in {"curator", "admin"})}
 
-    @app.post("/api/collections")
-    def collection_create(payload: Collection, account=Depends(require("curator"))):
+    def visible_collection(cid, account):
+        value = next((c for c in store.collection_records(account["id"]) if c["id"] == cid), None)
+        if value is None:
+            raise HTTPException(404, "Collection not found")
+        return value
+
+    def validate_collection(payload, account):
+        if not payload.name.strip():
+            raise HTTPException(422, "A collection name is required")
+        if payload.visibility == "shared" and account["role"] == "reader":
+            raise HTTPException(403, "Only curators and administrators can publish shared collections")
         known = {d["file_id"] for d in store.snapshot()[1]}
         if not set(payload.members) <= known:
             raise HTTPException(422, "Collection contains an unknown document")
-        value = {"id": identifier(), **payload.model_dump()}
+        return {**payload.model_dump(), "name": payload.name.strip(), "members": list(dict.fromkeys(payload.members))}
+
+    @app.get("/api/collections")
+    def list_collections(account=Depends(require())):
+        return {"items": [collection_view(c, account) for c in store.collection_records(account["id"])]}
+
+    @app.post("/api/collections")
+    def collection_create(payload: Collection, account=Depends(require())):
+        value = {"id": identifier(), "owner_id": account["id"], **validate_collection(payload, account)}
         store.save_collection(value)
         store.record("collection_created", account["id"], value["id"])
-        return value
+        return collection_view(value, account)
+
+    @app.put("/api/collections/{cid}")
+    def collection_update(cid: str, payload: Collection, account=Depends(require())):
+        previous = visible_collection(cid, account)
+        if not collection_view(previous, account)["can_manage"]:
+            raise HTTPException(403, "You cannot change this collection")
+        if previous["visibility"] == "shared" and payload.visibility == "private" and previous["owner_id"] != account["id"]:
+            raise HTTPException(403, "Only the owner can make a shared collection private")
+        value = {**previous, **validate_collection(payload, account)}
+        if not store.save_collection(value, previous):
+            raise HTTPException(409, "Collection changed; refresh before editing again")
+        store.record("collection_changed", account["id"], cid)
+        return collection_view(value, account)
+
+    @app.delete("/api/collections/{cid}")
+    def collection_delete(cid: str, account=Depends(require())):
+        previous = visible_collection(cid, account)
+        if not collection_view(previous, account)["can_manage"]:
+            raise HTTPException(403, "You cannot delete this collection")
+        if not store.delete_collection(previous):
+            raise HTTPException(409, "Collection changed; refresh before deleting")
+        store.record("collection_deleted", account["id"], cid)
+        return {"deleted": True}
+
+    @app.exception_handler(TopicIndexUnavailable)
+    async def topics_unavailable(request, exc):
+        return JSONResponse({"detail": str(exc)}, status_code=409)
+
+    @app.post("/api/topics/map")
+    def topics(payload: TopicRequest, account=Depends(require())):
+        revision, docs, rows = library.scoped(payload.scope, account["id"])
+        return topic_map(docs, rows, store.configuration().get("embedding_model", ""), revision)
+
+    @app.post("/api/topics/related")
+    def related(payload: RelatedRequest, account=Depends(require())):
+        revision, docs, rows = library.scoped(payload.scope, account["id"])
+        return related_documents(docs, rows, store.configuration().get("embedding_model", ""), revision, payload.file_id)
 
     @app.get("/api/admin/users")
     def accounts(account=Depends(require("admin"))):
@@ -319,14 +394,48 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
                 results[capability] = {"configured": True, "ok": False, "detail": str(exc)}
         return results
 
+    @app.get("/api/admin/source")
+    def source_status(account=Depends(require("admin"))):
+        selection = store.setting("source", {"directory": "."})
+        try:
+            target = resolve_directory(settings.source_root, selection["directory"])
+            available, readable = True, os.access(target, os.R_OK | os.X_OK)
+        except (ValueError, OSError):
+            available, readable = False, False
+        return {"mount_root": str(settings.source_root), **selection, "available": available,
+            "readable": readable, "statistics": store.statistics(), "models": store.configuration(),
+            "extractor_url": settings.extractor_url, "ocr_configured": bool(settings.ocr_url)}
+
+    @app.get("/api/admin/source/browse")
+    def source_browse(path: str = ".", cursor: int = 0, account=Depends(require("admin"))):
+        try:
+            return browse(settings.source_root, path, cursor)
+        except OSError:
+            raise HTTPException(409, "The source folder is unavailable or unreadable")
+
+    @app.put("/api/admin/source")
+    def source_select(payload: SourceSelection, account=Depends(require("admin"))):
+        try:
+            target = resolve_directory(settings.source_root, payload.directory)
+            if not os.access(target, os.R_OK | os.X_OK):
+                raise HTTPException(409, "The source folder is unreadable")
+        except OSError:
+            raise HTTPException(409, "The source folder is unavailable")
+        value = {"directory": target.relative_to(settings.source_root.resolve()).as_posix()}
+        store.save_setting("source", value)
+        store.record("source_selection_changed", account["id"], value["directory"])
+        return source_status(account)
+
     @app.post("/api/admin/intake")
     def intake(payload: Ingest | None = None, account=Depends(require("curator"))):
-        jid = store.enqueue("ingest", payload.model_dump() if payload else {})
+        selection = store.setting("source", {"directory": "."})
+        resolve_directory(settings.source_root, selection["directory"])
+        jid = store.enqueue("ingest", {**(payload.model_dump() if payload else {}), "source_directory": selection["directory"]})
         store.record("ingestion_requested", account["id"], jid)
-        return {"id": jid, "status": "queued"}
+        return {"id": jid, "status": "queued", **selection}
 
     @app.get("/api/runs")
     def runs(account=Depends(require("curator"))):
-        return {"runs": store.job_records()}
+        return {"runs": store.job_records(), "source_directory": store.setting("source", {"directory": "."})["directory"]}
 
     return app

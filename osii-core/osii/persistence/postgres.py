@@ -9,7 +9,7 @@ import uuid
 
 from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey, Integer,
                         LargeBinary, MetaData, String, Table, Text, create_engine,
-                        delete, insert, select, text, update)
+                        delete, insert, select, text, update, or_, func, UniqueConstraint)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Connection
 
@@ -37,8 +37,11 @@ artifacts = Table("artifacts", metadata, Column("id", String, primary_key=True),
     Column("file_id", String, ForeignKey("documents.file_id", ondelete="CASCADE"), nullable=False),
     Column("kind", String, nullable=False), Column("payload", JSONB, nullable=False))
 collections = Table("collections", metadata, Column("id", String, primary_key=True),
-    Column("name", String, unique=True, nullable=False), Column("description", Text, nullable=False),
-    Column("members", JSONB, nullable=False))
+    Column("name", String, nullable=False), Column("description", Text, nullable=False),
+    Column("members", JSONB, nullable=False),
+    Column("owner_id", String, ForeignKey("users.id", ondelete="SET NULL")),
+    Column("visibility", String, nullable=False, server_default="private"),
+    UniqueConstraint("owner_id", "name", name="collections_owner_name_key"))
 settings = Table("settings", metadata, Column("id", String, primary_key=True),
     Column("value", JSONB, nullable=False))
 jobs = Table("jobs", metadata, Column("id", String, primary_key=True),
@@ -85,7 +88,7 @@ class PostgresStore:
 
     def ready(self) -> None:
         with self.engine.connect() as c:
-            if c.execute(text("SELECT version_num FROM alembic_version")).scalar() != "0001_server":
+            if c.execute(text("SELECT version_num FROM alembic_version")).scalar() != "0002_workspace":
                 raise RuntimeError("Run the explicit database migration before starting OSII-server")
 
     def record(self, event: str, actor: str | None = None, resource: str | None = None) -> None:
@@ -204,15 +207,46 @@ class PostgresStore:
         with self.engine.connect() as c:
             return [dict(row) for row in c.execute(select(artifacts).where(artifacts.c.file_id == file_id)).mappings()]
 
-    def collection_records(self) -> list[dict]:
+    def collection_records(self, user_id: str | None = None) -> list[dict]:
+        visible = collections.c.visibility == "shared"
+        if user_id:
+            visible = or_(visible, collections.c.owner_id == user_id)
         with self.engine.connect() as c:
-            return [dict(row) for row in c.execute(select(collections).order_by(collections.c.name)).mappings()]
+            return [dict(row) for row in c.execute(select(collections).where(visible).order_by(collections.c.name)).mappings()]
 
-    def save_collection(self, value: dict) -> None:
+    @staticmethod
+    def _collection_version(previous: dict):
+        return [collections.c[key] == previous[key] for key in
+            ("id", "owner_id", "visibility", "name", "description", "members")]
+
+    def delete_collection(self, previous: dict) -> bool:
+        with self.transaction() as c:
+            return c.execute(delete(collections).where(*self._collection_version(previous))).rowcount == 1
+
+    def setting(self, key: str, default: dict) -> dict:
+        with self.engine.connect() as c:
+            return c.execute(select(settings.c.value).where(settings.c.id == key)).scalar() or default
+
+    def save_setting(self, key: str, value: dict) -> None:
         from sqlalchemy.dialects.postgresql import insert as upsert
         with self.transaction() as c:
-            s = upsert(collections).values(**value)
-            c.execute(s.on_conflict_do_update(index_elements=[collections.c.id], set_=value))
+            statement = upsert(settings).values(id=key, value=value)
+            c.execute(statement.on_conflict_do_update(index_elements=[settings.c.id], set_={"value": value}))
+
+    def statistics(self) -> dict:
+        with self.engine.connect() as c:
+            return {"documents": c.execute(select(func.count()).select_from(documents).where(documents.c.active)).scalar(),
+                "chunks": c.execute(select(func.count()).select_from(chunks.join(documents)).where(documents.c.active)).scalar(),
+                "embedded_chunks": c.execute(select(func.count()).select_from(chunks.join(documents)).where(documents.c.active, chunks.c.embedding.is_not(None))).scalar()}
+
+
+    def save_collection(self, value: dict, previous: dict | None = None) -> bool:
+        with self.transaction() as c:
+            if previous is None:
+                c.execute(insert(collections).values(**value))
+                return True
+            # A curator's stale shared edit must not republish a now-private collection.
+            return c.execute(update(collections).where(*self._collection_version(previous)).values(**value)).rowcount == 1
 
     def enqueue(self, kind: str, payload: dict) -> str:
         with self.transaction() as c:
