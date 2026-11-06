@@ -46,6 +46,8 @@ def main():
     if not (config / "model-key").is_file():
         parser.error("Install the private provider key at /etc/osii/model-key first")
     (config / "model-key").chmod(0o440)
+    (config / "keys").mkdir(mode=0o750, exist_ok=True)
+    (config / "keys").chmod(0o750)
     network = subprocess.run(["podman", "network", "exists", "osii"], check=False)
     if network.returncode:
         run("podman", "network", "create", "--subnet", "10.89.0.0/24", "--gateway", "10.89.0.1", "osii")
@@ -74,14 +76,15 @@ def main():
         sql(f"CREATE ROLE osii LOGIN PASSWORD '{password}';")
     if not sql("SELECT 1 FROM pg_database WHERE datname='osii_server';"):
         sql("CREATE DATABASE osii_server OWNER osii;")
-    write(config / "runtime.env", f"DATABASE_URL=postgresql+psycopg://osii:{password}@/osii_server?host=/var/run/postgresql\nOSII_SOURCE_DIR=/data/source\nOPENAI_BASE_URL=https://openrouter.ai/api/v1\nOSII_MODEL_API_KEY_FILE=/run/osii-model-key\nOSII_ORIGINS=https://{args.hostname}\nOSII_EXTRACTOR_URL=http://osii-extractor:8192\n", 0o600)
+    if not (config / "runtime.env").exists():
+        write(config / "runtime.env", f"DATABASE_URL=postgresql+psycopg://osii:{password}@/osii_server?host=/var/run/postgresql\nOSII_SOURCE_DIR=/data/source\nOPENAI_BASE_URL=https://openrouter.ai/api/v1\nOSII_MODEL_API_KEY_FILE=/run/osii-model-key\nOSII_ORIGINS=https://{args.hostname}\nOSII_EXTRACTOR_URL=http://osii-extractor:8192\n", 0o600)
     for component, memory in [("api", "1g"), ("worker", "1g"), ("extractor", "768m"), ("dashboard", "128m")]:
         image = f"localhost/osii-{'dashboard' if component == 'dashboard' else 'core'}:{args.image_tag}"
         command = f"/usr/bin/podman run --rm --name osii-{component} --network osii --read-only --cap-drop ALL --security-opt no-new-privileges --user 1001:0 --tmpfs /tmp:rw,nosuid,nodev,size=256m --memory {memory}"
         dependencies = ""
         if component in {"api", "worker"}:
             dependencies = "Wants=postgresql@16-main.service\nAfter=postgresql@16-main.service\nRequiresMountsFor=/mnt/nfs-documents\n"
-            command += " --env-file /etc/osii/runtime.env --volume /var/run/postgresql:/var/run/postgresql:ro --volume /etc/osii/model-key:/run/osii-model-key:ro --volume /mnt/nfs-documents:/data/source:ro"
+            command += " --env-file /etc/osii/runtime.env --volume /var/run/postgresql:/var/run/postgresql:ro --volume /etc/osii/model-key:/run/osii-model-key:ro --volume /etc/osii/keys:/run/osii-keys:ro --volume /mnt/nfs-documents:/data/source:ro"
         if component == "dashboard":
             dependencies = "Wants=osii-api.service\nAfter=osii-api.service\n"
             command += " --publish 127.0.0.1:18080:8080"

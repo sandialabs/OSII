@@ -103,6 +103,9 @@ def test_model_catalog_does_not_invoke_generation(client):
     assert r.json()["generation_tested"] is False
     config = client.get("/api/admin/models").json()
     assert "secret-not-for-clients" not in str(config)
+    assert config["endpoints"]["chat"]["base_url"] == "https://provider.test/v1"
+    assert config["endpoints"]["embedding"]["credential_present"] is True
+    assert config["endpoints"]["rerank"]["configured"] is False
     assert client.put("/api/admin/models", json={"chat_model": "vendor/model-id"}).status_code == 200
     assert client.post("/api/admin/models/test").json()["chat"]["ok"]
 

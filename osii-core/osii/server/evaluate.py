@@ -26,7 +26,7 @@ def main():
     settings = Settings.environment()
     store = PostgresStore(settings.database_url)
     store.ready()
-    library = Library(store, ModelProvider(settings.model_url, settings.model_key))
+    library = Library(store, settings.provider())
     recall, reciprocal, count = 0., 0., 0
     with open(args.queries, encoding="utf-8") as f:
         for line in f:

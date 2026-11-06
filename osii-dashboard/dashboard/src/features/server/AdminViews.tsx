@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { Alert, Autocomplete, Box, Button, Chip, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
 import { api, type Model, type User } from "./api";
 
+type Endpoint = { base_url: string; model: string; configured: boolean; credential_present: boolean };
+
 export function ModelAdmin() {
-  const [config, setConfig] = useState({ chat_model: "", embedding_model: "", base_url: "", credential_present: false });
+  const [config, setConfig] = useState({ chat_model: "", embedding_model: "", base_url: "", credential_present: false, endpoints: {} as Record<string, Endpoint> });
   const [models, setModels] = useState<Model[]>([]);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -17,9 +19,9 @@ export function ModelAdmin() {
       else { const result = await api<Record<string, { configured: boolean; ok?: boolean; detail?: string }>>("/api/admin/models/test", "POST", {}); setNotice(Object.entries(result).map(([name, check]) => `${name}: ${!check.configured ? "not selected" : check.ok ? "invocation passed" : check.detail}`).join(" · ")); }
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
-  return <Paper sx={{ p: 3 }}><Stack spacing={2}><Typography variant="h6">Model connection</Typography>
-    <Typography>{config.base_url}</Typography><Chip sx={{ alignSelf: "start" }} label={config.credential_present ? "Provider key configured" : "Provider key missing"} />
-    <Typography variant="body2" color="text.secondary">The endpoint and provider key are managed by the deployment. Only administrators select models.</Typography>
+  return <Paper sx={{ p: 3 }}><Stack spacing={2}><Typography variant="h6">Model endpoints</Typography>
+    {Object.entries(config.endpoints).map(([kind, endpoint]) => <Box key={kind}><Typography sx={{ textTransform: "capitalize" }}>{kind}: {endpoint.base_url || "Disabled"}</Typography>{endpoint.configured && <Chip size="small" label={endpoint.credential_present ? "Own credential configured" : "No API key configured"} />}{kind === "rerank" && endpoint.model && <Typography variant="body2">Model: {endpoint.model}</Typography>}</Box>)}
+    <Typography variant="body2" color="text.secondary">Endpoints and their credentials are managed by the deployment. Administrators select chat and embedding models here. A configured reranker is available to Core RAG strategies; it does not automatically change ordinary chat.</Typography>
     {error && <Alert severity="error">{error}</Alert>}{notice && <Alert severity="info">{notice}</Alert>}
     {(["chat", "embedding"] as const).map(kind => <Autocomplete key={kind} freeSolo options={models.filter(m => !m.capabilities.length || m.capabilities.includes(kind)).map(m => m.id)} value={config[`${kind}_model`]} onChange={(_, value) => setConfig({ ...config, [`${kind}_model`]: value ?? "" })} onInputChange={(_, value, reason) => { if (reason === "input") setConfig(current => ({ ...current, [`${kind}_model`]: value })); }} getOptionLabel={id => { const model = models.find(m => m.id === id); return model ? `${model.name} — ${id}` : id; }} renderInput={params => <TextField {...params} label={kind === "chat" ? "Language model ID" : "Embedding model ID (optional)"} helperText="Choose a discovered model or enter its exact API ID." />} />)}
     <Stack direction="row" spacing={1}><Button disabled={busy} onClick={() => void action("discover")}>Discover models</Button><Button variant="contained" disabled={busy} onClick={() => void action("save")}>Save selection</Button><Button disabled={busy} onClick={() => void action("test")}>Test selected models</Button></Stack>

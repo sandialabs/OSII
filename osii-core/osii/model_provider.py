@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import requests
 import time
+from osii.model_endpoints import ModelEndpoint
 
 
 class ProviderError(RuntimeError):
@@ -10,8 +11,10 @@ class ProviderError(RuntimeError):
 
 
 class ModelProvider:
-    def __init__(self, url: str, key: str):
+    def __init__(self, url: str, key: str, *, embedding_endpoint: ModelEndpoint | None = None):
         self.url, self.key = url.rstrip("/"), key
+        self.embedding_provider = (ModelProvider(embedding_endpoint.base_url, embedding_endpoint.api_key)
+            if embedding_endpoint is not None and (embedding_endpoint.base_url, embedding_endpoint.api_key) != (self.url, key) else None)
 
     def request(self, method: str, path: str, payload: dict | None = None) -> dict:
         # Retry only embedding reads: retrying chat after a lost response can
@@ -19,9 +22,11 @@ class ModelProvider:
         attempts = 3 if path == "/embeddings" else 1
         for attempt in range(attempts):
             try:
+                headers = {"Content-Type": "application/json"}
+                if self.key:
+                    headers["Authorization"] = f"Bearer {self.key}"
                 response = requests.request(method, self.url + path,
-                    headers={"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"},
-                    json=payload, timeout=(5, 90))
+                    headers=headers, json=payload, timeout=(5, 90), allow_redirects=False)
             except requests.RequestException:
                 if attempt + 1 == attempts:
                     raise ProviderError(f"The configured model endpoint could not be reached after {attempts} attempt(s)") from None
@@ -34,7 +39,7 @@ class ModelProvider:
             except (ValueError, TypeError):
                 delay = 2 ** attempt
             time.sleep(delay)
-        if not response.ok:
+        if not response.ok or 300 <= getattr(response, "status_code", 200) < 400:
             reasons = {401: "The provider rejected its API key", 402: "The provider reports insufficient credit",
                 403: "The provider denied access to this model", 404: "The model or endpoint was not found",
                 429: "The provider rate limit was reached"}
@@ -48,6 +53,16 @@ class ModelProvider:
         return data
 
     def catalog(self) -> list[dict]:
+        chat = self._catalog()
+        if self.embedding_provider is None:
+            return chat
+        models = {(row["id"], "chat"): {**row, "capabilities": ["chat"]} for row in chat if "embedding" not in row["capabilities"]}
+        for row in self.embedding_provider._catalog():
+            if "chat" not in row["capabilities"]:
+                models[(row["id"], "embedding")] = {**row, "capabilities": ["embedding"]}
+        return sorted(models.values(), key=lambda row: (row["name"].casefold(), row["id"]))
+
+    def _catalog(self) -> list[dict]:
         data = self.request("GET", "/models")
         results = {}
         for model in data.get("data", []):
@@ -75,6 +90,8 @@ class ModelProvider:
         return content.strip(), {k: data.get("usage", {}).get(k) for k in ("prompt_tokens", "completion_tokens", "cost")}
 
     def embed(self, model: str, texts: list[str]) -> list[list[float]]:
+        if self.embedding_provider is not None:
+            return self.embedding_provider.embed(model, texts)
         data = self.request("POST", "/embeddings", {"model": model, "input": texts})
         try:
             rows = sorted(data["data"], key=lambda row: row["index"])

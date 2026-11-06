@@ -90,7 +90,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
                provider: ModelProvider | None = None) -> FastAPI:
     settings = settings or Settings.environment()
     store = store or PostgresStore(settings.database_url)
-    provider = provider or ModelProvider(settings.model_url, settings.model_key)
+    provider = provider or settings.provider()
 
     @asynccontextmanager
     async def lifespan(app):
@@ -102,6 +102,8 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
 
     app = FastAPI(title="OSII Server", lifespan=lifespan)
     app.state.store, app.state.settings = store, settings
+    from osii.rag.strategies.http_reranker import create_reranker
+    app.state.rag_reranker = create_reranker(settings.endpoints()["rerank"])
     library = Library(store, provider)
 
     @app.middleware("http")
@@ -366,6 +368,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
     @app.get("/api/admin/models")
     def model_configuration(account=Depends(require("admin"))):
         return {**store.configuration(), "base_url": settings.model_url,
+            "endpoints": {name: endpoint.public() for name, endpoint in settings.endpoints().items()},
             "credential_present": bool(settings.model_key), "credential_managed_by_deployment": True}
 
     @app.put("/api/admin/models")
@@ -395,6 +398,17 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
                 results[capability] = {"configured": True, "ok": True}
             except ProviderError as exc:
                 results[capability] = {"configured": True, "ok": False, "detail": str(exc)}
+        endpoint = settings.endpoints()["rerank"]
+        results["rerank"] = {"configured": bool(endpoint.base_url and endpoint.model)}
+        if endpoint.base_url or endpoint.model:
+            from osii.rag.strategies.contracts import Evidence, RerankRequest, StrategyError
+            from osii.rag.strategies.http_reranker import create_reranker
+            try:
+                reranker = create_reranker(endpoint)
+                reranker(RerankRequest("connection check", (Evidence("check", "synthetic", "OSII synthetic connection check"),), top_k=1))
+                results["rerank"] = {"configured": True, "ok": True}
+            except (StrategyError, ValueError) as exc:
+                results["rerank"] = {"configured": True, "ok": False, "detail": str(exc)}
         return results
 
     @app.get("/api/admin/source")

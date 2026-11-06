@@ -13,6 +13,20 @@ parameters:
   required: true
 - name: MODEL_BASE_URL
   value: https://openrouter.ai/api/v1
+- name: CHAT_BASE_URL
+  value: ''
+- name: EMBEDDING_BASE_URL
+  value: ''
+- name: RERANK_BASE_URL
+  value: ''
+- name: RERANK_MODEL
+  value: ''
+- name: CHAT_API_KEY_FILE
+  value: ''
+- name: EMBEDDING_API_KEY_FILE
+  value: ''
+- name: RERANK_API_KEY_FILE
+  value: ''
 - name: DATABASE_STORAGE_CLASS
   value: gp3
 - name: SOURCE_STORAGE_CLASS
@@ -60,6 +74,13 @@ objects:
     OSII_SOURCE_DIR: /data/source
     OSII_EXTRACTOR_URL: http://osii-extractor:8192
     OPENAI_BASE_URL: ${MODEL_BASE_URL}
+    OSII_CHAT_BASE_URL: ${CHAT_BASE_URL}
+    OSII_EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL}
+    OSII_RERANK_BASE_URL: ${RERANK_BASE_URL}
+    OSII_RERANK_MODEL: ${RERANK_MODEL}
+    OSII_CHAT_API_KEY_FILE: ${CHAT_API_KEY_FILE}
+    OSII_EMBEDDING_API_KEY_FILE: ${EMBEDDING_API_KEY_FILE}
+    OSII_RERANK_API_KEY_FILE: ${RERANK_API_KEY_FILE}
     OSII_MODEL_API_KEY_FILE: /run/osii-model/key
     OSII_ORIGINS: https://${APP_HOST}
 - apiVersion: apps/v1

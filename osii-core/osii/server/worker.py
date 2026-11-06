@@ -161,7 +161,7 @@ def run(settings: Settings | None = None) -> None:
     settings = settings or Settings.environment()
     store = PostgresStore(settings.database_url)
     store.ready()
-    provider = ModelProvider(settings.model_url, settings.model_key)
+    provider = settings.provider()
     extractor = ProcessorClient(settings.extractor_url, timeout=120)
     ocr = ProcessorClient(settings.ocr_url, timeout=180) if settings.ocr_url else None
     worker, stopping = identifier(), threading.Event()

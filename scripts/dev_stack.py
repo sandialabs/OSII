@@ -109,7 +109,8 @@ def main() -> int:
     env.setdefault("OSII_DASHBOARD_PORT", "5174")
     env.setdefault("OSII_EXTRACTOR_URL", "http://127.0.0.1:8192")
     env.setdefault("OSII_SOURCE_DIR", str(ROOT / "osii-data/source"))
-    for key in ("OSII_SOURCE_DIR", "OSII_MODEL_API_KEY_FILE"):
+    for key in ("OSII_SOURCE_DIR", "OSII_MODEL_API_KEY_FILE", "OPENAI_API_KEY_FILE",
+                "OSII_CHAT_API_KEY_FILE", "OSII_EMBEDDING_API_KEY_FILE", "OSII_RERANK_API_KEY_FILE"):
         if env.get(key):
             path = Path(env[key]).expanduser()
             env[key] = str(path if path.is_absolute() else ROOT / path)
