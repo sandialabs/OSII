@@ -307,3 +307,14 @@ Framework reference: [Haystack pipeline loops](https://docs.haystack.deepset.ai/
 Model references: [MiniLM](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2),
 [MPNet](https://huggingface.co/sentence-transformers/all-mpnet-base-v2), and
 [one public Gemma 4 free variant](https://openrouter.ai/google/gemma-4-31b-it:free).
+
+### Shared browser and endpoint components
+
+Both products use the same transport-free BrowseGrid/FileCard, PDF thumbnail
+renderer, SearchResultCard, SearchModeSelect, EndpointFields, and topic-map
+components at the same frontend source paths. The hosted LibraryBrowser maps
+server API rows into those view models; local pages map sidecar API rows into
+them. Storage and account permissions stay behind Core APIs. Portable component
+changes are transferred as focused commits between branches; do not maintain a
+second server-only renderer for the same feature. Local Setup and hosted endpoint
+administration intentionally have separate persistence adapters.

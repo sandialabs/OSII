@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  Box, Button, InputAdornment, MenuItem, Stack, Table, TableBody, TableCell,
+  Box, Button, Checkbox, InputAdornment, MenuItem, Stack, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, ToggleButton,
   ToggleButtonGroup, Typography,
 } from "@mui/material";
@@ -22,6 +22,8 @@ type BrowseGridProps = {
   onChangeView: (view: "list" | "icons") => void;
   onOpenFolder: (folder: FolderScopeDescriptor) => void;
   onOpenFile: (fileId: string) => void;
+  selectedIds?: ReadonlySet<string>;
+  onToggleFile?: (fileId: string) => void;
 };
 
 type Entry = { kind: "folder"; folder: FolderScopeDescriptor } | { kind: "file"; file: FileCardModel };
@@ -32,7 +34,7 @@ function fileType(file: FileCardModel): string {
   return extension ? `${extension} file` : "File";
 }
 
-export function BrowseGrid({ folders, files, view, onChangeView, onOpenFolder, onOpenFile }: BrowseGridProps) {
+export function BrowseGrid({ folders, files, view, onChangeView, onOpenFolder, onOpenFile, selectedIds, onToggleFile }: BrowseGridProps) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<BrowseSort>("name-asc");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -96,14 +98,15 @@ export function BrowseGrid({ folders, files, view, onChangeView, onOpenFolder, o
                 const name = folder ? folderName(folder) : file!.title;
                 return (
                   <TableRow hover key={folder ? `folder:${folder.folder_id}` : `file:${file!.fileId}`}>
-                    <TableCell sx={{ py: 0.5 }}>
+                    <TableCell sx={{ py: 0.5 }}><Box sx={{ display: "flex", alignItems: "center" }}>
+                      {file && onToggleFile && <Checkbox size="small" checked={selectedIds?.has(file.fileId) ?? false} onChange={() => onToggleFile(file.fileId)} inputProps={{ "aria-label": `Select ${file.title}` }} />}
                       <Button onClick={() => folder ? onOpenFolder(folder) : onOpenFile(file!.fileId)}
                         aria-label={`Open ${folder ? "folder" : "file"} ${name}`} title={name}
                         startIcon={folder ? <FolderOutlinedIcon sx={{ color: "warning.main" }} /> : <DescriptionOutlinedIcon color="action" />}
                         sx={{ color: "text.primary", fontWeight: folder ? 600 : 400, textTransform: "none", justifyContent: "flex-start", width: "100%", minWidth: 0 }}>
                         <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</Box>
                       </Button>
-                    </TableCell>
+                    </Box></TableCell>
                     <TableCell sx={{ color: "text.secondary" }}>{file ? fileType(file) : "Folder"}</TableCell>
                     <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>{file ? formatFileSize(file.sizeBytes) ?? "—" : "—"}</TableCell>
                     <TableCell>{file ? formatModifiedDate(file.modifiedAt) ?? "—" : "—"}</TableCell>
@@ -117,7 +120,10 @@ export function BrowseGrid({ folders, files, view, onChangeView, onOpenFolder, o
         <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(170px, 100%), 1fr))", gap: 1.5 }}>
           {visible.map((entry) => entry.kind === "folder"
             ? <FolderTile key={`folder:${entry.folder.folder_id}`} folder={entry.folder} onOpen={() => onOpenFolder(entry.folder)} />
-            : <FileCard key={`file:${entry.file.fileId}`} file={entry.file} compact onOpen={onOpenFile} />)}
+            : <Box key={`file:${entry.file.fileId}`} sx={{ position: "relative" }}>
+              {onToggleFile && <Checkbox checked={selectedIds?.has(entry.file.fileId) ?? false} onChange={() => onToggleFile(entry.file.fileId)} inputProps={{ "aria-label": `Select ${entry.file.title}` }} sx={{ position: "absolute", top: 0, left: 0, zIndex: 1, bgcolor: "background.paper" }} />}
+              <FileCard file={entry.file} compact onOpen={onOpenFile} />
+            </Box>)}
         </Box>
       )}
 

@@ -27,11 +27,13 @@ import { ScopeSuggestions } from "../../../components/discovery/ScopeSuggestions
 import { useActivityHistory } from "../../../hooks/useActivityHistory";
 import type { ActivityHistoryEntry } from "../../../utils/activityHistory";
 
+import { SearchModeSelect } from "../components/SearchModeSelect";
+
 function coerceMode(value: string | null): SearchMode {
   if (value === "semantic" || value === "lexical" || value === "hybrid") {
     return value;
   }
-  return "semantic";
+  return "lexical";
 }
 
 export function SearchPage() {
@@ -201,18 +203,7 @@ export function SearchPage() {
                   spacing={1.25}
                   alignItems={{ xs: "stretch", lg: "center" }}
                 >
-                  <TextField
-                    select
-                    size="small"
-                    label="Mode"
-                    value={mode}
-                    onChange={(event) => setMode(event.target.value as SearchMode)}
-                    sx={{ minWidth: 160 }}
-                  >
-                    <MenuItem value="semantic">Semantic</MenuItem>
-                    <MenuItem value="lexical">Lexical</MenuItem>
-                    <MenuItem value="hybrid">Hybrid</MenuItem>
-                  </TextField>
+                  <SearchModeSelect value={mode} onChange={setMode} />
 
                   <TextField
                     select
