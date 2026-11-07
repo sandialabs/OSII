@@ -10,6 +10,7 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
@@ -22,9 +23,11 @@ from osii.server.auth import (COOKIE, CSRF_COOKIE, digest, origin_check, passwor
                               public_account, require, verify)
 from osii.server.config import Settings
 from osii.model_provider import ModelProvider, ProviderError
+from osii.server.model_connections import ModelConnections, ConfiguredModelProvider
 
 
 class Login(BaseModel):
+    remember: bool = False
     username: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=1, max_length=128)
 
@@ -47,6 +50,13 @@ class AccountUpdate(BaseModel):
 class ModelChoices(BaseModel):
     chat_model: str = Field(default="", max_length=200)
     embedding_model: str = Field(default="", max_length=200)
+
+
+class EndpointChoice(BaseModel):
+    base_url: str = Field(max_length=2000)
+    model: str = Field(default="", max_length=200)
+    api_key: str | None = Field(default=None, max_length=4096, repr=False)
+    clear_api_key: bool = False
 
 
 class Search(BaseModel):
@@ -90,7 +100,8 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
                provider: ModelProvider | None = None) -> FastAPI:
     settings = settings or Settings.environment()
     store = store or PostgresStore(settings.database_url)
-    provider = provider or settings.provider()
+    connections = ModelConnections(store, settings)
+    provider = provider or ConfiguredModelProvider(connections)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -123,6 +134,12 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
     @app.exception_handler(ValueError)
     async def invalid(request, exc):
         return JSONResponse({"detail": str(exc)}, status_code=422)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_fields(request, exc):
+        # Validation errors may contain the entire input, including write-only keys.
+        fields = [".".join(str(v) for v in error["loc"]) for error in exc.errors()]
+        return JSONResponse({"detail": "Invalid request fields: " + ", ".join(fields)}, status_code=422)
 
     @app.exception_handler(IntegrityError)
     async def conflict(request, exc):
@@ -161,9 +178,11 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
             store.record("login_denied")
             raise HTTPException(401, "Invalid username or password")
         token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
-        store.create_session(account["id"], digest(token), digest(csrf), account["auth_version"])
-        response.set_cookie(COOKIE, token, httponly=True, secure=settings.secure_cookies, samesite="lax", max_age=43200)
-        response.set_cookie(CSRF_COOKIE, csrf, httponly=False, secure=settings.secure_cookies, samesite="lax", max_age=43200)
+        lifetime = settings.remember_days * 86400 if payload.remember else 43200
+        store.create_session(account["id"], digest(token), digest(csrf), account["auth_version"],
+            lifetime_seconds=lifetime, idle_seconds=min(lifetime, 7 * 86400) if payload.remember else 1800)
+        response.set_cookie(COOKIE, token, httponly=True, secure=settings.secure_cookies, samesite="lax", max_age=lifetime)
+        response.set_cookie(CSRF_COOKIE, csrf, httponly=False, secure=settings.secure_cookies, samesite="lax", max_age=lifetime)
         store.record("login", account["id"])
         return {"user": public_account(account), "csrf_token": csrf}
 
@@ -194,13 +213,17 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
             "private_saved_work": True, "uploads": False}
 
     @app.get("/api/catalog/files")
-    def files(limit: int = 100, cursor: str | None = None, collection_id: str | None = None, folder_id: str | None = None, account=Depends(require())):
+    def files(limit: int = 100, cursor: str | None = None, collection_id: str | None = None, folder_id: str | None = None,
+              direct: bool = False, account=Depends(require())):
         scope = {"scope_type": "root"}
         if collection_id:
             scope = {"scope_type": "collection", "collection_id": collection_id}
         elif folder_id:
             scope = {"scope_type": "folder", "folder_id": folder_id}
         _, documents, _ = library.scoped(scope, account["id"])
+        if direct and not collection_id:
+            parent = str(Path(folder_id or "."))
+            documents = [d for d in documents if str(Path(d["source_relpath"]).parent) == parent]
         documents.sort(key=lambda d: d["source_relpath"])
         start = int(cursor or 0)
         if start < 0:
@@ -212,7 +235,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
     @app.get("/api/catalog/folders")
     def folders(account=Depends(require())):
         _, documents, _ = store.snapshot()
-        paths = sorted({str(Path(d["source_relpath"]).parent) for d in documents})
+        paths = sorted({str(parent) for d in documents for parent in Path(d["source_relpath"]).parents})
         return {"items": [{"folder_id": p, "path": p} for p in paths], "total": len(paths)}
 
     @app.get("/api/objects/{file_id}")
@@ -230,8 +253,9 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
     @app.get("/api/objects/{file_id}/source")
     def source(file_id: str, account=Depends(require())):
         doc = document(file_id, account)
-        target = (settings.source_root / doc["source_relpath"]).resolve()
-        if not target.is_relative_to(settings.source_root) or not target.is_file():
+        root = settings.source_root.resolve()
+        target = (root / doc["source_relpath"]).resolve()
+        if not target.is_relative_to(root) or not target.is_file():
             raise HTTPException(404, "Source unavailable")
         if hashlib.sha256(target.read_bytes()).hexdigest() != doc["sha256"]:
             raise HTTPException(409, "The original changed since ingestion; ask a curator to refresh the dataset")
@@ -367,9 +391,30 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
 
     @app.get("/api/admin/models")
     def model_configuration(account=Depends(require("admin"))):
-        return {**store.configuration(), "base_url": settings.model_url,
-            "endpoints": {name: endpoint.public() for name, endpoint in settings.endpoints().items()},
-            "credential_present": bool(settings.model_key), "credential_managed_by_deployment": True}
+        return {**store.configuration(), "base_url": connections.endpoints()["chat"].base_url,
+            "endpoints": connections.public(),
+            "credential_present": bool(connections.endpoints()["chat"].api_key),
+            "credential_managed_by_deployment": connections.public()["chat"]["managed_by"] == "deployment"}
+
+    @app.put("/api/admin/models/endpoints/{kind}")
+    def endpoint_save(kind: Literal["chat", "embedding", "rerank"], payload: EndpointChoice, account=Depends(require("admin"))):
+        if any(job["status"] in {"queued", "running"} for job in store.job_records()):
+            raise HTTPException(409, "Wait for queued and running processing jobs to finish before changing endpoints")
+        result = connections.save(kind, payload.model_dump())
+        if kind == "rerank":
+            app.state.rag_reranker = create_reranker(connections.endpoints()["rerank"])
+        store.record("model_endpoint_changed", account["id"], kind)
+        return result
+
+    @app.delete("/api/admin/models/endpoints/{kind}")
+    def endpoint_reset(kind: Literal["chat", "embedding", "rerank"], account=Depends(require("admin"))):
+        if any(job["status"] in {"queued", "running"} for job in store.job_records()):
+            raise HTTPException(409, "Wait for processing jobs to finish before resetting endpoints")
+        connections.reset(kind)
+        if kind == "rerank":
+            app.state.rag_reranker = create_reranker(connections.endpoints()["rerank"])
+        store.record("model_endpoint_reset", account["id"], kind)
+        return connections.public()[kind]
 
     @app.put("/api/admin/models")
     def model_choices(payload: ModelChoices, account=Depends(require("admin"))):
@@ -379,7 +424,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
 
     @app.get("/api/admin/models/catalog")
     def catalog(account=Depends(require("admin"))):
-        return {"models": provider.catalog(), "generation_tested": False}
+        return {"models": provider.catalog(), "warnings": getattr(provider, "catalog_errors", {}), "generation_tested": False}
 
     @app.post("/api/admin/models/test")
     def model_test(account=Depends(require("admin"))):
@@ -398,7 +443,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
                 results[capability] = {"configured": True, "ok": True}
             except ProviderError as exc:
                 results[capability] = {"configured": True, "ok": False, "detail": str(exc)}
-        endpoint = settings.endpoints()["rerank"]
+        endpoint = connections.endpoints()["rerank"]
         results["rerank"] = {"configured": bool(endpoint.base_url and endpoint.model)}
         if endpoint.base_url or endpoint.model:
             from osii.rag.strategies.contracts import Evidence, RerankRequest, StrategyError

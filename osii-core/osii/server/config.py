@@ -18,6 +18,7 @@ class Settings:
     ocr_url: str = ""
     embedding_endpoint: ModelEndpoint | None = None
     rerank_endpoint: ModelEndpoint | None = None
+    remember_days: int = 14
 
     def endpoints(self) -> dict[str, ModelEndpoint]:
         return {"chat": ModelEndpoint(self.model_url, self.model_key),
@@ -42,6 +43,9 @@ class Settings:
         secure = os.environ.get("OSII_INSECURE_LOCAL_HTTP", "false").lower() != "true"
         if not secure and any(not value.startswith(("http://localhost:", "http://127.0.0.1:")) for value in origins):
             raise ValueError("Insecure cookies are allowed only for explicit loopback development origins")
+        remember_days = int(os.environ.get("OSII_REMEMBER_DAYS", "14"))
+        if not 1 <= remember_days <= 30:
+            raise ValueError("OSII_REMEMBER_DAYS must be between 1 and 30")
         return cls(database, source, chat.base_url, chat.api_key,
             os.environ.get("OSII_EXTRACTOR_URL", "http://127.0.0.1:8192"), origins, secure,
-            os.environ.get("OSII_OCR_URL", ""), embedding, rerank)
+            os.environ.get("OSII_OCR_URL", ""), embedding, rerank, remember_days)

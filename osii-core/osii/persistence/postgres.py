@@ -59,7 +59,8 @@ identities = Table("identities", metadata, Column("id", String, primary_key=True
 sessions = Table("sessions", metadata, Column("token_hash", String, primary_key=True),
     Column("user_id", String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
     Column("csrf_hash", String, nullable=False), Column("auth_version", Integer, nullable=False),
-    Column("expires_at", DateTime(timezone=True), nullable=False), Column("last_seen", DateTime(timezone=True), nullable=False))
+    Column("expires_at", DateTime(timezone=True), nullable=False), Column("last_seen", DateTime(timezone=True), nullable=False),
+    Column("idle_seconds", Integer, nullable=False, server_default="1800"))
 attempts = Table("login_attempts", metadata, Column("id", String, primary_key=True),
     Column("count", Integer, nullable=False), Column("expires_at", DateTime(timezone=True), nullable=False))
 audit = Table("audit", metadata, Column("id", String, primary_key=True),
@@ -88,7 +89,7 @@ class PostgresStore:
 
     def ready(self) -> None:
         with self.engine.connect() as c:
-            if c.execute(text("SELECT version_num FROM alembic_version")).scalar() != "0002_workspace":
+            if c.execute(text("SELECT version_num FROM alembic_version")).scalar() != "0003_session_policy":
                 raise RuntimeError("Run the explicit database migration before starting OSII-server")
 
     def record(self, event: str, actor: str | None = None, resource: str | None = None) -> None:
@@ -139,18 +140,20 @@ class PostgresStore:
                 c.execute(statement.on_conflict_do_update(index_elements=[attempts.c.id], set_={"count": statement.excluded.count, "expires_at": statement.excluded.expires_at}))
             return count < maximum
 
-    def create_session(self, uid: str, token_hash: str, csrf_hash: str, version: int) -> None:
+    def create_session(self, uid: str, token_hash: str, csrf_hash: str, version: int, *,
+                       lifetime_seconds: int = 43200, idle_seconds: int = 1800) -> None:
         with self.transaction() as c:
             c.execute(insert(sessions).values(token_hash=token_hash, user_id=uid, csrf_hash=csrf_hash,
-                auth_version=version, expires_at=now() + timedelta(hours=12), last_seen=now()))
+                auth_version=version, expires_at=now() + timedelta(seconds=lifetime_seconds),
+                last_seen=now(), idle_seconds=idle_seconds))
 
     def session(self, token_hash: str) -> dict | None:
         with self.transaction() as c:
             row = c.execute(select(sessions, users).join(users, users.c.id == sessions.c.user_id).where(
                 sessions.c.token_hash == token_hash, sessions.c.expires_at > now(),
-                sessions.c.last_seen > now() - timedelta(minutes=30), users.c.active,
+                users.c.active,
                 sessions.c.auth_version == users.c.auth_version)).mappings().first()
-            if not row:
+            if not row or row["last_seen"] <= now() - timedelta(seconds=row["idle_seconds"]):
                 return None
             c.execute(update(sessions).where(sessions.c.token_hash == token_hash).values(last_seen=now()))
             return dict(row)

@@ -25,6 +25,8 @@ The agent's job is to execute the human's command—nothing more.
 - The Core owns canonical persistence, RAG orchestration, and grounded chat.
   Processors receive explicit bounded requests and return typed output; they do
   not browse a corpus or write the canonical store.
+- Reuse the common browse, file, search, model-field, and topic components across
+  local and server; adapt API data at each product boundary instead of forking widgets.
 - Keep domain logic independent of transport, UI, launchers, and deployment.
   Keep side effects at the edges and make paths, scopes, processors, and
   configuration explicit.
@@ -65,8 +67,8 @@ The agent's job is to execute the human's command—nothing more.
 - The supported startup path on main is `make dev` (Windows:
   `.\\scripts\\osii.ps1 dev`). Keep automatic dependency setup, logs, health
   checks, and Ctrl+C shutdown working. Do not add alternative startup menus.
-- This branch implements one shared OpenShift deployment, one configured model
-  endpoint, and PostgreSQL. Migrations and administrator bootstrap are explicit
+- This branch implements one shared OpenShift deployment, independent model capability
+  endpoints, and PostgreSQL. Migrations and administrator bootstrap are explicit
   CLI operations. Keep password authentication and server permission checks on
   every corpus/admin API; never expose a development authentication bypass.
 - Desktop installers, workstation catalogs, Compose, component splitting, and

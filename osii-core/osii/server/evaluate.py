@@ -10,6 +10,7 @@ from osii.domain.library import Library
 from osii.persistence.postgres import PostgresStore
 from osii.server.config import Settings
 from osii.model_provider import ModelProvider
+from osii.server.model_connections import ModelConnections, ConfiguredModelProvider
 
 
 def main():
@@ -26,7 +27,7 @@ def main():
     settings = Settings.environment()
     store = PostgresStore(settings.database_url)
     store.ready()
-    library = Library(store, settings.provider())
+    library = Library(store, ConfiguredModelProvider(ModelConnections(store, settings)))
     recall, reciprocal, count = 0., 0., 0
     with open(args.queries, encoding="utf-8") as f:
         for line in f:

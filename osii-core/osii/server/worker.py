@@ -21,6 +21,7 @@ from osii.processor_sdk.models import DocumentInput, ExtractionRequest, Extracti
 from osii.server.config import Settings
 from osii.server.sources import resolve_directory
 from osii.model_provider import ModelProvider, ProviderError
+from osii.server.model_connections import ModelConnections, ConfiguredModelProvider
 
 
 class IngestionError(ValueError):
@@ -90,21 +91,29 @@ def ingest_file(store: PostgresStore, provider: ModelProvider, extractor: Proces
             "char_start": start, "char_end": end, "source_origin": {"segments": origins},
             "embedding": None, "embedding_model": None})
     model = configuration.get("embedding_model", "")
+    embedding_error = ""
     if model:
-        for start in range(0, len(rows), 32):
-            batch = rows[start:start + 32]
-            vectors = provider.embed(model, [row["text"] for row in batch])
-            for row, vector in zip(batch, vectors):
-                row.update(embedding=vector, embedding_model=model)
+        try:
+            for start in range(0, len(rows), 32):
+                batch = rows[start:start + 32]
+                vectors = provider.embed(model, [row["text"] for row in batch])
+                for row, vector in zip(batch, vectors):
+                    row.update(embedding=vector, embedding_model=model)
+        except ProviderError as exc:
+            embedding_error = str(exc)
+            for row in rows:
+                row.update(embedding=None, embedding_model=None)
     doc = {"file_id": fid, "source_relpath": relative, "sha256": sha, "filename": path.name,
         "media_type": media, "size_bytes": len(original), "text": content,
         "metadata": {"segments": spans, "extractor": response.processor.model_dump(mode="json"), "embedding_model": model}}
+    if embedding_error:
+        doc["metadata"].update(embedding_model="", embedding_warning=embedding_error)
     if nul_replacements:
         doc["metadata"]["normalization"] = {"nul_replacements": nul_replacements, "replacement": "U+FFFD"}
     artifact_rows = [{"id": identifier(), "file_id": fid, "kind": artifact.kind,
         "payload": artifact.model_dump(mode="json")} for artifact in response.artifacts]
     store.commit_document(doc, rows, response.model_dump(mode="json"), artifact_rows)
-    return "processed"
+    return "text_only" if embedding_error else "processed"
 
 
 def failure_reason(exc: Exception) -> str:
@@ -150,18 +159,18 @@ def ingest_batch(store: PostgresStore, provider: ModelProvider, extractor: Proce
             counts["failed"] += 1
             report(f"failed: {relative}: {failure_reason(exc)}")
         else:
-            counts[status] += 1
+            counts[status] = counts.get(status, 0) + 1
             report(f"{status}: {relative}")
     report("Batch completed: " + ", ".join(f"{name}={count}" for name, count in counts.items()))
     # An error status means all files were visited but some need attention.
-    return counts["failed"] > 0
+    return counts["failed"] > 0 or counts.get("text_only", 0) > 0
 
 
 def run(settings: Settings | None = None) -> None:
     settings = settings or Settings.environment()
     store = PostgresStore(settings.database_url)
     store.ready()
-    provider = settings.provider()
+    provider = ConfiguredModelProvider(ModelConnections(store, settings))
     extractor = ProcessorClient(settings.extractor_url, timeout=120)
     ocr = ProcessorClient(settings.ocr_url, timeout=180) if settings.ocr_url else None
     worker, stopping = identifier(), threading.Event()

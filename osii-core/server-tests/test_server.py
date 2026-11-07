@@ -267,15 +267,17 @@ def test_batch_continues_after_failed_pdf_and_resume_skips_successes(store, tmp_
         assert store.progress(jid, "test-worker", entry)
     kwargs = dict(report=report, stopping=threading.Event())
     assert ingest_batch(store, Embeddings(), Extractor(), tmp_path, **kwargs)
-    assert "failed: a-bad.pdf:" in logs[1]
+    assert ("failed: a-bad.pdf:" if failure == "extractor" else "text_only: a-bad.pdf") in logs[1]
     assert "sensitive processor response" not in str(logs)
-    assert logs[-1] == "Batch completed: processed=2, unchanged=0, failed=1"
+    assert logs[-1] == ("Batch completed: processed=2, unchanged=0, failed=1" if failure == "extractor"
+                        else "Batch completed: processed=2, unchanged=0, failed=0, text_only=1")
     assert store.job_records()[0]["logs"] == logs
     _, docs, rows = store.snapshot()
-    assert {d["filename"] for d in docs} == {"b-good.pdf", "c-good.pdf"}
-    assert len(rows) == 2 and all(row["embedding"] for row in rows)
+    assert {d["filename"] for d in docs} == ({"b-good.pdf", "c-good.pdf"} if failure == "extractor" else {"a-bad.pdf", "b-good.pdf", "c-good.pdf"})
+    assert len([row for row in rows if row["embedding"]]) == 2
     assert ingest_batch(store, Embeddings(), Extractor(), tmp_path, **kwargs)
-    assert logs[-1] == "Batch completed: processed=0, unchanged=2, failed=1"
+    assert logs[-1] == ("Batch completed: processed=0, unchanged=2, failed=1" if failure == "extractor"
+                        else "Batch completed: processed=0, unchanged=2, failed=0, text_only=1")
 
 
 def test_missing_shared_source_is_not_reported_as_success(store, tmp_path):

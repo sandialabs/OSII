@@ -1,6 +1,6 @@
 export type User = { id: string; username: string; role: "reader" | "curator" | "admin"; active: boolean; must_change_password: boolean };
-export type Doc = { file_id: string; filename: string; source_relpath: string; text?: string; media_type?: string };
-export type Hit = Doc & { chunk_id: string; snippet: string; char_start: number; char_end: number; source_origin: unknown };
+export type Doc = { file_id: string; filename: string; source_relpath: string; text?: string; media_type?: string; size_bytes?: number; updated_at?: string };
+export type Hit = Doc & { chunk_id: string; snippet: string; char_start: number; char_end: number; source_origin: unknown; score?: number };
 export type Model = { id: string; name: string; capabilities: string[] };
 
 export async function api<T>(path: string, method = "GET", body?: unknown): Promise<T> {

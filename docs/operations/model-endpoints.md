@@ -26,6 +26,12 @@ For each capability, a configured key file takes precedence over its inline key.
 An unreadable configured file is an error; OSII does not fall back to a different
 credential. Blank credentials allow an endpoint that does not require authentication.
 API responses expose endpoint URLs and credential-presence flags, not key values.
+Hosted administrators can save a URL and write-only key per capability under Models.
+These explicit server settings override deployment defaults; **Use deployment default**
+removes the override. A URL change never reuses the old key unless it is entered again.
+Server overrides, including their credentials, live in PostgreSQL, accessible only
+to Core. Protect database backups as credentials. Deployment-managed key files
+remain outside the database. Endpoint edits wait for queued/running jobs to finish.
 
 If a chat or embedding URL is omitted, the legacy shared URL is used:
 `OSII_MODEL_BASE_URL`, then `OPENAI_BASE_URL`. OSII-server retains its OpenRouter
@@ -73,7 +79,9 @@ compatible vectors; matching dimensions alone does not establish compatibility.
 
 ## OSII-server on a Droplet
 
-Edit `/etc/osii/runtime.env`. Select chat and embedding model IDs in the hosted
+Use **Models** in the hosted administrator sidebar to edit endpoints and keys
+without restarting API or worker. Alternatively, edit deployment defaults in
+`/etc/osii/runtime.env`. Select chat and embedding model IDs in the hosted
 administrator's model settings; those selections remain in PostgreSQL.
 `OSII_CHAT_MODEL` and `OSII_EMBEDDING_MODEL` are local-profile seeds, not overrides
 for the server's saved selections. The reranker model is deployment-owned:
@@ -99,7 +107,7 @@ This requires images built from the updated code and, for the new directory
 mount, regenerated systemd units. The configurator preserves an existing
 `runtime.env` instead of resetting custom endpoint settings. Verify its origin,
 database and mount paths when reprovisioning. Once the updated units are installed,
-future environment/key changes need only an API/worker restart after active jobs
+future deployment environment/key changes need only an API/worker restart after active jobs
 finish:
 
 ```bash
@@ -107,8 +115,8 @@ systemctl restart osii-api osii-worker
 systemctl is-active osii-api osii-worker
 ```
 
-The model administration page shows each endpoint and whether its credential is
-present. Discovery queries chat/embedding catalogs using their own credentials;
+The model administration page shows each endpoint, its configuration owner, and whether
+its credential is present. Discovery queries chat/embedding catalogs independently using their own credentials;
 manual model IDs remain supported. The test action invokes the selected models
 and a configured reranker with synthetic text and may incur provider charges.
 A configured reranker is available to strategies; it does not automatically

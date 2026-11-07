@@ -106,5 +106,35 @@ The configurator installs a daily `osii-backup.timer`, with private compressed
 database dumps under `/var/backups/osii` and seven-day age retention. These local
 dumps help recover from application mistakes; arrange off-host copies separately
 to protect against loss of the Droplet. They do not include the NFS originals or
-provider credentials. Run `systemctl start osii-backup.service` for a fresh dump
+deployment key files. Administrator-saved endpoint keys are stored in PostgreSQL
+and are therefore included in database backups; keep those dumps private. Run `systemctl start osii-backup.service` for a fresh dump
 and inspect failures with `journalctl -u osii-backup.service`.
+
+## Hosted sessions and shared UI
+
+Sign in with **Stay signed in on this device** selected to retain the authenticated
+session for up to 14 days, with a seven-day inactivity limit. Deployment operators
+can set `OSII_REMEMBER_DAYS` from 1 to 30. Without this option, sessions retain the
+12-hour absolute and 30-minute inactivity limits. Sign-out, password changes,
+account disabling, and authorization-version changes still revoke access.
+The session stays in a Secure, HttpOnly cookie; no bearer token is put in local storage.
+The explicit `0003_session_policy` migration preserves existing sessions' short
+idle policy. Sign in once with the new option to obtain a remembered session.
+
+The hosted library uses the same BrowseGrid, FileCard, PDF thumbnail hook,
+SearchResultCard, and search-mode selector as OSII-local. Hosted code maps
+PostgreSQL API responses into those view models. Folder browsing shows immediate
+children, while search scopes still include descendants. Collections remain
+private by default and support selection in list and thumbnail views.
+
+Keyword search is the default and makes no embedding request. An embedding failure
+during ingestion now commits the extracted text and lexical passages, reports
+`text_only` in the processing log, and marks the run as needing attention. Retry
+processing after the endpoint is restored; completed compatible documents are skipped.
+No embedding model is selected or invoked automatically.
+
+Endpoint administration uses the same endpoint fields as local Setup; hosted
+persistence stays in Core/PostgreSQL. See [model endpoints](model-endpoints.md).
+Microsoft SSO is not enabled yet. Its future OIDC identity must map to an existing
+stable OSII user ID to preserve roles and private collections; matching email or
+username alone is not an account-linking policy.
