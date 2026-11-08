@@ -5,8 +5,6 @@ import {
   Alert,
   CircularProgress,
   Stack,
-  Tab,
-  Tabs,
 } from "@mui/material";
 
 import { useObject } from "../../../hooks/useObject";
@@ -24,7 +22,7 @@ import { ScopeWikiPanel } from "../components/ScopeWikiPanel";
 import { FileActionBar } from "../components/FileActionBar";
 import { SplitFileView } from "../components/SplitFileView";
 
-type FileTab = "text" | "source" | "split" | "extractions" | "syntheses" | "wiki" | "enrichments";
+import { FileDetailTabs, type FileTab } from "../components/FileDetailTabs";
 
 export function FilePage() {
   const { fileId } = useParams<{ fileId: string }>();
@@ -155,20 +153,7 @@ export function FilePage() {
     <Stack spacing={3}>
       <FileHeader file={detail} />
 
-      <Tabs
-        value={tab}
-        onChange={(_, nextValue: FileTab) => setTab(nextValue)}
-        variant="scrollable"
-        scrollButtons="auto"
-      >
-        <Tab label="Text" value="text" />
-        <Tab label="Source" value="source" />
-        <Tab label="Split View" value="split" />
-        <Tab label="Extractions" value="extractions" />
-        <Tab label="Syntheses" value="syntheses" />
-        <Tab label="Wiki" value="wiki" />
-        <Tab label="Enrichments" value="enrichments" />
-      </Tabs>
+      <FileDetailTabs value={tab} onChange={setTab} />
 
       {tab === "text" && (
         <FileTextPanel

@@ -7,6 +7,7 @@ import { GroundedSegmentEditor } from "./GroundedSegmentEditor";
 
 type SplitFileViewProps = {
   fileId: string;
+  readOnly?: boolean;
   mime: string | null;
   canonicalText: string;
   segments: ManifestRecord[];
@@ -18,6 +19,7 @@ type SplitFileViewProps = {
 
 export function SplitFileView({
   fileId,
+  readOnly = false,
   mime,
   canonicalText,
   segments,
@@ -48,6 +50,7 @@ export function SplitFileView({
       />
 
       <GroundedSegmentEditor
+        readOnly={readOnly}
         fileId={fileId}
         segments={segments}
         canonicalText={canonicalText}

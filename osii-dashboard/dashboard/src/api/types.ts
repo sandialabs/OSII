@@ -743,6 +743,7 @@ export type ProcessingRun = {
     } | null;
     enrich?: string | null;
   };
+  embedding_model?: string;
   indexing_status?: string;
   indexing_error?: string | null;
   items?: Array<{
