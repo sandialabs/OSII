@@ -16,6 +16,7 @@ import { FolderTile } from "./FolderTile";
 import { compareBrowseFiles, compareNames, folderName, type BrowseSort } from "../contents";
 
 type BrowseGridProps = {
+  context?: "folder" | "files";
   folders: FolderScopeDescriptor[];
   files: FileCardModel[];
   view: "list" | "icons";
@@ -34,7 +35,7 @@ function fileType(file: FileCardModel): string {
   return extension ? `${extension} file` : "File";
 }
 
-export function BrowseGrid({ folders, files, view, onChangeView, onOpenFolder, onOpenFile, selectedIds, onToggleFile }: BrowseGridProps) {
+export function BrowseGrid({ folders, files, view, onChangeView, onOpenFolder, onOpenFile, selectedIds, onToggleFile, context = "folder" }: BrowseGridProps) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<BrowseSort>("name-asc");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -42,20 +43,20 @@ export function BrowseGrid({ folders, files, view, onChangeView, onOpenFolder, o
     const needle = query.trim().toLocaleLowerCase();
     const matchingFolders = folders.filter((folder) => folderName(folder).toLocaleLowerCase().includes(needle))
       .sort((a, b) => compareNames(folderName(a), folderName(b)) * (sort === "name-desc" ? -1 : 1));
-    const matchingFiles = files.filter((file) => file.title.toLocaleLowerCase().includes(needle))
+    const matchingFiles = files.filter((file) => (context === "files" ? `${file.title} ${file.subtitle}` : file.title).toLocaleLowerCase().includes(needle))
       .sort((a, b) => compareBrowseFiles(a, b, sort));
     return [
       ...matchingFolders.map((folder): Entry => ({ kind: "folder", folder })),
       ...matchingFiles.map((file): Entry => ({ kind: "file", file })),
     ];
-  }, [folders, files, query, sort]);
+  }, [folders, files, query, sort, context]);
   const visible = entries.slice(0, visibleCount);
 
   return (
     <Stack spacing={1.5}>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }}>
         <TextField
-          size="small" label="Filter this folder" value={query}
+          size="small" label={context === "files" ? "Filter loaded files" : "Filter this folder"} value={query}
           onChange={(event) => { setQuery(event.target.value); setVisibleCount(PAGE_SIZE); }}
           InputProps={{ startAdornment: <InputAdornment position="start"><SearchOutlinedIcon fontSize="small" /></InputAdornment> }}
           sx={{ flex: 1 }}
@@ -75,12 +76,12 @@ export function BrowseGrid({ folders, files, view, onChangeView, onOpenFolder, o
       </Stack>
 
       <Typography variant="caption" color="text.secondary" role="status">
-        {folders.length} folders · {files.length} files in this folder{query ? ` · ${entries.length} matches` : ""}. Folders appear first.
+        {context === "folder" ? `${folders.length} folders · ${files.length} files in this folder` : `${files.length} loaded files`}{query ? ` · ${entries.length} matches` : ""}{context === "folder" ? ". Folders appear first." : "."}
       </Typography>
 
       {entries.length === 0 ? (
         <Typography color="text.secondary" sx={{ py: 3 }}>
-          {query ? "No names match this filter." : "This folder has no processed files or subfolders yet."}
+          {query ? "No names match this filter." : context === "files" ? "No files are available in this scope yet." : "This folder has no processed files or subfolders yet."}
         </Typography>
       ) : view === "list" ? (
         <TableContainer sx={{ border: 1, borderColor: "divider", borderRadius: 1, maxHeight: "65vh" }}>
@@ -122,7 +123,7 @@ export function BrowseGrid({ folders, files, view, onChangeView, onOpenFolder, o
             ? <FolderTile key={`folder:${entry.folder.folder_id}`} folder={entry.folder} onOpen={() => onOpenFolder(entry.folder)} />
             : <Box key={`file:${entry.file.fileId}`} sx={{ position: "relative" }}>
               {onToggleFile && <Checkbox checked={selectedIds?.has(entry.file.fileId) ?? false} onChange={() => onToggleFile(entry.file.fileId)} inputProps={{ "aria-label": `Select ${entry.file.title}` }} sx={{ position: "absolute", top: 0, left: 0, zIndex: 1, bgcolor: "background.paper" }} />}
-              <FileCard file={entry.file} compact onOpen={onOpenFile} />
+              <FileCard file={entry.file} compact showPath={context === "files"} onOpen={onOpenFile} />
             </Box>)}
         </Box>
       )}

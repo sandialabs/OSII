@@ -8,8 +8,8 @@ import type { FileCardModel } from "../../domain/files";
 import type { Doc, Scope } from "./api";
 
 /** Hosted transport data mapped into the same browse UI used by OSII-local. */
-export function LibraryBrowser({ docs, folders, scope, onScope, onOpen, selected, onToggle }: {
-  docs: Doc[]; folders: { folder_id: string; path: string }[]; scope: Scope;
+export function LibraryBrowser({ docs, folders, scope, onScope, onOpen, selected, onToggle, flat }: {
+  flat: boolean; docs: Doc[]; folders: { folder_id: string; path: string }[]; scope: Scope;
   onScope: (scope: Scope) => void; onOpen: (id: string) => void;
   selected: ReadonlySet<string>; onToggle: (id: string) => void;
 }) {
@@ -26,9 +26,9 @@ export function LibraryBrowser({ docs, folders, scope, onScope, onOpen, selected
     synthesisPreview: null, previewAvailable: true, hasPreferredText: true, hasSynthesis: false,
     hasEnrichments: false, supportsMarkdownRender: false }));
   return <Stack spacing={2}>
-    {scope.scope_type !== "collection" && <BrowseBreadcrumbs items={parents} onNavigate={openFolder} />}
-    <BrowseGrid key={`${scope.scope_type}:${path}:${scope.collection_id || ""}`} files={files}
-      folders={scope.scope_type === "collection" ? [] : immediateFolders(folders.map(f => folder(normalizeFolderPath(f.path))), folder(path))}
+    {!flat && scope.scope_type !== "collection" && <BrowseBreadcrumbs items={parents} onNavigate={openFolder} />}
+    <BrowseGrid context={flat || scope.scope_type === "collection" ? "files" : "folder"} key={`${flat}:${scope.scope_type}:${path}:${scope.collection_id || ""}`} files={files}
+      folders={flat || scope.scope_type === "collection" ? [] : immediateFolders(folders.map(f => folder(normalizeFolderPath(f.path))), folder(path))}
       view={view} onChangeView={setView} onOpenFolder={f => openFolder(f.folder_id)} onOpenFile={onOpen}
       selectedIds={selected} onToggleFile={onToggle} />
   </Stack>;

@@ -17,10 +17,16 @@ class ModelConnections:
 
     def public(self) -> dict:
         saved = self.store.setting("model_endpoints", {})
-        return {kind: {**endpoint.public(), "managed_by": "administrator" if kind in saved else "deployment"}
-                for kind, endpoint in self.endpoints().items()}
+        choices = self.store.configuration()
+        result = {}
+        for kind, endpoint in self.endpoints().items():
+            model = choices.get(kind + "_model", "") if kind != "rerank" else endpoint.model
+            name = choices.get(kind + "_model_name", model) if kind != "rerank" else saved.get(kind, {}).get("model_name", model)
+            result[kind] = {**endpoint.public(), "model": model, "model_name": name,
+                            "managed_by": "administrator" if kind in saved else "deployment"}
+        return result
 
-    def save(self, kind: str, payload: dict) -> dict:
+    def preview(self, kind: str, payload: dict) -> ModelEndpoint:
         current = self.endpoints()[kind]
         url = payload["base_url"].strip().rstrip("/")
         # Reusing a key at a changed address requires the administrator to enter it.
@@ -30,19 +36,20 @@ class ModelConnections:
         elif payload.get("api_key") is not None:
             key = payload["api_key"]
         prefix = f"OSII_{kind.upper()}"
-        endpoint = endpoint_from_environment(kind, environment={prefix + "_BASE_URL": url,
-            prefix + "_API_KEY": key, prefix + "_MODEL": payload.get("model", "")})
+        return endpoint_from_environment(kind, environment={prefix + "_BASE_URL": url,
+            prefix + "_API_KEY": key, prefix + "_MODEL": payload.get("model") or ""})
+
+    def save(self, kind: str, payload: dict) -> dict:
+        endpoint = self.preview(kind, payload)
         if kind == "rerank":
             create_reranker(endpoint)  # Validate the pair; no model invocation.
-        saved = self.store.setting("model_endpoints", {})
-        saved[kind] = {"base_url": endpoint.base_url, "api_key": endpoint.api_key, "model": endpoint.model}
-        self.store.save_setting("model_endpoints", saved)
+        self.store.save_model_connection(kind, {"base_url": endpoint.base_url, "api_key": endpoint.api_key,
+            "model": endpoint.model, "model_name": payload.get("model_name", "")},
+            model=payload.get("model"), model_name=payload.get("model_name", ""))
         return self.public()[kind]
 
     def reset(self, kind: str) -> None:
-        saved = self.store.setting("model_endpoints", {})
-        saved.pop(kind, None)
-        self.store.save_setting("model_endpoints", saved)
+        self.store.save_model_connection(kind, None, model="")
 
     def provider(self) -> ModelProvider:
         endpoints = self.endpoints()

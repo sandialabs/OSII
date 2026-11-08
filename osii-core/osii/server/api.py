@@ -24,6 +24,7 @@ from osii.server.auth import (COOKIE, CSRF_COOKIE, digest, origin_check, passwor
 from osii.server.config import Settings
 from osii.model_provider import ModelProvider, ProviderError
 from osii.server.model_connections import ModelConnections, ConfiguredModelProvider
+from osii.model_catalog import discover_models
 
 
 class Login(BaseModel):
@@ -54,7 +55,8 @@ class ModelChoices(BaseModel):
 
 class EndpointChoice(BaseModel):
     base_url: str = Field(max_length=2000)
-    model: str = Field(default="", max_length=200)
+    model: str | None = Field(default=None, max_length=200)
+    model_name: str = Field(default="", max_length=300)
     api_key: str | None = Field(default=None, max_length=4096, repr=False)
     clear_api_key: bool = False
 
@@ -406,6 +408,12 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
         store.record("model_endpoint_changed", account["id"], kind)
         return result
 
+    @app.post("/api/admin/models/endpoints/{kind}/discover")
+    def endpoint_discover(kind: Literal["chat", "embedding", "rerank"], payload: EndpointChoice, account=Depends(require("admin"))):
+        endpoint = connections.preview(kind, payload.model_dump())
+        return {"models": discover_models(endpoint.base_url, endpoint.api_key, capability=kind),
+                "generation_tested": False, "saved": False}
+
     @app.delete("/api/admin/models/endpoints/{kind}")
     def endpoint_reset(kind: Literal["chat", "embedding", "rerank"], account=Depends(require("admin"))):
         if any(job["status"] in {"queued", "running"} for job in store.job_records()):
@@ -427,10 +435,12 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
         return {"models": provider.catalog(), "warnings": getattr(provider, "catalog_errors", {}), "generation_tested": False}
 
     @app.post("/api/admin/models/test")
-    def model_test(account=Depends(require("admin"))):
+    def model_test(only: Literal["chat", "embedding", "rerank"] | None = None, account=Depends(require("admin"))):
         configuration = store.configuration()
         results = {}
         for capability in ("chat", "embedding"):
+            if only and capability != only:
+                continue
             model = configuration.get(capability + "_model")
             if not model:
                 results[capability] = {"configured": False}
@@ -443,6 +453,8 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
                 results[capability] = {"configured": True, "ok": True}
             except ProviderError as exc:
                 results[capability] = {"configured": True, "ok": False, "detail": str(exc)}
+        if only and only != "rerank":
+            return results
         endpoint = connections.endpoints()["rerank"]
         results["rerank"] = {"configured": bool(endpoint.base_url and endpoint.model)}
         if endpoint.base_url or endpoint.model:

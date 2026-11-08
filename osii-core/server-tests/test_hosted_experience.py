@@ -111,3 +111,65 @@ def test_saved_endpoints_apply_to_existing_provider_without_restart(app, monkeyp
     provider.embed("embedding-model", ["text"])
     assert calls == [("https://chat.test/v1/chat/completions", "Bearer synthetic-chat"),
                      ("https://embedding.test/v1/embeddings", "Bearer synthetic-embedding")]
+
+
+def test_discovery_previews_unsaved_endpoint_without_reusing_another_key(client, app, monkeypatch):
+    import requests
+    from osii.server.model_connections import ModelConnections
+    manager = ModelConnections(app.state.store, app.state.settings)
+    manager.save("chat", {"base_url": "https://old.test/v1", "api_key": "old-synthetic-key", "model": "old-model"})
+    before = app.state.store.setting("model_endpoints", {})
+    calls = []
+    class Response:
+        ok, status_code = True, 200
+        def json(self): return {"data": [{"id": "exact-model-name", "name": "Friendly model"}]}
+    monkeypatch.setattr(requests, "get", lambda url, **kw: calls.append((url, kw)) or Response())
+    login(client, "reader")
+    assert client.post("/api/admin/models/endpoints/chat/discover", json={"base_url": "https://new.test/v1"}).status_code == 403
+    login(client)
+    result = client.post("/api/admin/models/endpoints/chat/discover", json={"base_url": "https://new.test/v1"})
+    assert result.status_code == 200 and result.json()["saved"] is False
+    assert result.json()["models"][0]["id"] == "exact-model-name"
+    assert "Authorization" not in calls[0][1]["headers"]
+    assert app.state.store.setting("model_endpoints", {}) == before
+    assert app.state.store.configuration()["chat_model"] == "old-model"
+
+
+def test_save_connection_keeps_endpoint_and_selected_model_together(client, app):
+    login(client)
+    result = client.put("/api/admin/models/endpoints/chat", json={"base_url": "https://chat.test/v1",
+        "model": "vendor/published-model", "model_name": "Friendly model", "api_key": "synthetic-private-key"})
+    assert result.status_code == 200
+    public = client.get("/api/admin/models").json()
+    assert public["chat_model"] == "vendor/published-model"
+    assert public["endpoints"]["chat"]["model_name"] == "Friendly model"
+    assert "synthetic-private-key" not in str(public)
+    # A failed second setting write must roll back both endpoint and selection.
+    from sqlalchemy import event
+    import pytest
+    def fail_models_write(conn, cursor, statement, parameters, context, many):
+        if statement.startswith("INSERT INTO settings") and parameters.get("id") == "models":
+            raise RuntimeError("synthetic write failure")
+    event.listen(app.state.store.engine, "before_cursor_execute", fail_models_write)
+    try:
+        with pytest.raises(RuntimeError):
+            app.state.store.save_model_connection("chat", {"base_url": "https://changed.test/v1", "api_key": "new-synthetic-key"}, model="different")
+    finally:
+        event.remove(app.state.store.engine, "before_cursor_execute", fail_models_write)
+    assert app.state.store.setting("model_endpoints", {})["chat"]["base_url"] == "https://chat.test/v1"
+    assert app.state.store.configuration()["chat_model"] == "vendor/published-model"
+
+
+def test_flat_catalog_includes_nested_files_without_requesting_folder_mode(client, app):
+    document(app.state.store, app.state.settings.source_root, name="nested/report.txt")
+    login(client, "reader")
+    assert client.get("/api/catalog/files").json()["total"] == 1
+    assert client.get("/api/catalog/files?direct=true").json()["total"] == 0
+
+
+def test_sample_test_invokes_only_the_chosen_connection(client, app, monkeypatch):
+    app.state.store.save_configuration({"chat_model": "chat", "embedding_model": "embedding"})
+    monkeypatch.setattr(Provider, "embed", lambda *a: (_ for _ in ()).throw(AssertionError("Unexpected embedding call")))
+    login(client)
+    result = client.post("/api/admin/models/test?only=chat")
+    assert result.status_code == 200 and result.json() == {"chat": {"configured": True, "ok": True}}

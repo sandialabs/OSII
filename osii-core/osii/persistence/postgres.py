@@ -173,6 +173,27 @@ class PostgresStore:
             s = upsert(settings).values(id="models", value=value)
             c.execute(s.on_conflict_do_update(index_elements=[settings.c.id], set_={"value": value}))
 
+    def save_model_connection(self, kind: str, record: dict | None, *, model: str | None = None,
+                              model_name: str = "") -> None:
+        """Keep endpoint credentials and their selected model in one transaction."""
+        from sqlalchemy.dialects.postgresql import insert as upsert
+        with self.transaction() as c:
+            c.execute(text("SELECT pg_advisory_xact_lock(914036)"))
+            endpoints = dict(c.execute(select(settings.c.value).where(settings.c.id == "model_endpoints")).scalar() or {})
+            if record is None:
+                endpoints.pop(kind, None)
+            else:
+                endpoints[kind] = record
+            changes = {"model_endpoints": endpoints}
+            if kind in {"chat", "embedding"} and model is not None:
+                choices = dict(c.execute(select(settings.c.value).where(settings.c.id == "models")).scalar() or {
+                    "chat_model": "", "embedding_model": ""})
+                choices.update({kind + "_model": model, kind + "_model_name": model_name or model})
+                changes["models"] = choices
+            for key, value in changes.items():
+                statement = upsert(settings).values(id=key, value=value)
+                c.execute(statement.on_conflict_do_update(index_elements=[settings.c.id], set_={"value": value}))
+
     def snapshot(self) -> tuple[int, list[dict], list[dict]]:
         with self.engine.connect().execution_options(isolation_level="REPEATABLE READ") as c:
             with c.begin():

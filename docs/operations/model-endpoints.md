@@ -26,7 +26,20 @@ For each capability, a configured key file takes precedence over its inline key.
 An unreadable configured file is an error; OSII does not fall back to a different
 credential. Blank credentials allow an endpoint that does not require authentication.
 API responses expose endpoint URLs and credential-presence flags, not key values.
-Hosted administrators can save a URL and write-only key per capability under Models.
+Hosted **Models** lists configured selections separately from available models.
+Use **Add language model**, **Add embedding model**, or **Change connection** to open
+an endpoint dialog. Enter its address/key, click **Find available models** beside
+the URL, choose a model by its displayed name, then **Save connection**. The catalog
+lookup is read-only, uses no corpus text, and does not invoke models or save settings.
+For OpenRouter this uses its read-only [model catalog](https://openrouter.ai/docs/api/api-reference/models/get-models)
+and [embedding catalog](https://openrouter.ai/docs/api/api-reference/embeddings/list-embeddings-models).
+OSII retains the provider's exact identifier internally; manual entry is an optional
+fallback for services without a model catalog. Chat/embedding endpoint and selection
+are saved together in one PostgreSQL transaction. **Test with sample text** is a
+separate action and invokes only the chosen connection; provider charges may apply.
+Local Setup uses the same endpoint fields, model picker, and catalog adapter when
+adding or editing a connection. Its existing named-connection persistence remains
+local. Hosted administrators can save a URL and write-only key per capability under Models.
 These explicit server settings override deployment defaults; **Use deployment default**
 removes the override. A URL change never reuses the old key unless it is entered again.
 Server overrides, including their credentials, live in PostgreSQL, accessible only

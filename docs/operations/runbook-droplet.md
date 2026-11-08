@@ -123,8 +123,9 @@ idle policy. Sign in once with the new option to obtain a remembered session.
 
 The hosted library uses the same BrowseGrid, FileCard, PDF thumbnail hook,
 SearchResultCard, and search-mode selector as OSII-local. Hosted code maps
-PostgreSQL API responses into those view models. Folder browsing shows immediate
-children, while search scopes still include descendants. Collections remain
+PostgreSQL API responses into those view models. The library opens with a flat
+view of all indexed files in the selected scope; **Folders** switches to immediate
+children. Both search and the flat view include descendants. Collections remain
 private by default and support selection in list and thumbnail views.
 
 Keyword search is the default and makes no embedding request. An embedding failure
@@ -133,7 +134,10 @@ during ingestion now commits the extracted text and lexical passages, reports
 processing after the endpoint is restored; completed compatible documents are skipped.
 No embedding model is selected or invoked automatically.
 
-Endpoint administration uses the same endpoint fields as local Setup; hosted
+Endpoint administration separates configured selections from available models.
+Use **Find available models** in the Add/Change dialog before saving; model identifiers
+are kept behind the name selection. It uses the same endpoint fields and model picker
+as local Setup; hosted
 persistence stays in Core/PostgreSQL. See [model endpoints](model-endpoints.md).
 Microsoft SSO is not enabled yet. Its future OIDC identity must map to an existing
 stable OSII user ID to preserve roles and private collections; matching email or
