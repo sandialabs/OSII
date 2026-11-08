@@ -321,3 +321,26 @@ synthesis is committed through Core's storage workflow.
 
 Next: [enrichment](enrichment.md) for structured knowledge, or
 [embedding](embedding.md) for numerical text representations.
+
+
+## Suggested titles and long inputs
+
+The shared chat synthesizer requests a descriptive Markdown heading. Core stores
+that heading as `metadata.document_title` with `title_method=model_generated`;
+it is a derived suggestion, not a filename change. If no useful heading is
+returned, the first short source line may supply a `source_first_line` heuristic.
+Multi-document syntheses do not assign a title to any individual document.
+Topic Explorer prefers these titles when their synthesis still matches the
+primary extraction; filenames and paths remain visible.
+
+The built-in chat synthesizer and model-provider bridge share
+`osii.processors.synthesis.synthesize_bounded`. Source text is divided into
+100,000-character windows by default, summarized, then reduced in groups of up
+to four. All source windows are included. `window_chars` and
+`max_input_windows` bound requests and cost; defaults allow 32 input windows.
+Smaller-context models may require smaller windows. Intermediate summaries are
+derived model output and can lose detail, so inspect the original evidence.
+Hosted Intake estimates call counts from current extracted text, and saves
+successful model calls privately in the run for retry. Estimates can change
+when re-extraction changes the text. External processors retain their own
+input limits; Core does not silently split arbitrary enrichment requests.

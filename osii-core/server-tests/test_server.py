@@ -181,7 +181,7 @@ def test_empty_extraction_requires_ocr_and_can_retry(store, tmp_path):
 
     path = tmp_path / "scan.txt"
     path.write_bytes(b"scan original")
-    with pytest.raises(IngestionError, match="OSII_OCR_URL"):
+    with pytest.raises(IngestionError, match="choose an OCR extractor"):
         ingest_file(store, Provider(), Extractor(""), tmp_path, path)
     assert store.snapshot()[1] == []
     assert ingest_file(store, Provider(), Extractor(""), tmp_path, path, ocr=Extractor("OCR neutron detector")) == "processed"

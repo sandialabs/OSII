@@ -194,3 +194,13 @@ class LocalTesseractPageExtractor(Extractor):
 
 
 app = create_processor_app(LocalTesseractPageExtractor())
+
+
+@app.get("/ready")
+def ready():
+    import shutil
+    from fastapi.responses import JSONResponse
+    executable = shutil.which('tesseract')
+    return JSONResponse({'status':'ready' if executable else 'unavailable',
+                         'detail':'Tesseract is available' if executable else 'Native tesseract executable is missing'},
+                        status_code=200 if executable else 503)

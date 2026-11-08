@@ -7,25 +7,29 @@ import { ProcessorConfigInput } from "../queue/components/ProcessorConfigInput";
 import type { ProcessorConfigSchema } from "../../api/types";
 import { ProcessingActivity, type ProcessingAction } from "../queue/components/ProcessingActivity";
 import type { ProcessingRun } from "../../api/types";
+import type { ProcessorStatus } from "./ProcessorAdmin";
 import { api, type Doc } from "./api";
 
 type Processor = { id: string; display_name: string; kind: string; available: boolean; detail: string; model_requirements: Record<string,string>; descriptor: { config_schema?: ProcessorConfigSchema } };
 type SourceItem = { name: string; path: string; kind: string; size_bytes: number | null; readable: boolean };
 type Listing = { path: string; items: SourceItem[]; next_cursor: number | null; truncated: boolean };
-type Plan = { items: { path: string; size_bytes: number; indexed: boolean }[]; embedding_model: string; embedding_model_name?: string };
-export function Intake({ initialPaths = [] }: { initialPaths?: string[] }) {
+type Plan = { synthesis_calls_estimate?: number; items: { path: string; size_bytes: number; indexed: boolean }[]; embedding_model: string; embedding_model_name?: string };
+export function Intake({ initialPaths = [], initialProcessor = null }: { initialPaths?: string[]; initialProcessor?: ProcessorStatus | null }) {
   const [section, setSection] = useState<IntakeSection>(initialPaths.length ? "process" : "add");
   const [listing, setListing] = useState<Listing | null>(null);
   const [docs, setDocs] = useState<Doc[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [paths, setPaths] = useState<string[]>(initialPaths);
-  const [operation, setOperation] = useState(initialPaths.length ? "process" : "missing");
+  const [operation, setOperation] = useState(initialProcessor?.kind === "extractor" ? "reprocess" : initialPaths.length ? "process" : "missing");
   const [processors, setProcessors] = useState<Processor[]>([]);
   const [urls, setUrls] = useState("");
-  const [synthesize, setSynthesize] = useState(false);
-  const [enrich, setEnrich] = useState(false);
-  const [synthesizer, setSynthesizer] = useState("local.extractive-preview");
-  const [enricher, setEnricher] = useState("local.stats-keywords");
+  const [extractor,setExtractor]=useState(initialProcessor?.kind === "extractor" ? initialProcessor.id : "");
+  const [extractConfig,setExtractConfig]=useState<Record<string,unknown>>({});
+  const [extractionPolicy,setExtractionPolicy]=useState("make_primary");
+  const [synthesize, setSynthesize] = useState(initialProcessor?.kind === "synthesizer");
+  const [enrich, setEnrich] = useState(initialProcessor?.kind === "enricher");
+  const [synthesizer, setSynthesizer] = useState(initialProcessor?.kind === "synthesizer" ? initialProcessor.id : "local.extractive-preview");
+  const [enricher, setEnricher] = useState(initialProcessor?.kind === "enricher" ? initialProcessor.id : "local.stats-keywords");
   const [synthConfig, setSynthConfig] = useState<Record<string, unknown>>({});
   const [enrichConfig, setEnrichConfig] = useState<Record<string, unknown>>({});
   const [expertContext, setExpertContext] = useState("");
@@ -67,7 +71,7 @@ export function Intake({ initialPaths = [] }: { initialPaths?: string[] }) {
     const timer = window.setInterval(() => void refresh().catch(fail), 2500); return () => window.clearInterval(timer); }, []);
   const invalidate = () => { revision.current += 1; setPreview(null); setExcludedPaths([]); setError(""); };
   const toggle = (path: string) => { invalidate(); setPaths(current => current.includes(path) ? current.filter(p => p !== path) : [...current, path]); };
-  const derivedSettings = () => ({ synthesizer_name: synthesize ? synthesizer : null, enricher_name: enrich ? enricher : null,
+  const derivedSettings = () => ({ extractor_name: extractor || null, extractor_config: extractConfig, extraction_policy: extractionPolicy, synthesizer_name: synthesize ? synthesizer : null, enricher_name: enrich ? enricher : null,
     synthesizer_config: synthConfig, enricher_config: enrichConfig, expert_context: expertContext });
   const configFields = (name: string, config: Record<string,unknown>, update: (config: Record<string,unknown>) => void) => Object.entries(processors.find(p => p.id === name)?.descriptor.config_schema?.properties ?? {}).map(([key, property]) => <ProcessorConfigInput key={key} name={key} property={property} value={config[key] ?? property.default ?? ""} onChange={value => { invalidate(); update({ ...config, [key]: value }); }} />);
   const inspect = async () => {
@@ -114,15 +118,21 @@ export function Intake({ initialPaths = [] }: { initialPaths?: string[] }) {
       </Stack></Paper>
       <Paper variant="outlined" sx={{ p: 2 }}><Stack spacing={2}>
         <Typography variant="h6">Processing options</Typography>
-        <TextField select label="Work to perform" value={operation} onChange={e => { invalidate(); setOperation(e.target.value); }}>
+        <TextField select label="Work to perform" value={operation} onChange={e => { invalidate(); setOperation(e.target.value); setExtractionPolicy("make_primary"); }}>
           <MenuItem value="missing">Intake / refresh changed files</MenuItem><MenuItem value="reprocess">Re-extract all selected files</MenuItem><MenuItem value="embed">Re-embed existing text</MenuItem><MenuItem value="process">Process existing text without extraction</MenuItem>
         </TextField>
-        <FormControlLabel control={<Checkbox checked={embed || operation === "embed"} disabled={operation === "embed"} onChange={e => { invalidate(); setEmbed(e.target.checked); }} />} label="Build embeddings using the selected embedding model" />
+        {!["process","embed"].includes(operation) && <Stack spacing={1}>
+          <TextField select label="Extractor" value={processors.some(p=>p.id===extractor) ? extractor : ""} onChange={e=>{invalidate();setExtractor(e.target.value);setExtractConfig({});}}><MenuItem value="">Deployment default (native text, then configured OCR fallback)</MenuItem>{processors.filter(p=>p.kind==="extractor").map(p=><MenuItem key={p.id} value={p.id} disabled={!p.available}>{p.display_name}{!p.available?" — unavailable":""}</MenuItem>)}</TextField>
+          {extractor&&configFields(extractor,extractConfig,setExtractConfig)}
+          <TextField select label="After extraction" value={extractionPolicy} onChange={e=>{invalidate();setExtractionPolicy(e.target.value);if(e.target.value==="save_variant"){setSynthesize(false);setEnrich(false);setEmbed(false);}}}><MenuItem value="make_primary">Make primary; preserve previous extractions</MenuItem><MenuItem value="save_variant">Save another version; keep current primary and search text</MenuItem></TextField>
+          <Typography variant="caption">Use Re-extract all selected files to compare OCR with an existing text layer. Saved variants appear in the document's Extractions and representation selector.</Typography>
+        </Stack>}
+        <FormControlLabel control={<Checkbox checked={embed || operation === "embed"} disabled={operation === "embed" || extractionPolicy === "save_variant"} onChange={e => { invalidate(); setEmbed(e.target.checked); }} />} label="Build embeddings using the selected embedding model" />
         <Typography variant="body2" color="text.secondary">Text-only processing supports keyword search without a model. Embedding requests may use provider credit. Synthesis and enrichment create separate derived outputs; extracted text stays unchanged. Model-backed methods may use provider credit.</Typography>
-        <ProcessorStepControl label="Generate document summaries" methodLabel="Synthesizer" checked={synthesize} onChecked={value => { invalidate(); setSynthesize(value); }} method={synthesizer} onMethod={value => { invalidate(); setSynthesizer(value); setSynthConfig({}); }} options={processors.filter(p => p.kind === "synthesizer")} helperText={synthesizer === "local.extractive-preview" ? "No AI: cited source excerpts, without generating new prose." : "Uses the selected language model or configured Processor API service."}>
+        <ProcessorStepControl disabled={extractionPolicy === "save_variant"} label="Generate document summaries" methodLabel="Synthesizer" checked={synthesize} onChecked={value => { invalidate(); setSynthesize(value); }} method={synthesizer} onMethod={value => { invalidate(); setSynthesizer(value); setSynthConfig({}); }} options={processors.filter(p => p.kind === "synthesizer")} helperText={synthesizer === "local.extractive-preview" ? "No AI: cited source excerpts, without generating new prose." : "Uses the selected language model or configured Processor API service."}>
           {configFields(synthesizer, synthConfig, setSynthConfig)}
         </ProcessorStepControl>
-        <ProcessorStepControl label="Run enrichment" methodLabel="Enricher" checked={enrich} onChecked={value => { invalidate(); setEnrich(value); }} method={enricher} onMethod={value => { invalidate(); setEnricher(value); setEnrichConfig({}); }} options={processors.filter(p => p.kind === "enricher")} helperText="The built-in statistics/keywords method is deterministic and needs no model. Toolbox methods remain optional.">
+        <ProcessorStepControl disabled={extractionPolicy === "save_variant"} label="Run enrichment" methodLabel="Enricher" checked={enrich} onChecked={value => { invalidate(); setEnrich(value); }} method={enricher} onMethod={value => { invalidate(); setEnricher(value); setEnrichConfig({}); }} options={processors.filter(p => p.kind === "enricher")} helperText="The built-in statistics/keywords method is deterministic and needs no model. Toolbox methods remain optional.">
           {configFields(enricher, enrichConfig, setEnrichConfig)}
         </ProcessorStepControl>
         <TextField label="Expert context (optional)" value={expertContext} multiline minRows={2} inputProps={{ maxLength: 8000 }} onChange={e => { invalidate(); setExpertContext(e.target.value); }} helperText="Additional guidance supplied to the selected processors; it is recorded with their outputs." />
@@ -133,9 +143,13 @@ export function Intake({ initialPaths = [] }: { initialPaths?: string[] }) {
           {processors.filter(p => !p.available).map(p => <Typography key={p.id} variant="caption" color="text.secondary">{p.display_name}: {p.detail}</Typography>)}
         </Stack></Box>
         <Button color="secondary" variant="outlined" disabled={busy || !paths.length || (operation === "process" && !synthesize && !enrich && !embed)} onClick={() => void inspect()}>{busy ? "Working…" : "Preview selected files"}</Button>
-        {preview && <><Typography fontWeight={700}>{preview.items.length} files · {(preview.items.reduce((sum,item) => sum + item.size_bytes,0)/1048576).toFixed(1)} MiB{preview.embedding_model ? ` · embedding model: ${preview.embedding_model_name || preview.embedding_model}` : synthesize || enrich ? " · no embeddings" : " · text only"}</Typography><Typography variant="body2">{synthesize ? `Synthesis: ${processors.find(p => p.id === synthesizer)?.display_name || synthesizer}. ` : ""}{enrich ? `Enrichment: ${processors.find(p => p.id === enricher)?.display_name || enricher}. ` : ""}</Typography><Typography variant="body2">Uncheck files to exclude them from the staged plan.</Typography><FileSelectionList files={preview.items} excludedPaths={excludedPaths} onToggle={path => setExcludedPaths(current => current.includes(path) ? current.filter(p => p !== path) : [...current,path])} /><Button color="secondary" variant="contained" disabled={busy || preview.items.every(item => excludedPaths.includes(item.path))} onClick={() => void stage()}>Stage plan — do not start yet</Button></>}
+        {preview && <><Typography fontWeight={700}>{preview.items.length} files · {(preview.items.reduce((sum,item) => sum + item.size_bytes,0)/1048576).toFixed(1)} MiB{preview.embedding_model ? ` · embedding model: ${preview.embedding_model_name || preview.embedding_model}` : synthesize || enrich ? " · no embeddings" : " · text only"}</Typography><Typography variant="body2">{synthesize ? `Synthesis: ${processors.find(p => p.id === synthesizer)?.display_name || synthesizer}. ` : ""}{enrich ? `Enrichment: ${processors.find(p => p.id === enricher)?.display_name || enricher}. ` : ""}</Typography><Typography variant="body2">{preview.synthesis_calls_estimate ? `Approximately ${preview.synthesis_calls_estimate} synthesis model calls. Completed windows are saved for retry.` : ""}</Typography><Typography variant="body2">Uncheck files to exclude them from the staged plan.</Typography><FileSelectionList files={preview.items} excludedPaths={excludedPaths} onToggle={path => setExcludedPaths(current => current.includes(path) ? current.filter(p => p !== path) : [...current,path])} /><Button color="secondary" variant="contained" disabled={busy || preview.items.every(item => excludedPaths.includes(item.path))} onClick={() => void stage()}>Stage plan — do not start yet</Button></>}
       </Stack></Paper>
     </>}
-    {section === "activity" && <ProcessingActivity recentRuns={runs} workerAvailable={workerAvailable} selectedLogRunId={selectedLogRunId} setSelectedLogRunId={setSelectedLogRunId} controllingRun={controlling} controlRun={control} displayedLogLines={selectedRun?.logs ?? []} refreshLogs={() => void refresh().catch(fail)} />}
+    {section === "activity" && <ProcessingActivity recentRuns={runs} workerAvailable={workerAvailable} selectedLogRunId={selectedLogRunId} setSelectedLogRunId={setSelectedLogRunId} controllingRun={controlling} controlRun={control} displayedLogLines={selectedRun?.logs ?? []} refreshLogs={() => void refresh().catch(fail)} onRestage={run=>{
+      const failed=(run.items??[]).filter(item=>item.status==="error").map(item=>item.display);
+      if(!failed.length){setError("This older run has no file checkpoints. Select its source files under Add files.");return;}
+      setPaths(failed);setSection("add");setOperation("reprocess");invalidate();setNotice("Failed files selected. Review the extractor, methods and settings, then preview and stage a new plan.");
+    }} />}
   </Stack>;
 }

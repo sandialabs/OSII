@@ -3,13 +3,15 @@
 PCA projection is shared with OSII-local. No model calls or persistence here.
 """
 import hashlib
+from collections.abc import Iterable, Mapping
+from typing import Any
 import numpy as np
 
 
 from osii.domain.topic_projection import TopicIndexUnavailable, project_documents
 
 
-def document_space(documents: list[dict], rows: list[dict], model: str, revision: int) -> tuple[list[dict], np.ndarray, dict, int]:
+def document_space(documents: list[dict], rows: Iterable[Mapping[str, Any]], model: str, revision: int) -> tuple[list[dict], np.ndarray, dict, int]:
     if not model:
         raise TopicIndexUnavailable("An administrator must select an embedding model and a curator must process the dataset first.")
     if len(documents) > 5000:
@@ -42,7 +44,8 @@ def document_space(documents: list[dict], rows: list[dict], model: str, revision
         fid = doc["file_id"]
         if fid not in sums or np.linalg.norm(sums[fid]) <= 1e-12:
             continue
-        indexed.append({k: doc[k] for k in ("file_id", "filename", "source_relpath")}|{"chunk_count":counts[fid]})
+        indexed.append({k: doc[k] for k in ("file_id", "filename", "source_relpath")}|{"chunk_count":counts[fid],
+            "document_title": doc.get("document_title"), "title_method": doc.get("title_method")})
         vectors.append(sums[fid]/np.linalg.norm(sums[fid]))
     stale -= {d["file_id"] for d in indexed}
     index = {"id":hashlib.sha256(f"{revision}:{model}:{dimensions}".encode()).hexdigest()[:20],
@@ -50,7 +53,7 @@ def document_space(documents: list[dict], rows: list[dict], model: str, revision
     return indexed, np.array(vectors).reshape(len(vectors), dimensions or 0), index, len(stale)
 
 
-def topic_map(documents: list[dict], rows: list[dict], model: str, revision: int, limit: int = 500) -> dict:
+def topic_map(documents: list[dict], rows: Iterable[Mapping[str, Any]], model: str, revision: int, limit: int = 500) -> dict:
     docs, vectors, index, stale = document_space(documents, rows, model, revision)
     coordinates, variance = project_documents(vectors[:limit])
     return {"index":index,"scope_count":len(documents),"indexed_count":len(docs),"stale_count":stale,
@@ -59,7 +62,7 @@ def topic_map(documents: list[dict], rows: list[dict], model: str, revision: int
         "points":[dict(doc,x=float(point[0]),y=float(point[1])) for doc,point in zip(docs[:limit],coordinates)]}
 
 
-def related_documents(documents: list[dict], rows: list[dict], model: str, revision: int, file_id: str, limit: int = 12) -> dict:
+def related_documents(documents: list[dict], rows: Iterable[Mapping[str, Any]], model: str, revision: int, file_id: str, limit: int = 12) -> dict:
     docs,vectors,index,_ = document_space(documents,rows,model,revision)
     ids = [d["file_id"] for d in docs]
     if file_id not in ids:

@@ -29,6 +29,14 @@ class ProcessorClient:
     def descriptor(self) -> ProcessorDescriptor:
         return ProcessorDescriptor.model_validate(self._get("/v1/descriptor"))
 
+    def health(self) -> dict:
+        try:
+            return self._get("/ready")
+        except ProcessorClientError as exc:
+            if isinstance(exc.__cause__, urllib.error.HTTPError) and exc.__cause__.code == 404:
+                return self._get("/health")
+            raise
+
     def extract(self, request: ExtractionRequest) -> ExtractionResponse:
         return ExtractionResponse.model_validate(self._post("/v1/extract", request.model_dump_json()))
 

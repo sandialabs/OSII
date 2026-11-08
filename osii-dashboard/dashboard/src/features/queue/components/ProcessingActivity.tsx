@@ -35,11 +35,11 @@ function completedFileDurations(run: ProcessingRun): number[] {
   ));
 }
 
-export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRunId, setSelectedLogRunId, controllingRun, controlRun, displayedLogLines, refreshLogs, logError = false }: {
+export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRunId, setSelectedLogRunId, controllingRun, controlRun, displayedLogLines, refreshLogs, logError = false, onRestage }: {
   recentRuns: ProcessingRun[]; workerAvailable?: boolean; selectedLogRunId: string | null;
   setSelectedLogRunId: (id: string) => void; controllingRun: string | null;
   controlRun: (run: ProcessingRun, action: ProcessingAction) => void | Promise<void>;
-  displayedLogLines: string[]; refreshLogs: () => unknown; logError?: boolean;
+  displayedLogLines: string[]; refreshLogs: () => unknown; logError?: boolean; onRestage?: (run: ProcessingRun) => void;
 }) {
   const selectedLogRun = recentRuns.find(run => run.id === selectedLogRunId);
   const logPanelRef = useRef<HTMLPreElement | null>(null);
@@ -153,6 +153,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
                       Cancel
                     </Button>
                   ) : null}
+                  {run.status === "error" && onRestage && <Button color="secondary" variant="outlined" onClick={() => onRestage(run)}>Restage failed files</Button>}
                   {canRetry ? (
                     <Button
                       size="small"

@@ -37,7 +37,8 @@ def validate_urls(urls: list[str]) -> list[str]:
 def catalog(store, settings) -> list[dict]:
     rows = []
     descriptors = [(p.descriptor, '') for p in BUILTINS.values()] + [(MODEL_SYNTHESIS, '')]
-    for url in configured_urls(store, settings):
+    urls = list(dict.fromkeys([settings.extractor_url, *([settings.ocr_url] if settings.ocr_url else []), *configured_urls(store, settings)]))
+    for url in urls:
         try:
             descriptor = ProcessorClient(url, timeout=3).descriptor()
             descriptors.append((descriptor, url))
@@ -47,17 +48,26 @@ def catalog(store, settings) -> list[dict]:
     names = {}
     for descriptor, url in descriptors:
         name = descriptor.name
-        if descriptor.kind not in {ProcessorKind.SYNTHESIZER, ProcessorKind.ENRICHER}:
+        if descriptor.kind not in set(ProcessorKind):
             continue
         required = dict(descriptor.model_requirements)
         if name == MODEL_SYNTHESIS.name and not url:
             required = {'chat': 'required'}
-        available = 'object' in descriptor.capabilities.scope_types
+        available = descriptor.kind in {ProcessorKind.EXTRACTOR, ProcessorKind.EMBEDDER} or 'object' in descriptor.capabilities.scope_types
         detail = '' if available else 'This processor does not support individual documents'
         for capability, requirement in required.items():
             if requirement == 'required' and not store.configuration().get(capability + '_model'):
                 available, detail = False, f'Select a {capability} model in Models first'
-        row = {'id': name, 'display_name': descriptor.display_name, 'kind': descriptor.kind.value,
+        health = 'built_in'
+        if url:
+            try:
+                state = ProcessorClient(url, timeout=3).health()
+                if state.get('status') not in {'ok', 'ready', 'healthy'}:
+                    raise ValueError('Not ready')
+                health = 'ready'
+            except Exception:
+                health, available, detail = 'unavailable', False, 'Service readiness check failed. Check its native dependencies and logs.'
+        row = {'health': health, 'id': name, 'display_name': descriptor.display_name, 'kind': descriptor.kind.value,
                'description': descriptor.description, 'available': available, 'detail': detail,
                'base_url': url, 'descriptor': descriptor.model_dump(mode='json'),
                'model_requirements': required}
@@ -112,9 +122,10 @@ def validate_response(response, request, selection):
         raise ProcessorError('Processor returned a mismatched request or identity')
     if len(response.model_dump_json()) > 4_000_000:
         raise ProcessorError('Processor output exceeds the 4 MiB hosted limit')
-    allowed = {doc.file_id for doc in request.scope.documents}
+    documents = request.scope.documents if hasattr(request, 'scope') else [request.document]
+    allowed = {doc.file_id for doc in documents}
     refs = response.citations if isinstance(response, SynthesisResponse) else []
-    lengths = {doc.file_id: len(doc.text or '') for doc in request.scope.documents}
+    lengths = {doc.file_id: len(doc.text or '') for doc in documents}
     for ref in refs:
         if ref.file_id and ref.file_id not in allowed:
             raise ProcessorError('Processor cited a document outside the requested scope')
@@ -137,8 +148,9 @@ def validate_response(response, request, selection):
     return response
 
 
-def invoke(store, settings, provider, selection: dict, request, *, job_id: str, worker: str):
-    if sum(len(doc.text or '') for doc in request.scope.documents) > MAX_INPUT_CHARS:
+def invoke(store, settings, provider, selection: dict, request, *, job_id: str, worker: str, checkpoint=None):
+    documents = request.scope.documents if hasattr(request, 'scope') else [request.document]
+    if selection['kind'] != 'extractor' and selection['base_url'] and sum(len(doc.text or '') for doc in documents) > MAX_INPUT_CHARS:
         raise ProcessorError('Document exceeds the 200,000-character processor input limit')
     name, url = selection['id'], selection['base_url']
     if url:
@@ -148,17 +160,22 @@ def invoke(store, settings, provider, selection: dict, request, *, job_id: str, 
         from osii.server.processor_gateway import grant
         with grant(store, settings, selection, job_id, worker) as context:
             request.model_context = context
-            client = ProcessorClient(url, timeout=180)
-            response = client.synthesize(request) if selection['kind'] == 'synthesizer' else client.enrich(request)
+            client = ProcessorClient(url, timeout=600 if selection['kind'] == 'extractor' else 180)
+            response = client.extract(request) if selection['kind'] == 'extractor' else client.synthesize(request) if selection['kind'] == 'synthesizer' else client.enrich(request)
     elif name in BUILTINS:
         processor = BUILTINS[name]
         response = processor.synthesize(request) if selection['kind'] == 'synthesizer' else processor.enrich(request)
     elif name == MODEL_SYNTHESIS.name:
         model = store.configuration()['chat_model']
-        content, usage = provider.chat(model, [{'role': 'user', 'content': synthesis_prompt(request)}],
-            max_tokens=max(256, min(int(request.config.get('max_tokens', 1200)), 4000)),
-            **({"temperature": float(request.config["temperature"])} if "temperature" in request.config else {}))
-        response = model_synthesis_response(request, MODEL_SYNTHESIS, content, model, {'usage': usage})
+        from osii.processors.synthesis import synthesize_bounded
+        def complete(messages):
+            return provider.chat(model, messages,
+                max_tokens=max(256, min(int(request.config.get('max_tokens', 1200)), 4000)),
+                **({"temperature": float(request.config["temperature"])} if "temperature" in request.config else {}))
+        try:
+            response = synthesize_bounded(request, MODEL_SYNTHESIS, model, complete, checkpoint=checkpoint)
+        except ValueError as exc:
+            raise ProcessorError(str(exc)) from None
     else:
         raise ProcessorError('Unsupported processor selection')
     return validate_response(response, request, selection)
@@ -196,7 +213,16 @@ def derived_outputs(store, settings, provider, job: dict, worker: str, index: in
         report(f'{kind} started: {item["path"]} · {selection["display_name"]}')
         request = request_type(request_id=identifier(), scope=scope, expert_context=payload.get('expert_context') or None,
                                config=payload.get(selection_key + '_config', {}))
-        response = invoke(store, settings, provider, selection, request, job_id=job['id'], worker=worker)
+        def checkpoint(key, value=None):
+            cache = item.setdefault('synthesis_calls', {})
+            if value is None:
+                if key not in cache:
+                    item['current_step'] = f'synthesis call {len(cache)+1}'
+                    store.update_processing_item(job['id'], worker, index, item)
+                return cache.get(key)
+            cache[key] = value
+            store.update_processing_item(job['id'], worker, index, item)
+        response = invoke(store, settings, provider, selection, request, job_id=job['id'], worker=worker, checkpoint=checkpoint)
         # PostgreSQL JSONB cannot represent NUL; derived output is not canonical evidence.
         data = json.loads(response.model_dump_json().replace('\\u0000', '\\ufffd'))
         item.setdefault('steps', {})[kind] = 'done'
@@ -206,3 +232,15 @@ def derived_outputs(store, settings, provider, job: dict, worker: str, index: in
             'run_id': job['id'], 'config': request.config, 'expert_context': request.expert_context,
         }, jid=job['id'], worker=worker, index=index, item=item)
         report(f'{kind} saved: {item["path"]}')
+
+
+class SelectedExtractor:
+    """Adapt a planned SDK extractor without giving it persistence or source paths."""
+    def __init__(self, store, settings, provider, selection, config, job_id, worker):
+        self.store, self.settings, self.provider = store, settings, provider
+        self.selection, self.config, self.job_id, self.worker = selection, config, job_id, worker
+
+    def extract(self, request):
+        request.config = self.config
+        return invoke(self.store, self.settings, self.provider, self.selection, request,
+                      job_id=self.job_id, worker=self.worker)

@@ -30,10 +30,89 @@ def configure_backup():
     write("/etc/systemd/system/osii-backup.timer", "[Unit]\nDescription=Daily OSII database backup\n\n[Timer]\nOnCalendar=daily\nPersistent=true\nRandomizedDelaySec=300\n\n[Install]\nWantedBy=timers.target\n")
 
 
+def configure_ocr(source: Path, release_tag: str, bind_address: str = "10.89.0.1"):
+    """Explicit optional native services; no NFS/database access or Core deps."""
+    import pwd
+    import ipaddress
+    import re
+
+    ipaddress.ip_address(bind_address)
+    if not re.fullmatch(r"[a-z0-9-]+", release_tag):
+        raise ValueError("Use an immutable release tag")
+    run("apt-get", "update", "-qq")
+    run(
+        "apt-get",
+        "install",
+        "-y",
+        "tesseract-ocr",
+        "tesseract-ocr-eng",
+        "python3.12-venv",
+    )
+    try:
+        pwd.getpwnam("osii-ocr")
+    except KeyError:
+        run(
+            "useradd",
+            "--system",
+            "--no-create-home",
+            "--shell",
+            "/usr/sbin/nologin",
+            "osii-ocr",
+        )
+    environment = Path("/opt/osii/tools") / ("ocr-" + release_tag)
+    run("python3.12", "-m", "venv", str(environment))
+    python = environment / "bin/python"
+    run(
+        str(python),
+        "-m",
+        "pip",
+        "install",
+        "--require-hashes",
+        "-r",
+        str(source / "osii-toolbox/osii-tesseract/requirements-host.lock.txt"),
+    )
+    for name, directory, port in [
+        ("osii-ocr-page", "osii-core/services/local-tesseract", 8193),
+        ("osii-ocr-regions", "osii-toolbox/osii-tesseract", 8194),
+    ]:
+        write(
+            "/etc/systemd/system/" + name + ".service",
+            f"""[Unit]
+Description=Optional OSII native OCR service
+After=osii-api.service
+Wants=osii-api.service
+[Service]
+User=osii-ocr
+Group=osii-ocr
+WorkingDirectory={source / directory}
+Environment=PYTHONPATH={source / "osii-core"}
+Environment=ENABLE_DEMO=false
+Environment=OMP_THREAD_LIMIT=1
+Environment=OPENBLAS_NUM_THREADS=1
+ExecStart={python} -m uvicorn app.main:app --app-dir {source / directory} --host {bind_address} --port {port}
+Restart=on-failure
+RestartSec=5
+MemoryMax=1G
+CPUQuota=100%
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+InaccessiblePaths=/etc/osii /mnt/nfs-documents /var/run/postgresql
+[Install]
+WantedBy=multi-user.target
+""",
+        )
+    run("systemctl", "daemon-reload")
+    run("systemctl", "enable", "osii-ocr-page", "osii-ocr-regions")
+    run("systemctl", "restart", "osii-ocr-page", "osii-ocr-regions")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hostname", required=True)
     parser.add_argument("--image-tag", required=True)
+    parser.add_argument("--with-ocr", action="store_true", help="Explicitly install optional native OCR services")
     args = parser.parse_args()
     import re
     if not re.fullmatch(r"[a-z0-9.-]+", args.hostname) or not re.fullmatch(r"[a-z0-9-]+", args.image_tag):
@@ -96,6 +175,8 @@ def main():
         check_mount = "ExecStartPre=/usr/bin/findmnt -rn -M /mnt/nfs-documents -t nfs,nfs4\n" if component in {"api", "worker"} else ""
         write(f"/etc/systemd/system/osii-{component}.service", f"[Unit]\nDescription=OSII {component}\nAfter=network-online.target osii-network.service\nWants=network-online.target\nRequires=osii-network.service\n{dependencies}StartLimitIntervalSec=0\n\n[Service]\nRestart=always\nRestartSec=5\nTimeoutStartSec=120\nTimeoutStopSec=45\n{check_mount}ExecStartPre=-/usr/bin/podman rm -f osii-{component}\nExecStart={command}\nExecStop=/usr/bin/podman stop --time 20 osii-{component}\n\n[Install]\nWantedBy=multi-user.target\n")
     write("/etc/caddy/Caddyfile", f"{args.hostname} {{\n    reverse_proxy 127.0.0.1:18080\n}}\n")
+    if args.with_ocr:
+        configure_ocr(Path(__file__).resolve().parents[2], args.image_tag)
     configure_backup()
     run("caddy", "validate", "--config", "/etc/caddy/Caddyfile")
     run("systemctl", "daemon-reload")

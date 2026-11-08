@@ -26,7 +26,7 @@ export function TopicExplorer({ scope, open, onSelect }: { scope: Scope; open: (
   }, [scope, selected]);
   return <Stack spacing={2}>
     <Typography variant="h5">Topic explorer</Typography>
-    <Typography color="text.secondary">Explore documents by their existing embeddings. This experimental map uses a 2D PCA projection; related documents are ranked using full document vectors. It makes no model calls.</Typography>
+    <Typography color="text.secondary">Explore documents by their existing embeddings. This experimental map uses a 2D PCA projection; related documents are ranked using full document vectors. It makes no model calls. Labels use suggested synthesis titles when available; original filenames are retained.</Typography>
     <Button sx={{ alignSelf: "start" }} disabled={busy} onClick={() => setRevision(value => value + 1)}>Refresh map</Button>
     {busy && <Typography>Projecting documents…</Typography>}{error && <Alert severity="info">{error}</Alert>}
     {map && <><Stack direction="row" spacing={1} flexWrap="wrap"><Chip label={`${map.indexed_count} / ${map.scope_count} indexed`} /><Chip label={`${map.stale_count} stale · ${map.unindexed_count} without compatible embeddings`} /><Chip label={`${map.index.model} · ${map.index.dimensions} dimensions`} /></Stack>
@@ -35,10 +35,10 @@ export function TopicExplorer({ scope, open, onSelect }: { scope: Scope; open: (
         <TextDocumentList points={map.points} selected={selected} choose={setSelected} />
       </>}
     </>}
-    {related && <Paper sx={{ p: 2 }}><Stack spacing={2}><Typography variant="h6">Related to {related.document.filename}</Typography><Stack direction="row" spacing={1}><Button onClick={() => open(related.document.file_id)}>Open document</Button><Button onClick={() => onSelect(related.document.file_id)}>Select for collection</Button></Stack>{!related.results.length && <Typography>No other indexed documents in this scope.</Typography>}{related.results.map(doc => <Stack key={doc.file_id} direction="row" spacing={1} alignItems="center"><Button onClick={() => setSelected(doc.file_id)}>{doc.filename}</Button><Typography variant="caption">Cosine similarity: {doc.similarity.toFixed(3)}</Typography><Button onClick={() => open(doc.file_id)}>Open</Button><Button onClick={() => onSelect(doc.file_id)}>Select for collection</Button></Stack>)}</Stack></Paper>}
+    {related && <Paper sx={{ p: 2 }}><Stack spacing={2}><Typography variant="h6">Related to {related.document.document_title || related.document.filename}</Typography><Stack direction="row" spacing={1}><Button onClick={() => open(related.document.file_id)}>Open document</Button><Button onClick={() => onSelect(related.document.file_id)}>Select for collection</Button></Stack>{!related.results.length && <Typography>No other indexed documents in this scope.</Typography>}{related.results.map(doc => <Stack key={doc.file_id} direction="row" spacing={1} alignItems="center"><Button onClick={() => setSelected(doc.file_id)}>{doc.document_title || doc.filename}</Button><Typography variant="caption">Cosine similarity: {doc.similarity.toFixed(3)}</Typography><Button onClick={() => open(doc.file_id)}>Open</Button><Button onClick={() => onSelect(doc.file_id)}>Select for collection</Button></Stack>)}</Stack></Paper>}
   </Stack>;
 }
 
 function TextDocumentList({ points, selected, choose }: { points: TopicMap["points"]; selected: string; choose: (id: string) => void }) {
-  return <TextField select label="Explore a document" value={points.some(p => p.file_id === selected) ? selected : ""} onChange={e => choose(e.target.value)}><MenuItem value="">Select a document</MenuItem>{points.map(doc => <MenuItem key={doc.file_id} value={doc.file_id}>{doc.source_relpath}</MenuItem>)}</TextField>;
+  return <TextField select label="Explore a document" value={points.some(p => p.file_id === selected) ? selected : ""} onChange={e => choose(e.target.value)}><MenuItem value="">Select a document</MenuItem>{points.map(doc => <MenuItem key={doc.file_id} value={doc.file_id}>{doc.document_title ? `${doc.document_title} — ${doc.source_relpath}` : doc.source_relpath}</MenuItem>)}</TextField>;
 }

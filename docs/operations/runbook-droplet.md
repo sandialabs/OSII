@@ -204,7 +204,8 @@ content, not verified source statements.
 
 Under **Processor connections**, add the base addresses of explicitly deployed
 Toolbox Processor API services, one per line. Their `/v1/descriptor` must declare
-an object-scoped synthesizer or enricher with a unique name. Connections are
+a unique processor name and one of the four SDK component kinds. Synthesis and
+enrichment methods must support object scope for per-file plans. Connections are
 admin-managed PostgreSQL settings; `OSII_PROCESSORS` supplies deployment defaults.
 This does not launch tools, install models or copy Toolbox code into Core. The
 current hosted planner runs each selected file separately; aggregate folder,
@@ -220,11 +221,60 @@ most 16 model requests, and are revoked when the operation ends. The gateway has
 no corpus or filesystem endpoints. Keep processor services on an approved network;
 Processor API service authentication is managed by that deployment.
 
-Each processor request is limited to 200,000 characters of primary document text,
-configuration to 16,000 serialized characters, and each response to 4 MiB. Gateway
+External synthesis/enrichment requests are limited to 200,000 characters of
+primary document text, configuration to 16,000 serialized characters, and each
+response to 4 MiB. Built-in model synthesis uses bounded windows instead of the
+200,000-character document limit. Model-free preview/keywords can read longer
+canonical text without making a model request. Gateway
 chat is non-streaming and limits responses to 16,000 tokens; embedding requests
-allow at most 128 texts and 200,000 input characters. Long documents fail with a
+allow at most 128 texts and 200,000 input characters. External methods that cannot accept a long document fail with a
 clear per-file error instead of silent truncation. No schema migration is needed;
 plans, checkpoints, output envelopes and temporary grant hashes use existing
 PostgreSQL tables. Older staged plans may require re-staging after this adapter
 upgrade; existing documents, outputs and jobs are retained.
+
+
+## Optional native OCR and Toolbox health
+
+Administrators can open **Processors & Toolbox** for descriptors, readiness,
+and **Queue extraction/synthesis/enrichment** actions. Adding a URL registers
+an already running Processor API service; it does not install software.
+Ordinary users cannot change connections or queue shared processing.
+
+To explicitly install the two native OCR services on this Ubuntu 24.04 host,
+include `osii-toolbox/osii-tesseract` in the immutable release archive and use
+the configurator's `--with-ocr` flag. They use a separate hashed Python lockfile
+and environment under `/opt/osii/tools`; Core's image and lockfile gain no OCR
+dependencies. The `osii-ocr-page` service provides full-page Tesseract at private
+`10.89.0.1:8193`, and `osii-ocr-regions` provides the experimental OpenCV region
+extractor at private `10.89.0.1:8194`. Both run as `osii-ocr`, without access to
+NFS, PostgreSQL, or deployment secrets. Keep these ports private.
+
+Set `OSII_OCR_URL=http://10.89.0.1:8193` in the private deployment environment
+and restart Core/worker to enable automatic fallback when native extraction
+finds no text. Register `http://10.89.0.1:8194` in **Processors & Toolbox** for
+explicit region extraction. Preserve existing custom endpoints when updating.
+
+```bash
+systemctl status osii-ocr-page osii-ocr-regions
+journalctl -u osii-ocr-page -u osii-ocr-regions -n 50
+curl --fail http://10.89.0.1:8193/ready
+curl --fail http://10.89.0.1:8194/ready
+```
+
+For a failed scanned PDF, use **Restage failed files** in Intake Activity, or
+select the source under **Add files**. Choose **Re-extract all selected files**,
+then the OCR extractor, review settings, preview, stage, and start. For an
+already indexed document, **Save another version** preserves the primary text,
+search chunks, embeddings, and synthesis. It runs extraction alone. Open the
+document's Extractions pane and representation selector to compare versions;
+region OCR supplies bounding boxes in the shared PDF viewer. To search the OCR
+text, re-extract with **Make primary**, then rebuild embeddings if desired.
+Source PDFs always remain read-only. OCR jobs are bounded by the existing
+50 MiB input limit and a ten-minute selected-extractor request timeout; split
+very large scans into reviewed batches outside the source share if needed.
+
+Topic Explorer streams database vectors rather than loading the entire index
+into Python objects. Catalog browsing reads only document headers. A proxy HTML
+response now produces an HTTP/service diagnostic instead of a JSON parser error;
+check Core readiness and its journal when that diagnostic appears.

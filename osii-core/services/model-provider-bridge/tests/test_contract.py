@@ -8,6 +8,26 @@ from osii.model_gateway_tokens import issue_model_gateway_token
 from tests.fake_openai_server import app as fake_openai_app
 
 
+def test_named_connection_does_not_inherit_another_providers_key(monkeypatch, tmp_path):
+    monkeypatch.setattr("app.main._configured_provider", lambda *a: {
+        "base_url": "https://embedding.test/v1", "credential_env": "OSII_EMBEDDING_API_KEY"})
+    monkeypatch.setenv("OSII_ENV_FILE", str(tmp_path / "empty.env"))
+    monkeypatch.setenv("OPENAI_API_KEY", "shared-must-not-leak")
+    monkeypatch.setenv("OSII_MODEL_API_KEY", "other-must-not-leak")
+    monkeypatch.delenv("OSII_EMBEDDING_API_KEY", raising=False)
+    monkeypatch.delenv("OSII_EMBEDDING_API_KEY_FILE", raising=False)
+    assert "Authorization" not in CLIENTS["openai"].headers(capability="embedding")
+    monkeypatch.setenv("OSII_EMBEDDING_API_KEY", "embedding-key")
+    assert CLIENTS["openai"].headers(capability="embedding")["Authorization"] == "Bearer embedding-key"
+
+
+@pytest.fixture(autouse=True)
+def isolated_model_configuration(monkeypatch, tmp_path):
+    """Contract tests must not read the developer's saved model connections."""
+    monkeypatch.setenv("OSII_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("OSII_ENV_FILE", str(tmp_path / "config" / "secrets.env"))
+
+
 def test_provider_client_preserves_ollama_context_error(monkeypatch):
     response = requests.Response()
     response.status_code = 400
@@ -364,3 +384,49 @@ def test_model_gateway_token_stops_working_when_job_revokes_it(monkeypatch):
 
     assert rejected.status_code == 401
     assert "no longer active" in rejected.json()["detail"]
+
+
+def test_long_synthesis_windows_cover_all_text_and_resume_successful_calls():
+    from osii.processor_sdk import SynthesisRequest
+    from osii.processors.text import chat_synthesizer_descriptor
+    from osii.processors.synthesis import synthesize_bounded, synthesis_call_estimate
+    text = 'START_MARKER ' + 'x' * 205550 + ' END_MARKER'
+    request = SynthesisRequest(request_id='bounded', scope={'scope_type':'object', 'scope_id':'doc',
+        'documents':[{'file_id':'doc','filename':'OPAQUE.pdf','text':text}]})
+    saved={}; calls=[]; failed=[False]
+    def checkpoint(key, value=None):
+        if value is not None: saved[key]=value
+        return saved.get(key)
+    def complete(messages):
+        calls.append(messages[0]['content'])
+        if len(calls)==2 and not failed[0]:
+            failed[0]=True
+            raise ValueError('synthetic transient provider failure')
+        return '# Gardening and Landscape Design\n\nGrounded summary [doc].', {}
+    with pytest.raises(ValueError, match='synthetic transient'):
+        synthesize_bounded(request,chat_synthesizer_descriptor(),'test-model',complete,checkpoint=checkpoint)
+    result=synthesize_bounded(request,chat_synthesizer_descriptor(),'test-model',complete,checkpoint=checkpoint)
+    assert result.metadata['input_windows']==3
+    assert result.metadata['model_calls']==synthesis_call_estimate(len(text))==4
+    assert result.metadata['document_title']=='Gardening and Landscape Design'
+    assert result.metadata['title_method']=='model_generated'
+    assert sum('START_MARKER' in prompt for prompt in calls)==1
+    assert any('END_MARKER' in prompt for prompt in calls)
+    assert len(calls)==5  # one failed request; first successful window was reused
+    assert all(len(prompt)<101000 for prompt in calls)
+    request.config={'max_input_windows':1}
+    with pytest.raises(ValueError,match='window budget'):
+        synthesize_bounded(request,chat_synthesizer_descriptor(),'test-model',lambda _: pytest.fail('Budget checked before model call'))
+
+
+def test_synthesis_titles_are_optional_metadata_and_multi_source_has_no_document_title():
+    from osii.processor_sdk import SynthesisRequest
+    from osii.processors.text import chat_synthesizer_descriptor, model_synthesis_response, LocalExtractivePreviewSynthesizer
+    request=SynthesisRequest(request_id='titles',scope={'scope_type':'object', 'scope_id':'doc',
+        'documents':[{'file_id':'doc','filename':'OPAQUE.pdf','text':'Practical Gardening Handbook\nDetailed source text.'}]})
+    response=model_synthesis_response(request,chat_synthesizer_descriptor(),'# Summary\nGrounded output','test')
+    assert response.metadata['document_title']=='Practical Gardening Handbook'
+    assert response.metadata['title_method']=='source_first_line'
+    assert LocalExtractivePreviewSynthesizer().synthesize(request).metadata['title_method']=='source_first_line'
+    request.scope.documents.append(request.scope.documents[0])
+    assert 'document_title' not in model_synthesis_response(request,chat_synthesizer_descriptor(),'# Combined Sources','test').metadata

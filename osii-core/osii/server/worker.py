@@ -22,7 +22,7 @@ from osii.processor_sdk.client import ProcessorClient, ProcessorClientError
 from osii.processor_sdk.models import DocumentInput, ExtractionRequest, ExtractionResponse
 from osii.server.config import Settings
 from osii.server.sources import resolve_directory
-from osii.server.processors import ProcessorError, derived_outputs
+from osii.server.processors import ProcessorError, derived_outputs, SelectedExtractor
 from osii.model_provider import ModelProvider, ProviderError
 from osii.server.model_connections import ModelConnections, ConfiguredModelProvider
 
@@ -54,7 +54,7 @@ def _normalize_extraction(response: ExtractionResponse) -> tuple[ExtractionRespo
 def ingest_file(store: PostgresStore, provider: ModelProvider, extractor: ProcessorClient,
                 root: Path, path: Path, *, max_bytes: int = 50 * 1024 * 1024,
                 ocr: ProcessorClient | None = None, force: bool = False, embed: bool = True,
-                job_owner: tuple[str, str] | None = None) -> str:
+                job_owner: tuple[str, str] | None = None, save_variant: bool = False) -> str:
     target = path.resolve()
     if not target.is_relative_to(root.resolve()) or path.is_symlink():
         raise IngestionError("Source escapes the configured dataset or is a symbolic link")
@@ -76,8 +76,11 @@ def ingest_file(store: PostgresStore, provider: ModelProvider, extractor: Proces
         response = ocr.extract(ExtractionRequest(request_id=identifier(), document=DocumentInput(
             file_id=fid, filename=path.name, media_type=media, content_base64=base64.b64encode(original).decode())))
     if not any(segment.text.strip() for segment in response.segments):
-        raise IngestionError("No usable text extracted. Configure OSII_OCR_URL for scanned documents, then retry.")
+        raise IngestionError("No usable text extracted. Check OCR health in Intake, then choose an OCR extractor and re-extract this file.")
     response, nul_replacements = _normalize_extraction(response)
+    if save_variant:
+        store.save_extraction_variant(fid, sha, response.model_dump(mode='json'), job_owner=job_owner)
+        return 'variant_saved'
     pieces, spans, position = [], [], 0
     for segment in response.segments:
         if pieces:
@@ -225,12 +228,14 @@ def process_plan(store: PostgresStore, provider, extractor, settings: Settings,
             return False
         report("processing: " + item["path"])
         try:
+            planned_extractor = (SelectedExtractor(store, settings, provider, payload['extractor'], payload.get('extractor_config',{}), job['id'],worker)
+                                 if payload.get('extractor') else extractor)
             path = source_file(settings.source_root, item["path"])
             stat = path.stat()
             if stat.st_size != item["size_bytes"] or stat.st_mtime_ns != item["mtime_ns"]:
                 raise IngestionError("Source changed after staging. Stage a new plan to review it.")
             if payload.get("synthesizer") or payload.get("enricher"):
-                process_derived_file(store, provider, extractor, settings, job, worker, index, current, path, report=report, ocr=ocr)
+                process_derived_file(store, provider, planned_extractor, settings, job, worker, index, current, path, report=report, ocr=ocr)
                 result = "processed"
             elif payload["operation"] in {"embed", "process"}:
                 fid = "sha256-" + hashlib.sha256(path.read_bytes()).hexdigest()
@@ -250,8 +255,8 @@ def process_plan(store: PostgresStore, provider, extractor, settings: Settings,
                 store.replace_embeddings(fid, rows, payload["embedding_model"], job_owner=(job["id"], worker))
                 result = "embedded"
             else:
-                result = ingest_file(store, provider, extractor, settings.source_root, path, ocr=ocr,
-                    force=payload["operation"] in {"extract", "reprocess"}, embed=payload["embed"], job_owner=(job["id"], worker))
+                result = ingest_file(store, provider, planned_extractor, settings.source_root, path, ocr=ocr,
+                    force=payload["operation"] in {"extract", "reprocess"}, embed=payload["embed"], job_owner=(job["id"], worker), save_variant=payload.get("extraction_policy")=="save_variant")
             current.update(status="done", result=result)
             if result == "text_only":
                 current.update(status="error", error="Text saved, but embedding failed. Keyword search remains available; retry embeddings.")

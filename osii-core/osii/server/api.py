@@ -16,7 +16,7 @@ from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 
-from osii.domain.library import Library
+from osii.domain.library import Library, scope_documents
 from osii.domain.topics import topic_map, related_documents, TopicIndexUnavailable
 from osii.server.sources import browse, resolve_directory
 from osii.persistence.postgres import PostgresStore, identifier
@@ -115,6 +115,9 @@ class IntakePlan(BaseModel):
     paths: list[str] = Field(min_length=1, max_length=5000)
     operation: Literal["missing", "extract", "reprocess", "embed", "process"] = "missing"
     embed: bool = False
+    extractor_name: str | None = Field(default=None, max_length=200)
+    extractor_config: dict = Field(default_factory=dict)
+    extraction_policy: Literal["make_primary", "save_variant"] = "make_primary"
     synthesizer_name: str | None = Field(default=None, max_length=200)
     enricher_name: str | None = Field(default=None, max_length=200)
     synthesizer_config: dict = Field(default_factory=dict)
@@ -252,7 +255,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
             scope = {"scope_type": "collection", "collection_id": collection_id}
         elif folder_id:
             scope = {"scope_type": "folder", "folder_id": folder_id}
-        _, documents, _ = library.scoped(scope, account["id"])
+        documents = scope_documents(store.catalog_documents(), scope, store.collection_records(account["id"]))
         if direct and not collection_id:
             parent = str(Path(folder_id or "."))
             documents = [d for d in documents if str(Path(d["source_relpath"]).parent) == parent]
@@ -266,7 +269,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
 
     @app.get("/api/catalog/folders")
     def folders(account=Depends(require())):
-        _, documents, _ = store.snapshot()
+        documents = store.catalog_documents()
         paths = sorted({str(parent) for d in documents for parent in Path(d["source_relpath"]).parents})
         return {"items": [{"folder_id": p, "path": p} for p in paths], "total": len(paths)}
 
@@ -347,7 +350,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
             raise HTTPException(422, "A collection name is required")
         if payload.visibility == "shared" and account["role"] == "reader":
             raise HTTPException(403, "Only curators and administrators can publish shared collections")
-        known = {d["file_id"] for d in store.snapshot()[1]}
+        known = {d["file_id"] for d in store.catalog_documents()}
         # Preserve references to earlier document versions when editing metadata.
         if previous:
             known.update(previous["members"])
@@ -395,13 +398,15 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
 
     @app.post("/api/topics/map")
     def topics(payload: TopicRequest, account=Depends(require())):
-        revision, docs, rows = library.scoped(payload.scope, account["id"])
-        return topic_map(docs, rows, store.configuration().get("embedding_model", ""), revision)
+        with store.topic_snapshot() as (revision, documents, rows):
+            docs = scope_documents(documents, payload.scope, store.collection_records(account['id']))
+            return topic_map(docs, rows([doc['file_id'] for doc in docs]), store.configuration().get("embedding_model", ""), revision)
 
     @app.post("/api/topics/related")
     def related(payload: RelatedRequest, account=Depends(require())):
-        revision, docs, rows = library.scoped(payload.scope, account["id"])
-        return related_documents(docs, rows, store.configuration().get("embedding_model", ""), revision, payload.file_id)
+        with store.topic_snapshot() as (revision, documents, rows):
+            docs = scope_documents(documents, payload.scope, store.collection_records(account['id']))
+            return related_documents(docs, rows([doc['file_id'] for doc in docs]), store.configuration().get("embedding_model", ""), revision, payload.file_id)
 
     @app.get("/api/admin/users")
     def accounts(account=Depends(require("admin"))):
@@ -599,7 +604,8 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
         from osii.server.intake import plan
         return plan(store, settings, payload.paths, operation=payload.operation, embed=payload.embed or payload.operation == "embed",
             synthesizer_name=payload.synthesizer_name, enricher_name=payload.enricher_name,
-            synthesizer_config=payload.synthesizer_config, enricher_config=payload.enricher_config, expert_context=payload.expert_context)
+            synthesizer_config=payload.synthesizer_config, enricher_config=payload.enricher_config, expert_context=payload.expert_context, extractor_name=payload.extractor_name,
+            extractor_config=payload.extractor_config, extraction_policy=payload.extraction_policy)
 
     @app.post("/api/admin/intake/stage")
     def intake_stage(payload: IntakePlan, account=Depends(require("admin"))):

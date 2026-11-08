@@ -146,8 +146,12 @@ def test_remote_processor_receives_only_scoped_revoked_model_grant(app,monkeypat
     captured=[]
     statuses=[]
     class Remote:
-        def __init__(self,*args,**kwargs): pass
-        def descriptor(self): return descriptor
+        def __init__(self,url,*args,**kwargs): self.url=url
+        def health(self): return {'status':'ready'}
+        def descriptor(self):
+            if self.url=='http://extractor.test':
+                return ProcessorDescriptor(name='native.test',version='1',display_name='Native test',description='Test',kind=ProcessorKind.EXTRACTOR)
+            return descriptor
         def enrich(self,request):
             context=request.model_context;captured.append(context)
             assert context.token!='secret-not-for-clients'
@@ -193,3 +197,76 @@ def test_response_identity_scope_and_size_validation():
     selection={'kind':'synthesizer','descriptor':descriptor.model_dump(mode='json')}
     for response in (SynthesisResponse(request_id='wrong',processor=descriptor,markdown='x'),SynthesisResponse(request_id='expected',processor=descriptor,markdown='x',citations=[ProvenanceRef(file_id='outside')]), SynthesisResponse(request_id='expected',processor=descriptor,markdown='x',citations=[ProvenanceRef(file_id='one',char_end=100)])):
         with pytest.raises(processors.ProcessorError): processors.validate_response(response,request,selection)
+
+
+def test_selected_ocr_variant_keeps_primary_search_and_synthesis_title(client, app, monkeypatch):
+    store=app.state.store
+    store.save_configuration({'embedding_model':'test-embeddings'})
+    doc=document(store,app.state.settings.source_root,name='OPAQUE.txt',content='Gardening Handbook\nPlanting advice with neutron markers.')
+    jid=create_plan(app,[doc['source_relpath']],synthesizer_name='local.extractive-preview')
+    start(app,jid); assert execute(app,jid)['status']=='done'
+    primary=store.extraction_records(doc['file_id'])[0]['id']
+    oldtext=store.document(doc['file_id'])['text']
+    oldchunks=store.document_chunks(doc['file_id'])
+    descriptor=ProcessorDescriptor(name='toolbox.ocr-test',version='1',display_name='OCR test',description='Test',kind=ProcessorKind.EXTRACTOR,
+        config_schema={'type':'object','properties':{'language':{'type':'string','default':'eng'}}})
+    captured=[]
+    class Remote:
+        def __init__(self,*args,**kwargs): pass
+        def descriptor(self): return descriptor
+        def health(self): return {'status':'ready'}
+        def extract(self,request):
+            captured.append(request)
+            assert request.document.content_base64
+            assert request.config=={'language':'eng'}
+            return ExtractionResponse(request_id=request.request_id,processor=descriptor,
+                segments=[TextSegment(id='region',text='Alternate OCR Title\nOCR comparison text',source_origin={'page':1,'bbox':[0.1,0.1,0.8,0.2]})])
+    monkeypatch.setattr(processors,'ProcessorClient',Remote)
+    payload=plan(store,app.state.settings,[doc['source_relpath']],operation='reprocess',embed=False,
+        extractor_name=descriptor.name,extraction_policy='save_variant')
+    jid=store.enqueue('plan',payload,status='staged'); start(app,jid)
+    assert execute(app,jid)['status']=='done'
+    assert len(captured)==1
+    assert len(store.extraction_records(doc['file_id']))==2
+    assert store.extraction_records(doc['file_id'])[0]['id']==primary
+    assert store.document(doc['file_id'])['text']==oldtext
+    assert store.document_chunks(doc['file_id'])==oldchunks
+    store.save_configuration({'embedding_model':'test-embeddings'})
+    login(client,'reader')
+    mapped=client.post('/api/topics/map',json={}).json()
+    assert mapped['points'][0]['document_title']=='Gardening Handbook'
+    assert mapped['points'][0]['filename']=='OPAQUE.txt'
+    assert not client.get(f"/api/objects/{doc['file_id']}/artifacts").json()['items'][0]['stale']
+
+
+def test_long_hosted_synthesis_estimate_and_checkpoints_survive_retry(app):
+    store=app.state.store
+    doc=document(store,app.state.settings.source_root,content='Gardening Handbook\n'+'word '*42000)
+    store.save_configuration({'chat_model':'selected-chat'})
+    jid=create_plan(app,[doc['source_relpath']],synthesizer_name='openai.synthesizer')
+    assert store.job(jid)['payload']['synthesis_calls_estimate']==4
+    class Flaky(Provider):
+        calls=0
+        def chat(self,*args,**kwargs):
+            self.calls+=1
+            if self.calls==2: raise processors.ProcessorError('Temporary test error')
+            return '# Gardening Handbook\n\nAdvice [source].',{}
+    provider=Flaky(); start(app,jid)
+    assert execute(app,jid,provider=provider)['status']=='error'
+    store.control_job(jid,'retry',configuration_stamp(store,app.state.settings))
+    assert execute(app,jid,provider=provider)['status']=='done'
+    assert provider.calls==5
+    from osii.server.intake import public_run
+    assert 'synthesis_calls' not in public_run(store.job(jid))['items'][0]
+    assert store.list_artifacts(doc['file_id'])[0]['payload']['response']['metadata']['document_title']=='Gardening Handbook'
+
+
+def test_long_model_free_outputs_do_not_require_model_or_truncate_canonical_text(app):
+    store=app.state.store
+    text='Gardening Handbook\n'+'advice '*30000
+    doc=document(store,app.state.settings.source_root,content=text)
+    jid=create_plan(app,[doc['source_relpath']],synthesizer_name='local.extractive-preview',enricher_name='local.stats-keywords')
+    start(app,jid); result=execute(app,jid)
+    assert result['status']=='done',result['logs']
+    assert store.document(doc['file_id'])['text']==text
+    assert len(store.list_artifacts(doc['file_id']))==2

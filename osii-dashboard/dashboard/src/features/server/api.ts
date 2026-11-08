@@ -6,9 +6,13 @@ export type Model = { id: string; name: string; capabilities: string[] };
 export async function api<T>(path: string, method = "GET", body?: unknown): Promise<T> {
   const csrf = document.cookie.split("; ").find(value => value.startsWith("osii_csrf="))?.split("=").slice(1).join("=") ?? "";
   const response = await fetch(path, { method, credentials: "same-origin", headers: { "Content-Type": "application/json", "X-CSRF-Token": decodeURIComponent(csrf) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-  const data = await response.json();
+  if (response.status === 401 && path !== "/api/auth/login") window.dispatchEvent(new Event("osii-session-expired"));
+  if (!response.headers.get("Content-Type")?.includes("json")) {
+    throw new Error(`The server returned HTTP ${response.status} instead of an API response. It may have restarted or timed out; please retry.`);
+  }
+  let data;
+  try { data = await response.json(); } catch { throw new Error(`The server returned an incomplete API response (HTTP ${response.status}). Please retry.`); }
   if (!response.ok) {
-    if (response.status === 401 && path !== "/api/auth/login") window.dispatchEvent(new Event("osii-session-expired"));
     throw new Error(typeof data.detail === "string" ? data.detail : `Request failed (${response.status})`);
   }
   return data as T;

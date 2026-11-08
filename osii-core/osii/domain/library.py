@@ -22,21 +22,8 @@ class Library:
 
     def scoped(self, scope: dict, user_id: str | None = None):
         revision, documents, rows = self.store.snapshot()
-        kind = scope.get("scope_type", "root")
-        allowed = {document["file_id"] for document in documents}
-        if kind == "object":
-            allowed &= {scope.get("file_id")}
-        elif kind == "folder":
-            prefix = scope.get("folder_id", "").strip("/")
-            if prefix not in {"", "."}:
-                allowed = {d["file_id"] for d in documents if str(Path(d["source_relpath"]).parent) == prefix or d["source_relpath"].startswith(prefix + "/")}
-        elif kind == "collection":
-            collection = next((c for c in self.store.collection_records(user_id) if c["id"] == scope.get("collection_id")), None)
-            if not collection:
-                raise ValueError("Collection not found")
-            allowed &= set(collection["members"])
-        elif kind != "root":
-            raise ValueError("Unsupported scope")
+        scoped_documents = scope_documents(documents, scope, self.store.collection_records(user_id))
+        allowed = {d['file_id'] for d in scoped_documents}
         rows = [row for row in rows if row["file_id"] in allowed]
         return revision, [d for d in documents if d["file_id"] in allowed], rows
 
@@ -79,3 +66,22 @@ class Library:
             "model": model if not fallback else None, "fallback_used": fallback,
             "retrieval_mode": found["retrieval_mode_used"], "channels_used": found["channels_used"],
             "corpus_revision": found["corpus_revision"], "usage": usage}
+
+
+def scope_documents(documents: list[dict], scope: dict, collection_records: list[dict]) -> list[dict]:
+    kind = scope.get("scope_type", "root")
+    allowed = {document["file_id"] for document in documents}
+    if kind == "object":
+        allowed &= {scope.get("file_id")}
+    elif kind == "folder":
+        prefix = scope.get("folder_id", "").strip("/")
+        if prefix not in {"", "."}:
+            allowed = {d["file_id"] for d in documents if str(Path(d["source_relpath"]).parent) == prefix or d["source_relpath"].startswith(prefix + "/")}
+    elif kind == "collection":
+        collection = next((c for c in collection_records if c["id"] == scope.get("collection_id")), None)
+        if not collection:
+            raise ValueError("Collection not found")
+        allowed &= set(collection["members"])
+    elif kind != "root":
+        raise ValueError("Unsupported scope")
+    return [doc for doc in documents if doc["file_id"] in allowed]

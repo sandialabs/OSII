@@ -3,6 +3,7 @@ import { Alert, AppBar, Box, Button, Container, Drawer, IconButton, List, ListIt
 import { AccountTreeOutlined, ChatOutlined, CollectionsBookmarkOutlined, FolderOutlined, GroupOutlined, HubOutlined, Menu, Search, SettingsOutlined, StorageOutlined } from "@mui/icons-material";
 import { api, type Collection, type Doc, type Hit, type Scope, type User } from "./api";
 import { Intake, ModelAdmin, UserAdmin } from "./AdminViews";
+import { ProcessorAdmin, type ProcessorStatus } from "./ProcessorAdmin";
 import { SourceAdmin } from "./SourceAdmin";
 import { TopicExplorer } from "./TopicExplorer";
 import { Collections, CollectionSelection } from "./Collections";
@@ -16,15 +17,16 @@ const pages = [
   { id: "library", label: "Library", icon: FolderOutlined }, { id: "collections", label: "Collections", icon: CollectionsBookmarkOutlined },
   { id: "topics", label: "Topic explorer", icon: HubOutlined }, { id: "search", label: "Search", icon: Search }, { id: "chat", label: "Chat", icon: ChatOutlined },
   { id: "processing", label: "Intake & processing", icon: AccountTreeOutlined }, { id: "source", label: "Source & status", icon: StorageOutlined },
-  { id: "models", label: "Models", icon: SettingsOutlined }, { id: "users", label: "Users", icon: GroupOutlined },
+  { id: "processors", label: "Processors & Toolbox", icon: SettingsOutlined }, { id: "models", label: "Models", icon: SettingsOutlined }, { id: "users", label: "Users", icon: GroupOutlined },
 ];
 const rootScope: Scope = { scope_type: "root" };
 const drawerWidth = 238;
 
 export function Workspace({ user, onLogout, onPassword }: { user: User; onLogout: () => void; onPassword: () => void }) {
   const curator = user.role !== "reader";
-  const availablePages = pages.filter(page => ["processing", "source", "models", "users"].includes(page.id) ? user.role === "admin" : page.id !== "processing" || curator);
+  const availablePages = pages.filter(page => ["processing", "processors", "source", "models", "users"].includes(page.id) ? user.role === "admin" : page.id !== "processing" || curator);
   const pageFromHash = () => availablePages.some(page => page.id === window.location.hash.slice(1)) ? window.location.hash.slice(1) : "library";
+  const [processingPreset,setProcessingPreset]=useState<ProcessorStatus|null>(null);
   const [processingPaths, setProcessingPaths] = useState<string[]>([]);
   const [flat, setFlat] = useState(true);
   const [tab, setTab] = useState(pageFromHash);
@@ -93,8 +95,8 @@ export function Workspace({ user, onLogout, onPassword }: { user: User; onLogout
         onOpen={() => void open(hit.file_id)} /><Button size="small" sx={{ alignSelf: "start" }} onClick={() => toggle(hit.file_id)}>{selectedIds.has(hit.file_id) ? "Deselect" : "Select for collection"}</Button></Stack>)}</>}
       {tab === "topics" && <TopicExplorer scope={scope} open={id => void open(id)} onSelect={id => setSelectedIds(current => new Set([...current, id]))} />}
       {corpusPage && selectedIds.size > 0 && <CollectionSelection collections={collections} refresh={refresh} fail={fail} selected={selectedIds} clear={() => setSelectedIds(new Set())} current={currentCollection} />}
-      {tab === "processing" && curator && <Intake initialPaths={processingPaths} />}{tab === "source" && user.role === "admin" && <SourceAdmin />}{tab === "models" && user.role === "admin" && <ModelAdmin />}{tab === "users" && user.role === "admin" && <UserAdmin />}
+      {tab === "processing" && curator && <Intake initialPaths={processingPaths} initialProcessor={processingPreset} />}{tab === "source" && user.role === "admin" && <SourceAdmin />}{tab === "processors" && user.role === "admin" && <ProcessorAdmin queue={processor=>{setProcessingPreset(processor);setProcessingPaths([]);navigate("processing");}} />}{tab === "models" && user.role === "admin" && <ModelAdmin />}{tab === "users" && user.role === "admin" && <UserAdmin />}
     </Stack></Container></Box>
-    {selected && <DocumentView key={selected.file_id} doc={selected} close={() => setSelected(null)} onProcess={user.role === "admin" ? () => { setProcessingPaths([selected.source_relpath]); setSelected(null); navigate("processing"); } : undefined} />}
+    {selected && <DocumentView key={selected.file_id} doc={selected} close={() => setSelected(null)} onProcess={user.role === "admin" ? () => { setProcessingPreset(null); setProcessingPaths([selected.source_relpath]); setSelected(null); navigate("processing"); } : undefined} />}
   </Box>;
 }

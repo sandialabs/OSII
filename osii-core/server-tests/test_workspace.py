@@ -136,6 +136,7 @@ def test_topics_use_only_current_database_vectors_and_never_call_provider(client
     from conftest import Provider
     monkeypatch.setattr(Provider, "embed", forbidden)
     monkeypatch.setattr(Provider, "chat", forbidden)
+    monkeypatch.setattr(store, "snapshot", forbidden)
     login(client, "reader")
     mapped = client.post("/api/topics/map", json={}).json()
     assert mapped["indexed_count"] == mapped["shown_count"] == 3
@@ -207,3 +208,17 @@ def test_collection_remains_editable_after_original_is_replaced(client, app):
     assert r.status_code == 200 and r.json()["members"] == [old["file_id"]]
     assert client.get("/api/catalog/files", params={"collection_id": collection["id"]}).json()["total"] == 0
     assert client.put(f'/api/collections/{collection["id"]}', json={"name": "Renamed evidence", "members": []}).status_code == 200
+
+
+def test_json_null_embedding_is_not_counted_and_snapshot_vectors_are_compact(app):
+    from array import array
+    store=app.state.store
+    store.save_configuration({'embedding_model':'test-embeddings'})
+    doc=document(store,app.state.settings.source_root)
+    assert store.statistics()['embedded_chunks']==1
+    rows=store.snapshot()[2]
+    assert isinstance(rows[0]['embedding'],array)
+    assert list(rows[0]['embedding'])==pytest.approx([1,0])
+    with store.transaction() as c:
+        c.execute(update(chunks).where(chunks.c.file_id==doc['file_id']).values(embedding=None))
+    assert store.statistics()['embedded_chunks']==0

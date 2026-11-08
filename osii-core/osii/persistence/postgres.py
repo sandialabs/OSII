@@ -207,8 +207,18 @@ class PostgresStore:
             with c.begin():
                 revision = c.execute(select(datasets.c.revision).where(datasets.c.id == "shared")).scalar() or 0
                 docs = [dict(row) for row in c.execute(select(documents).where(documents.c.active)).mappings()]
-                rows = [dict(row) for row in c.execute(select(chunks, documents.c.filename, documents.c.source_relpath)
-                    .join(documents, documents.c.file_id == chunks.c.file_id).where(documents.c.active)).mappings()]
+                from array import array
+                rows = []
+                result = c.execution_options(stream_results=True, max_row_buffer=16).execute(select(chunks, documents.c.filename, documents.c.source_relpath)
+                    .join(documents, documents.c.file_id == chunks.c.file_id).where(documents.c.active))
+                for row in result.mappings():
+                    value = dict(row)
+                    if isinstance(value.get('embedding'), list):
+                        # Retrieval already uses float32. Keep the canonical JSONB
+                        # unchanged while avoiding millions of boxed Python floats.
+                        value['embedding'] = array('f', value['embedding'])
+                    rows.append(value)
+                result.close()
                 return revision, docs, rows
 
     def document(self, file_id: str) -> dict | None:
@@ -218,7 +228,8 @@ class PostgresStore:
 
     def commit_document(self, document: dict, chunk_rows: list[dict], extraction: dict, artifact_rows: list[dict], *, job_owner: tuple[str, str] | None = None) -> None:
         from sqlalchemy.dialects.postgresql import insert as upsert
-        document = {**document, "active": True}
+        extraction_id = identifier()
+        document = {**document, "active": True, "metadata": {**document["metadata"], "primary_extraction_id": extraction_id}}
         with self.transaction() as c:
             self.assert_job_owner(c, job_owner)
             c.execute(update(documents).where(documents.c.source_relpath == document["source_relpath"],
@@ -229,7 +240,7 @@ class PostgresStore:
             c.execute(delete(chunks).where(chunks.c.file_id == document["file_id"]))
             if chunk_rows:
                 c.execute(insert(chunks), chunk_rows)
-            c.execute(insert(extractions).values(id=identifier(), file_id=document["file_id"],
+            c.execute(insert(extractions).values(id=extraction_id, file_id=document["file_id"],
                 sha256=document["sha256"], response=extraction, created_at=now()))
             c.execute(delete(artifacts).where(artifacts.c.file_id == document["file_id"], or_(artifacts.c.kind.not_in(["synthesis", "enrichment"]), artifacts.c.payload["input_extraction_id"].astext.is_(None))))
             if artifact_rows:
@@ -270,7 +281,7 @@ class PostgresStore:
         with self.engine.connect() as c:
             return {"documents": c.execute(select(func.count()).select_from(documents).where(documents.c.active)).scalar(),
                 "chunks": c.execute(select(func.count()).select_from(chunks.join(documents)).where(documents.c.active)).scalar(),
-                "embedded_chunks": c.execute(select(func.count()).select_from(chunks.join(documents)).where(documents.c.active, chunks.c.embedding.is_not(None))).scalar()}
+                "embedded_chunks": c.execute(select(func.count()).select_from(chunks.join(documents)).where(documents.c.active, func.jsonb_typeof(chunks.c.embedding) == "array")).scalar()}
 
 
     def save_collection(self, value: dict, previous: dict | None = None) -> bool:
@@ -376,8 +387,11 @@ class PostgresStore:
 
     def extraction_records(self, file_id: str) -> list[dict]:
         with self.engine.connect() as c:
-            return [dict(row) for row in c.execute(select(extractions).where(extractions.c.file_id == file_id)
+            rows = [dict(row) for row in c.execute(select(extractions).where(extractions.c.file_id == file_id)
                 .order_by(extractions.c.created_at.desc(), extractions.c.id)).mappings()]
+            meta = c.execute(select(documents.c.metadata).where(documents.c.file_id == file_id)).scalar() or {}
+            primary = meta.get('primary_extraction_id')
+            return sorted(rows, key=lambda row: row['id'] != primary) if primary else rows
 
     def replace_embeddings(self, file_id: str, rows: list[dict], model: str, *, job_owner: tuple[str, str] | None = None) -> None:
         with self.transaction() as c:
@@ -445,6 +459,7 @@ class PostgresStore:
             self.assert_job_owner(c, (jid, worker))
             doc = c.execute(select(documents).where(documents.c.file_id == file_id, documents.c.active).with_for_update()).mappings().one()
             latest = c.execute(select(extractions.c.id).where(extractions.c.file_id == file_id).order_by(extractions.c.created_at.desc(), extractions.c.id).limit(1)).scalar()
+            latest = doc["metadata"].get("primary_extraction_id") or latest
             if hashlib.sha256(doc["text"].encode()).hexdigest() != payload["input_text_sha256"] or latest != payload["input_extraction_id"]:
                 raise ValueError("Primary text changed during processing; no derived output was committed")
             statement = upsert(artifacts).values(id=output_id, file_id=file_id, kind=kind, payload=payload)
@@ -473,3 +488,57 @@ class PostgresStore:
         with self.transaction() as c:
             c.execute(delete(settings).where(settings.c.id.like('processor_grant:%'),
                 settings.c.value['expires_at'].astext.cast(DateTime(timezone=True)) < now()))
+
+
+    @contextmanager
+    def topic_snapshot(self):
+        """Headers plus a server-side vector cursor; never materialize the index."""
+        with self.engine.connect().execution_options(isolation_level="REPEATABLE READ") as c:
+            with c.begin():
+                revision = c.execute(select(datasets.c.revision).where(datasets.c.id == "shared")).scalar() or 0
+                docs = [dict(row) for row in c.execute(select(documents.c.file_id, documents.c.filename,
+                    documents.c.source_relpath, documents.c.media_type, documents.c.size_bytes, documents.c.updated_at).where(documents.c.active)).mappings()]
+                latest = select(extractions.c.file_id, extractions.c.id).distinct(extractions.c.file_id).order_by(
+                    extractions.c.file_id, extractions.c.created_at.desc(), extractions.c.id).subquery()
+                title = artifacts.c.payload['response']['metadata']['document_title'].astext
+                method = artifacts.c.payload['response']['metadata']['title_method'].astext
+                titles = {}
+                for row in c.execute(select(artifacts.c.file_id, title.label('document_title'), method.label('title_method')).join(
+                    latest, latest.c.file_id == artifacts.c.file_id).join(documents,documents.c.file_id == artifacts.c.file_id).where(artifacts.c.kind == 'synthesis',
+                    artifacts.c.payload['input_extraction_id'].astext == func.coalesce(documents.c.metadata['primary_extraction_id'].astext,latest.c.id), title.is_not(None)).order_by(
+                    artifacts.c.payload['created_at'].astext.desc(), artifacts.c.id)).mappings():
+                    titles.setdefault(row['file_id'], dict(row))
+                for doc in docs:
+                    doc.update(titles.get(doc['file_id'], {}))
+                def rows(allowed):
+                    statement = select(chunks.c.file_id, chunks.c.embedding, chunks.c.embedding_model).where(
+                        chunks.c.file_id.in_(allowed))
+                    result = c.execution_options(stream_results=True, max_row_buffer=16).execute(statement)
+                    try:
+                        yield from result.mappings()
+                    finally:
+                        result.close()
+                yield revision, docs, rows
+
+
+    def document_text_lengths(self) -> dict[str, int]:
+        with self.engine.connect() as c:
+            return dict(c.execute(select(documents.c.source_relpath, func.length(documents.c.text)).where(documents.c.active)).all())
+
+
+    def save_extraction_variant(self, file_id, sha256, response, *, job_owner=None):
+        with self.transaction() as c:
+            self.assert_job_owner(c, job_owner)
+            doc = c.execute(select(documents).where(documents.c.file_id==file_id,documents.c.active).with_for_update()).mappings().first()
+            if not doc:
+                raise ValueError('A primary extraction is required before saving a variant')
+            if not doc['metadata'].get('primary_extraction_id'):
+                old = c.execute(select(extractions.c.id).where(extractions.c.file_id==file_id).order_by(extractions.c.created_at.desc(),extractions.c.id).limit(1)).scalar()
+                c.execute(update(documents).where(documents.c.file_id==file_id).values(metadata={**doc['metadata'],'primary_extraction_id':old}))
+            c.execute(insert(extractions).values(id=identifier(),file_id=file_id,sha256=sha256,response=response,created_at=now()))
+
+
+    def catalog_documents(self) -> list[dict]:
+        with self.engine.connect() as c:
+            return [dict(row) for row in c.execute(select(documents.c.file_id, documents.c.filename, documents.c.source_relpath,
+                documents.c.media_type, documents.c.size_bytes, documents.c.updated_at).where(documents.c.active)).mappings()]

@@ -52,7 +52,7 @@ class LocalExtractivePreviewSynthesizer(Synthesizer):
             processor=self.descriptor,
             markdown="\n\n".join(sections),
             citations=citations,
-            metadata={"mode": "extractive_preview", "document_count": len(sections)},
+            metadata={"mode": "extractive_preview", "document_count": len(sections), **suggested_title(request, "", model_generated=False)},
             warnings=[] if sections else ["No text content was available for an extractive preview."],
         )
 
@@ -135,7 +135,7 @@ class LocalStatsKeywordsEnricher(Enricher):
 
 DEFAULT_SYNTHESIS_INSTRUCTIONS = (
     "Write a concise grounded Markdown synthesis. Cite source file IDs in square "
-    "brackets. Do not introduce facts absent from the sources."
+    "brackets. Do not introduce facts absent from the sources. Begin with # followed by a concise descriptive document title inferred from the content, not an opaque filename."
 )
 
 
@@ -171,6 +171,8 @@ def chat_synthesizer_descriptor(provider: str = "openai") -> ProcessorDescriptor
                     "description": "Lower values make synthesis more repeatable.",
                     "minimum": 0, "maximum": 2, "default": 0.2,
                 },
+                "window_chars": {"type":"integer", "title":"Characters per synthesis window", "minimum":4000, "maximum":160000, "default":100000},
+                "max_input_windows": {"type":"integer", "title":"Maximum input windows", "minimum":1, "maximum":64, "default":32},
                 "max_tokens": {
                     "type": "integer", "title": "Maximum output tokens",
                     "minimum": 256, "maximum": 4000, "default": 1200,
@@ -187,7 +189,7 @@ def model_synthesis_response(request: SynthesisRequest, descriptor: ProcessorDes
         raise ValueError("Provider returned empty synthesis text.")
     return SynthesisResponse(request_id=request.request_id, processor=descriptor, markdown=markdown.strip(),
         citations=[ProvenanceRef(file_id=doc.file_id) for doc in request.scope.documents if doc.file_id],
-        metadata={**(metadata or {}), "model": model})
+        metadata={**(metadata or {}), "model": model, **suggested_title(request, markdown, model_generated=True)})
 
 
 def source_excerpt(text: str, max_chars: int) -> tuple[str, int, int]:
@@ -206,3 +208,19 @@ def source_excerpt(text: str, max_chars: int) -> tuple[str, int, int]:
         if len(part) < len(match.group()):
             break
     return excerpt, start, end
+
+
+def suggested_title(request: SynthesisRequest, markdown: str, *, model_generated: bool) -> dict:
+    if len(request.scope.documents) != 1:
+        return {}
+    candidate = next((line.lstrip('#').strip() for line in markdown.splitlines() if line.startswith('#')), '')
+    if candidate.casefold() in {'summary','document summary','synthesis','overview','source excerpts','analysis'}:
+        candidate = ''
+    method = 'model_generated' if candidate and model_generated else 'source_first_line'
+    if not candidate:
+        candidate = next((line.strip() for line in (request.scope.documents[0].text or '')[:4000].splitlines()
+                          if 5 <= len(line.strip()) <= 160 and sum(char.isalpha() for char in line)>4), '')
+    candidate = re.sub(r'[<>\x00-\x1f]', '', candidate).strip(' #*`"')[:160].strip()
+    if not candidate or candidate == request.scope.documents[0].filename:
+        return {}
+    return {'document_title': candidate, 'title_method': method}

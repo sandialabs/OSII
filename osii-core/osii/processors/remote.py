@@ -413,6 +413,8 @@ class RemoteSynthesizer:
             config={
                 **(synthesizer_config or {}),
                 "processor_url": self.base_url,
+                "document_title": response.metadata.get("document_title"),
+                "title_method": response.metadata.get("title_method"),
                 "expert_context": expert_context,
                 # Processor API citations have optional grounding fields. TOML
                 # cannot encode None, so provenance records only supplied data.
