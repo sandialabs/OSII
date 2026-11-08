@@ -1,3 +1,4 @@
+import { ProcessorStepControl } from "../components/ProcessorStepControl";
 import {
   ChangeEvent,
   useDeferredValue,
@@ -1170,50 +1171,10 @@ export function QueuePage() {
                         ) : null}
                       </Stack>
                     ) : null}
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={synthesize}
-                          disabled={
-                            !availableSynthesizers.length ||
-                            (extractionPolicy === "save_variant" &&
-                              runExtraction)
-                          }
-                          onChange={(event) =>
-                            setSynthesize(event.target.checked)
-                          }
-                        />
-                      }
-                      label="Generate document summaries"
-                    />
-                    {synthesize ? (
-                      <TextField
-                        select
-                        size="small"
-                        label="Synthesizer"
-                        value={effectiveSynthesizer}
-                        onChange={(event) =>
-                          setSelectedSynthesizer(event.target.value)
-                        }
-                      >
-                        {availableSynthesizers.map((item) => (
-                          <MenuItem key={item.id} value={item.id}>
-                            {item.display_name}
-                          </MenuItem>
-                        ))}
-                      </TextField>
-                    ) : null}
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ mt: -1 }}
-                    >
-                      {!availableSynthesizers.length
-                        ? "Summaries are unavailable until a synthesizer is connected in Setup. You can still read and search extracted text."
-                        : effectiveSynthesizer === "local.extractive-preview"
-                          ? "Using the no-AI baseline: OSII copies cited source excerpts and does not generate new prose."
-                          : "Using a connected model-backed synthesizer; its provider and model are recorded with the result."}
-                    </Typography>
+                    <ProcessorStepControl label="Generate document summaries" methodLabel="Synthesizer" checked={synthesize} onChecked={setSynthesize}
+                      method={effectiveSynthesizer} onMethod={setSelectedSynthesizer} options={availableSynthesizers}
+                      disabled={extractionPolicy === "save_variant" && runExtraction}
+                      helperText={!availableSynthesizers.length ? "Summaries are unavailable until a synthesizer is connected in Setup. You can still read and search extracted text." : effectiveSynthesizer === "local.extractive-preview" ? "Using the no-AI baseline: OSII copies cited source excerpts and does not generate new prose." : "Using a connected model-backed synthesizer; its provider and model are recorded with the result."} />
                     {embed ? (
                       <Accordion variant="outlined" disableGutters>
                         <AccordionSummary
@@ -1336,44 +1297,9 @@ export function QueuePage() {
                     {section === "process" &&
                     (libraryGoal === "enrich" || libraryGoal === "custom") ? (
                       <>
-                        <FormControlLabel
-                          control={
-                            <Checkbox
-                              checked={enrich}
-                              disabled={
-                                extractionPolicy === "save_variant" &&
-                                runExtraction
-                              }
-                              onChange={(event) =>
-                                setEnrich(event.target.checked)
-                              }
-                            />
-                          }
-                          label="Run enrichment"
-                        />
-                        {enrich ? (
-                          <TextField
-                            select
-                            size="small"
-                            label="Enricher"
-                            value={
-                              selectedEnricher ||
-                              readiness.data?.defaults.enricher ||
-                              ""
-                            }
-                            onChange={(event) =>
-                              setSelectedEnricher(event.target.value)
-                            }
-                          >
-                            {(readiness.data?.enrichers ?? [])
-                              .filter((item) => item.available)
-                              .map((item) => (
-                                <MenuItem key={item.id} value={item.id}>
-                                  {item.display_name}
-                                </MenuItem>
-                              ))}
-                          </TextField>
-                        ) : null}
+                        <ProcessorStepControl label="Run enrichment" methodLabel="Enricher" checked={enrich} onChecked={setEnrich}
+                          method={selectedEnricher || readiness.data?.defaults.enricher || ""} onMethod={setSelectedEnricher}
+                          options={(readiness.data?.enrichers ?? []).filter(item => item.available)} disabled={extractionPolicy === "save_variant" && runExtraction} />
                       </>
                     ) : null}
                     {extractionPolicy === "save_variant" && runExtraction ? (

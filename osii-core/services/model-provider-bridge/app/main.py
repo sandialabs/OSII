@@ -137,10 +137,7 @@ class ProviderHTTP:
 
 CLIENTS = {name: ProviderHTTP(name) for name in ("ollama", "openai")}
 _OLLAMA_MODEL_CACHE: tuple[float, list[dict[str, Any]]] = (0.0, [])
-DEFAULT_SYNTHESIS_INSTRUCTIONS = (
-    "Write a concise grounded Markdown synthesis. Cite source file IDs in square "
-    "brackets. Do not introduce facts absent from the sources."
-)
+from osii.processors.text import synthesis_prompt, chat_synthesizer_descriptor, model_synthesis_response
 
 
 def _ollama_model_digest(model: str) -> str | None:
@@ -247,51 +244,12 @@ class ProviderEmbedder(Embedder):
         )
 
 
-def _scope_prompt(request: SynthesisRequest) -> str:
-    sources = []
-    for document in request.scope.documents:
-        text = document.text or "\n\n".join(segment.text for segment in document.segments)
-        sources.append(f"SOURCE {document.file_id or document.filename}:\n{text}")
-    instructions = str(
-        request.config.get("instructions")
-        or DEFAULT_SYNTHESIS_INSTRUCTIONS
-    ).strip()
-    context = str(request.expert_context or "").strip()
-    guidance = f"\n\nADDITIONAL GUIDANCE:\n{context}" if context else ""
-    return f"{instructions}{guidance}\n\n" + "\n\n".join(sources)
-
+_scope_prompt = synthesis_prompt
 
 class ProviderSynthesizer(Synthesizer):
     def __init__(self, provider: str) -> None:
         self.provider = provider
-        self.descriptor = ProcessorDescriptor(
-            name=f"{provider}.synthesizer",
-            version="1.0.0",
-            display_name=f"{provider.title()} Synthesizer",
-            description=f"Processor API adapter for an explicitly selected {provider} chat model.",
-            kind=ProcessorKind.SYNTHESIZER,
-            capabilities=Capability(scope_types=["object", "folder", "collection", "root"], output_kinds=["wiki_markdown"]),
-            config_schema={
-                "type": "object",
-                "properties": {
-                    "instructions": {
-                        "type": "string", "title": "Synthesis prompt",
-                        "description": "Instructions placed before the grounded source material.",
-                        "default": DEFAULT_SYNTHESIS_INSTRUCTIONS, "format": "textarea",
-                    },
-                    "temperature": {
-                        "type": "number", "title": "Temperature",
-                        "description": "Lower values make synthesis more repeatable.",
-                        "minimum": 0, "maximum": 2, "default": 0.2,
-                    },
-                    "max_tokens": {
-                        "type": "integer", "title": "Maximum output tokens",
-                        "minimum": 256, "maximum": 4000, "default": 1200,
-                    },
-                },
-                "additionalProperties": False,
-            },
-        )
+        self.descriptor = chat_synthesizer_descriptor(provider)
 
     def synthesize(self, request: SynthesisRequest) -> SynthesisResponse:
         model = _model(self.provider, "synthesis", request.config)
@@ -305,10 +263,8 @@ class ProviderSynthesizer(Synthesizer):
             payload = CLIENTS[self.provider].request("POST", "/chat/completions", payload={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}, timeout=180, capability="synthesis")
             choices = payload.get("choices") or []
             markdown = choices[0].get("message", {}).get("content", "") if choices else ""
-        if not str(markdown).strip():
-            raise ValueError("Provider returned empty synthesis text.")
-        citations = [ProvenanceRef(file_id=doc.file_id) for doc in request.scope.documents if doc.file_id]
-        return SynthesisResponse(request_id=request.request_id, processor=self.descriptor, markdown=str(markdown).strip(), citations=citations, metadata={"provider": self.provider, "endpoint_type": "ollama-native" if self.provider == "ollama" else "openai-compatible", "model": model})
+        return model_synthesis_response(request, self.descriptor, markdown, model,
+            {"provider": self.provider, "endpoint_type": "ollama-native" if self.provider == "ollama" else "openai-compatible"})
 
 
 class ChatRequest(BaseModel):

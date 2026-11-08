@@ -328,12 +328,33 @@ boundaries and remaining work are:
 | --- | --- | --- | --- |
 | Browse indexed files | Browse, list and thumbnail cards | Flat all-files view by default; folders optional | BrowseGrid, FileCard and PDF thumbnail code; server maps authenticated catalog rows. |
 | Model discovery and selection | Multiple named connections in Setup | One active connection per purpose: chat, embeddings, optional reranking | EndpointFields, ModelPicker and read-only model catalog discovery; query an entered URL before saving. |
-| Intake planning | Detailed staged Intake and source/file choices | Source/file selection, preview, durable staged plans; text intake, re-extraction and embedding-only runs | Activity cards and controls are shared; server plans/items live in PostgreSQL. Local retains its richer synthesis/enrichment and collection planning. |
+| Intake planning | Detailed staged Intake and source/file choices | Source/file selection, preview, durable staged plans; text intake, re-extraction and embedding-only runs | Activity cards and controls are shared; server plans/items live in PostgreSQL. Per-document synthesis/enrichment use shared SDK implementations, selectors and activity controls; aggregate collection planning remains local. |
 | Processing controls | Pause, resume, cancel and retry controls | Durable leases, file checkpoints, pause/resume/cancel/retry and live logs | Shared ProcessingActivity; server controls finish the current file before releasing the worker. Completed files are skipped on resume/retry. |
 | Document inspection | Detailed file page and extraction representations | Shared PDF.js source/split panes, preserved extraction history and representation selection; saved artifact panes | Shared document tabs, SplitFileView, grounded text, OCR regions, ExtractionVersions and artifact renderer. Hosted text editing and extraction promotion remain separate future work. |
 | RAG experiments | Opt-in profiles and comparisons in Chat | Baseline grounded chat | Portable strategy code exists; authenticated PostgreSQL composition and shared experiment controls still need hosted integration. |
-| Synthesis and enrichment | Configured methods and Toolbox routing | Native extraction and optional embedding/OCR processing | Hosted job planning must route the same bounded Processor SDK operations; no fifth Toolbox kind. |
+| Synthesis and enrichment | Configured methods and Toolbox routing | Staged per-document synthesis/enrichment, model-free baselines and explicitly connected Toolbox Processor API services | Shared storage-independent SDK processors, synthesis prompts, method/config controls and output cards. Core commits outputs/provenance to PostgreSQL; aggregate scope planning remains separate. No fifth Toolbox kind. |
 
 Migrate these workflows in that order through Core adapters, preserving local
 behavior. A frontend control is not considered ported until the hosted Core API,
 authorization, worker state, persistence and failure/recovery behavior support it.
+
+
+Hosted derived processing preserves the existing Processor SDK boundary. Shared
+`osii.processors.text` implementations accept explicit SDK requests and return
+responses without reading a catalog or writing storage. Local baseline hosts and
+hosted worker composition use those same implementations; the model-provider
+bridge and server share synthesis prompt/response construction. Core remains the
+only canonical writer. Derived responses live separately from canonical text and
+vectors, with processor/version, configuration, expert guidance, job identity,
+input extraction identity and text digest. Re-extraction preserves old outputs
+and marks them stale. Successful output commits and per-step checkpoints are
+transactional and idempotent within a run; retry skips committed steps. A lost
+response from an in-flight model call can still lead to a repeated call on retry.
+
+Optional model-backed processors use the existing SDK `ModelContext` contract.
+Local's gateway remains profile/filesystem-backed; the hosted gateway uses
+short-lived PostgreSQL grants bound to a live job lease and explicit selected
+models. Grant routes authenticate their bearer grant independently of browser
+sessions; they expose no corpus/store access. Provider credentials remain inside
+Core. This is a persistence adapter, not another Toolbox component or a new
+processor API.
