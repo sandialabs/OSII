@@ -31,13 +31,24 @@ def source_file(root: Path, relative: str) -> Path:
 def configuration_stamp(store, settings) -> str:
     from osii.server.model_connections import ModelConnections
     endpoints = {name: (endpoint.base_url, endpoint.api_key, endpoint.model)
-                 for name, endpoint in ModelConnections(store, settings).endpoints().items() if name == "embedding"}
+                 for name, endpoint in ModelConnections(store, settings).endpoints().items() if name in {"embedding", "chat"}}
     # Only a digest is persisted in plans; credentials never enter job payloads/logs.
-    return hashlib.sha256(json.dumps([store.configuration().get("embedding_model", ""), endpoints, settings.extractor_url, settings.ocr_url],
+    return hashlib.sha256(json.dumps([store.configuration().get("embedding_model", ""), store.configuration().get("chat_model", ""), endpoints,
+                                    settings.extractor_url, settings.ocr_url,
+                                    store.setting("processor_endpoints", {"urls": list(settings.processor_urls)})],
                                     sort_keys=True).encode()).hexdigest()
 
 
-def plan(store, settings, paths: list[str], *, operation: str, embed: bool) -> dict:
+def plan(store, settings, paths: list[str], *, operation: str, embed: bool, synthesizer_name: str | None = None, enricher_name: str | None = None,
+         synthesizer_config: dict | None = None, enricher_config: dict | None = None, expert_context: str = "") -> dict:
+    from osii.server.processors import catalog, resolve, bounded_config
+    if operation == "process" and not any((embed, synthesizer_name, enricher_name)):
+        raise ValueError("Select synthesis, enrichment, or embeddings when processing existing text")
+    selections = catalog(store, settings) if synthesizer_name or enricher_name else []
+    synthesizer = resolve(selections, synthesizer_name, 'synthesizer')
+    enricher = resolve(selections, enricher_name, 'enricher')
+    synth_config = bounded_config(synthesizer_config or {}, synthesizer)
+    enrich_config = bounded_config(enricher_config or {}, enricher)
     stamp = configuration_stamp(store, settings)
     root = settings.source_root.resolve()
     selected = set()
@@ -80,7 +91,7 @@ def plan(store, settings, paths: list[str], *, operation: str, embed: bool) -> d
         stat = target.stat()
         if stat.st_size > 50*1024*1024:
             raise ValueError(f"File exceeds the 50 MiB processing limit: {relative}")
-        if operation == 'embed' and relative not in docs:
+        if operation in {'embed', 'process'} and relative not in docs:
             raise ValueError(f"Extract text before embedding: {relative}")
         items.append({'display': relative, 'path': relative, 'size_bytes': stat.st_size,
                       'mtime_ns': stat.st_mtime_ns, 'status': 'pending', 'indexed': relative in docs})
@@ -89,7 +100,8 @@ def plan(store, settings, paths: list[str], *, operation: str, embed: bool) -> d
     return {'version': 1, 'workflow': 'library' if operation != 'missing' else 'intake',
             'operation': operation, 'embed': embed, 'embedding_model': configuration.get('embedding_model', '') if embed else '',
             'embedding_model_name': configuration.get('embedding_model_name', configuration.get('embedding_model', '')) if embed else '',
-            'configuration_stamp': stamp, 'items': items}
+            'synthesizer': synthesizer, 'enricher': enricher, 'synthesizer_config': synth_config, 'enricher_config': enrich_config,
+            'expert_context': expert_context, 'configuration_stamp': stamp, 'items': items}
 
 
 def public_run(job: dict) -> dict:
@@ -98,7 +110,10 @@ def public_run(job: dict) -> dict:
     completed = sum(item['status'] in {'done', 'error'} for item in items)
     return {**{k: job[k] for k in ('id', 'status', 'created_at', 'logs')}, 'workflow': payload.get('workflow'),
             'total': len(items), 'completed': completed, 'items': items,
-            'operations': {'extract': payload.get('operation') != 'embed', 'embed': payload.get('embed', False)},
+            'expert_context': payload.get('expert_context', ''),
+            'operations': {'extract': payload.get('operation') not in {'embed','process'}, 'embed': payload.get('embed', False),
+                'synthesize': (payload.get('synthesizer') or {}).get('display_name'),
+                'enrich': (payload.get('enricher') or {}).get('display_name')},
             'indexing_status': ('done' if job['status'] == 'done' else 'error' if job['status'] == 'error' else 'running' if job['status'] in {'running','pausing','cancelling'} else 'pending') if payload.get('embed') else None,
             'embedding_model': payload.get('embedding_model_name') or payload.get('embedding_model', ''), 'operation': payload.get('operation', 'legacy'),
             'error': 'Some files need attention. Review the per-file errors and retry.' if job['status'] == 'error' else None}

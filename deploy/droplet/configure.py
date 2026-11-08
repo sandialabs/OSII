@@ -77,7 +77,7 @@ def main():
     if not sql("SELECT 1 FROM pg_database WHERE datname='osii_server';"):
         sql("CREATE DATABASE osii_server OWNER osii;")
     if not (config / "runtime.env").exists():
-        write(config / "runtime.env", f"DATABASE_URL=postgresql+psycopg://osii:{password}@/osii_server?host=/var/run/postgresql\nOSII_SOURCE_DIR=/data/source\nOPENAI_BASE_URL=https://openrouter.ai/api/v1\nOSII_MODEL_API_KEY_FILE=/run/osii-model-key\nOSII_ORIGINS=https://{args.hostname}\nOSII_EXTRACTOR_URL=http://osii-extractor:8192\n", 0o600)
+        write(config / "runtime.env", f"DATABASE_URL=postgresql+psycopg://osii:{password}@/osii_server?host=/var/run/postgresql\nOSII_SOURCE_DIR=/data/source\nOPENAI_BASE_URL=https://openrouter.ai/api/v1\nOSII_MODEL_API_KEY_FILE=/run/osii-model-key\nOSII_ORIGINS=https://{args.hostname}\nOSII_EXTRACTOR_URL=http://osii-extractor:8192\nOSII_PROCESSOR_GATEWAY_URL=http://osii-api:8512/api/processor-model/v1\n", 0o600)
     for component, memory in [("api", "1g"), ("worker", "1g"), ("extractor", "768m"), ("dashboard", "128m")]:
         image = f"localhost/osii-{'dashboard' if component == 'dashboard' else 'core'}:{args.image_tag}"
         command = f"/usr/bin/podman run --rm --name osii-{component} --network osii --read-only --cap-drop ALL --security-opt no-new-privileges --user 1001:0 --tmpfs /tmp:rw,nosuid,nodev,size=256m --memory {memory}"

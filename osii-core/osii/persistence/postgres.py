@@ -231,7 +231,7 @@ class PostgresStore:
                 c.execute(insert(chunks), chunk_rows)
             c.execute(insert(extractions).values(id=identifier(), file_id=document["file_id"],
                 sha256=document["sha256"], response=extraction, created_at=now()))
-            c.execute(delete(artifacts).where(artifacts.c.file_id == document["file_id"]))
+            c.execute(delete(artifacts).where(artifacts.c.file_id == document["file_id"], or_(artifacts.c.kind.not_in(["synthesis", "enrichment"]), artifacts.c.payload["input_extraction_id"].astext.is_(None))))
             if artifact_rows:
                 c.execute(insert(artifacts), artifact_rows)
             c.execute(update(datasets).where(datasets.c.id == "shared").values(revision=datasets.c.revision + 1))
@@ -409,3 +409,67 @@ class PostgresStore:
             jobs.c.status.in_(["running", "pausing", "cancelling"]), jobs.c.lease_until > now()).with_for_update()).first()
         if not row:
             raise ValueError("Worker no longer owns this processing run; no document changes were committed")
+
+
+    def delete_setting(self, key: str) -> None:
+        with self.transaction() as c:
+            c.execute(delete(settings).where(settings.c.id == key))
+
+    def save_processor_urls(self, urls: list[str]) -> None:
+        from sqlalchemy.dialects.postgresql import insert as upsert
+        with self.transaction() as c:
+            c.execute(text("SELECT pg_advisory_xact_lock(914036)"))
+            self.assert_models_idle(c)
+            row = upsert(settings).values(id="processor_endpoints", value={"urls": urls})
+            c.execute(row.on_conflict_do_update(index_elements=[settings.c.id], set_={"value": row.excluded.value}))
+
+    def processor_grant(self, key: str, *, capability: str | None = None, model: str = "", consume: bool = False) -> dict:
+        with self.transaction() as c:
+            row = c.execute(select(settings.c.value).where(settings.c.id == key).with_for_update()).scalar()
+            if not row or datetime.fromisoformat(row["expires_at"]) <= now():
+                raise ValueError("Processor model grant is missing or expired")
+            self.assert_job_owner(c, (row["job_id"], row["worker"]))
+            if capability and (not row["bindings"].get(capability) or row["bindings"][capability] != model):
+                raise ValueError("Model is outside this processor grant")
+            if consume:
+                if row["remaining_calls"] <= 0:
+                    raise ValueError("Processor model request budget exhausted")
+                row = {**row, "remaining_calls": row["remaining_calls"]-1}
+                c.execute(update(settings).where(settings.c.id == key).values(value=row))
+            return row
+
+    def commit_processing_output(self, file_id: str, kind: str, payload: dict, *, jid: str, worker: str, index: int, item: dict) -> str:
+        from sqlalchemy.dialects.postgresql import insert as upsert
+        output_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"osii:{jid}:{index}:{kind}"))
+        with self.transaction() as c:
+            self.assert_job_owner(c, (jid, worker))
+            doc = c.execute(select(documents).where(documents.c.file_id == file_id, documents.c.active).with_for_update()).mappings().one()
+            latest = c.execute(select(extractions.c.id).where(extractions.c.file_id == file_id).order_by(extractions.c.created_at.desc(), extractions.c.id).limit(1)).scalar()
+            if hashlib.sha256(doc["text"].encode()).hexdigest() != payload["input_text_sha256"] or latest != payload["input_extraction_id"]:
+                raise ValueError("Primary text changed during processing; no derived output was committed")
+            statement = upsert(artifacts).values(id=output_id, file_id=file_id, kind=kind, payload=payload)
+            c.execute(statement.on_conflict_do_update(index_elements=[artifacts.c.id], set_={"payload": payload}))
+            job = c.execute(select(jobs.c.payload).where(jobs.c.id == jid)).scalar()
+            job["items"][index] = item
+            c.execute(update(jobs).where(jobs.c.id == jid).values(payload=job))
+        return output_id
+
+    def processing_output(self, jid: str, index: int, kind: str) -> dict | None:
+        output_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"osii:{jid}:{index}:{kind}"))
+        with self.engine.connect() as c:
+            value = c.execute(select(artifacts).where(artifacts.c.id == output_id)).mappings().first()
+            return dict(value) if value else None
+
+    def update_processing_item(self, jid: str, worker: str, index: int, item: dict) -> None:
+        """Step progress within a file; pause/cancel still waits for its boundary."""
+        with self.transaction() as c:
+            self.assert_job_owner(c, (jid, worker))
+            payload = c.execute(select(jobs.c.payload).where(jobs.c.id == jid)).scalar()
+            payload['items'][index] = item
+            c.execute(update(jobs).where(jobs.c.id == jid).values(payload=payload))
+
+
+    def prune_processor_grants(self) -> None:
+        with self.transaction() as c:
+            c.execute(delete(settings).where(settings.c.id.like('processor_grant:%'),
+                settings.c.value['expires_at'].astext.cast(DateTime(timezone=True)) < now()))

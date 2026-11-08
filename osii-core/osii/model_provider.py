@@ -79,8 +79,8 @@ class ModelProvider:
                     results[str(model["id"])] = {"id": str(model["id"]), "name": str(model.get("name") or model["id"]), "capabilities": ["embedding"]}
         return sorted(results.values(), key=lambda m: (m["name"].casefold(), m["id"]))
 
-    def chat(self, model: str, messages: list[dict], max_tokens: int = 900) -> tuple[str, dict]:
-        data = self.request("POST", "/chat/completions", {"model": model, "messages": messages, "max_tokens": max_tokens})
+    def chat(self, model: str, messages: list[dict], max_tokens: int = 900, temperature: float | None = None) -> tuple[str, dict]:
+        data = self.request("POST", "/chat/completions", {"model": model, "messages": messages, "max_tokens": max_tokens, **({"temperature": temperature} if temperature is not None else {})})
         try:
             content = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError):

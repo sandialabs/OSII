@@ -750,6 +750,8 @@ export type ProcessingRun = {
     display: string;
     status: string;
     error?: string | null;
+    current_step?: string;
+    steps?: Record<string, string>;
     extractor?: string | null;
     extraction_variant_id?: string | null;
     started_at?: string | null;

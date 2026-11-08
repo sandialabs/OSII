@@ -62,10 +62,10 @@ class ConfiguredModelProvider:
     def __init__(self, connections: ModelConnections):
         self.connections = connections
 
-    def chat(self, model, messages, max_tokens=900):
+    def chat(self, model, messages, max_tokens=900, temperature=None):
         if not self.connections.endpoints()["chat"].base_url:
             raise ProviderError("Chat endpoint is disabled")
-        return self.connections.provider().chat(model, messages, max_tokens)
+        return self.connections.provider().chat(model, messages, max_tokens, temperature=temperature)
 
     def embed(self, model, texts):
         if not self.connections.endpoints()["embedding"].base_url:

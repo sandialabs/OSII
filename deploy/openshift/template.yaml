@@ -73,6 +73,7 @@ objects:
   data:
     OSII_SOURCE_DIR: /data/source
     OSII_EXTRACTOR_URL: http://osii-extractor:8192
+    OSII_PROCESSOR_GATEWAY_URL: http://osii-api:8512/api/processor-model/v1
     OPENAI_BASE_URL: ${MODEL_BASE_URL}
     OSII_CHAT_BASE_URL: ${CHAT_BASE_URL}
     OSII_EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL}

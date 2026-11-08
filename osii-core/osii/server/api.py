@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 import secrets
 import hashlib
 import os
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -94,10 +95,31 @@ class RelatedRequest(TopicRequest):
     file_id: str = Field(min_length=1, max_length=200)
 
 
+class ProcessorEndpoints(BaseModel):
+    urls: list[str] = Field(default_factory=list, max_length=16)
+
+
+class ProcessorChat(BaseModel):
+    model: str = Field(max_length=200)
+    messages: list[dict] = Field(min_length=1, max_length=100)
+    max_tokens: int = Field(default=1200, ge=1, le=4000)
+    temperature: float | None = Field(default=None, ge=0, le=2)
+
+
+class ProcessorEmbeddings(BaseModel):
+    model: str = Field(max_length=200)
+    input: str | list[str]
+
+
 class IntakePlan(BaseModel):
     paths: list[str] = Field(min_length=1, max_length=5000)
-    operation: Literal["missing", "extract", "reprocess", "embed"] = "missing"
+    operation: Literal["missing", "extract", "reprocess", "embed", "process"] = "missing"
     embed: bool = False
+    synthesizer_name: str | None = Field(default=None, max_length=200)
+    enricher_name: str | None = Field(default=None, max_length=200)
+    synthesizer_config: dict = Field(default_factory=dict)
+    enricher_config: dict = Field(default_factory=dict)
+    expert_context: str = Field(default="", max_length=8000)
 
 
 class Ingest(BaseModel):
@@ -127,7 +149,9 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
-        if request.url.path not in {"/health", "/ready", "/api/auth/login"}:
+        if request.url.path not in {"/health", "/ready", "/api/auth/login",
+                "/api/processor-model/v1/models", "/api/processor-model/v1/chat/completions",
+                "/api/processor-model/v1/embeddings", "/api/processor-model/v1/tokens/revoke"}:
             try:
                 await run_in_threadpool(require(password_change=request.url.path in {"/api/auth/me", "/api/auth/password", "/api/auth/logout"}), request)
                 if request.url.path in {"/docs", "/redoc", "/openapi.json"}:
@@ -275,7 +299,13 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
     @app.get("/api/objects/{file_id}/artifacts")
     def artifact_list(file_id: str, account=Depends(require())):
         document(file_id, account)
-        return {"items": store.list_artifacts(file_id)}
+        records = store.extraction_records(file_id)
+        primary_id = records[0]['id'] if records else None
+        rows = store.list_artifacts(file_id)
+        for row in rows:
+            if row['kind'] in {'synthesis', 'enrichment'}:
+                row['stale'] = row['payload'].get('input_extraction_id') != primary_id
+        return {"items": sorted(rows, key=lambda row: row['payload'].get('created_at', ''), reverse=True)}
 
     @app.post("/api/search")
     def search(payload: Search, account=Depends(require())):
@@ -508,10 +538,68 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
         store.record("source_selection_changed", account["id"], value["directory"])
         return source_status(account)
 
+    @app.get("/api/admin/processors")
+    def processors(account=Depends(require("admin"))):
+        from osii.server.processors import catalog, configured_urls
+        return {"processors": catalog(store, settings), "urls": configured_urls(store, settings)}
+
+    @app.put("/api/admin/processors")
+    def processor_endpoints(payload: ProcessorEndpoints, account=Depends(require("admin"))):
+        from osii.server.processors import validate_urls
+        store.save_processor_urls(validate_urls(payload.urls))
+        store.record("processor_endpoints_changed", account["id"])
+        return processors(account)
+
+    def processor_claim(request: Request, capability=None, model="", consume=False):
+        from osii.server.processor_gateway import grant_id
+        authorization = request.headers.get("Authorization", "")
+        if not authorization.startswith("Bearer ") or len(authorization) > 200:
+            raise HTTPException(401, "A valid processor model grant is required")
+        try:
+            key = grant_id(authorization[7:])
+            return key, store.processor_grant(key, capability=capability, model=model, consume=consume)
+        except ValueError:
+            raise HTTPException(403, "Processor grant is expired, exhausted, or outside its allowed model/job")
+
+    @app.get("/api/processor-model/v1/models")
+    def processor_models(request: Request):
+        _, claims = processor_claim(request)
+        return {"object": "list", "data": [{"id": model, "object": "model"} for model in claims["bindings"].values()]}
+
+    @app.post("/api/processor-model/v1/tokens/revoke")
+    def processor_revoke(request: Request):
+        key, _ = processor_claim(request)
+        store.delete_setting(key)
+        return {"revoked": True}
+
+    @app.post("/api/processor-model/v1/chat/completions")
+    def processor_chat(payload: ProcessorChat, request: Request):
+        if sum(len(str(message.get("content", ""))) for message in payload.messages) > 200_000 or any(
+            message.get("role") not in {"system", "user", "assistant"} or not isinstance(message.get("content"), str) for message in payload.messages):
+            raise HTTPException(422, "Processor messages exceed the supported text/role limits")
+        processor_claim(request, "chat", payload.model, True)
+        content, usage = provider.chat(payload.model, payload.messages, max_tokens=payload.max_tokens,
+            **({"temperature": payload.temperature} if payload.temperature is not None else {}))
+        return {"id": "osii-processor", "object": "chat.completion", "created": int(time.time()), "model": payload.model,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
+            "usage": {k: v for k, v in usage.items() if v is not None}}
+
+    @app.post("/api/processor-model/v1/embeddings")
+    def processor_embeddings(payload: ProcessorEmbeddings, request: Request):
+        values = [payload.input] if isinstance(payload.input, str) else payload.input
+        if not 1 <= len(values) <= 128 or sum(map(len, values)) > 200_000:
+            raise HTTPException(422, "Processor embedding inputs exceed the supported limits")
+        processor_claim(request, "embedding", payload.model, True)
+        vectors = provider.embed(payload.model, values)
+        return {"object": "list", "model": payload.model, "data": [
+            {"index": i, "object": "embedding", "embedding": vector} for i, vector in enumerate(vectors)]}
+
     @app.post("/api/admin/intake/preview")
     def intake_preview(payload: IntakePlan, account=Depends(require("admin"))):
         from osii.server.intake import plan
-        return plan(store, settings, payload.paths, operation=payload.operation, embed=payload.embed or payload.operation == "embed")
+        return plan(store, settings, payload.paths, operation=payload.operation, embed=payload.embed or payload.operation == "embed",
+            synthesizer_name=payload.synthesizer_name, enricher_name=payload.enricher_name,
+            synthesizer_config=payload.synthesizer_config, enricher_config=payload.enricher_config, expert_context=payload.expert_context)
 
     @app.post("/api/admin/intake/stage")
     def intake_stage(payload: IntakePlan, account=Depends(require("admin"))):

@@ -311,7 +311,7 @@ function WikiView({ artifact }: { artifact: StandardWikiMarkdownArtifact }) {
   );
 }
 
-export function EnrichmentArtifactView({ data }: { data: unknown }) {
+export function EnrichmentArtifactView({ data, showTitle = true }: { data: unknown; showTitle?: boolean }) {
   if (!isStandardArtifact(data)) {
     return (
       <Alert severity="info">
@@ -325,7 +325,7 @@ export function EnrichmentArtifactView({ data }: { data: unknown }) {
 
   return (
     <Stack spacing={1.5}>
-      <Typography variant="h6">{data.title}</Typography>
+      {showTitle && <Typography variant="h6">{data.title}</Typography>}
       {"description" in data && data.description ? (
         <Typography color="text.secondary">{data.description}</Typography>
       ) : null}

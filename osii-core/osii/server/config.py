@@ -19,6 +19,8 @@ class Settings:
     embedding_endpoint: ModelEndpoint | None = None
     rerank_endpoint: ModelEndpoint | None = None
     remember_days: int = 14
+    processor_urls: tuple[str, ...] = ()
+    processor_gateway_url: str = "http://127.0.0.1:8512/api/processor-model/v1"
 
     def endpoints(self) -> dict[str, ModelEndpoint]:
         return {"chat": ModelEndpoint(self.model_url, self.model_key),
@@ -48,4 +50,6 @@ class Settings:
             raise ValueError("OSII_REMEMBER_DAYS must be between 1 and 30")
         return cls(database, source, chat.base_url, chat.api_key,
             os.environ.get("OSII_EXTRACTOR_URL", "http://127.0.0.1:8192"), origins, secure,
-            os.environ.get("OSII_OCR_URL", ""), embedding, rerank, remember_days)
+            os.environ.get("OSII_OCR_URL", ""), embedding, rerank, remember_days,
+            tuple(url.strip().rstrip("/") for url in os.environ.get("OSII_PROCESSORS", "").split(",") if url.strip()),
+            os.environ.get("OSII_PROCESSOR_GATEWAY_URL", "http://127.0.0.1:8512/api/processor-model/v1").rstrip("/"))

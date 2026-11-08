@@ -105,9 +105,9 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
                   ) : null}
                   <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
                     {run.operations?.extract ? <Chip size="small" label="Extraction" /> : null}
-                    {run.operations?.synthesize ? <Chip size="small" label="Synthesis" /> : null}
+                    {run.operations?.synthesize ? <Chip size="small" label={`Synthesis: ${run.operations.synthesize}`} /> : null}
                     {run.operations?.embed ? <Chip size="small" label={`Embedding${run.indexing_status ? `: ${run.indexing_status}` : ""}`} /> : null}
-                    {run.operations?.enrich ? <Chip size="small" label="Enrichment" /> : null}
+                    {run.operations?.enrich ? <Chip size="small" label={`Enrichment: ${run.operations.enrich}`} /> : null}
                   </Stack>
                 </Stack>
                 <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
@@ -236,7 +236,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
                         >
                           <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>{item.display}</Typography>
                           <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
-                            {item.status} · {formatDuration(
+                            {item.status}{item.current_step ? ` · ${item.current_step}` : ""} · {formatDuration(
                               item.duration_seconds ?? secondsBetween(item.started_at, item.finished_at),
                             )}
                           </Typography>

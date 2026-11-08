@@ -22,6 +22,7 @@ from osii.processor_sdk.client import ProcessorClient, ProcessorClientError
 from osii.processor_sdk.models import DocumentInput, ExtractionRequest, ExtractionResponse
 from osii.server.config import Settings
 from osii.server.sources import resolve_directory
+from osii.server.processors import ProcessorError, derived_outputs
 from osii.model_provider import ModelProvider, ProviderError
 from osii.server.model_connections import ModelConnections, ConfiguredModelProvider
 
@@ -121,13 +122,13 @@ def ingest_file(store: PostgresStore, provider: ModelProvider, extractor: Proces
 
 def failure_reason(exc: Exception) -> str:
     """Operator diagnostics without provider bodies, SQL parameters, or text."""
-    if isinstance(exc, (IngestionError, ProviderError)):
+    if isinstance(exc, (IngestionError, ProviderError, ProcessorError)):
         return str(exc)
     if isinstance(exc, ProcessorClientError):
         cause = exc.__cause__
         if isinstance(cause, urllib.error.HTTPError):
-            return f"Extractor request failed (HTTP {cause.code})"
-        return "Extractor unavailable or returned an invalid response"
+            return f"Processor request failed (HTTP {cause.code})"
+        return "Processor unavailable or returned an invalid response"
     if isinstance(exc, TimeoutError):
         return "Extractor request timed out"
     if isinstance(exc, OSError):
@@ -170,6 +171,40 @@ def ingest_batch(store: PostgresStore, provider: ModelProvider, extractor: Proce
 
 
 
+
+def process_derived_file(store, provider, extractor, settings, job, worker, index, current, path, *, report, ocr=None):
+    payload = job["payload"]
+    steps = current.setdefault("steps", {})
+    if payload["operation"] not in {"embed", "process"} and steps.get("extraction") != "done":
+        current["current_step"] = "extraction"
+        store.update_processing_item(job["id"], worker, index, current)
+        ingest_file(store, provider, extractor, settings.source_root, path, ocr=ocr,
+            force=payload["operation"] in {"extract", "reprocess"}, embed=False, job_owner=(job["id"], worker))
+        steps["extraction"] = "done"
+        store.update_processing_item(job["id"], worker, index, current)
+    fid = "sha256-" + hashlib.sha256(path.read_bytes()).hexdigest()
+    doc = store.document(fid)
+    if not doc or not doc["active"] or doc["source_relpath"] != current["path"]:
+        raise IngestionError("Source no longer matches its indexed document. Extract it before processing.")
+    derived_outputs(store, settings, provider, job, worker, index, current, doc, report=report)
+    if payload["embed"] and steps.get("embedding") != "done":
+        current["current_step"] = "embedding"
+        store.update_processing_item(job["id"], worker, index, current)
+        rows = store.document_chunks(fid)
+        if not rows:
+            raise IngestionError("No text chunks are available for embeddings")
+        for offset in range(0, len(rows), 32):
+            batch = rows[offset:offset+32]
+            vectors = provider.embed(payload["embedding_model"], [row["text"] for row in batch])
+            if len(vectors) != len(batch):
+                raise IngestionError("Embedding service returned the wrong number of vectors")
+            for row, vector in zip(batch, vectors):
+                row["embedding"] = vector
+        store.replace_embeddings(fid, rows, payload["embedding_model"], job_owner=(job["id"], worker))
+        steps["embedding"] = "done"
+        store.update_processing_item(job["id"], worker, index, current)
+    current["current_step"] = "finished"
+
 def process_plan(store: PostgresStore, provider, extractor, settings: Settings,
                  job: dict, worker: str, stopping: threading.Event, *, report, ocr=None) -> bool:
     from osii.server.intake import source_file, configuration_stamp
@@ -194,7 +229,10 @@ def process_plan(store: PostgresStore, provider, extractor, settings: Settings,
             stat = path.stat()
             if stat.st_size != item["size_bytes"] or stat.st_mtime_ns != item["mtime_ns"]:
                 raise IngestionError("Source changed after staging. Stage a new plan to review it.")
-            if payload["operation"] == "embed":
+            if payload.get("synthesizer") or payload.get("enricher"):
+                process_derived_file(store, provider, extractor, settings, job, worker, index, current, path, report=report, ocr=ocr)
+                result = "processed"
+            elif payload["operation"] in {"embed", "process"}:
                 fid = "sha256-" + hashlib.sha256(path.read_bytes()).hexdigest()
                 doc = store.document(fid)
                 if not doc or not doc["active"] or doc["source_relpath"] != item["path"]:

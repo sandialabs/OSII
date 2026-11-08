@@ -25,6 +25,7 @@ export function Workspace({ user, onLogout, onPassword }: { user: User; onLogout
   const curator = user.role !== "reader";
   const availablePages = pages.filter(page => ["processing", "source", "models", "users"].includes(page.id) ? user.role === "admin" : page.id !== "processing" || curator);
   const pageFromHash = () => availablePages.some(page => page.id === window.location.hash.slice(1)) ? window.location.hash.slice(1) : "library";
+  const [processingPaths, setProcessingPaths] = useState<string[]>([]);
   const [flat, setFlat] = useState(true);
   const [tab, setTab] = useState(pageFromHash);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -92,8 +93,8 @@ export function Workspace({ user, onLogout, onPassword }: { user: User; onLogout
         onOpen={() => void open(hit.file_id)} /><Button size="small" sx={{ alignSelf: "start" }} onClick={() => toggle(hit.file_id)}>{selectedIds.has(hit.file_id) ? "Deselect" : "Select for collection"}</Button></Stack>)}</>}
       {tab === "topics" && <TopicExplorer scope={scope} open={id => void open(id)} onSelect={id => setSelectedIds(current => new Set([...current, id]))} />}
       {corpusPage && selectedIds.size > 0 && <CollectionSelection collections={collections} refresh={refresh} fail={fail} selected={selectedIds} clear={() => setSelectedIds(new Set())} current={currentCollection} />}
-      {tab === "processing" && curator && <Intake />}{tab === "source" && user.role === "admin" && <SourceAdmin />}{tab === "models" && user.role === "admin" && <ModelAdmin />}{tab === "users" && user.role === "admin" && <UserAdmin />}
+      {tab === "processing" && curator && <Intake initialPaths={processingPaths} />}{tab === "source" && user.role === "admin" && <SourceAdmin />}{tab === "models" && user.role === "admin" && <ModelAdmin />}{tab === "users" && user.role === "admin" && <UserAdmin />}
     </Stack></Container></Box>
-    {selected && <DocumentView key={selected.file_id} doc={selected} close={() => setSelected(null)} />}
+    {selected && <DocumentView key={selected.file_id} doc={selected} close={() => setSelected(null)} onProcess={user.role === "admin" ? () => { setProcessingPaths([selected.source_relpath]); setSelected(null); navigate("processing"); } : undefined} />}
   </Box>;
 }

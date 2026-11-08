@@ -177,6 +177,54 @@ Syntheses / Wiki / Enrichments** tabs. PDF.js renders the authenticated PDF in a
 canvas, so the application can keep `frame-ancestors 'none'`. Extraction history
 preserves Processor SDK responses and their source/OCR regions in PostgreSQL.
 Selecting an older representation changes only the viewer. It does not promote
-that version into search. Hosted text editing, extraction promotion and hosted
-synthesis/enrichment execution are not yet implemented; their panes show saved
-artifacts or an explicit empty state.
+that version into search. Hosted text editing and extraction promotion remain separate future work. The
+Syntheses, Wiki and Enrichments panes show saved responses with processor/model
+provenance and stale-input warnings.
+
+
+## Synthesis and enrichment
+
+Choose **Process existing text without extraction** under **Intake & processing**
+to derive new outputs without re-reading the source. Enable **Generate document
+summaries** and/or **Run enrichment**, select methods, adjust their displayed
+settings, and optionally supply expert context. You can also combine these steps
+with intake, re-extraction or embeddings. Preview and stage the plan, then start
+it from Activity. The same pause/resume/cancel/retry controls apply. Pause/cancel
+finishes the current document, including its selected downstream steps. Completed
+synthesis/enrichment steps survive a later failure and are skipped on retry.
+
+The cited source-excerpt preview and statistics/keyword enrichment are model-free
+and work immediately. **Openai Synthesizer** uses the language model selected in
+Models and may incur provider charges. Selecting or previewing a method never
+invokes it. Outputs appear in the document's Syntheses/Enrichments panes; Wiki
+shows wiki-markdown enrichment products. **Stage processing for this document**
+opens Intake with that file preselected. Outputs do not replace extracted text
+or become search evidence automatically. Model-generated claims remain derived
+content, not verified source statements.
+
+Under **Processor connections**, add the base addresses of explicitly deployed
+Toolbox Processor API services, one per line. Their `/v1/descriptor` must declare
+an object-scoped synthesizer or enricher with a unique name. Connections are
+admin-managed PostgreSQL settings; `OSII_PROCESSORS` supplies deployment defaults.
+This does not launch tools, install models or copy Toolbox code into Core. The
+current hosted planner runs each selected file separately; aggregate folder,
+collection and root synthesis/enrichment are not yet exposed by these plans.
+
+For model-backed remote processors, Core supplies a short-lived SDK model grant,
+not a provider key. Set `OSII_PROCESSOR_GATEWAY_URL` to a Core API address reachable
+from those services, ending in `/api/processor-model/v1`. The Podman and OpenShift
+default is `http://osii-api:8512/api/processor-model/v1`; processors outside that
+network may need `https://osii.app/api/processor-model/v1`. Grants bind exact chat/
+embedding selections to an active job lease, expire after ten minutes, permit at
+most 16 model requests, and are revoked when the operation ends. The gateway has
+no corpus or filesystem endpoints. Keep processor services on an approved network;
+Processor API service authentication is managed by that deployment.
+
+Each processor request is limited to 200,000 characters of primary document text,
+configuration to 16,000 serialized characters, and each response to 4 MiB. Gateway
+chat is non-streaming and limits responses to 4,000 tokens; embedding requests
+allow at most 128 texts and 200,000 input characters. Long documents fail with a
+clear per-file error instead of silent truncation. No schema migration is needed;
+plans, checkpoints, output envelopes and temporary grant hashes use existing
+PostgreSQL tables. Older staged plans may require re-staging after this adapter
+upgrade; existing documents, outputs and jobs are retained.
