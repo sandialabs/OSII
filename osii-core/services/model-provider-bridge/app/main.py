@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from osii.processors.synthesis import synthesize_bounded
+
 import json
 import os
 from pathlib import Path
@@ -253,18 +255,20 @@ class ProviderSynthesizer(Synthesizer):
 
     def synthesize(self, request: SynthesisRequest) -> SynthesisResponse:
         model = _model(self.provider, "synthesis", request.config)
-        messages = [{"role": "user", "content": _scope_prompt(request)}]
         max_tokens = max(256, min(int(request.config.get("max_tokens", 1200)), 4000))
         temperature = max(0.0, min(float(request.config.get("temperature", 0.2)), 2.0))
-        if self.provider == "ollama":
-            payload = CLIENTS[self.provider].request("POST", "/api/chat", payload={"model": model, "messages": messages, "stream": False, "options": {"num_predict": max_tokens, "temperature": temperature}}, timeout=180, capability="synthesis")
-            markdown = payload.get("message", {}).get("content", "")
-        else:
-            payload = CLIENTS[self.provider].request("POST", "/chat/completions", payload={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}, timeout=180, capability="synthesis")
-            choices = payload.get("choices") or []
-            markdown = choices[0].get("message", {}).get("content", "") if choices else ""
-        return model_synthesis_response(request, self.descriptor, markdown, model,
-            {"provider": self.provider, "endpoint_type": "ollama-native" if self.provider == "ollama" else "openai-compatible"})
+        def complete(messages):
+            if self.provider == "ollama":
+                payload = CLIENTS[self.provider].request("POST", "/api/chat", payload={"model": model, "messages": messages, "stream": False, "options": {"num_predict": max_tokens, "temperature": temperature}}, timeout=180, capability="synthesis")
+                markdown = payload.get("message", {}).get("content", "")
+            else:
+                payload = CLIENTS[self.provider].request("POST", "/chat/completions", payload={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}, timeout=180, capability="synthesis")
+                choices = payload.get("choices") or []
+                markdown = choices[0].get("message", {}).get("content", "") if choices else ""
+            return markdown, payload.get("usage", {})
+        response = synthesize_bounded(request, self.descriptor, model, complete)
+        response.metadata.update(provider=self.provider, endpoint_type="ollama-native" if self.provider == "ollama" else "openai-compatible")
+        return response
 
 
 class ChatRequest(BaseModel):

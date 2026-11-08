@@ -64,3 +64,11 @@ def test_invalid_payload_and_unknown_config_are_422():
     response = client.post("/v1/extract", json=request)
     assert response.status_code == 422
     assert "Unsupported Tesseract configuration" in response.json()["detail"]
+
+
+def test_readiness_distinguishes_missing_native_ocr_from_http_liveness(monkeypatch):
+    monkeypatch.setattr(main.shutil, 'which', lambda _: None)
+    assert client.get('/health').status_code==200
+    assert client.get('/ready').status_code==503
+    monkeypatch.setattr(main.shutil, 'which', lambda _: '/synthetic/tesseract')
+    assert client.get('/ready').json()['status']=='ready'

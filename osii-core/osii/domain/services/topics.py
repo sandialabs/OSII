@@ -10,6 +10,7 @@ import tomllib
 import faiss
 import numpy as np
 
+from osii.domain.storage.store import provenance_path
 from osii.domain.topic_projection import TopicIndexUnavailable, project_documents
 
 from osii.domain.artifacts.artifact_staleness import get_artifact_staleness
@@ -84,11 +85,19 @@ def load_document_space(osii_root: Path, scope: dict) -> DocumentSpace:
             if norm <= 1e-12:
                 continue
             row = catalog[file_id]
+            title = {}
+            try:
+                provenance = tomllib.loads(provenance_path(osii_root, file_id).read_text(encoding='utf-8'))
+                config = provenance.get('synthesis', {}).get('config', {})
+                if not (get_artifact_staleness(osii_root, file_id) or {}).get('stale', {}).get('syntheses'):
+                    title = {k: config[k] for k in ('document_title','title_method') if config.get(k)}
+            except (OSError, ValueError, TypeError):
+                pass
             documents.append({
                 "file_id": file_id,
                 "filename": Path(row["source_relpath"]).name,
                 "source_relpath": row["source_relpath"],
-                "chunk_count": counts[file_id],
+                "chunk_count": counts[file_id], **title,
             })
             vectors.append(sums[file_id] / norm)
         identity = hashlib.sha256(repr((provider, model, before)).encode()).hexdigest()[:20]

@@ -67,7 +67,7 @@ export function TopicExplorerPage() {
           <Typography variant="subtitle2" sx={{ mt: 2 }}>Mapped documents ({visible.length})</Typography>
           <List dense aria-label="Mapped documents" sx={{ maxHeight: 260, overflow: "auto" }}>
             {visible.map(p => <ListItemButton key={p.file_id} selected={p.file_id === selectedId} onClick={() => select(p.file_id)}>
-              <ListItemText primary={p.filename} secondary={p.source_relpath} sx={{ overflowWrap: "anywhere" }} />
+              <ListItemText primary={p.document_title || p.filename} secondary={p.source_relpath} sx={{ overflowWrap: "anywhere" }} />
             </ListItemButton>)}
           </List>
           {!visible.length && <Typography color="text.secondary">No mapped documents match this filter.</Typography>}
@@ -75,7 +75,7 @@ export function TopicExplorerPage() {
         <Card><CardContent><Stack spacing={2}>
           <Typography variant="h6">Related documents</Typography>
           {!selectedId && <Typography color="text.secondary">Select a point or a document from the list to find related content.</Typography>}
-          {selected && <Box><Typography fontWeight={700} sx={{ overflowWrap: "anywhere" }}>{selected.filename}</Typography>
+          {selected && <Box><Typography fontWeight={700} sx={{ overflowWrap: "anywhere" }}>{selected.document_title || selected.filename}</Typography>
             <Typography variant="caption" color="text.secondary">{selected.chunk_count} indexed chunk{selected.chunk_count === 1 ? "" : "s"} · {selected.source_relpath}</Typography>
             <Box sx={{ mt: 1 }}><Button component={Link} to={buildFileRoute({ fileId: selected.file_id })} size="small">Open document</Button></Box></Box>}
           {related.isFetching && <LinearProgress aria-label="Finding related documents" />}
@@ -85,7 +85,7 @@ export function TopicExplorerPage() {
             <Typography variant="caption" color="text.secondary">Ranked by cosine similarity of document embeddings. Scores are similarity, not confidence or proof of a shared topic.</Typography>
             {!related.data.results.length && <Typography>No other indexed documents in this scope.</Typography>}
             {related.data.results.map(p => <Box key={p.file_id} sx={{ borderTop: "1px solid", borderColor: "divider", pt: 1.5 }}>
-              <Stack direction="row" spacing={1} justifyContent="space-between"><Typography fontWeight={600} sx={{ overflowWrap: "anywhere" }}>{p.filename}</Typography><Chip size="small" label={p.similarity.toFixed(3)} /></Stack>
+              <Stack direction="row" spacing={1} justifyContent="space-between"><Typography fontWeight={600} sx={{ overflowWrap: "anywhere" }}>{p.document_title || p.filename}</Typography><Chip size="small" label={p.similarity.toFixed(3)} /></Stack>
               <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>{p.source_relpath}</Typography>
               <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}><Button size="small" onClick={() => select(p.file_id)}>Explore related</Button><Button component={Link} to={buildFileRoute({ fileId: p.file_id })} size="small">Open</Button></Stack>
             </Box>)}

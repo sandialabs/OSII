@@ -43,14 +43,14 @@ export function EmbeddingMap({ points, selectedId, relatedIds, onSelect }: {
         const selected = point.file_id === selectedId;
         const related = relatedIds.has(point.file_id);
         const { x, y } = position(point);
-        return <g key={point.file_id} role="button" tabIndex={0} aria-label={`Explore ${point.filename}`} aria-pressed={selected}
+        return <g key={point.file_id} role="button" tabIndex={0} aria-label={`Explore ${point.document_title || point.filename}`} aria-pressed={selected}
           onClick={() => onSelect(point.file_id)} onKeyDown={event => {
             if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(point.file_id); }
           }} style={{ cursor: "pointer", outlineOffset: 3 }}>
-          <title>{point.source_relpath}</title>
+          <title>{point.document_title ? `${point.document_title} · ${point.source_relpath}` : point.source_relpath}</title>
           <circle cx={x} cy={y} r={selected ? 10 : related ? 7 : 5.5} fill={selected ? "#e47b37" : related ? "#00899e" : "#629caf"}
             stroke={selected ? "#7c3510" : "white"} strokeWidth={selected ? 2 : 1.5} opacity={selected || related ? 1 : 0.8} />
-          {selected && <text x={x + 14} y={y + 4} fill="#263442" fontSize="13" paintOrder="stroke" stroke="white" strokeWidth="3">{point.filename.slice(0, 45)}</text>}
+          {selected && <text x={x + 14} y={y + 4} fill="#263442" fontSize="13" paintOrder="stroke" stroke="white" strokeWidth="3">{(point.document_title || point.filename).slice(0, 65)}</text>}
         </g>;
       })}
     </Box>

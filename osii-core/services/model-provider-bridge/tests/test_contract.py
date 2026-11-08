@@ -384,3 +384,49 @@ def test_model_gateway_token_stops_working_when_job_revokes_it(monkeypatch):
 
     assert rejected.status_code == 401
     assert "no longer active" in rejected.json()["detail"]
+
+
+def test_long_synthesis_windows_cover_all_text_and_resume_successful_calls():
+    from osii.processor_sdk import SynthesisRequest
+    from osii.processors.text import chat_synthesizer_descriptor
+    from osii.processors.synthesis import synthesize_bounded, synthesis_call_estimate
+    text = 'START_MARKER ' + 'x' * 205550 + ' END_MARKER'
+    request = SynthesisRequest(request_id='bounded', scope={'scope_type':'object', 'scope_id':'doc',
+        'documents':[{'file_id':'doc','filename':'OPAQUE.pdf','text':text}]})
+    saved={}; calls=[]; failed=[False]
+    def checkpoint(key, value=None):
+        if value is not None: saved[key]=value
+        return saved.get(key)
+    def complete(messages):
+        calls.append(messages[0]['content'])
+        if len(calls)==2 and not failed[0]:
+            failed[0]=True
+            raise ValueError('synthetic transient provider failure')
+        return '# Gardening and Landscape Design\n\nGrounded summary [doc].', {}
+    with pytest.raises(ValueError, match='synthetic transient'):
+        synthesize_bounded(request,chat_synthesizer_descriptor(),'test-model',complete,checkpoint=checkpoint)
+    result=synthesize_bounded(request,chat_synthesizer_descriptor(),'test-model',complete,checkpoint=checkpoint)
+    assert result.metadata['input_windows']==3
+    assert result.metadata['model_calls']==synthesis_call_estimate(len(text))==4
+    assert result.metadata['document_title']=='Gardening and Landscape Design'
+    assert result.metadata['title_method']=='model_generated'
+    assert sum('START_MARKER' in prompt for prompt in calls)==1
+    assert any('END_MARKER' in prompt for prompt in calls)
+    assert len(calls)==5  # one failed request; first successful window was reused
+    assert all(len(prompt)<101000 for prompt in calls)
+    request.config={'max_input_windows':1}
+    with pytest.raises(ValueError,match='window budget'):
+        synthesize_bounded(request,chat_synthesizer_descriptor(),'test-model',lambda _: pytest.fail('Budget checked before model call'))
+
+
+def test_synthesis_titles_are_optional_metadata_and_multi_source_has_no_document_title():
+    from osii.processor_sdk import SynthesisRequest
+    from osii.processors.text import chat_synthesizer_descriptor, model_synthesis_response, LocalExtractivePreviewSynthesizer
+    request=SynthesisRequest(request_id='titles',scope={'scope_type':'object', 'scope_id':'doc',
+        'documents':[{'file_id':'doc','filename':'OPAQUE.pdf','text':'Practical Gardening Handbook\nDetailed source text.'}]})
+    response=model_synthesis_response(request,chat_synthesizer_descriptor(),'# Summary\nGrounded output','test')
+    assert response.metadata['document_title']=='Practical Gardening Handbook'
+    assert response.metadata['title_method']=='source_first_line'
+    assert LocalExtractivePreviewSynthesizer().synthesize(request).metadata['title_method']=='source_first_line'
+    request.scope.documents.append(request.scope.documents[0])
+    assert 'document_title' not in model_synthesis_response(request,chat_synthesizer_descriptor(),'# Combined Sources','test').metadata

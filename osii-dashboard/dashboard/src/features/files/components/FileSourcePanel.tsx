@@ -41,7 +41,9 @@ function normalizedPageRegions(
         ? segment.regions
         : Array.isArray(segment.source_origin?.regions)
           ? segment.source_origin.regions
-          : [];
+          : Array.isArray(segment.source_origin?.bbox)
+            ? [{ ...segment.source_origin, text: typeof segment.text === "string" ? segment.text : undefined }]
+            : [];
       return rawRegions.flatMap((value) => {
         if (!value || typeof value !== "object") return [];
         const region = value as Record<string, unknown>;
