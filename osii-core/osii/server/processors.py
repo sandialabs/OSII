@@ -83,6 +83,9 @@ def bounded_config(config: dict, selection: dict | None = None) -> dict:
         raise ValueError('Processor configuration exceeds 16,000 characters')
     schema = (selection or {}).get('descriptor', {}).get('config_schema', {})
     properties = schema.get('properties', {})
+    config = {**{name: field['default'] for name, field in properties.items() if 'default' in field}, **config}
+    if len(json.dumps(config)) > 16_000:
+        raise ValueError('Processor configuration exceeds 16,000 characters')
     if schema.get('additionalProperties') is False and set(config) - set(properties):
         raise ValueError('Processor configuration contains unsupported settings')
     if set(schema.get('required', [])) - set(config):

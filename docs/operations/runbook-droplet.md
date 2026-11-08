@@ -222,7 +222,7 @@ Processor API service authentication is managed by that deployment.
 
 Each processor request is limited to 200,000 characters of primary document text,
 configuration to 16,000 serialized characters, and each response to 4 MiB. Gateway
-chat is non-streaming and limits responses to 4,000 tokens; embedding requests
+chat is non-streaming and limits responses to 16,000 tokens; embedding requests
 allow at most 128 texts and 200,000 input characters. Long documents fail with a
 clear per-file error instead of silent truncation. No schema migration is needed;
 plans, checkpoints, output envelopes and temporary grant hashes use existing

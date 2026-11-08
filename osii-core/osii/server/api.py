@@ -102,7 +102,7 @@ class ProcessorEndpoints(BaseModel):
 class ProcessorChat(BaseModel):
     model: str = Field(max_length=200)
     messages: list[dict] = Field(min_length=1, max_length=100)
-    max_tokens: int = Field(default=1200, ge=1, le=4000)
+    max_tokens: int = Field(default=1200, ge=1, le=16000)
     temperature: float | None = Field(default=None, ge=0, le=2)
 
 

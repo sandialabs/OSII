@@ -48,6 +48,7 @@ def test_baselines_stage_then_process_without_models_or_extraction(client,app):
     assert store.document_chunks(doc['file_id'])==chunks
     assert store.extraction_records(doc['file_id'])==history
     assert run['payload']['items'][0]['steps']=={'synthesis':'done','enrichment':'done'}
+    assert run['payload']['enricher_config']['top_k']==20
     login(client,'reader')
     assert all(not row['stale'] for row in client.get(f"/api/objects/{doc['file_id']}/artifacts").json()['items'])
 
@@ -158,6 +159,7 @@ def test_remote_processor_receives_only_scoped_revoked_model_grant(app,monkeypat
                 r=gateway.post('/api/processor-model/v1/chat/completions',headers=headers,json={'model':'selected-chat','messages':[{'role':'user','content':'test'}]})
                 statuses.append(r.status_code)
                 assert r.status_code==200,r.text
+                assert gateway.post('/api/processor-model/v1/chat/completions',headers=headers,json={'model':'selected-chat','messages':[{'role':'user','content':'test'}], 'max_tokens':16001}).status_code==422
             return EnrichmentResponse(request_id=request.request_id,processor=descriptor,artifacts=[Artifact(id='result',kind='test',media_type='application/json',standard_data={'artifact_type':'wiki_markdown','title':'Synthetic wiki','markdown':'Generated','citations':[]})])
     monkeypatch.setattr(processors,'ProcessorClient',Remote)
     jid=create_plan(app,[doc['source_relpath']],enricher_name=descriptor.name)
