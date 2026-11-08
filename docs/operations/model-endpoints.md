@@ -94,10 +94,11 @@ compatible vectors; matching dimensions alone does not establish compatibility.
 
 Use **Models** in the hosted administrator sidebar to edit endpoints and keys
 without restarting API or worker. Alternatively, edit deployment defaults in
-`/etc/osii/runtime.env`. Select chat and embedding model IDs in the hosted
+`/etc/osii/runtime.env`. Select chat and embedding models by name in the hosted
 administrator's model settings; those selections remain in PostgreSQL.
 `OSII_CHAT_MODEL` and `OSII_EMBEDDING_MODEL` are local-profile seeds, not overrides
-for the server's saved selections. The reranker model is deployment-owned:
+for the server's saved selections. `OSII_RERANK_MODEL` supplies the deployment
+default; administrators can override it with a saved reranker connection:
 
 ```dotenv
 OSII_CHAT_BASE_URL=https://chat.example.org/v1
@@ -128,10 +129,11 @@ systemctl restart osii-api osii-worker
 systemctl is-active osii-api osii-worker
 ```
 
-The model administration page shows each endpoint, its configuration owner, and whether
-its credential is present. Discovery queries chat/embedding catalogs independently using their own credentials;
-manual model IDs remain supported. The test action invokes the selected models
-and a configured reranker with synthetic text and may incur provider charges.
+The model administration page shows configured models and their endpoint addresses;
+connection dialogs indicate whether a saved credential is present. Discovery queries
+each catalog independently using its own credential; manual model names remain
+supported when a catalog is unavailable. Each test action invokes only its chosen
+connection with synthetic text and may incur provider charges.
 A configured reranker is available to strategies; it does not automatically
 enable reranking in the hosted chat pipeline.
 
