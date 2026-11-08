@@ -60,7 +60,8 @@ def test_retry_preserves_successful_model_synthesis(app,monkeypatch):
     jid=create_plan(app,[doc['source_relpath']],synthesizer_name='openai.synthesizer',enricher_name='local.stats-keywords')
     class Spy(Provider):
         calls=0
-        def chat(self,model,messages,max_tokens=900):
+        def chat(self,model,messages,max_tokens=900,temperature=None):
+            assert temperature == 0.2
             assert model=='selected-chat'
             self.calls+=1
             return 'Source-grounded generated synthesis.',{'completion_tokens':4}
@@ -156,7 +157,7 @@ def test_remote_processor_receives_only_scoped_revoked_model_grant(app,monkeypat
                 assert statuses[-1]==401
                 headers={'Authorization':'Bearer '+context.token}
                 assert gateway.post('/api/processor-model/v1/chat/completions',headers=headers,json={'model':'other','messages':[{'role':'user','content':'test'}]}).status_code==403
-                r=gateway.post('/api/processor-model/v1/chat/completions',headers=headers,json={'model':'selected-chat','messages':[{'role':'user','content':'test'}]})
+                r=gateway.post('/api/processor-model/v1/chat/completions',headers=headers,json={'model':'selected-chat','messages':[{'role':'user','content':'test'}], 'max_tokens':6000})
                 statuses.append(r.status_code)
                 assert r.status_code==200,r.text
                 assert gateway.post('/api/processor-model/v1/chat/completions',headers=headers,json={'model':'selected-chat','messages':[{'role':'user','content':'test'}], 'max_tokens':16001}).status_code==422
