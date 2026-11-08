@@ -93,8 +93,12 @@ The agent's job is to execute the human's command—nothing more.
 - Automatically stage and commit completed, validated task changes locally.
   Use focused commits, preserve unrelated work, and do not ask the user to
   copy-paste commit commands. This is standing authorization for local commits.
-- Do not push or open a pull request unless the user explicitly asks. The user
-  currently handles upstream pushes.
+- Automatically push completed, tested task changes after committing them to
+  the current branch on `origin` (the user's GitHub repository). This is standing
+  authorization to push; do not ask for confirmation or leave the push to the user.
+  Preserve unrelated work, use normal non-force pushes, and resolve any remote
+  divergence without discarding changes. Do not push to `upstream` or open a pull
+  request unless the user explicitly asks.
 - Report local commit hashes and relevant validation results. Include run or
   inspection instructions when needed, including required rebuild or restart
   steps.
