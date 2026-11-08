@@ -6,6 +6,7 @@ OSII (the On-Store Intelligence Index) turns documents and datasets into a
 library you can browse, search, enrich, and ask questions about. The `main`
 branch is OSII-local: a standalone application for working with files on your
 computer or a shared drive mounted on it.
+It runs without user accounts or a login; OSII-server provides hosted user access.
 
 The source material is the evidence. OSII keeps originals unchanged and saves
 extracted content and provenance in portable `.osii` sidecars. Search indexes
@@ -15,6 +16,8 @@ an AI model.
 
 ## What you can do
 
+- Scan file metadata to understand a folder's contents, sizes, and formats before
+  choosing what to process.
 - Extract text, with optional OCR for scanned documents, and inspect the sources.
 - Browse files and collections, search by keywords or document meaning, and ask
   grounded questions with an optional model connection.

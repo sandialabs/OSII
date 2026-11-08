@@ -120,7 +120,11 @@ def test_toolbox_opt_out_retains_manual_controls_and_core_only_omits_services():
     assert len(tools) == 6 and all(not s.start_automatically for s in tools)
     assert all("--no-sync" not in s.command for s in tools)
     core = DEV_STACK.service_commands("uv", "npm", {}, core_only=True)
-    assert {s.name for s in core} == {"api", "worker", "mcp", "dashboard"}
+    assert {s.name for s in core} == {"api", "worker", "inventory-worker", "mcp", "dashboard"}
+    by_name = {s.name: s for s in core}
+    assert "osii.main:app" in by_name["api"].command
+    assert "python -m osii.worker" in by_name["worker"].command
+    assert "python -m osii.volume.worker" in by_name["inventory-worker"].command
 
 
 def test_toolbox_environment_registers_custom_ports_without_changing_routes(monkeypatch, tmp_path):
@@ -191,6 +195,7 @@ def test_shared_drive_environment_keeps_artifacts_in_separate_local_root(monkeyp
 
     assert env["SHARED_VOLUME_ROOT"] == str(source.resolve())
     assert env["OSII_ROOT"] == str((runtime / ".osii").resolve())
+    assert env["OSII_INVENTORY_DB"] == str((runtime / ".osii" / "state" / "inventory.sqlite3").resolve())
     assert env["UPLOAD_ORIGINALS_ROOT"] == str((runtime / "uploads").resolve())
     assert env["OSII_SOURCE_KIND"] == "shared"
     assert env["OSII_CONFIG_DIR"] == str(profile_config.resolve())
@@ -207,6 +212,23 @@ def test_shared_drive_environment_does_not_create_missing_source(monkeypatch, tm
         DEV_STACK.build_environment(core_only=True)
 
     assert not source.exists()
+
+
+def test_inventory_database_is_checkout_relative_and_outside_source(monkeypatch, tmp_path):
+    checkout = tmp_path / "checkout"
+    source = checkout / "documents"
+    source.mkdir(parents=True)
+    monkeypatch.setattr(DEV_STACK, "REPOSITORY_ROOT", checkout)
+    monkeypatch.setattr(DEV_STACK, "load_dotenv", lambda _path: {})
+    monkeypatch.setenv("OSII_SOURCE_DIR", str(source))
+    monkeypatch.setenv("OSII_RUNTIME_DIR", str(checkout / "runtime"))
+    monkeypatch.setenv("OSII_VOLUME_DB", "./previous-inventory.sqlite3")
+    monkeypatch.delenv("OSII_INVENTORY_DB", raising=False)
+    assert DEV_STACK.build_environment(True)["OSII_INVENTORY_DB"] == str(checkout / "previous-inventory.sqlite3")
+    monkeypatch.setenv("OSII_INVENTORY_DB", str(source / "unsafe.sqlite3"))
+    with pytest.raises(RuntimeError, match="outside the read-only source"):
+        DEV_STACK.build_environment(True)
+    assert not (source / "unsafe.sqlite3").exists()
 
 
 @pytest.mark.parametrize("wrapper_default", [False, True])

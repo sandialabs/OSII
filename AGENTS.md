@@ -20,6 +20,14 @@ The agent's job is to execute the human's command—nothing more.
 - OSII is local-first. Preserve original source identity, extracted text,
   locations, scopes, provenance, and portable `.osii` sidecars. Catalogs,
   indexes, caches, and model output are derived and rebuildable.
+- OSII-local has no user authentication, accounts, roles, or login screen.
+  Hosted user authentication belongs exclusively to `osii-server`. Keep local
+  processes on loopback; processor/provider credentials and private internal
+  service tokens are separate from user authentication.
+- File metadata inventory is part of normal OSII-local, not a separate branch
+  or startup mode. `osii.volume` owns its separate canonical SQLite inventory
+  on local disk. Never rebuild, quarantine, or replace it as a sidecar catalog.
+  Metadata scanning must not read file contents, hash files, or invoke models.
 - The Core owns canonical persistence, RAG orchestration, and grounded chat.
   Processors receive explicit bounded requests and return typed output; they do
   not browse a corpus or write the canonical store.

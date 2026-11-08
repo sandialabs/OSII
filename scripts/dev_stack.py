@@ -40,6 +40,7 @@ SERVICE_DISPLAY_NAMES = {
     "collection-table": "Collection table enricher",
     "api": "OSII backend API and grounded chat",
     "worker": "sequential intake worker",
+    "inventory-worker": "file metadata inventory worker",
     "mcp": "MCP server for agents",
     "dashboard": "dashboard web interface",
 }
@@ -166,6 +167,14 @@ def build_environment(core_only: bool) -> dict[str, str]:
         osii_root = REPOSITORY_ROOT / osii_root
     osii_root = osii_root.resolve()
 
+    inventory_value = env.get("OSII_INVENTORY_DB", "") or env.get("OSII_VOLUME_DB", "")
+    inventory_database = Path(inventory_value).expanduser() if inventory_value else osii_root / "state" / "inventory.sqlite3"
+    if not inventory_database.is_absolute():
+        inventory_database = REPOSITORY_ROOT / inventory_database
+    inventory_database = inventory_database.resolve()
+    if inventory_database.is_relative_to(source_root):
+        raise RuntimeError("The inventory database must be outside the read-only source folder, on local disk.")
+
     uploads_value = env.get("UPLOAD_ORIGINALS_ROOT", "").strip()
     uploads_root = Path(uploads_value).expanduser() if uploads_value else runtime_root / "uploads"
     if not uploads_root.is_absolute():
@@ -244,6 +253,7 @@ def build_environment(core_only: bool) -> dict[str, str]:
             "OSII_SOURCE_KIND": env.get("OSII_SOURCE_KIND", "auto").strip().lower() or "auto",
             "OSII_RUNTIME_DIR": str(runtime_root),
             "OSII_ROOT": str(osii_root),
+            "OSII_INVENTORY_DB": str(inventory_database),
             "UPLOAD_ORIGINALS_ROOT": str(uploads_root),
             "TIKA_URL": f"http://127.0.0.1:{tika_port}",
             "OSII_BACKEND_BASE_URL": f"http://127.0.0.1:{api_port}",
@@ -424,6 +434,13 @@ def service_commands(
                 "python -m osii.worker",
                 "osii",
             ),
+            REPOSITORY_ROOT / "osii-core",
+            0,
+        ),
+        Service(
+            "inventory-worker",
+            (uv, "run", "--no-sync", "--package", "osii", "python", "-m",
+             "watchfiles", "--filter", "python", "python -m osii.volume.worker", "osii/volume"),
             REPOSITORY_ROOT / "osii-core",
             0,
         ),

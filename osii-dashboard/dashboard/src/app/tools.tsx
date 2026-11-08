@@ -22,6 +22,8 @@ export type WorkbenchTool = {
 export const workbenchTools: readonly WorkbenchTool[] = [
   { id: "intake", path: "/intake", label: "Intake", group: "start", icon: MoveToInboxOutlined,
     Page: lazy(() => import("../features/queue/pages/QueuePage").then(m => ({ default: m.QueuePage }))) },
+  { id: "inventory", path: "/inventory", label: "File inventory", description: "Scan file metadata before processing", group: "start", icon: FolderOutlined,
+    Page: lazy(() => import("../features/volume/VolumePage")) },
   { id: "setup", path: "/admin/processors", label: "Setup", description: "Models and processing rules", group: "start", icon: SettingsOutlined,
     Page: lazy(() => import("../features/admin/pages/ProcessorsPage").then(m => ({ default: m.ProcessorsPage }))) },
   { id: "files", path: "/", label: "Files", group: "documents", icon: HomeOutlined,

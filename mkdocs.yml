@@ -38,6 +38,7 @@ nav:
   - Install and use:
       - What are you trying to do?: operations/runbooks.md
       - Start from source: operations/runbook-development.md
+      - File inventory: operations/large-volumes.md
       - Model endpoints: operations/model-endpoints.md
       - Python walkthrough: tutorials/python-demonstrations.md
       - Single-file walkthrough: tutorials/single-file.md
@@ -47,6 +48,7 @@ nav:
       - CLI cheat sheet: reference/cli.md
   - Understand OSII:
       - Architecture: concepts/architecture.md
+      - Inventory database decision: concepts/adr-volume-store.md
       - Extraction: concepts/extraction.md
       - Tables and tabular extraction: concepts/tabular-extraction.md
       - Collections and enrichments: concepts/collections-and-enrichments.md

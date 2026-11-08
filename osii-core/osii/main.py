@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -38,12 +39,26 @@ from osii.api.text_routes import router as text_router
 from osii.domain.processing.jobs import configure_job_store
 from osii.domain.catalog_db import ensure_catalog
 from osii.rag.strategies.http_reranker import create_reranker
+from osii.volume.api import create_app as create_inventory_app
+from osii.volume.store import database_path
+
+
+inventory_app = create_inventory_app(api_prefix="")
+
+
+@asynccontextmanager
+async def lifespan(application):
+    inventory_app.state.volume_store.path = database_path(application.state.osii_root)
+    inventory_app.state.source_root = application.state.shared_volume_root
+    async with inventory_app.router.lifespan_context(inventory_app):
+        yield
 
 app = FastAPI(
     title="OSII Backend",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
+    lifespan=lifespan,
     )
 app.state.rag_reranker = create_reranker()
 
@@ -97,10 +112,17 @@ app.include_router(processor_settings_router)
 app.include_router(model_provider_router)
 app.include_router(setup_router)
 app.include_router(chat_router)
+app.mount("/api/volume", inventory_app)
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/api/runtime")
+async def runtime():
+    return {"storage_mode": "local", "user_authentication": False,
+            "capabilities": ["metadata_inventory", "sidecar_processing"]}
 
 @app.get("/artifact/{file_path:path}", name="download_artifact")
 async def download_artifact(file_path: str):

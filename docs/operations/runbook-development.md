@@ -42,6 +42,15 @@ change them in Setup rather than expecting new defaults to overwrite them.
 
 ## Work on local and server together
 
+OSII-local has no user accounts or login screen. Its normal `make dev` startup
+includes **File inventory** for coarse metadata discovery, alongside existing
+Intake, Files, Search, Topics, and Chat. Scan metadata first when deciding what
+to process; scans do not read file contents, hash documents, or invoke models.
+See [file inventory](large-volumes.md) for filters, resumable scans, selection
+budgets, and local-disk database recovery. Hosted user authentication belongs
+only to OSII-server. Model-provider credentials and private inter-process
+tokens do not represent OSII-local user accounts.
+
 Keep each chat and terminal in its own existing worktree:
 
 | Application | Checkout | Branch | API / dashboard | Python environment |

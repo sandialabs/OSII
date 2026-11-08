@@ -26,6 +26,7 @@ dependencies = [
   "faiss-cpu",
   "numpy",
   "PyYAML>=6,<7",
+  "jsonschema>=4.23,<5",
 ]
 
 [project.optional-dependencies]
