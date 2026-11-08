@@ -22,6 +22,7 @@ from osii.domain.env_credentials import (
     write_env_value,
 )
 from osii.configuration import load_models_config, save_models_config, secrets_path
+from osii.model_catalog import discover_models
 
 
 router = APIRouter(prefix="/api/admin/model-providers", tags=["model-provider-administration"])
@@ -424,6 +425,25 @@ def create_provider(request: Request, payload: dict):
     records.append(record)
     _save(root, records)
     return {"provider": _public(record)}
+
+
+@router.post("/discover")
+def discover_provider(request: Request, payload: dict):
+    """Inspect an entered endpoint without saving it or invoking any model."""
+    base_url, key = payload.get("base_url", ""), payload.get("api_key", "")
+    protocol = payload.get("type", "openai")
+    if (not isinstance(base_url, str) or len(base_url) > 2000 or not isinstance(key, str)
+            or len(key) > 4096 or protocol not in {"openai", "ollama"}):
+        raise HTTPException(422, "Invalid model discovery settings")
+    if protocol == "openai" and not key and payload.get("provider_id"):
+        current = next((record for record in _load(request.app.state.osii_root.resolve())
+                        if record["id"] == payload["provider_id"]), None)
+        if current and current["base_url"] == base_url.rstrip("/") and current["type"] == protocol:
+            key = resolve_env_value(str(current.get("credential_env") or "OPENAI_API_KEY"))[0]
+    try:
+        return {"models": discover_models(base_url, key, protocol=protocol), "generation_tested": False}
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
 
 
 @router.put("/{provider_id}")

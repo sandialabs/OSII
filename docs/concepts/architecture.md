@@ -318,3 +318,22 @@ them. Storage and account permissions stay behind Core APIs. Portable component
 changes are transferred as focused commits between branches; do not maintain a
 second server-only renderer for the same feature. Local Setup and hosted endpoint
 administration intentionally have separate persistence adapters.
+
+### Workflow parity remains explicit
+
+Shared widgets do not imply identical product workflows. The current adapter
+boundaries and remaining work are:
+
+| Workflow | Local | Hosted server | Shared implementation / remaining work |
+| --- | --- | --- | --- |
+| Browse indexed files | Browse, list and thumbnail cards | Flat all-files view by default; folders optional | BrowseGrid, FileCard and PDF thumbnail code; server maps authenticated catalog rows. |
+| Model discovery and selection | Multiple named connections in Setup | One active connection per purpose: chat, embeddings, optional reranking | EndpointFields, ModelPicker and read-only model catalog discovery; query an entered URL before saving. |
+| Intake planning | Detailed staged Intake and source/file choices | Source selection and whole-dataset batch processing | Still needs shared plan editor and PostgreSQL plan/item adapters; do not replace the local Intake page with a simplified server page. |
+| Processing controls | Pause, resume, cancel and retry controls | Durable job leases and processing logs | Server still needs explicit pause/resume/item checkpoints and common progress/control UI. |
+| Document inspection | Detailed file page and extraction representations | Original PDF and extracted text | Server still needs representation persistence and the shared PDF/OCR overlay and comparison workflow. |
+| RAG experiments | Opt-in profiles and comparisons in Chat | Baseline grounded chat | Portable strategy code exists; authenticated PostgreSQL composition and shared experiment controls still need hosted integration. |
+| Synthesis and enrichment | Configured methods and Toolbox routing | Native extraction and optional embedding/OCR processing | Hosted job planning must route the same bounded Processor SDK operations; no fifth Toolbox kind. |
+
+Migrate these workflows in that order through Core adapters, preserving local
+behavior. A frontend control is not considered ported until the hosted Core API,
+authorization, worker state, persistence and failure/recovery behavior support it.

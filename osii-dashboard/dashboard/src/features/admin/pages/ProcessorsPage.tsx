@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import {
-  Accordion, AccordionDetails, AccordionSummary, Alert, Autocomplete, Box, Button, Chip,
+  Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip,
   Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel,
   LinearProgress, MenuItem, Paper, Snackbar, Stack, Switch, TextField, Typography,
 } from "@mui/material";
@@ -28,6 +28,8 @@ import type {
 import { WorkflowProgress } from "../../../components/discovery/WorkflowProgress";
 import type { WorkflowStepId } from "../../../domain/workflow";
 
+import { apiJson } from "../../../api/client";
+import { ModelPicker, type ModelOption } from "../../models/components/ModelPicker";
 import { EndpointFields } from "../../models/components/EndpointFields";
 
 const DEFAULT_EMBEDDING_MODEL = "all-minilm";
@@ -148,6 +150,25 @@ export function ProcessorsPage() {
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [providerForm, setProviderForm] = useState<ModelProvider>(blankProvider("openai"));
   const [apiKey, setApiKey] = useState("");
+  const [catalogQueried, setCatalogQueried] = useState(false);
+  const [catalogModels, setCatalogModels] = useState<ModelOption[]>([]);
+  const [discoveringModels, setDiscoveringModels] = useState(false);
+  const discoveryVersion = useRef(0);
+  useEffect(() => { discoveryVersion.current += 1; setCatalogModels([]); setCatalogQueried(false); }, [connectionOpen, providerForm.base_url, providerForm.type, apiKey]);
+  const findModels = async () => {
+    const version = discoveryVersion.current;
+    setDiscoveringModels(true);
+    try {
+      const result = await apiJson<{ models: ModelOption[] }>("/api/admin/model-providers/discover", {
+        method: "POST", json: { type: providerForm.type, base_url: providerForm.base_url, api_key: apiKey, provider_id: editingProviderId || "" },
+      });
+      if (version === discoveryVersion.current) {
+        setCatalogModels(result.models); setCatalogQueried(true);
+        notify(`Found ${result.models.length} available models. Choose one below; nothing has been saved or invoked.`);
+      }
+    } catch (error) { if (version === discoveryVersion.current) notify((error as Error).message, "error"); }
+    finally { setDiscoveringModels(false); }
+  };
   const [providerHealth, setProviderHealth] = useState<Record<string, ModelProviderHealth>>({});
   const [savingConnection, setSavingConnection] = useState(false);
   const [serviceBusy, setServiceBusy] = useState<string | null>(null);
@@ -488,7 +509,8 @@ export function ProcessorsPage() {
     followWorkflowStep(requestedStep as WorkflowStepId);
   }, [requestedStep, providerData.data, data]);
   const configurationErrors = Object.entries(data?.configuration?.errors ?? {});
-  const discoveredModels = providerHealth[providerForm.id]?.models ?? [];
+  const savedEndpointMatches = providerData.data?.providers.some(provider => provider.id === editingProviderId && provider.base_url === providerForm.base_url.replace(/\/$/, ""));
+  const discoveredModels = catalogQueried ? catalogModels : (savedEndpointMatches ? providerHealth[providerForm.id]?.models ?? [] : []).map(id => ({ id, name: id, capabilities: [] }));
 
   const capabilityMethods = (kind: keyof typeof CAPABILITY_COPY): CapabilityReadiness[] => {
     if (!data) return [];
@@ -688,17 +710,18 @@ export function ProcessorsPage() {
       <Stack spacing={1.5} sx={{ pt: 0.5 }}>
         <TextField select label="Connection" value={providerForm.type} disabled={Boolean(editingProviderId)} onChange={(event) => { setProviderForm(newConnectionProvider(event.target.value as ModelProvider["type"])); setApiKey(""); }} helperText="Use your endpoint's URL, model names, and API key. For a local model server, choose Ollama."><MenuItem value="openai">OpenAI-compatible endpoint</MenuItem><MenuItem value="ollama">Ollama (local model server)</MenuItem></TextField>
         <TextField label="Connection name" required disabled={Boolean(editingProviderId)} value={providerForm.id} onChange={(event) => setProviderForm({ ...providerForm, id: event.target.value.trim().toLowerCase() })} helperText="A reusable name such as base, mid, or top. Tools refer to this name, so it stays fixed after creation." />
-        <EndpointFields required baseUrl={providerForm.base_url} onBaseUrl={base_url => setProviderForm({ ...providerForm, base_url })}
+        <EndpointFields required onDiscover={() => void findModels()} discovering={discoveringModels} baseUrl={providerForm.base_url} onBaseUrl={base_url => setProviderForm({ ...providerForm, base_url })}
           apiKey={apiKey} onApiKey={setApiKey} credentialPresent={providerForm.credential_present}
           credentialWritable={providerForm.credential_writable !== false} showCredential={providerForm.type !== "ollama"}
           urlHelp={providerForm.type === "ollama" ? "Use an address reachable by the OSII backend. In containers, localhost means the container itself." : "Use the OpenAI-compatible API base address."}
           credentialHelp={providerForm.credential_help ?? `Saved locally in ${data?.configuration.files.secrets ?? "secrets.env"}. Never sent to Toolbox processors.`} />
         {providerForm.type === "ollama" && <Alert severity="info" icon={false}>Install and start Ollama yourself. OSII can inspect installed models and download the approved starters.</Alert>}
-        <Autocomplete freeSolo options={discoveredModels.filter(id => { const m = providerHealth[providerForm.id]?.model_details.find(m => m.name === id); return !m?.capabilities?.length || m.capabilities.includes("chat"); })} value={providerForm.chat_model} onChange={(_, id) => setProviderForm(current => ({ ...current, chat_model: id ?? "", synthesis_model: id ?? "" }))} onInputChange={(_, id, reason) => { if (reason === "input") setProviderForm(current => ({ ...current, chat_model: id, synthesis_model: id })); }} getOptionLabel={id => { const m = providerHealth[providerForm.id]?.model_details.find(m => m.name === id); return m?.display_name && m.display_name !== id ? `${m.display_name} — ${id}` : id; }} renderInput={params => <TextField {...params} label="Language model" helperText="Search discovered models or enter the exact API ID. Used for chat, summaries, and wiki generation." />} />
+        <ModelPicker label="Language model" value={providerForm.chat_model} options={discoveredModels.filter(model => !model.capabilities.length || model.capabilities.includes("chat"))}
+          onChange={model => setProviderForm(current => ({ ...current, chat_model: model, synthesis_model: model }))} helperText="Choose an available model for chat, summaries, and wiki generation." />
         <FormControlLabel control={<Switch checked={Boolean(providerForm.default_chat)} disabled={!providerForm.chat_model} onChange={(event) => setProviderForm({ ...providerForm, default_chat: event.target.checked })} />} label="Use this connection by default for chat and synthesis" />
-        <Autocomplete freeSolo options={discoveredModels.filter(id => { const m = providerHealth[providerForm.id]?.model_details.find(m => m.name === id); return !m?.capabilities?.length || m.capabilities.includes("embedding"); })} value={providerForm.embedding_model} onChange={(_, id) => setProviderForm(current => ({ ...current, embedding_model: id ?? "" }))} onInputChange={(_, id, reason) => { if (reason === "input") setProviderForm(current => ({ ...current, embedding_model: id })); }} getOptionLabel={id => { const m = providerHealth[providerForm.id]?.model_details.find(m => m.name === id); return m?.display_name && m.display_name !== id ? `${m.display_name} — ${id}` : id; }} renderInput={params => <TextField {...params} label="Embedding model" helperText="Search discovered models or enter an embedding API ID. Optional; keyword search remains available." />} />
+        <ModelPicker label="Embedding model (optional)" value={providerForm.embedding_model} options={discoveredModels.filter(model => !model.capabilities.length || model.capabilities.includes("embedding"))}
+          onChange={model => setProviderForm(current => ({ ...current, embedding_model: model }))} helperText="Choose a model for semantic search. Keyword search remains available without it." />
         <FormControlLabel control={<Switch checked={Boolean(providerForm.default_embedding)} disabled={!providerForm.embedding_model} onChange={(event) => setProviderForm({ ...providerForm, default_embedding: event.target.checked })} />} label="Use this connection by default for semantic embeddings" />
-        <datalist id="osii-model-options">{discoveredModels.map((model) => <option key={model} value={model} />)}</datalist>
         {providerHealth[providerForm.id] ? <Alert severity={!providerHealth[providerForm.id].ok || (providerHealth[providerForm.id].capabilities?.embedding?.configured && !providerHealth[providerForm.id].capabilities?.embedding?.ok) ? "error" : "success"}>
           {!providerHealth[providerForm.id].ok
             ? providerHealth[providerForm.id].detail

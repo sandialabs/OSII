@@ -37,6 +37,21 @@ def test_catalog_uses_api_ids_and_preserves_display_labels():
     assert models[0]["capabilities"] == ["chat"]
 
 
+def test_discover_entered_endpoint_before_saving(client, monkeypatch):
+    from osii.configuration import load_models_config
+    before = load_models_config()
+    calls = []
+    monkeypatch.setattr("requests.get", lambda url, **kw: calls.append((url, kw)) or FakeResponse(
+        payload={"data": [{"id": "published-model", "name": "Readable name"}]}))
+    response = client.post("/api/admin/model-providers/discover", json={
+        "type": "openai", "base_url": "https://new.test/v1", "api_key": "synthetic-key"})
+    assert response.status_code == 200
+    assert response.json()["models"][0] == {"id": "published-model", "name": "Readable name", "capabilities": []}
+    assert response.json()["generation_tested"] is False
+    assert load_models_config() == before
+    assert calls[0][0] == "https://new.test/v1/models"
+
+
 def test_default_ollama_provider_uses_small_us_models(client):
     payload = client.get("/api/admin/model-providers").json()
     embedder = next(item for item in payload["providers"] if item["id"] == "minilm")
