@@ -94,6 +94,12 @@ class RelatedRequest(TopicRequest):
     file_id: str = Field(min_length=1, max_length=200)
 
 
+class IntakePlan(BaseModel):
+    paths: list[str] = Field(min_length=1, max_length=5000)
+    operation: Literal["missing", "extract", "reprocess", "embed"] = "missing"
+    embed: bool = False
+
+
 class Ingest(BaseModel):
     force: bool = False
 
@@ -250,7 +256,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
     @app.get("/api/objects/{file_id}/texts/preferred")
     def preferred(file_id: str, account=Depends(require())):
         doc = document(file_id, account)
-        return {"text": doc["text"], "kind": "canonical_extracted_text", "file_id": file_id}
+        return {"text": doc["text"], "kind": "canonical_extracted_text", "representation": "primary extraction", "file_id": file_id}
 
     @app.get("/api/objects/{file_id}/source")
     def source(file_id: str, account=Depends(require())):
@@ -400,7 +406,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
 
     @app.put("/api/admin/models/endpoints/{kind}")
     def endpoint_save(kind: Literal["chat", "embedding", "rerank"], payload: EndpointChoice, account=Depends(require("admin"))):
-        if any(job["status"] in {"queued", "running"} for job in store.job_records()):
+        if any(job["status"] in {"queued", "running", "pausing", "cancelling"} for job in store.job_records()):
             raise HTTPException(409, "Wait for queued and running processing jobs to finish before changing endpoints")
         result = connections.save(kind, payload.model_dump())
         if kind == "rerank":
@@ -416,7 +422,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
 
     @app.delete("/api/admin/models/endpoints/{kind}")
     def endpoint_reset(kind: Literal["chat", "embedding", "rerank"], account=Depends(require("admin"))):
-        if any(job["status"] in {"queued", "running"} for job in store.job_records()):
+        if any(job["status"] in {"queued", "running", "pausing", "cancelling"} for job in store.job_records()):
             raise HTTPException(409, "Wait for processing jobs to finish before resetting endpoints")
         connections.reset(kind)
         if kind == "rerank":
@@ -426,6 +432,8 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
 
     @app.put("/api/admin/models")
     def model_choices(payload: ModelChoices, account=Depends(require("admin"))):
+        if any(job["status"] in {"queued", "running", "pausing", "cancelling"} for job in store.job_records()):
+            raise HTTPException(409, "Wait for processing jobs to finish before changing models")
         store.save_configuration(payload.model_dump())
         store.record("model_selection_changed", account["id"])
         return payload
@@ -499,6 +507,43 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
         store.save_setting("source", value)
         store.record("source_selection_changed", account["id"], value["directory"])
         return source_status(account)
+
+    @app.post("/api/admin/intake/preview")
+    def intake_preview(payload: IntakePlan, account=Depends(require("admin"))):
+        from osii.server.intake import plan
+        return plan(store, settings, payload.paths, operation=payload.operation, embed=payload.embed or payload.operation == "embed")
+
+    @app.post("/api/admin/intake/stage")
+    def intake_stage(payload: IntakePlan, account=Depends(require("admin"))):
+        reviewed = intake_preview(payload, account)
+        jid = store.enqueue("plan", reviewed, status="staged")
+        store.record("processing_staged", account["id"], jid)
+        from osii.server.intake import public_run
+        return public_run(store.job(jid))
+
+    @app.post("/api/admin/runs/{jid}/{action}")
+    def intake_control(jid: str, action: Literal["start", "pause", "resume", "cancel", "retry"], account=Depends(require("admin"))):
+        from osii.server.intake import configuration_stamp, public_run
+        try:
+            result = store.control_job(jid, action, lambda: configuration_stamp(store, settings))
+        except ValueError as exc:
+            raise HTTPException(409, str(exc))
+        store.record("processing_" + action, account["id"], jid)
+        return public_run(result)
+
+    @app.get("/api/admin/runs")
+    def processing_activity(account=Depends(require("admin"))):
+        from osii.server.intake import public_run
+        from datetime import datetime, timezone, timedelta
+        last_seen = store.setting("worker_status", {}).get("last_seen")
+        available = bool(last_seen and datetime.fromisoformat(last_seen) > datetime.now(timezone.utc) - timedelta(seconds=45))
+        return {"runs": [public_run(job) for job in store.job_records()], "worker": {"available": available}}
+
+    @app.get("/api/objects/{file_id}/extractions")
+    def extraction_history(file_id: str, account=Depends(require())):
+        document(file_id, account)
+        records = store.extraction_records(file_id)
+        return {"items": [{**row, "primary": i == 0} for i, row in enumerate(records)]}
 
     @app.post("/api/admin/intake")
     def intake(payload: Ingest | None = None, account=Depends(require("curator"))):

@@ -15,7 +15,9 @@ import urllib.error
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 from osii.indexing.chunking import _structured_window_spans
-from osii.persistence.postgres import PostgresStore, identifier
+from sqlalchemy import text
+
+from osii.persistence.postgres import PostgresStore, identifier, now
 from osii.processor_sdk.client import ProcessorClient, ProcessorClientError
 from osii.processor_sdk.models import DocumentInput, ExtractionRequest, ExtractionResponse
 from osii.server.config import Settings
@@ -50,7 +52,8 @@ def _normalize_extraction(response: ExtractionResponse) -> tuple[ExtractionRespo
 
 def ingest_file(store: PostgresStore, provider: ModelProvider, extractor: ProcessorClient,
                 root: Path, path: Path, *, max_bytes: int = 50 * 1024 * 1024,
-                ocr: ProcessorClient | None = None, force: bool = False) -> str:
+                ocr: ProcessorClient | None = None, force: bool = False, embed: bool = True,
+                job_owner: tuple[str, str] | None = None) -> str:
     target = path.resolve()
     if not target.is_relative_to(root.resolve()) or path.is_symlink():
         raise IngestionError("Source escapes the configured dataset or is a symbolic link")
@@ -61,8 +64,9 @@ def ingest_file(store: PostgresStore, provider: ModelProvider, extractor: Proces
     sha = hashlib.sha256(original).hexdigest()
     fid = "sha256-" + sha
     configuration = store.configuration()
+    model = configuration.get("embedding_model", "") if embed else ""
     previous = store.document(fid)
-    if not force and previous and previous["active"] and previous["source_relpath"] == relative and previous["sha256"] == sha and previous["metadata"].get("embedding_model", "") == configuration.get("embedding_model", ""):
+    if not force and previous and previous["active"] and previous["source_relpath"] == relative and previous["sha256"] == sha and (not embed or previous["metadata"].get("embedding_model", "") == model):
         return "unchanged"
     media = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
     response = extractor.extract(ExtractionRequest(request_id=identifier(), document=DocumentInput(
@@ -90,7 +94,6 @@ def ingest_file(store: PostgresStore, provider: ModelProvider, extractor: Proces
         rows.append({"chunk_id": f"{fid}:{i}", "file_id": fid, "text": content[start:end],
             "char_start": start, "char_end": end, "source_origin": {"segments": origins},
             "embedding": None, "embedding_model": None})
-    model = configuration.get("embedding_model", "")
     embedding_error = ""
     if model:
         try:
@@ -112,7 +115,7 @@ def ingest_file(store: PostgresStore, provider: ModelProvider, extractor: Proces
         doc["metadata"]["normalization"] = {"nul_replacements": nul_replacements, "replacement": "U+FFFD"}
     artifact_rows = [{"id": identifier(), "file_id": fid, "kind": artifact.kind,
         "payload": artifact.model_dump(mode="json")} for artifact in response.artifacts]
-    store.commit_document(doc, rows, response.model_dump(mode="json"), artifact_rows)
+    store.commit_document(doc, rows, response.model_dump(mode="json"), artifact_rows, job_owner=job_owner)
     return "text_only" if embedding_error else "processed"
 
 
@@ -166,6 +169,67 @@ def ingest_batch(store: PostgresStore, provider: ModelProvider, extractor: Proce
     return counts["failed"] > 0 or counts.get("text_only", 0) > 0
 
 
+
+def process_plan(store: PostgresStore, provider, extractor, settings: Settings,
+                 job: dict, worker: str, stopping: threading.Event, *, report, ocr=None) -> bool:
+    from osii.server.intake import source_file, configuration_stamp
+    payload = job["payload"]
+    if payload["configuration_stamp"] != configuration_stamp(store, settings):
+        raise IngestionError("Model or processor settings changed. Stage a new plan with the current settings.")
+    for index, item in enumerate(payload["items"]):
+        if store.checkpoint(job["id"], worker) != "running":
+            return False
+        if stopping.is_set():
+            # Stop at a file boundary. A restart resumes uncommitted work.
+            raise IngestionError("Worker stopped; completed files are retained. Retry this run to continue.")
+        if item["status"] == "done":
+            continue
+        started = now()
+        current = {**item, "status": "running", "started_at": started.isoformat(), "finished_at": None, "duration_seconds": None, "error": None}
+        if store.checkpoint(job["id"], worker, item=current, index=index) != "running":
+            return False
+        report("processing: " + item["path"])
+        try:
+            path = source_file(settings.source_root, item["path"])
+            stat = path.stat()
+            if stat.st_size != item["size_bytes"] or stat.st_mtime_ns != item["mtime_ns"]:
+                raise IngestionError("Source changed after staging. Stage a new plan to review it.")
+            if payload["operation"] == "embed":
+                fid = "sha256-" + hashlib.sha256(path.read_bytes()).hexdigest()
+                doc = store.document(fid)
+                if not doc or not doc["active"] or doc["source_relpath"] != item["path"]:
+                    raise IngestionError("Source no longer matches its indexed document. Extract it before embedding.")
+                rows = store.document_chunks(fid)
+                if not rows:
+                    raise IngestionError("No text chunks are available; extract this file before embedding.")
+                for offset in range(0, len(rows), 32):
+                    batch = rows[offset:offset+32]
+                    vectors = provider.embed(payload["embedding_model"], [row["text"] for row in batch])
+                    if len(vectors) != len(batch):
+                        raise IngestionError("Embedding service returned the wrong number of vectors")
+                    for row, vector in zip(batch, vectors):
+                        row["embedding"] = vector
+                store.replace_embeddings(fid, rows, payload["embedding_model"], job_owner=(job["id"], worker))
+                result = "embedded"
+            else:
+                result = ingest_file(store, provider, extractor, settings.source_root, path, ocr=ocr,
+                    force=payload["operation"] in {"extract", "reprocess"}, embed=payload["embed"], job_owner=(job["id"], worker))
+            current.update(status="done", result=result)
+            if result == "text_only":
+                current.update(status="error", error="Text saved, but embedding failed. Keyword search remains available; retry embeddings.")
+        except OperationalError:
+            raise
+        except Exception as exc:
+            current.update(status="error", error=failure_reason(exc))
+        current.update(finished_at=now().isoformat(), duration_seconds=(now()-started).total_seconds())
+        item.update(current)
+        report_status = current.get("error") or current.get("result", "done")
+        report(f"{current['status']}: {item['path']}: {report_status}")
+        if store.checkpoint(job["id"], worker, item=current, index=index) != "running":
+            return False
+    return any(item["status"] == "error" for item in payload["items"])
+
+
 def run(settings: Settings | None = None) -> None:
     settings = settings or Settings.environment()
     store = PostgresStore(settings.database_url)
@@ -176,44 +240,50 @@ def run(settings: Settings | None = None) -> None:
     worker, stopping = identifier(), threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stopping.set())
+    last_seen = 0.0
     while not stopping.is_set():
-        job = store.claim(worker)
-        if not job:
-            stopping.wait(1)
-            continue
-        finished = threading.Event()
-
-        def heartbeat():
-            while not finished.wait(10):
-                store.heartbeat(job["id"], worker)
-
-        thread = threading.Thread(target=heartbeat, daemon=True)
-        thread.start()
-        logs, failed = list(job["logs"]), False
-
-        def report(entry: str) -> None:
-            if not store.progress(job["id"], worker, entry):
-                raise IngestionError("Worker no longer owns this job; processing stopped.")
-            logs.append(entry)
-
-        try:
-            # One writer for the shared corpus, including when an operator starts
-            # another worker accidentally. Source originals are never modified.
-            with store.engine.connect() as lock:
-                lock.execute(__import__("sqlalchemy").text("SELECT pg_advisory_lock(914035)"))
+        if time.monotonic() - last_seen > 10:
+            store.save_setting("worker_status", {"last_seen": now().isoformat()})
+            last_seen = time.monotonic()
+        # Acquire the single-writer lock BEFORE claiming; a second worker must
+        # not lease another run while waiting behind the current writer.
+        with store.engine.connect() as lock:
+            if not lock.execute(text("SELECT pg_try_advisory_lock(914035)")).scalar():
+                stopping.wait(1)
+                continue
+            try:
+                job = store.claim(worker)
+                if not job:
+                    stopping.wait(1)
+                    continue
+                finished = threading.Event()
+                def heartbeat():
+                    while not finished.wait(10):
+                        store.heartbeat(job["id"], worker)
+                        store.save_setting("worker_status", {"last_seen": now().isoformat()})
+                thread = threading.Thread(target=heartbeat, daemon=True)
+                thread.start()
+                logs, failed = list(job["logs"]), False
+                def report(entry: str) -> None:
+                    if not store.progress(job["id"], worker, entry):
+                        raise IngestionError("Worker no longer owns this job; processing stopped.")
+                    logs.append(entry)
                 try:
-                    failed = ingest_batch(store, provider, extractor, settings.source_root,
-                        report=report, stopping=stopping, ocr=ocr, force=bool(job["payload"].get("force")),
-                        source_directory=job["payload"].get("source_directory", "."))
+                    if job["kind"] == "plan":
+                        failed = process_plan(store, provider, extractor, settings, job, worker, stopping, report=report, ocr=ocr)
+                    else:
+                        failed = ingest_batch(store, provider, extractor, settings.source_root,
+                            report=report, stopping=stopping, ocr=ocr, force=bool(job["payload"].get("force")),
+                            source_directory=job["payload"].get("source_directory", "."))
+                except Exception as exc:
+                    logs.append("Batch stopped: " + failure_reason(exc))
+                    failed = True
                 finally:
-                    lock.execute(__import__("sqlalchemy").text("SELECT pg_advisory_unlock(914035)"))
-        except Exception as exc:
-            logs.append("Batch stopped: " + failure_reason(exc))
-            failed = True
-        finally:
-            finished.set()
-            thread.join(timeout=2)
-            store.finish(job["id"], worker, logs, failed)
+                    finished.set()
+                    thread.join(timeout=2)
+                    store.finish(job["id"], worker, logs, failed)
+            finally:
+                lock.execute(text("SELECT pg_advisory_unlock(914035)"))
 
 
 if __name__ == "__main__":

@@ -5,11 +5,12 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import hashlib
 from typing import Iterator
+from collections.abc import Callable
 import uuid
 
 from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey, Integer,
                         LargeBinary, MetaData, String, Table, Text, create_engine,
-                        delete, insert, select, text, update, or_, func, UniqueConstraint)
+                        delete, insert, select, text, update, or_, func, UniqueConstraint, case)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Connection
 
@@ -167,9 +168,15 @@ class PostgresStore:
             return c.execute(select(settings.c.value).where(settings.c.id == "models")).scalar() or {
                 "chat_model": "", "embedding_model": ""}
 
+    def assert_models_idle(self, connection: Connection) -> None:
+        if connection.execute(select(jobs.c.id).where(jobs.c.status.in_(["queued", "running", "pausing", "cancelling"])).limit(1)).first():
+            raise ValueError("Wait for processing jobs to finish before changing models or endpoints")
+
     def save_configuration(self, value: dict) -> None:
         from sqlalchemy.dialects.postgresql import insert as upsert
         with self.transaction() as c:
+            c.execute(text("SELECT pg_advisory_xact_lock(914036)"))
+            self.assert_models_idle(c)
             s = upsert(settings).values(id="models", value=value)
             c.execute(s.on_conflict_do_update(index_elements=[settings.c.id], set_={"value": value}))
 
@@ -179,6 +186,7 @@ class PostgresStore:
         from sqlalchemy.dialects.postgresql import insert as upsert
         with self.transaction() as c:
             c.execute(text("SELECT pg_advisory_xact_lock(914036)"))
+            self.assert_models_idle(c)
             endpoints = dict(c.execute(select(settings.c.value).where(settings.c.id == "model_endpoints")).scalar() or {})
             if record is None:
                 endpoints.pop(kind, None)
@@ -208,10 +216,11 @@ class PostgresStore:
             row = c.execute(select(documents).where(documents.c.file_id == file_id)).mappings().first()
             return dict(row) if row else None
 
-    def commit_document(self, document: dict, chunk_rows: list[dict], extraction: dict, artifact_rows: list[dict]) -> None:
+    def commit_document(self, document: dict, chunk_rows: list[dict], extraction: dict, artifact_rows: list[dict], *, job_owner: tuple[str, str] | None = None) -> None:
         from sqlalchemy.dialects.postgresql import insert as upsert
         document = {**document, "active": True}
         with self.transaction() as c:
+            self.assert_job_owner(c, job_owner)
             c.execute(update(documents).where(documents.c.source_relpath == document["source_relpath"],
                 documents.c.file_id != document["file_id"]).values(active=False))
             s = upsert(documents).values(**document, updated_at=now())
@@ -272,10 +281,11 @@ class PostgresStore:
             # A curator's stale shared edit must not republish a now-private collection.
             return c.execute(update(collections).where(*self._collection_version(previous)).values(**value)).rowcount == 1
 
-    def enqueue(self, kind: str, payload: dict) -> str:
+    def enqueue(self, kind: str, payload: dict, *, status: str = "queued") -> str:
         with self.transaction() as c:
+            c.execute(text("SELECT pg_advisory_xact_lock(914036)"))
             jid = identifier()
-            c.execute(insert(jobs).values(id=jid, kind=kind, status="queued", payload=payload,
+            c.execute(insert(jobs).values(id=jid, kind=kind, status=status, payload=payload,
                 logs=[], attempts=0, created_at=now()))
             return jid
 
@@ -286,7 +296,9 @@ class PostgresStore:
     def claim(self, worker: str) -> dict | None:
         with self.transaction() as c:
             # Expired leases are recoverable; repeated failure is bounded.
-            c.execute(update(jobs).where(jobs.c.status == "running", jobs.c.lease_until < now()).values(status="queued"))
+            c.execute(update(jobs).where(jobs.c.status.in_(["running", "pausing", "cancelling"]), jobs.c.lease_until < now()).values(
+                status=case((jobs.c.status == "pausing", "paused"),
+                    (jobs.c.status == "cancelling", "cancelled"), else_="queued"), worker_id=None, lease_until=None))
             c.execute(update(jobs).where(jobs.c.status == "queued", jobs.c.attempts >= 3)
                 .values(status="error", logs=["Worker recovery exhausted after three attempts."]))
             row = c.execute(select(jobs).where(jobs.c.status == "queued", jobs.c.attempts < 3)
@@ -299,16 +311,101 @@ class PostgresStore:
 
     def heartbeat(self, jid: str, worker: str) -> None:
         with self.transaction() as c:
-            c.execute(update(jobs).where(jobs.c.id == jid, jobs.c.worker_id == worker, jobs.c.status == "running")
+            c.execute(update(jobs).where(jobs.c.id == jid, jobs.c.worker_id == worker, jobs.c.status.in_(["running", "pausing", "cancelling"]))
                 .values(lease_until=now() + timedelta(minutes=5)))
 
     def progress(self, jid: str, worker: str, entry: str) -> bool:
         with self.transaction() as c:
             result = c.execute(update(jobs).where(jobs.c.id == jid, jobs.c.worker_id == worker,
-                jobs.c.status == "running").values(logs=jobs.c.logs + [entry]))
+                jobs.c.status.in_(["running", "pausing", "cancelling"])).values(logs=jobs.c.logs + [entry]))
             return result.rowcount == 1
 
     def finish(self, jid: str, worker: str, logs: list[str], failed: bool = False) -> None:
         with self.transaction() as c:
-            c.execute(update(jobs).where(jobs.c.id == jid, jobs.c.worker_id == worker)
-                .values(status="error" if failed else "done", logs=logs, lease_until=None))
+            c.execute(update(jobs).where(jobs.c.id == jid, jobs.c.worker_id == worker,
+                jobs.c.status.in_(["running", "pausing", "cancelling"])).values(
+                    status=case((jobs.c.status == "pausing", "paused"), (jobs.c.status == "cancelling", "cancelled"),
+                                else_="error" if failed else "done"),
+                    logs=logs[-2000:], worker_id=None, lease_until=None))
+
+
+    def job(self, jid: str) -> dict | None:
+        with self.engine.connect() as c:
+            row = c.execute(select(jobs).where(jobs.c.id == jid)).mappings().first()
+            return dict(row) if row else None
+
+    def control_job(self, jid: str, action: str, configuration_stamp: str | Callable[[], str]) -> dict:
+        with self.transaction() as c:
+            c.execute(text("SELECT pg_advisory_xact_lock(914036)"))
+            configuration_stamp = configuration_stamp() if callable(configuration_stamp) else configuration_stamp
+            row = c.execute(select(jobs).where(jobs.c.id == jid).with_for_update()).mappings().first()
+            if not row:
+                raise ValueError("Processing plan not found")
+            state, payload = row["status"], dict(row["payload"])
+            transitions = {
+                "start": {"staged": "queued"},
+                "pause": {"queued": "paused", "running": "pausing"},
+                "resume": {"paused": "queued"},
+                "cancel": {"staged": "cancelled", "queued": "cancelled", "paused": "cancelled", "running": "cancelling", "pausing": "cancelling"},
+                "retry": {"error": "queued"},
+            }
+            target = transitions.get(action, {}).get(state)
+            if not target:
+                raise ValueError(f"Cannot {action} a {state} run")
+            if target == "queued" and payload.get("configuration_stamp", configuration_stamp) != configuration_stamp:
+                raise ValueError("Model or processor settings changed. Stage a new plan with the current settings.")
+            if action == "retry":
+                payload["items"] = [{**item, "status": "pending", "error": None, "started_at": None, "finished_at": None, "duration_seconds": None} if item["status"] == "error" else item for item in payload.get("items", [])]
+            c.execute(update(jobs).where(jobs.c.id == jid).values(status=target, payload=payload,
+                attempts=0 if target == "queued" else row["attempts"]))
+            return {**dict(row), "status": target, "payload": payload}
+
+    def checkpoint(self, jid: str, worker: str, *, item: dict | None = None, index: int | None = None) -> str:
+        """Persist file progress and honor controls only at a file boundary."""
+        with self.transaction() as c:
+            row = c.execute(select(jobs).where(jobs.c.id == jid).with_for_update()).mappings().first()
+            if not row or row["worker_id"] != worker or row["status"] not in {"running", "pausing", "cancelling"} or row["lease_until"] <= now():
+                raise ValueError("Worker no longer owns this processing run")
+            payload = dict(row["payload"])
+            if item is not None:
+                payload["items"][index] = item
+            state = {"pausing": "paused", "cancelling": "cancelled"}.get(row["status"], row["status"])
+            c.execute(update(jobs).where(jobs.c.id == jid).values(payload=payload, status=state,
+                **({"worker_id": None, "lease_until": None, "logs": row["logs"] + [f"Run {state} at a file boundary."]} if state != "running" else {})))
+            return state
+
+    def extraction_records(self, file_id: str) -> list[dict]:
+        with self.engine.connect() as c:
+            return [dict(row) for row in c.execute(select(extractions).where(extractions.c.file_id == file_id)
+                .order_by(extractions.c.created_at.desc(), extractions.c.id)).mappings()]
+
+    def replace_embeddings(self, file_id: str, rows: list[dict], model: str, *, job_owner: tuple[str, str] | None = None) -> None:
+        with self.transaction() as c:
+            self.assert_job_owner(c, job_owner)
+            doc = c.execute(select(documents).where(documents.c.file_id == file_id).with_for_update()).mappings().one()
+            for row in rows:
+                c.execute(update(chunks).where(chunks.c.file_id == file_id, chunks.c.chunk_id == row["chunk_id"])
+                    .values(embedding=row["embedding"], embedding_model=model))
+            c.execute(update(documents).where(documents.c.file_id == file_id).values(
+                metadata={**doc["metadata"], "embedding_model": model, "embedding_warning": ""}, updated_at=now()))
+            c.execute(update(datasets).where(datasets.c.id == "shared").values(revision=datasets.c.revision + 1))
+
+    def document_chunks(self, file_id: str) -> list[dict]:
+        with self.engine.connect() as c:
+            return [dict(row) for row in c.execute(select(chunks).where(chunks.c.file_id == file_id).order_by(chunks.c.char_start)).mappings()]
+
+
+    def indexed_paths(self) -> set[str]:
+        with self.engine.connect() as c:
+            return set(c.execute(select(documents.c.source_relpath).where(documents.c.active)).scalars())
+
+
+    @staticmethod
+    def assert_job_owner(connection: Connection, owner: tuple[str, str] | None) -> None:
+        if owner is None:
+            return
+        jid, worker = owner
+        row = connection.execute(select(jobs.c.id).where(jobs.c.id == jid, jobs.c.worker_id == worker,
+            jobs.c.status.in_(["running", "pausing", "cancelling"]), jobs.c.lease_until > now()).with_for_update()).first()
+        if not row:
+            raise ValueError("Worker no longer owns this processing run; no document changes were committed")

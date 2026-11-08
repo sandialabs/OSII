@@ -35,6 +35,7 @@ type GroundedSegmentEditorProps = {
   fontSizePx?: number;
   searchResetToken?: number;
   compact?: boolean;
+  readOnly?: boolean;
 };
 
 type EditableSegment = {
@@ -94,8 +95,9 @@ export function GroundedSegmentEditor({
   fontSizePx = 15,
   searchResetToken = 0,
   compact = false,
+  readOnly = false,
 }: GroundedSegmentEditorProps) {
-  const editedQuery = useEditedObjectText(fileId, true);
+  const editedQuery = useEditedObjectText(fileId, !readOnly);
   const saveMutation = useSaveEditedObjectText(fileId);
   const deleteMutation = useDeleteEditedObjectText(fileId);
 
@@ -254,7 +256,7 @@ export function GroundedSegmentEditor({
             <SearchOutlinedIcon fontSize="small" />
           </IconButton>
 
-          {!isEditing ? (
+          {!readOnly && (!isEditing ? (
             <Button
               size="small"
               variant="outlined"
@@ -282,9 +284,9 @@ export function GroundedSegmentEditor({
                 Cancel
               </Button>
             </>
-          )}
+          ))}
 
-          <Button
+          {!readOnly && <Button
             size="small"
             variant="outlined"
             color="warning"
@@ -293,7 +295,7 @@ export function GroundedSegmentEditor({
             disabled={!hasEditedText || deleteMutation.isPending}
           >
             Restore
-          </Button>
+          </Button>}
         </Stack>
       </Stack>
 

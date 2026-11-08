@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Alert, AppBar, Box, Button, Container, Dialog, DialogContent, DialogTitle, Divider, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, ListSubheader, MenuItem, Paper, Stack, TextField, Toolbar, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
+import { Alert, AppBar, Box, Button, Container, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, ListSubheader, MenuItem, Paper, Stack, TextField, Toolbar, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
 import { AccountTreeOutlined, ChatOutlined, CollectionsBookmarkOutlined, FolderOutlined, GroupOutlined, HubOutlined, Menu, Search, SettingsOutlined, StorageOutlined } from "@mui/icons-material";
 import { api, type Collection, type Doc, type Hit, type Scope, type User } from "./api";
 import { Intake, ModelAdmin, UserAdmin } from "./AdminViews";
@@ -7,6 +7,7 @@ import { SourceAdmin } from "./SourceAdmin";
 import { TopicExplorer } from "./TopicExplorer";
 import { Collections, CollectionSelection } from "./Collections";
 
+import { DocumentView } from "./DocumentView";
 import { LibraryBrowser } from "./LibraryBrowser";
 import { SearchResultCard } from "../search/components/SearchResultCard";
 import { SearchModeSelect, type SearchMode } from "../search/components/SearchModeSelect";
@@ -14,7 +15,7 @@ import { SearchModeSelect, type SearchMode } from "../search/components/SearchMo
 const pages = [
   { id: "library", label: "Library", icon: FolderOutlined }, { id: "collections", label: "Collections", icon: CollectionsBookmarkOutlined },
   { id: "topics", label: "Topic explorer", icon: HubOutlined }, { id: "search", label: "Search", icon: Search }, { id: "chat", label: "Chat", icon: ChatOutlined },
-  { id: "processing", label: "Processing", icon: AccountTreeOutlined }, { id: "source", label: "Source & status", icon: StorageOutlined },
+  { id: "processing", label: "Intake & processing", icon: AccountTreeOutlined }, { id: "source", label: "Source & status", icon: StorageOutlined },
   { id: "models", label: "Models", icon: SettingsOutlined }, { id: "users", label: "Users", icon: GroupOutlined },
 ];
 const rootScope: Scope = { scope_type: "root" };
@@ -22,7 +23,7 @@ const drawerWidth = 238;
 
 export function Workspace({ user, onLogout, onPassword }: { user: User; onLogout: () => void; onPassword: () => void }) {
   const curator = user.role !== "reader";
-  const availablePages = pages.filter(page => ["source", "models", "users"].includes(page.id) ? user.role === "admin" : page.id !== "processing" || curator);
+  const availablePages = pages.filter(page => ["processing", "source", "models", "users"].includes(page.id) ? user.role === "admin" : page.id !== "processing" || curator);
   const pageFromHash = () => availablePages.some(page => page.id === window.location.hash.slice(1)) ? window.location.hash.slice(1) : "library";
   const [flat, setFlat] = useState(true);
   const [tab, setTab] = useState(pageFromHash);
@@ -93,6 +94,6 @@ export function Workspace({ user, onLogout, onPassword }: { user: User; onLogout
       {corpusPage && selectedIds.size > 0 && <CollectionSelection collections={collections} refresh={refresh} fail={fail} selected={selectedIds} clear={() => setSelectedIds(new Set())} current={currentCollection} />}
       {tab === "processing" && curator && <Intake />}{tab === "source" && user.role === "admin" && <SourceAdmin />}{tab === "models" && user.role === "admin" && <ModelAdmin />}{tab === "users" && user.role === "admin" && <UserAdmin />}
     </Stack></Container></Box>
-    <Dialog open={Boolean(selected)} onClose={() => setSelected(null)} fullWidth maxWidth="lg"><DialogTitle>{selected?.filename}</DialogTitle><DialogContent><Stack spacing={2}><Button component="a" href={`/api/objects/${selected?.file_id}/source`} target="_blank" rel="noopener">Open original source</Button>{selected?.media_type === "application/pdf" && <Box component="iframe" title="Source PDF" src={`/api/objects/${selected.file_id}/source`} sx={{ height: 500, border: 0 }} />}<Divider /><Typography variant="h6">Extracted evidence</Typography><Typography component="pre" sx={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontFamily: "inherit" }}>{selected?.text}</Typography></Stack></DialogContent></Dialog>
+    {selected && <DocumentView key={selected.file_id} doc={selected} close={() => setSelected(null)} />}
   </Box>;
 }

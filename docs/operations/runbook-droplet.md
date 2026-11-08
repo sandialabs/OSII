@@ -142,3 +142,41 @@ persistence stays in Core/PostgreSQL. See [model endpoints](model-endpoints.md).
 Microsoft SSO is not enabled yet. Its future OIDC identity must map to an existing
 stable OSII user ID to preserve roles and private collections; matching email or
 username alone is not an account-linking policy.
+
+
+## Staged Intake and document inspection
+
+As an administrator, open **Intake & processing**. Under **Add files**, browse
+mounted folders and select files or folders. **Process library** selects already
+indexed documents. Choose text intake/refresh, re-extraction, or embedding-only
+processing. Text-only is the default; embeddings require an explicitly selected
+model and can incur provider charges. Embedding-only work reuses canonical chunks
+and replaces vectors transactionally without another extraction.
+
+Choose **Preview selected files**, review the exact list, then **Stage plan**.
+Staging stores a durable, unstarted plan in PostgreSQL; it does not invoke a
+processor. In **Activity**, review its files and choose **Start processing**.
+The worker handles one file at a time. **Pause** and **Cancel** finish the current
+file safely; **Resume** skips completed files, and **Retry** revisits failed or
+unfinished files. Per-file status, timings, errors, progress and live logs use
+the same activity component as local. Worker availability is based on a heartbeat,
+not just a successful API response.
+
+Plans contain at most 5,000 visible files, each at most 50 MiB. Source files stay
+read-only. A changed source fails its staged item instead of silently processing
+the changed file: stage a new plan to review it. A changed model/processor
+configuration also requires a new plan before start/resume. Endpoint/model edits
+are blocked while jobs are queued or active, including pause/cancel requests.
+Staged/paused plans survive API and worker restarts. Expired leases recover active
+work; an interrupted current file can be repeated, while completed checkpoints
+are retained. A pause/cancel request survives lease recovery. Legacy curator
+batch APIs remain compatible; the new staged-plan controls are administrator-only.
+
+Opening a document uses the shared **Text / Source / Split View / Extractions /
+Syntheses / Wiki / Enrichments** tabs. PDF.js renders the authenticated PDF in a
+canvas, so the application can keep `frame-ancestors 'none'`. Extraction history
+preserves Processor SDK responses and their source/OCR regions in PostgreSQL.
+Selecting an older representation changes only the viewer. It does not promote
+that version into search. Hosted text editing, extraction promotion and hosted
+synthesis/enrichment execution are not yet implemented; their panes show saved
+artifacts or an explicit empty state.
