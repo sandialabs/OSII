@@ -40,6 +40,7 @@ def test_configured_processor_urls_includes_enabled_admin_registry(tmp_path, mon
 
     assert remote.configured_processor_urls() == [
         "http://processor-a:8000",
+        "http://127.0.0.1:8095/metadata",
         "http://127.0.0.1:8099",
         "http://127.0.0.1:8100",
         "http://127.0.0.1:8081",
@@ -61,6 +62,7 @@ def test_openai_provider_uses_standard_embedding_and_synthesis_adapters(tmp_path
     urls = remote.configured_processor_urls()
 
     assert urls == [
+        "http://127.0.0.1:8095/metadata",
         "http://127.0.0.1:8099",
         "http://127.0.0.1:8100",
         "http://127.0.0.1:8081",
@@ -200,21 +202,21 @@ def test_remote_enricher_commits_multiple_standard_artifacts_by_kind(
             "metadata": {"model": "test-model", "provider": "test"},
             "artifacts": [
                 {
-                    "id": "concept-entity-wiki", "kind": "wiki",
+                    "id": "concept-entity-wiki", "kind": "wiki", "media_type": "application/json",
                     "standard_data": {
                         "artifact_type": "wiki_markdown", "title": "Wiki",
                         "markdown": "# Wiki", "citations": [],
                     },
                 },
                 {
-                    "id": "entities", "kind": "entities",
+                    "id": "entities", "kind": "entities", "media_type": "application/json",
                     "standard_data": {
                         "artifact_type": "entity_list", "title": "Entities",
                         "entities": [],
                     },
                 },
                 {
-                    "id": "concepts", "kind": "table",
+                    "id": "concepts", "kind": "table", "media_type": "application/json",
                     "standard_data": {
                         "artifact_type": "table", "title": "Concepts",
                         "columns": [], "rows": [], "row_provenance": [],
@@ -239,3 +241,11 @@ def test_remote_enricher_commits_multiple_standard_artifacts_by_kind(
     )
     assert metadata["model"] == "test-model"
     assert metadata["provider"] == "test"
+
+
+def test_invalid_descriptor_is_isolated_from_other_tools(monkeypatch):
+    monkeypatch.setattr(remote, "configured_processor_urls", lambda: ["http://invalid", "http://valid"])
+    descriptor = ProcessorDescriptor(name="test.valid", version="1", display_name="Valid", description="Test", kind=ProcessorKind.ENRICHER).model_dump(mode="json")
+    monkeypatch.setattr(remote, "_request_json", lambda url, **kwargs: {"capabilities": []} if "invalid" in url else descriptor)
+    assert [item["name"] for item in remote.discover_remote_processors()] == ["test.valid"]
+    assert remote.discover_remote_processors(include_errors=True)[0]["error"]

@@ -1,28 +1,15 @@
-def test_enrichment_job_api_starts_job(client, monkeypatch, sample_osii_object):
-    class FakeEnricher:
-        def enrich(self, *, osii_store, scope, enricher_config=None):
-            return {
-                "result": {
-                    "scope_type": scope["scope_type"],
-                    "kind": "keywords",
-                    "method": "stats_keywords",
-                }
-            }
+from osii.domain.processing.jobs import claim_next_queue_job, configure_job_store, get_run
+from osii.worker import execute_job
 
-    monkeypatch.setattr("osii.api.enrichment_jobs_routes.resolve_enricher", lambda name: FakeEnricher())
 
-    response = client.post(
-        "/api/enrichment-jobs/run",
-        json={
-            "enricher_name": "stats_keywords",
-            "scope": {
-                "scope_type": "object",
-                "file_id": sample_osii_object["file_id"],
-            },
-            "enricher_config": {"top_k": 10},
-        },
-    )
+def test_enrichment_job_queues_then_saves(client, temp_osii_root, sample_osii_object):
+    response = client.post("/api/enrichment-jobs/run", json={"enricher_name": "stats_keywords", "scope": {"scope_type": "object", "file_id": sample_osii_object["file_id"]}})
     assert response.status_code == 200
-    data = response.json()
-    assert data["enricher_name"] == "stats_keywords"
-    assert "run_id" in data
+    assert response.json()["status"] == "queued"
+    configure_job_store(temp_osii_root)
+    job = claim_next_queue_job("test-worker")
+    assert job["run_id"] == response.json()["run_id"]
+    execute_job(job)
+    run = get_run(job["run_id"])
+    assert run["status"] == "done"
+    assert run["items"][0]["enrichment"]["kind"] == "keywords"

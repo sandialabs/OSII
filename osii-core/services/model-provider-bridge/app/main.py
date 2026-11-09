@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from osii.processors.synthesis import synthesize_bounded
+from osii.processors.document_metadata import metadata_prompt, parse_document_metadata
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -19,6 +21,12 @@ from app.env_credentials import resolve_secret
 from osii.processor_sdk import (
     Capability,
     Embedder,
+    Enricher,
+    EnrichmentRequest,
+    EnrichmentResponse,
+    Artifact,
+    TableArtifactData,
+    TableColumn,
     EmbeddingRequest,
     EmbeddingResponse,
     EmbeddingVector,
@@ -271,6 +279,41 @@ class ProviderSynthesizer(Synthesizer):
         return response
 
 
+
+
+class DocumentMetadataEnricher(Enricher):
+    descriptor = ProcessorDescriptor(
+        name="core.document-metadata", version="1.0.0", display_name="Suggest document metadata",
+        description="Infer title, author and date from document text, with evidence for review.",
+        kind=ProcessorKind.ENRICHER,
+        capabilities=Capability(scope_types=["object"], output_kinds=["document_metadata"]),
+        model_requirements={"chat": "required"},
+    )
+
+    def enrich(self, request: EnrichmentRequest) -> EnrichmentResponse:
+        context = request.model_context
+        if not context or not context.bindings.get("chat"):
+            raise ValueError("Choose a chat model for metadata suggestions.")
+        if len(request.scope.documents) != 1:
+            raise ValueError("Choose one document for metadata suggestions.")
+        document = request.scope.documents[0]
+        text = document.text or ""
+        response = requests.post(context.gateway_url.rstrip("/") + "/chat/completions",
+            headers={"Authorization": "Bearer " + context.token},
+            json={"model": context.bindings["chat"], "messages": [{"role": "user", "content": metadata_prompt(text, "")}],
+                  "max_tokens": 1600, "temperature": 0}, timeout=180)
+        response.raise_for_status()
+        content = response.json()["choices"][0]["message"]["content"]
+        metadata = parse_document_metadata(content, text=text, model=context.bindings["chat"])
+        rows = [{"field": field, **metadata[field]} for field in ("title", "author", "date")]
+        table = TableArtifactData(title="Metadata suggestions", columns=[TableColumn(key=key, label=label)
+            for key, label in [("field", "Field"), ("value", "Suggestion"), ("qualifier", "Context"), ("evidence", "Evidence")]],
+            rows=rows, row_provenance=[[ProvenanceRef(file_id=document.file_id)] for _ in rows])
+        return EnrichmentResponse(request_id=request.request_id, processor=self.descriptor,
+            artifacts=[Artifact(id="metadata", kind="document_metadata", media_type="application/json", standard_data=table,
+                                metadata={"document_metadata": metadata, "suggestions_only": True})])
+
+
 class ChatRequest(BaseModel):
     model: str | None = None
     messages: list[dict[str, Any]] = Field(min_length=1)
@@ -289,6 +332,9 @@ for provider in ("ollama", "openai"):
     app.mount(f"/{provider}/embedder", create_processor_app(ProviderEmbedder(provider)))
 for provider in ("ollama", "openai"):
     app.mount(f"/{provider}/synthesizer", create_processor_app(ProviderSynthesizer(provider)))
+
+
+app.mount("/metadata", create_processor_app(DocumentMetadataEnricher()))
 
 
 @app.get("/health")
@@ -359,6 +405,9 @@ def _bound_connection(claims: dict[str, Any], capability: str, requested: str) -
     connection = model_connection(alias)
     if connection is None:
         raise HTTPException(status_code=503, detail=f"Model connection {alias!r} is unavailable")
+    expected = claims.get("connection_fingerprints", {}).get(capability)
+    if expected and hashlib.sha256(json.dumps(connection, sort_keys=True).encode()).hexdigest() != expected:
+        raise HTTPException(status_code=409, detail="This model changed since the job started. Start a new run.")
     if capability not in connection.get("capabilities", []):
         raise HTTPException(status_code=422, detail=f"Model connection {alias!r} does not support {capability}")
     return alias, connection

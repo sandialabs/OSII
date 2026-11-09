@@ -257,16 +257,17 @@ def test_interrupted_publication_preserves_readable_previous_revision(
     from osii.domain.artifacts import documentation_wiki
 
     saved = save(temp_osii_root, wiki_page)
-    write = documentation_wiki.atomic_write_text
+    from osii.domain.artifacts import products
+    write = products.atomic_write_text
 
     def interrupted_write(path, content):
-        if path.name == saved["filename"]:
+        if path.name == "manifest.json":
             raise OSError("simulated interruption after metadata publication")
         return write(path, content)
 
     revised = wiki_page.model_copy(update={"markdown": "Updated calibration lesson."})
     with monkeypatch.context() as patch:
-        patch.setattr(documentation_wiki, "atomic_write_text", interrupted_write)
+        patch.setattr(products, "atomic_write_text", interrupted_write)
         with pytest.raises(OSError, match="simulated interruption"):
             save(temp_osii_root, revised, revision=1)
     recovered = get_documentation_wiki(temp_osii_root, None, "thermal-calibration")

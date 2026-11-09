@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import urllib.error
@@ -13,9 +14,9 @@ from typing import Any
 
 from osii.configuration import (
     configured_tools,
-    load_models_config,
     model_connection,
     tool_for_processor,
+    resolve_tool_models,
 )
 from osii.model_gateway_tokens import issue_model_gateway_token
 
@@ -25,6 +26,7 @@ from osii.processor_sdk import (
     EmbeddingRequest,
     ExtractionRequest,
     ProcessorClient,
+    ProcessorDescriptor,
     ProcessorClientError,
     ScopeInput,
     SynthesisRequest,
@@ -106,31 +108,11 @@ def _model_context(
     if not requirements:
         return None
     configured = tool_for_processor(processor_name, osii_root)
-    tool_id, tool = configured if configured else (processor_name, {})
-    access = tool.get("model_access") or {}
-    if access.get("mode", "gateway") == "none":
-        required = [name for name, value in requirements.items() if value == "required"]
-        if required:
-            raise RuntimeError(
-                f"{processor_name} requires {', '.join(required)} model access, but the tool is configured as self-contained."
-            )
-        return None
-    bindings = dict(access.get("bindings") or {})
-    defaults = load_models_config(osii_root).get("defaults", {})
-    for capability, requirement in requirements.items():
-        alias = str(bindings.get(capability) or defaults.get(capability) or "")
-        if not alias:
-            if requirement == "required":
-                raise RuntimeError(
-                    f"Choose a {capability} model connection for {processor_name} in Setup."
-                )
-            continue
-        connection = model_connection(alias, osii_root)
-        if connection is None or capability not in connection.get("capabilities", []):
-            raise RuntimeError(
-                f"Model connection {alias!r} is unavailable or does not support {capability}."
-            )
-        bindings[capability] = alias
+    tool_id = configured[0] if configured else processor_name
+    from osii.domain.tool_actions import frozen_bindings
+    bindings = frozen_bindings(processor_name)
+    if bindings is None:
+        bindings = resolve_tool_models(processor_name, requirements, osii_root)
     if not bindings:
         return None
     return {
@@ -141,6 +123,7 @@ def _model_context(
             tool_id=tool_id,
             job_id=request_id,
             bindings=bindings,
+            connection_fingerprints={cap: hashlib.sha256(json.dumps(model_connection(alias, osii_root), sort_keys=True).encode()).hexdigest() for cap, alias in bindings.items()},
         ),
         "bindings": bindings,
     }
@@ -187,11 +170,13 @@ def discover_remote_processors(*, include_errors: bool = False) -> list[dict[str
     discovered = []
     for base_url in configured_processor_urls():
         try:
-            descriptor = _request_json(f"{base_url}/v1/descriptor", timeout=5.0)
+            descriptor = ProcessorDescriptor.model_validate(
+                _request_json(f"{base_url}/v1/descriptor", timeout=5.0)
+            ).model_dump(mode="json")
             descriptor["base_url"] = base_url
             descriptor["remote"] = True
             discovered.append(descriptor)
-        except RuntimeError as exc:
+        except (RuntimeError, ValueError, TypeError) as exc:
             if include_errors:
                 discovered.append({"base_url": base_url, "remote": True, "error": str(exc)})
     return discovered
@@ -567,7 +552,9 @@ class RemoteEnricher:
         enricher_config: dict | None = None,
     ) -> dict:
         texts, _ = collect_scope_texts(osii_store, scope)
-        expert_context = resolve_expert_context(osii_store, scope, expert_context)
+        from osii.domain.tool_actions import frozen_expert_context
+        frozen, context = frozen_expert_context(self.name)
+        expert_context = context if frozen else resolve_expert_context(osii_store, scope, expert_context)
         scope_type = (scope.get("scope_type") or scope.get("type") or "").strip().lower()
         scope_id = (
             scope.get("file_id")
@@ -618,6 +605,13 @@ class RemoteEnricher:
             )
         finally:
             _revoke_model_context(model_context)
+        from osii.processor_sdk import EnrichmentResponse
+        if len(json.dumps(response)) > 8_000_000:
+            raise ValueError("Processor returned more than 8 MB of enrichment output")
+        validated = EnrichmentResponse.model_validate(response)
+        if validated.request_id != request_id or validated.processor.name != self.name:
+            raise ValueError("Processor returned a response for a different request or tool")
+        response = validated.model_dump(mode="json")
         artifacts = response.get("artifacts") or []
         if not artifacts:
             raise RuntimeError(f"Remote enricher '{self.name}' returned no artifacts")

@@ -100,13 +100,18 @@ def builtin_tools_config() -> dict[str, Any]:
     return {
         "version": CONFIG_VERSION,
         "tools": {
+            "document-metadata": {
+                "enabled": True, "processor_id": "core.document-metadata",
+                "runtime": {"endpoint": "http://127.0.0.1:8095/metadata"},
+                "model_access": {"mode": "gateway", "bindings": {}},
+            },
             "readable-llm-wiki": {
                 "enabled": True,
                 "processor_id": "toolbox.readable-wiki",
                 "display_name": "Readable LLM Wiki",
                 "kind": "enricher",
                 "runtime": {"mode": "external", "endpoint": "http://127.0.0.1:8099"},
-                "model_access": {"mode": "gateway", "bindings": {"chat": "top"}},
+                "model_access": {"mode": "gateway", "bindings": {}},
             },
             "concept-entity-llm-wiki": {
                 "enabled": True,
@@ -114,7 +119,7 @@ def builtin_tools_config() -> dict[str, Any]:
                 "display_name": "Concept and Entity LLM Wiki",
                 "kind": "enricher",
                 "runtime": {"mode": "external", "endpoint": "http://127.0.0.1:8100"},
-                "model_access": {"mode": "gateway", "bindings": {"chat": "mid"}},
+                "model_access": {"mode": "gateway", "bindings": {}},
             },
             "tesseract-opencv": {
                 "enabled": True,
@@ -439,3 +444,41 @@ def configuration_status() -> dict[str, Any]:
             default=0,
         ),
     }
+
+
+def resolve_tool_models(processor_id: str, requirements: dict[str, str], osii_root: Path,
+                        overrides: dict[str, str] | None = None) -> dict[str, str]:
+    """Resolve visible library defaults; preserve valid explicit tool choices."""
+    configured = tool_for_processor(processor_id, osii_root)
+    tool = configured[1] if configured else {}
+    access = tool.get("model_access") or {}
+    if access.get("mode", "gateway") == "none":
+        if "required" in requirements.values():
+            raise ValueError("This tool needs a model. Choose one in Setup.")
+        return {}
+    bindings = {**(access.get("bindings") or {}), **(overrides or {})}
+    configuration = load_models_config(osii_root)
+    defaults = configuration.get("defaults", {})
+    result = {}
+    legacy = {"toolbox.readable-wiki": "top", "toolbox.concept-entity-wiki": "mid"}
+    for capability, requirement in requirements.items():
+        alias = str(bindings.get(capability) or "")
+        # These shipped aliases were never guaranteed to exist. A real alias
+        # with this name remains an explicit user choice, including an error
+        # when its capabilities are unsuitable.
+        if alias == legacy.get(processor_id) and alias not in configuration.get("models", {}):
+            alias = ""
+        explicit = bool(alias)
+        alias = alias or str(defaults.get(capability) or "")
+        connection = model_connection(alias, osii_root) if alias else None
+        if not explicit and (connection is None or capability not in connection.get("capabilities", [])):
+            alias = next((name for name in configuration.get("models", {})
+                          if (model_connection(name, osii_root) or {}).get("enabled", True)
+                          and capability in (model_connection(name, osii_root) or {}).get("capabilities", [])), "")
+            connection = model_connection(alias, osii_root) if alias else None
+        if connection is None or capability not in connection.get("capabilities", []):
+            if requirement == "required" or explicit:
+                raise ValueError(f"Choose an enabled {capability} model for this tool in Setup.")
+            continue
+        result[capability] = alias
+    return result

@@ -916,7 +916,7 @@ async def recover_run_queue():
 async def get_run_status(run_id: str):
     job = get_run(run_id)
     if job is None:
-        return {"error": f"Run not found: {run_id}"}
+        raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
     return job
 
 

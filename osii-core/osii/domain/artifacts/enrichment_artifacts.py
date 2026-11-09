@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import json
 
+from osii.domain.artifacts.products import write_artifact, validate_scope, artifact_metadata
 from osii.domain.artifacts.extraction_variants import list_extraction_variants
 from osii.domain.artifacts.artifact_staleness import clear_artifacts_stale
 
@@ -23,10 +24,13 @@ def _variant_basename(kind: str, method: str) -> str:
     if not method:
         raise ValueError("method is required")
 
+    if any(c in kind + method for c in "/\\\0") or kind in {".", ".."} or method in {".", ".."}:
+        raise ValueError("Invalid artifact kind or method")
     return f"{kind.replace(' ', '_')}--{method.replace(' ', '_')}"
 
 
 def _scope_enrichment_dir(osii_root: Path, scope: dict) -> tuple[str, Path, str]:
+    scope = validate_scope(scope)
     scope_type = (scope.get("scope_type") or scope.get("type") or "").strip().lower()
 
     if scope_type == "object":
@@ -93,10 +97,10 @@ def write_object_enrichment_variant(
     data_path = out_dir / f"{base}.json"
     meta_path = out_dir / f"{base}.meta.json"
 
-    data_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    write_artifact(osii_root, data_path, payload)
     extraction_id = (list_extraction_variants(osii_root, file_id) or {}).get("primary_id")
     meta_path.write_text(
-        json.dumps({**(metadata or {}), **({"input_extraction_id": extraction_id} if extraction_id else {})}, indent=2),
+        json.dumps({**artifact_metadata(metadata), **({"input_extraction_id": extraction_id} if extraction_id else {})}, indent=2),
         encoding="utf-8",
     )
     clear_artifacts_stale(osii_root, file_id, "enrichments")
@@ -126,8 +130,8 @@ def write_folder_enrichment_variant(
     data_path = out_dir / f"{base}.json"
     meta_path = out_dir / f"{base}.meta.json"
 
-    data_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    meta_path.write_text(json.dumps(metadata or {}, indent=2), encoding="utf-8")
+    write_artifact(osii_root, data_path, payload)
+    meta_path.write_text(json.dumps(artifact_metadata(metadata), indent=2), encoding="utf-8")
 
     return {
         "scope_type": "folder",
@@ -154,8 +158,8 @@ def write_collection_enrichment_variant(
     data_path = out_dir / f"{base}.json"
     meta_path = out_dir / f"{base}.meta.json"
 
-    data_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    meta_path.write_text(json.dumps(metadata or {}, indent=2), encoding="utf-8")
+    write_artifact(osii_root, data_path, payload)
+    meta_path.write_text(json.dumps(artifact_metadata(metadata), indent=2), encoding="utf-8")
 
     return {
         "scope_type": "collection",
@@ -181,8 +185,8 @@ def write_root_enrichment_variant(
     data_path = out_dir / f"{base}.json"
     meta_path = out_dir / f"{base}.meta.json"
 
-    data_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    meta_path.write_text(json.dumps(metadata or {}, indent=2), encoding="utf-8")
+    write_artifact(osii_root, data_path, payload)
+    meta_path.write_text(json.dumps(artifact_metadata(metadata), indent=2), encoding="utf-8")
 
     return {
         "scope_type": "root",

@@ -25,6 +25,7 @@ from osii.domain.scopes.collections import get_collection, list_collections
 from osii.domain.scopes.membership import list_scope_file_ids
 from osii.domain.scopes.scopes import normalize_scope_type
 from osii.domain.storage.atomic import atomic_write_text
+from osii.domain.artifacts.products import write_artifact
 from osii.domain.storage.store import (
     collection_enrichments_dir,
     folder_enrichments_dir,
@@ -378,7 +379,7 @@ def save_documentation_wiki(
             path.with_name(f"{path.stem}.meta.json"),
             json.dumps(metadata, indent=2, ensure_ascii=False),
         )
-        atomic_write_text(path, json.dumps(payload, indent=2, ensure_ascii=False))
+        write_artifact(osii_root, path, payload)
     finally:
         lock.rmdir()
     return get_documentation_wiki(osii_root, scope, page_id)

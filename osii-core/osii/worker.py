@@ -33,6 +33,11 @@ def execute_job(job: dict) -> None:
     osii_root = Path(payload["osii_store"]).resolve()
     configure_job_store(osii_root)
 
+    if payload.get("job_kind") == "tool":
+        from osii.domain.tool_actions import execute_tool
+        execute_tool(job)
+        return
+
     run = get_run(job["run_id"])
     # An interrupted/retried embedding phase never repeats original reads,
     # extraction, summaries, or enrichment from the completed file phase.

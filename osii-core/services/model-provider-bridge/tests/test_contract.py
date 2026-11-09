@@ -432,3 +432,41 @@ def test_synthesis_titles_are_optional_metadata_and_multi_source_has_no_document
     assert LocalExtractivePreviewSynthesizer().synthesize(request).metadata['title_method']=='source_first_line'
     request.scope.documents.append(request.scope.documents[0])
     assert 'document_title' not in model_synthesis_response(request,chat_synthesizer_descriptor(),'# Combined Sources','test').metadata
+
+
+def test_gateway_rejects_connection_changed_during_job(monkeypatch):
+    import hashlib
+    import json
+    from fastapi import HTTPException
+    from app.main import _bound_connection
+    connection = {"model": "first", "capabilities": ["chat"]}
+    fingerprint = hashlib.sha256(json.dumps(connection, sort_keys=True).encode()).hexdigest()
+    monkeypatch.setattr("app.main.model_connection", lambda alias: connection)
+    claims = {"bindings": {"chat": "chosen"}, "connection_fingerprints": {"chat": fingerprint}}
+    assert _bound_connection(claims, "chat", "chosen")[1]["model"] == "first"
+    connection["model"] = "second"
+    with pytest.raises(HTTPException) as error:
+        _bound_connection(claims, "chat", "chosen")
+    assert error.value.status_code == 409
+
+
+def test_independent_metadata_tool_uses_selected_gateway_and_returns_suggestions(monkeypatch):
+    import json
+    calls = []
+    class Response:
+        def raise_for_status(self): pass
+        def json(self):
+            return {"choices": [{"message": {"content": json.dumps({"title": {"value": "Calibration", "evidence": "Thermal calibration"}, "author": {"value": None}, "date": {"value": None}})}}]}
+    def post(url, **kwargs):
+        calls.append((url, kwargs))
+        return Response()
+    monkeypatch.setattr("app.main.requests.post", post)
+    response = TestClient(app).post("/metadata/v1/enrich", json={"request_id": "metadata", "scope": {"scope_type": "object", "scope_id": "document", "documents": [{"file_id": "document", "filename": "opaque.pdf", "text": "Thermal calibration improved."}]}, "model_context": {"gateway_url": "http://gateway.test/v1", "token": "job-grant", "bindings": {"chat": "chosen"}}})
+    assert response.status_code == 200, response.text
+    artifact = response.json()["artifacts"][0]
+    assert artifact["kind"] == "document_metadata"
+    assert artifact["metadata"]["suggestions_only"] is True
+    assert artifact["metadata"]["document_metadata"]["author"]["value"] is None
+    assert artifact["standard_data"]["rows"][0]["evidence"] == "Thermal calibration"
+    assert calls[0][0] == "http://gateway.test/v1/chat/completions"
+    assert calls[0][1]["json"]["model"] == "chosen"

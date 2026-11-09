@@ -59,3 +59,41 @@ async def get_object_enrichment_route(request: Request, file_id: str, filename: 
     if data is None:
         return {"error": "enrichment not found"}
     return data
+
+
+@router.post("/revisions")
+def product_revisions(request: Request, payload: dict):
+    import hashlib
+    from osii.domain.artifacts.products import product_path, read_product, product_input_state
+    try:
+        root, scope = request.app.state.osii_root.resolve(), payload.get("scope") or {}
+        history = read_product(product_path(root, scope, str(payload.get("filename") or "")))
+        if history["data"] is None:
+            raise HTTPException(status_code=404, detail="Wiki not found")
+        return {**history, "library_id": hashlib.sha256(str(root).encode()).hexdigest()[:20], "input_state": product_input_state(root, scope, history)}
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/revisions")
+def save_product_revision(request: Request, payload: dict):
+    import hashlib
+    from osii.domain.artifacts.products import edit_product, activate_product
+    try:
+        root = request.app.state.osii_root.resolve()
+        arguments = (root, payload.get("scope") or {}, str(payload.get("filename") or ""))
+        expected = payload.get("expected_revision")
+        if not isinstance(expected, str):
+            raise ValueError("expected_revision is required")
+        if payload.get("revision"):
+            result = activate_product(*arguments, str(payload["revision"]), expected)
+        else:
+            markdown = payload.get("markdown")
+            if not isinstance(markdown, str) or len(markdown) > 2_000_000:
+                raise ValueError("Wiki text must contain at most 2,000,000 characters")
+            result = edit_product(*arguments, markdown, expected)
+        return {**result, "library_id": hashlib.sha256(str(root).encode()).hexdigest()[:20]}
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
