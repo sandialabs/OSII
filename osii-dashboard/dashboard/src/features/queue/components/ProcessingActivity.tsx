@@ -56,7 +56,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
           </Stack>
           {recentRuns.some((run) => ["queued", "pending", "running", "pausing", "cancelling"].includes(run.status)) ? (
             <Alert severity="info">
-              Runs use one worker and process files sequentially. Pause a long run to let a newly queued priority run go next; pausing or cancelling takes effect safely after the current file finishes.
+              One worker processes queued work. Pause and cancel take effect after the current file or provider request finishes.
             </Alert>
           ) : null}
           {recentRuns.map((run) => {
@@ -81,11 +81,13 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
               >
                 <Stack>
                   <Typography fontWeight={600}>
-                    {run.workflow === "library" ? "Library processing" : "New file intake"} · {run.id.slice(0, 8)}
+                    {run.workflow === "tool" ? run.tool_label ?? "Tool run" : run.workflow === "library" ? "Library processing" : "New file intake"} · {run.id.slice(0, 8)}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {run.completed ?? 0} / {run.total ?? 0} files · {run.created_at}
+                    {run.completed ?? 0} / {run.total ?? 0} {run.workflow === "tool" ? "operations" : "files"} · {new Date(run.created_at).toLocaleString()}
                   </Typography>
+                  {run.model_targets ? <Typography variant="caption" color="text.secondary">{Object.values(run.model_targets).map(target => `${target.model} · ${target.alias}`).join(" / ")}</Typography> : null}
+                  {run.input_summary ? <Typography variant="caption" color="text.secondary">{run.input_summary.member_ids.length} source documents · {run.input_summary.text_chars.toLocaleString()} text characters · {run.input_summary.truncated_documents} excerpts</Typography> : null}
                   {(run.embedding_target?.model || run.embedding_model) && <Typography variant="caption" color="text.secondary">Embedding model: {run.embedding_target?.model || run.embedding_model}</Typography>}
                   {run.expert_context ? (
                     <Typography

@@ -9,7 +9,7 @@ import type {
 import { useScopeEnrichmentPayload } from "../../../hooks/useScopeEnrichmentPayload";
 import { useScopeEnrichments } from "../../../hooks/useScopeEnrichments";
 import { EnrichmentArtifactView } from "./EnrichmentArtifactView";
-import { ExampleEnrichmentActions } from "./ExampleEnrichmentActions";
+import { ToolActionPanel } from "./ToolActionPanel";
 
 function ScopeArtifact({
   scope,
@@ -25,7 +25,7 @@ function ScopeArtifact({
       <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
         <Stack spacing={0.15}>
           <Typography fontWeight={650}>{entry.name.replace(/\.json$/i, "")}</Typography>
-          <Typography variant="caption" color="text.secondary">Open to browse this derived artifact</Typography>
+
         </Stack>
       </AccordionSummary>
       <AccordionDetails>
@@ -37,7 +37,7 @@ function ScopeArtifact({
   );
 }
 
-export function ScopeEnrichmentsPanel({ scope }: { scope: ScopeDescribeRequest }) {
+export function ScopeEnrichmentsPanel({ scope, showActions = true }: { scope: ScopeDescribeRequest; showActions?: boolean }) {
   const query = useScopeEnrichments(scope);
   if (query.isLoading) return <Typography>Loading enrichments…</Typography>;
   if (query.isError) return <Alert severity="warning">Failed to load enrichments.</Alert>;
@@ -51,8 +51,8 @@ export function ScopeEnrichmentsPanel({ scope }: { scope: ScopeDescribeRequest }
   );
   return (
     <Stack spacing={2}>
-      <Typography variant="h6" fontWeight={700}>Derived artifacts</Typography>
-      <ExampleEnrichmentActions scope={scope} />
+      <Typography variant="h6" fontWeight={700}>Saved products</Typography>
+      {showActions ? <ToolActionPanel scope={scope} /> : null}
       {files.length === 0 ? (
         <Alert severity="info">No other derived artifacts are available for this scope.</Alert>
       ) : null}

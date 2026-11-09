@@ -19,7 +19,7 @@ import {
 } from "@mui/material";
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import ViewColumnOutlinedIcon from "@mui/icons-material/ViewColumnOutlined";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -42,9 +42,7 @@ function displayValue(value: unknown): string {
 
 function isStandardArtifact(value: unknown): value is StandardEnrichmentArtifact {
   if (!value || typeof value !== "object") return false;
-  return ["table", "knowledge_graph", "entity_list", "wiki_markdown"].includes(
-    String((value as { artifact_type?: unknown }).artifact_type),
-  );
+  return Object.prototype.hasOwnProperty.call(artifactRenderers, String((value as { artifact_type?: unknown }).artifact_type));
 }
 
 type SortDirection = "asc" | "desc";
@@ -311,6 +309,15 @@ function WikiView({ artifact }: { artifact: StandardWikiMarkdownArtifact }) {
   );
 }
 
+// A new visualization registers once here; a new method using an existing
+// product format needs no renderer or route changes.
+const artifactRenderers: Record<StandardEnrichmentArtifact["artifact_type"], (data: StandardEnrichmentArtifact) => ReactNode> = {
+  table: data => <TableView artifact={data as StandardTableArtifact} />,
+  entity_list: data => <EntityListView artifact={data as StandardEntityListArtifact} />,
+  knowledge_graph: data => <KnowledgeGraphView artifact={data as StandardKnowledgeGraphArtifact} />,
+  wiki_markdown: data => <WikiView artifact={data as StandardWikiMarkdownArtifact} />,
+};
+
 export function EnrichmentArtifactView({ data, showTitle = true }: { data: unknown; showTitle?: boolean }) {
   if (!isStandardArtifact(data)) {
     return (
@@ -329,10 +336,7 @@ export function EnrichmentArtifactView({ data, showTitle = true }: { data: unkno
       {"description" in data && data.description ? (
         <Typography color="text.secondary">{data.description}</Typography>
       ) : null}
-      {data.artifact_type === "table" ? <TableView artifact={data} /> : null}
-      {data.artifact_type === "entity_list" ? <EntityListView artifact={data} /> : null}
-      {data.artifact_type === "knowledge_graph" ? <KnowledgeGraphView artifact={data} /> : null}
-      {data.artifact_type === "wiki_markdown" ? <WikiView artifact={data} /> : null}
+      {artifactRenderers[data.artifact_type](data)}
     </Stack>
   );
 }

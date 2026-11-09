@@ -21,6 +21,7 @@ an AI model.
 - Extract text, with optional OCR for scanned documents, and inspect the sources.
 - Browse files and collections, search by keywords or document meaning, and ask
   grounded questions with an optional model connection.
+- Create and edit wikis with revision history; run replaceable analysis tools.
 - Explore related documents with the experimental Topic Explorer.
 - Compare experimental RAG strategies and inspect their evidence in Chat.
 - Extend processing and frontend tools through documented interfaces.

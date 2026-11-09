@@ -3,6 +3,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Button,
+  Divider,
+  Step,
+  StepLabel,
+  Stepper,
   Checkbox,
   FormControlLabel,
   LinearProgress,
@@ -105,7 +109,7 @@ export function DiscoveryIntakePanel({
   });
   useEffect(() => {
     if (sourceId === "" && sources.data?.items.length)
-      setSourceId(sources.data.items[0].id);
+      setSourceId((sources.data.items.find(source => source.root === localStorage.getItem("osii:last-discovery-root")) ?? sources.data.items[0]).id);
   }, [sources.data, sourceId]);
   const scans = useQuery({
     queryKey: ["discovery", "scans", sourceId],
@@ -221,12 +225,10 @@ export function DiscoveryIntakePanel({
   return (
     <Paper variant="outlined" sx={{ p: 3 }}>
       <Stack spacing={2}>
-        <Typography variant="h6">Discover a shared drive</Typography>
-        <Typography variant="body2">
-          Scan names and metadata into a local inventory. Discovery reads no
-          document contents and invokes no models. Close this page safely;
-          checkpoints and frozen selections survive restart.
-        </Typography>
+        <Stepper activeStep={selection?.count ? 3 : status ? 2 : sourceId !== "" ? 1 : 0} alternativeLabel sx={{ pb: 2 }}>
+          {["Location", "Discover", "Select batch", "Process"].map(label => <Step key={label}><StepLabel>{label}</StepLabel></Step>)}
+        </Stepper>
+        <Typography variant="h6" fontWeight={750}>1. Location</Typography>
         {error && <Alert severity="error">{error}</Alert>}
         {sources.isError && (
           <Alert severity="error">{String(sources.error)}</Alert>
@@ -251,6 +253,8 @@ export function DiscoveryIntakePanel({
             value={sourceId}
             onChange={(e) => {
               setSourceId(Number(e.target.value));
+              const source = sources.data?.items.find(item => item.id === Number(e.target.value));
+              if (source) localStorage.setItem("osii:last-discovery-root", source.root);
               setSelection(null);
               onSelect(null);
               setCursor(0);
@@ -262,6 +266,8 @@ export function DiscoveryIntakePanel({
               </MenuItem>
             ))}
           </TextField>
+        </Stack>
+        <details open={!sources.data?.items.length}><summary>Add a location</summary><Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ pt: 1 }}>
           <TextField
             fullWidth
             size="small"
@@ -283,9 +289,13 @@ export function DiscoveryIntakePanel({
               })
             }
           >
-            Register source
+            Add location
           </Button>
         </Stack>
+        </details>
+        <Divider />
+        <Typography variant="h6" fontWeight={750}>2. Discover files</Typography>
+        <details><summary>Scan options</summary>
         <Stack
           direction={{ xs: "column", sm: "row" }}
           spacing={1}
@@ -354,6 +364,8 @@ export function DiscoveryIntakePanel({
             }
             label="Cross filesystem boundaries"
           />
+        </Stack></details>
+        <Stack direction="row" spacing={1}>
           <Button
             variant="contained"
             disabled={
@@ -380,15 +392,17 @@ export function DiscoveryIntakePanel({
               })
             }
           >
-            Start discovery
+            ▶ Scan files
           </Button>
         </Stack>
         {status && (
           <Stack spacing={1}>
             <Typography fontWeight={700}>
-              Scan #{status.id}: {status.status}
+              {status.observed_entries.toLocaleString()} entries · {bytes(status.known_bytes)} · {status.status === "done" ? "Scan complete" : status.status}
             </Typography>
             {active && <LinearProgress />}
+            {(status.failed > 0 || status.metadata_errors > 0) && <Alert severity="warning">{status.failed} directory failures · {status.metadata_errors} unreadable entries. Review scan details.</Alert>}
+            <details><summary>Scan details</summary>
             <Typography variant="body2">
               {status.observed_entries.toLocaleString()} observed entries ·{" "}
               {bytes(status.known_bytes)} known logical bytes ·{" "}
@@ -419,11 +433,12 @@ export function DiscoveryIntakePanel({
                 Reading: {p || "(source root)"}
               </Typography>
             ))}
+            </details>
             {status.error && <Alert severity="warning">{status.error}</Alert>}
             <Alert severity={status.status === "done" ? "success" : "warning"}>
               {status.status === "done"
-                ? "Discovery completed under its saved traversal rules. This is a metadata observation, not a content-read permission guarantee."
-                : "Coverage is incomplete. Unvisited and denied paths may be absent. Resume after reconnecting or fixing access; a partial batch requires acknowledgement below."}
+                ? "Scan complete. File access is checked again when processing."
+                : "Partial scan. Resume to continue, or explicitly accept partial coverage below."}
             </Alert>
             <Stack direction="row" spacing={1}>
               {active && (
@@ -439,7 +454,7 @@ export function DiscoveryIntakePanel({
                   disabled={busy}
                   onClick={() => void control(status.id, "resume")}
                 >
-                  Resume scan / retry failures
+                  Resume scan
                 </Button>
               )}
               {["running", "queued", "paused"].includes(status.status) && (
@@ -464,7 +479,7 @@ export function DiscoveryIntakePanel({
           </Stack>
         )}
         <details>
-          <summary>Changed mount identity</summary>
+          <summary>Advanced: reconnect a changed mount</summary>
           <Stack spacing={1}>
             <Typography variant="body2">
               After a remount, verify that this is the original dataset. Cancel
@@ -500,14 +515,24 @@ export function DiscoveryIntakePanel({
             </Button>
           </Stack>
         </details>
-        <Typography fontWeight={700}>
-          Filter inventory and freeze a bounded batch
-        </Typography>
-        <Typography variant="body2">
-          Filters query local SQLite without rereading the share. New selections
-          use files observed in the latest scan; unknown sizes are never
-          eligible.
-        </Typography>
+        <Divider />
+        <Typography variant="h6" fontWeight={750}>3. Select a batch</Typography>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+          <TextField
+            fullWidth
+            size="small"
+            label="Filename contains"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <TextField
+            size="small"
+            label="Extension"
+            value={suffix}
+            onChange={(e) => setSuffix(e.target.value)}
+          />
+        </Stack>
+        <details><summary>More filters</summary>
         <Stack
           direction={{ xs: "column", sm: "row" }}
           spacing={1}
@@ -520,13 +545,7 @@ export function DiscoveryIntakePanel({
             },
           }}
         >
-          <TextField
-            fullWidth
-            size="small"
-            label="Filename contains"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
+
           <TextField
             fullWidth
             size="small"
@@ -534,12 +553,7 @@ export function DiscoveryIntakePanel({
             value={prefix}
             onChange={(e) => setPrefix(e.target.value)}
           />
-          <TextField
-            size="small"
-            label="Extension"
-            value={suffix}
-            onChange={(e) => setSuffix(e.target.value)}
-          />
+
           <TextField
             select
             size="small"
@@ -620,6 +634,7 @@ export function DiscoveryIntakePanel({
             InputLabelProps={{ shrink: true }}
           />
         </Stack>
+        </details>
         {summary.data && (
           <Typography variant="body2">
             {summary.data.files.toLocaleString()} matching cached names ·{" "}
@@ -703,15 +718,15 @@ export function DiscoveryIntakePanel({
             />
           )}
         </Stack>
-        <FormControlLabel
+        {latest?.status !== "done" && <FormControlLabel
           control={
             <Checkbox
               checked={partial}
               onChange={(e) => setPartial(e.target.checked)}
             />
           }
-          label="I accept incomplete coverage for this batch"
-        />
+          label="Use files from this partial scan"
+        />}
         <Button
           variant="outlined"
           disabled={
@@ -747,8 +762,9 @@ export function DiscoveryIntakePanel({
             })
           }
         >
-          Freeze selection for Intake
+          ✓ Select batch
         </Button>
+        <details><summary>Batch limits & saved selections</summary>
         <Typography variant="caption">
           Intake accepts up to 10,000 files per batch and 50 MiB per file.
           Processing pauses between files after one hour; resume in Activity.
@@ -779,14 +795,15 @@ export function DiscoveryIntakePanel({
             Restore frozen selection
           </Button>
         </Stack>
+        </details>
         {selection && (
           <Stack spacing={1}>
             <Alert severity={selection.count ? "success" : "warning"}>
-              Frozen selection #{selection.id}: {selection.count} files ·{" "}
+              Selected batch #{selection.id}: {selection.count} files ·{" "}
               {bytes(selection.bytes)}.{" "}
               {selection.count
-                ? "Use the processing options and Start intake below. Changing filters does not alter this selection."
-                : "No eligible files; adjust filters or budgets and freeze again."}
+                ? "Ready to process below."
+                : "No eligible files. Adjust filters or limits and select again."}
             </Alert>
             <Typography variant="caption">
               Coverage at selection:{" "}

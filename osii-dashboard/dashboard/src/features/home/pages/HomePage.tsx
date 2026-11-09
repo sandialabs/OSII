@@ -1,5 +1,5 @@
 // src/features/home/pages/HomePage.tsx
-import { Alert, Button, Paper, Stack, Typography } from "@mui/material";
+import { Button, Paper, Stack, Typography } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { useMemo, useState } from "react";
 
@@ -32,15 +32,12 @@ export function HomePage() {
             <Stack spacing={0.25}>
               <Typography variant="h6" fontWeight={700}>Start your first OSII library</Typography>
               <Typography variant="body2" color="text.secondary">
-                OSII keeps your original files in their source folder and builds inspectable, reusable results beside them. Basic reading and lexical search work without a model connection.
+                Read, search, and explore documents while keeping your original files intact.
               </Typography>
             </Stack>
-            <Alert severity="info">
-              Choose your source folder and optional services in the launcher, then use <strong>Intake</strong> to process files. Open <strong>Setup</strong> only to add a model connection or change processing rules. In a local development session, <code>make dev</code> uses <code>osii-data/source</code> by default.
-            </Alert>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-              <Button variant="outlined" onClick={() => navigate("/admin/processors")}>Open Setup</Button>
-              <Button variant="contained" onClick={() => navigate("/intake")}>Open Intake</Button>
+              <Button variant="outlined" onClick={() => navigate("/admin/processors")}>Setup</Button>
+              <Button variant="contained" onClick={() => navigate("/intake")}>＋ Add files</Button>
             </Stack>
           </Stack>
         </Paper>
@@ -56,9 +53,7 @@ export function HomePage() {
           <Button variant="outlined" onClick={() => setSearchOpen(true)}>Search metadata{filtered ? " · filters active" : ""}</Button>
           {filtered && <Button onClick={() => setFilters({ ...emptyFileFilters })}>Clear filters</Button>}
         </Stack>
-        <Typography variant="body2" color="text.secondary">
-          Browse all files in a compact flat view. Use Browse for native folder hierarchy navigation.
-        </Typography>
+
       </Stack>
 
       <FileGrid

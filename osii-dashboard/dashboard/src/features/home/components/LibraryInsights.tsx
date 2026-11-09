@@ -27,12 +27,10 @@ export function LibraryInsights() {
             <Stack spacing={0.35}>
               <Stack direction="row" spacing={1} alignItems="center">
                 <InsightsOutlinedIcon color="primary" />
-                <Typography variant="h6" fontWeight={700}>Library Insights</Typography>
-                <Chip size="small" variant="outlined" label={`${suggestions.artifactCount} artifact${suggestions.artifactCount === 1 ? "" : "s"}`} />
+                <Typography variant="h6" fontWeight={700}>Library wikis & products</Typography>
+                <Chip size="small" variant="outlined" label={`${suggestions.artifactCount} saved`} />
               </Stack>
-              <Typography variant="body2" color="text.secondary">
-                Root-level knowledge products derived from all processed files. Expand only when you want to explore them.
-              </Typography>
+
             </Stack>
             <Button
               size="small"
@@ -40,7 +38,7 @@ export function LibraryInsights() {
               endIcon={<ExpandMoreOutlinedIcon sx={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform 150ms" }} />}
               onClick={() => setExpanded((current) => !current)}
             >
-              {expanded ? "Collapse" : "Explore insights"}
+              {expanded ? "Collapse" : "Open"}
             </Button>
           </Stack>
 
@@ -48,7 +46,7 @@ export function LibraryInsights() {
             <Stack spacing={2} sx={{ pt: 0.5 }}>
               <Tabs value={tab} onChange={(_, value: "wiki" | "artifacts") => setTab(value)}>
                 <Tab label="Wiki" value="wiki" />
-                <Tab label="Artifacts" value="artifacts" />
+                <Tab label="Products" value="artifacts" />
               </Tabs>
               {tab === "wiki" ? <ScopeWikiPanel scope={ROOT_SCOPE} title="OSII Library" /> : null}
               {tab === "artifacts" ? <ScopeEnrichmentsPanel scope={ROOT_SCOPE} /> : null}

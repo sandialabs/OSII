@@ -48,6 +48,7 @@ nav:
       - CLI cheat sheet: reference/cli.md
   - Understand OSII:
       - Architecture: concepts/architecture.md
+      - Workbench tools decision: concepts/adr-workbench-tools.md
       - Inventory database decision: concepts/adr-volume-store.md
       - Incremental embeddings decision: concepts/adr-incremental-embeddings.md
       - Extraction: concepts/extraction.md

@@ -84,7 +84,7 @@ export function TopicExplorerPage() {
           {related.isError && <Alert severity="warning">{related.error.message}</Alert>}
           {related.data && !related.isError && <>
             {related.data.index.id !== data.index.id && <Alert severity="info">The index has changed. Refresh the map to align it with these results.</Alert>}
-            <Typography variant="caption" color="text.secondary">Ranked by cosine similarity of document embeddings. Scores are similarity, not confidence or proof of a shared topic.</Typography>
+            <Typography variant="caption" color="text.secondary">Similarity compares document content; it is not a confidence score.</Typography>
             {!related.data.results.length && <Typography>No other indexed documents in this scope.</Typography>}
             {related.data.results.map(p => <Box key={p.file_id} sx={{ borderTop: "1px solid", borderColor: "divider", pt: 1.5 }}>
               <Stack direction="row" spacing={1} justifyContent="space-between"><Typography fontWeight={600} sx={{ overflowWrap: "anywhere" }}>{p.document_title || p.filename}</Typography><Chip size="small" label={p.similarity.toFixed(3)} /></Stack>
@@ -94,7 +94,7 @@ export function TopicExplorerPage() {
           </>}
         </Stack></CardContent></Card>
       </Box>}
-      <Typography variant="caption" color="text.secondary">Each point averages a document’s normalized chunk vectors, then normalizes that average. PCA compresses these vectors into two dimensions; axes are not topic labels. No model calls or document changes occur here.</Typography>
+      <details><summary>How the map works</summary><Typography variant="caption" color="text.secondary">Each point averages a document’s normalized chunk vectors, then normalizes that average. PCA compresses these vectors into two dimensions; axes are not topic labels. No model calls or document changes occur here.</Typography></details>
     </>}
   </Stack>;
 }

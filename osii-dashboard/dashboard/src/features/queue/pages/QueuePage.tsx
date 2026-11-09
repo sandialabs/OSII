@@ -127,7 +127,7 @@ export function QueuePage() {
   const [excludePatterns, setExcludePatterns] = useState("");
   const [includeSubfolders, setIncludeSubfolders] = useState(true);
   const [showHidden, setShowHidden] = useState(false);
-  const [section, setSection] = useState<"add" | "process" | "activity">(requestedStep === "index" ? "process" : "add");
+  const [section, setSection] = useState<"add" | "process" | "activity">(searchParams.get("tab") === "activity" ? "activity" : requestedStep === "index" ? "process" : "add");
   const useDiscovery = sourceMode === "discovery" && section !== "process";
   const [libraryGoal, setLibraryGoal] = useState<
     "embed" | "synthesize" | "reextract" | "enrich" | "custom"
@@ -640,21 +640,18 @@ export function QueuePage() {
           Intake
         </Typography>
         <Typography color="text.secondary">
-          Discover a share or choose a folder, then process a selected batch. OSII
-          never changes your original files.
+          Add documents and choose how to process them.
         </Typography>
       </Stack>
 
-      <WorkflowProgress readiness={readiness.data} checking={readiness.isLoading} failed={readiness.isError} sourceReady={Boolean((selectedFolder || uploadedItems.length) && !folderChanged && !selectingFolder && !folderError && sourceStatus?.osii_writable !== false)} onStep={followWorkflowStep} />
+      <Accordion disableGutters elevation={0}><AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}><Typography variant="body2">Library readiness</Typography></AccordionSummary><AccordionDetails><WorkflowProgress readiness={readiness.data} checking={readiness.isLoading} failed={readiness.isError} sourceReady={Boolean((selectedFolder || uploadedItems.length) && !folderChanged && !selectingFolder && !folderError && sourceStatus?.osii_writable !== false)} onStep={followWorkflowStep} /></AccordionDetails></Accordion>
       {readiness.data && (!embeddingAvailable || !readiness.data.language_model?.available) && section !== "activity" ? <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }}><Typography variant="body2" color="text.secondary">Finish model setup for the full experience, or choose a deliberate first pass.</Typography><Button variant="outlined" sx={{ flexShrink: 0 }} onClick={useTextOnlyIntake}>Use text-only intake</Button></Stack> : null}
 
       <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
         <IntakeSections value={section} onChange={changeSection} />
       </Box>
 
-                      {section === "add" && <TextField select size="small" label="Intake preset" value={intakePreset} disabled={!intakeDefaults.data} onChange={e => applyIntakePreset(e.target.value)} helperText="Choose a starting point, then adjust individual steps below.">
-                        {(intakeDefaults.data?.presets ?? [{ id: "summary-search", label: "Loading intake defaults…" }]).map(preset => <MenuItem key={preset.id} value={preset.id}>{preset.label}</MenuItem>)}
-                      </TextField>}
+
 
       {notice ? <Alert severity={notice.severity}>{notice.text}</Alert> : null}
 
@@ -732,7 +729,7 @@ export function QueuePage() {
             </Paper>
           ) : null}
 
-          {section === "add" && <TextField select size="small" label="Source selection" value={sourceMode} onChange={e => setSourceMode(e.target.value as "quick" | "discovery")}>
+          {section === "add" && <TextField select size="small" label="Add from" value={sourceMode} onChange={e => setSourceMode(e.target.value as "quick" | "discovery")}>
             <MenuItem value="discovery">Discover a shared drive — resumable metadata scan</MenuItem>
             <MenuItem value="quick">Quick folder selection</MenuItem>
           </TextField>}
@@ -1109,6 +1106,11 @@ export function QueuePage() {
             </DialogActions>
           </Dialog>
 
+          {(!useDiscovery || frozenSelection !== null) && <>
+          <Typography variant="h6" fontWeight={750}>{useDiscovery ? "4. Process batch" : "Processing"}</Typography>
+                      {section === "add" && <TextField select size="small" label="Intake preset" value={intakePreset} disabled={!intakeDefaults.data} onChange={e => applyIntakePreset(e.target.value)}>
+                        {(intakeDefaults.data?.presets ?? [{ id: "summary-search", label: "Loading intake defaults…" }]).map(preset => <MenuItem key={preset.id} value={preset.id}>{preset.label}</MenuItem>)}
+                      </TextField>}
           <Accordion
             variant="outlined"
             disableGutters
@@ -1120,11 +1122,10 @@ export function QueuePage() {
             <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
               <Stack>
                 <Typography fontWeight={700}>
-                  Change processing options
+                  Processing options
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {processingSummary}. The configured defaults are already
-                  selected.
+                  {processingSummary}
                 </Typography>
               </Stack>
             </AccordionSummary>
@@ -1501,7 +1502,7 @@ export function QueuePage() {
               {readiness.data && synthesize && !effectiveSynthesizer ? (
                 <Alert severity="warning">
                   No synthesizer is connected. Connect one in Setup, or turn off
-                  summaries under Change processing options.
+                  summaries under Processing options.
                 </Alert>
               ) : null}
               {readiness.data && embed && !embeddingAvailable ? <Alert severity="warning" action={<Button color="inherit" onClick={() => navigate("/admin/processors?step=embedding")}>Set up embeddings</Button>}>Semantic embeddings are selected, but the default embedding model is unavailable. {embeddingStatus?.detail} Configure it in Setup or explicitly choose text-only intake above.</Alert> : null}
@@ -1511,7 +1512,7 @@ export function QueuePage() {
                 </Alert>
               ) : null}
               {!runExtraction && !synthesize && !embed && !enrich ? (
-                <Alert severity="info">Select at least one step under Change processing options.</Alert>
+                <Alert severity="info">Select at least one step under Processing options.</Alert>
               ) : null}
 
               <Button
@@ -1548,10 +1549,11 @@ export function QueuePage() {
               >
                 {starting
                   ? "Queueing work…"
-                  : `${section === "process" ? "Queue processing" : "Start intake"}${queuedDocumentCount ? ` (${queuedDocumentCount} document${queuedDocumentCount === 1 ? "" : "s"})` : ""}`}
+                  : `${section === "process" ? "Queue processing" : "▶ Process batch"}${queuedDocumentCount ? ` (${queuedDocumentCount} document${queuedDocumentCount === 1 ? "" : "s"})` : ""}`}
               </Button>
             </Stack>
           </Box>
+          </>}
         </>
       ) : null}
 

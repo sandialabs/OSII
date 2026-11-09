@@ -11,10 +11,12 @@ export function useEnrichmentJob() {
     mutationFn: (payload: {
       enricher_name: string;
       scope: ScopeDescribeRequest;
+      model_bindings?: Record<string, string>;
       enricher_config?: Record<string, unknown>;
     }) => runEnrichmentJob(payload),
     onSuccess: async () => {
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["processing-runs"] }),
         queryClient.invalidateQueries({ queryKey: ["enrichments"] }),
         queryClient.invalidateQueries({ queryKey: ["objects"] }),
         queryClient.invalidateQueries({ queryKey: ["scopes", "summaries"] }),

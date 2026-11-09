@@ -14,7 +14,7 @@ import type { EnrichmentListEntryFile } from "../../../api/types";
 import { useObjectEnrichmentPayload } from "../../../hooks/useObjectEnrichmentPayload";
 import { useScopeEnrichments } from "../../../hooks/useScopeEnrichments";
 import { EnrichmentArtifactView } from "./EnrichmentArtifactView";
-import { ExampleEnrichmentActions } from "./ExampleEnrichmentActions";
+import { ToolActionPanel } from "./ToolActionPanel";
 
 type FileEnrichmentsPanelProps = {
   fileId: string;
@@ -86,7 +86,7 @@ export function FileEnrichmentsPanel({ fileId }: FileEnrichmentsPanelProps) {
 
   return (
     <Stack spacing={2}>
-      <ExampleEnrichmentActions scope={{ scope_type: "object", file_id: fileId }} />
+      <ToolActionPanel scope={{ scope_type: "object", file_id: fileId }} />
       {enrichments.length === 0 ? (
         <Alert severity="info">No other enrichments are available for this file.</Alert>
       ) : null}

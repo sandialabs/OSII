@@ -33,20 +33,36 @@ For source-only development commands and OpenAI-compatible routing, see
 
 ## Generate and compare
 
-Open a processed document's **Wiki** tab, a collection's **Enrichments**
-drawer, or root **Library Insights → Wiki**. Choose either method and select
-**Generate selected wiki**. Saved Wiki Markdown outputs are discovered by
+Open a processed document's **Wiki** tab, a collection's **Wikis & products**
+section, or **Library wikis & products → Wiki** on Files. Choose either method and select
+**Generate wiki**. Saved Wiki Markdown outputs are discovered by
 their standard `artifact_type`, not by a hard-coded processor name or filename,
 so another SME's conforming wiki enricher appears in the same view.
 
 The concept/entity processor also returns structured artifacts. Open the
-regular **Enrichments** view to browse and sort those outputs through the
+regular **Other products** view to browse and sort those outputs through the
 generic entity-list and table renderers.
 
 Processor settings, including the prompt, temperature, and input budget, are
 descriptor-driven and appear in Setup. The chosen model connection is a tool
 binding in `tools.toml`, not a processor-specific URL. No frontend change is
 required to expose the same supported schema fields from a new processor.
+
+## Models, progress, and editing
+
+The writing-model field shows the actual configured model. Library defaults are
+selected automatically; a missing old `top`/`mid` placeholder inherits that
+default. A valid custom binding is preserved. Incompatible choices are rejected
+before a job starts. Generation uses the persistent worker and appears in
+**Activity**. Navigate away and return without losing its status; failed work
+can be retried on the same saved text inputs.
+
+Every document, folder, collection, and library wiki has **Read**, **Edit**, and
+**History**. A draft survives navigation on this browser. Save creates a revision;
+stale saves preserve the draft and require comparison with the latest revision.
+Regeneration leaves human edits visible and saves a candidate for review. Use
+**History → Use this revision** to explicitly choose a candidate or older version.
+Edited passages retain citation provenance but require grounding review.
 
 ## Storage and provenance
 

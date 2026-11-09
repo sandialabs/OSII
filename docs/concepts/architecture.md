@@ -13,7 +13,7 @@ person in the dashboard and an agent without processor-specific integration.
 Dashboard / MCP
       |
       v
-OSII API + grounded chat  ----> job worker (migration target)
+OSII API + grounded chat  ----> durable Intake / scope-tool worker
           |
           +----> extractor services
           +----> synthesizer services
@@ -23,6 +23,9 @@ OSII API + grounded chat  ----> job worker (migration target)
           v
   canonical .osii store
 ```
+
+See the [workbench resource and extension decision](adr-workbench-tools.md) for
+operations, methods, model bindings, durable scope runs, and versioned products.
 
 ## Processor API v1
 

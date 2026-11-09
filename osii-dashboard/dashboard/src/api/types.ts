@@ -730,7 +730,12 @@ export type ProcessingRun = {
   finished_at?: string | null;
   completed?: number;
   total?: number;
-  workflow?: "intake" | "library";
+  workflow?: "intake" | "library" | "tool";
+  tool_id?: string;
+  tool_label?: string;
+  scope?: ScopeDescribeRequest;
+  model_targets?: Record<string, { alias: string; model: string; endpoint_type?: string }>;
+  input_summary?: { member_ids: string[]; text_chars: number; truncated_documents: number };
   expert_context?: string | null;
   operations?: {
     extract?: boolean;

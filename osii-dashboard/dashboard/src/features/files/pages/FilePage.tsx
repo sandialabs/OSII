@@ -27,7 +27,8 @@ import { FileDetailTabs, type FileTab } from "../components/FileDetailTabs";
 export function FilePage() {
   const { fileId } = useParams<{ fileId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [tab, setTab] = useState<FileTab>("split");
+  const requestedTab = searchParams.get("tab");
+  const [tab, setTab] = useState<FileTab>(["text", "source", "split", "extractions", "syntheses", "wiki", "enrichments"].includes(requestedTab ?? "") ? requestedTab as FileTab : "split");
 
   const charStartValue = searchParams.get("char_start");
   const charEndValue = searchParams.get("char_end");
@@ -153,7 +154,7 @@ export function FilePage() {
     <Stack spacing={3}>
       <FileHeader file={detail} />
 
-      <FileDetailTabs value={tab} onChange={setTab} />
+      <FileDetailTabs value={tab} onChange={value => { setTab(value); const next = new URLSearchParams(searchParams); next.set("tab", value); setSearchParams(next, { replace: true }); }} />
 
       {tab === "text" && (
         <FileTextPanel
