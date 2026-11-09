@@ -44,6 +44,7 @@ def configure_job_store(osii_root: Path) -> Path:
             );
             CREATE INDEX IF NOT EXISTS idx_queue_jobs_status_created
               ON queue_jobs(status, created_at);
+            CREATE TABLE IF NOT EXISTS run_aliases (alias TEXT PRIMARY KEY, run_id TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS workers (
                 id TEXT PRIMARY KEY,
                 started_at TEXT NOT NULL,
@@ -230,7 +231,7 @@ def list_runs(*, limit: int = 100) -> list[dict]:
     ]
 
 
-def enqueue_run(run_id: str, payload: dict[str, Any], *, job_id: str | None = None) -> dict:
+def enqueue_run(run_id: str, payload: dict[str, Any], *, job_id: str | None = None, alias: str | None = None) -> dict:
     job_id = job_id or uuid.uuid4().hex
     now = _now()
     with _connection() as conn:
@@ -239,7 +240,15 @@ def enqueue_run(run_id: str, payload: dict[str, Any], *, job_id: str | None = No
                VALUES (?, ?, ?, 'queued', ?)""",
             (job_id, run_id, json.dumps(payload), now),
         )
+        if alias:
+            conn.execute("INSERT INTO run_aliases VALUES(?, ?) ON CONFLICT(alias) DO UPDATE SET run_id=excluded.run_id", (alias, run_id))
     return {"id": job_id, "run_id": run_id, "status": "queued", "created_at": now}
+
+
+def resolve_run_alias(alias: str) -> str | None:
+    with _connection() as conn:
+        row = conn.execute("SELECT run_id FROM run_aliases WHERE alias=?", (alias,)).fetchone()
+    return row["run_id"] if row else None
 
 
 def register_worker(worker_id: str) -> None:
@@ -661,8 +670,39 @@ def purge_job_history(run_ids: list[str]) -> int:
     placeholders = ",".join("?" for _ in run_ids)
     with _connection() as conn:
         conn.execute(f"DELETE FROM queue_jobs WHERE run_id IN ({placeholders})", run_ids)
+        conn.execute(f"DELETE FROM run_aliases WHERE run_id IN ({placeholders})", run_ids)
         cursor = conn.execute(f"DELETE FROM runs WHERE id IN ({placeholders})", run_ids)
     with RUNS_LOCK:
         for run_id in run_ids:
             RUNS.pop(run_id, None)
     return int(cursor.rowcount)
+
+
+def honor_run_control(run_id: str) -> bool:
+    """Stop safely between files when the API requested pause or cancellation."""
+    run = get_run(run_id)
+    if run is None:
+        return True
+    queue_status = queue_status_for_run(run_id)
+    control_state = (
+        "pause_requested" if queue_status == "pause_requested"
+        else "cancel_requested" if queue_status == "cancel_requested"
+        else run.get("control_state")
+    )
+    if control_state == "pause_requested":
+        run["status"] = "paused"
+        run["control_state"] = "paused"
+        save_run(run)
+        append_log(run_id, "Run paused after the current operation completed.")
+        return True
+    if control_state == "cancel_requested":
+        run["status"] = "cancelled"
+        run["control_state"] = "cancelled"
+        run["finished_at"] = datetime.now(UTC).isoformat()
+        for item in run.get("items", []):
+            if item.get("status") in {"pending", "running"}:
+                item["status"] = "cancelled"
+        save_run(run)
+        append_log(run_id, "Run cancelled after the current operation completed.")
+        return True
+    return False

@@ -65,9 +65,18 @@ a saved-result checkpoint prevents repeating completed work on resume. Model
 requests are **at least once**: a worker lost after a provider response but
 before result persistence can repeat that request. Pause/cancel is cooperative;
 an in-flight request may finish and save a result before control takes effect.
-Legacy standalone synthesis/full-index API jobs and model downloads have not
-been migrated by this decision; the supported Intake and scope-tool paths use
-the persistent worker. No cross-process or multi-machine collaboration is claimed.
+Standalone object and collection synthesis use this same queue and saved-result
+checkpoint, preserving their existing endpoints. Full synthesis inputs are saved
+on local disk so compatibility methods keep their original text semantics;
+processor request budgets still apply. The worker checks the chosen method and
+model configuration before execution. Full-index builds use the same incremental
+vector engine with an isolated checkpoint per run. Their cohort is fixed at
+submission; retry reads current text revisions and reuses matching completed
+chunks. Full builds publish only after all cohort members succeed, removing old
+members from the rebuilt index. Paused or failed builds retain checkpoints and
+the previous published index. API restarts retain the `segments` polling alias;
+new clients can poll the immutable run ID. Model downloads remain separate
+service-management operations. No cross-process or multi-machine collaboration is claimed.
 
 ## Wiki revisions
 

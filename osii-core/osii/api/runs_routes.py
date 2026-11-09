@@ -23,6 +23,7 @@ from osii.domain.processing.intake import (
 )
 from osii.domain.processing.jobs import (
     append_log,
+    honor_run_control as _honor_run_control,
     control_run,
     create_run_record,
     configure_job_store,
@@ -64,35 +65,6 @@ def _finish_item_timing(item: dict, started: datetime) -> None:
     item["finished_at"] = finished.isoformat()
     item["duration_seconds"] = round(max(0.0, (finished - started).total_seconds()), 3)
 
-
-def _honor_run_control(run_id: str) -> bool:
-    """Stop safely between files when the API requested pause or cancellation."""
-    run = get_run(run_id)
-    if run is None:
-        return True
-    queue_status = queue_status_for_run(run_id)
-    control_state = (
-        "pause_requested" if queue_status == "pause_requested"
-        else "cancel_requested" if queue_status == "cancel_requested"
-        else run.get("control_state")
-    )
-    if control_state == "pause_requested":
-        run["status"] = "paused"
-        run["control_state"] = "paused"
-        save_run(run)
-        append_log(run_id, "Run paused after the current file completed.")
-        return True
-    if control_state == "cancel_requested":
-        run["status"] = "cancelled"
-        run["control_state"] = "cancelled"
-        run["finished_at"] = datetime.now(UTC).isoformat()
-        for item in run.get("items", []):
-            if item.get("status") in {"pending", "running"}:
-                item["status"] = "cancelled"
-        save_run(run)
-        append_log(run_id, "Run cancelled after the current file completed.")
-        return True
-    return False
 
 
 def load_parser_routes(config_path: Path) -> list[dict]:

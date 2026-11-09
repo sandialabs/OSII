@@ -16,6 +16,10 @@ def ensure_object_synth_dir(osii_store: Path, file_id: str) -> Path:
 
 
 def read_concatenated_text(osii_store: Path, file_id: str) -> tuple[str, int]:
+    from osii.enrichment.common import frozen_object_text
+    frozen = frozen_object_text(osii_store, file_id)
+    if frozen is not None:
+        return frozen.get("native_text", frozen["text"]), frozen.get("text_record_count", 1)
     records = list_text_records(osii_store, file_id)
     texts = []
 

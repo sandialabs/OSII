@@ -83,3 +83,18 @@ def snapshot_scope(osii_root: Path, scope: dict, *, max_documents: int = 1000, m
     return {"documents": documents, "member_ids": file_ids,
             "text_chars": sum(len(d["text"]) for d in documents),
             "truncated_documents": sum(d["truncated"] for d in documents)}
+
+
+def frozen_object_text(osii_root: Path, file_id: str) -> dict | None:
+    frozen = _SCOPE_INPUTS.get()
+    if not frozen or frozen[0] != str(osii_root.resolve()):
+        return None
+    for item in frozen[2]:
+        if item["file_id"] == file_id:
+            return dict(item)
+    raise ValueError("Document is outside the saved scope inputs")
+
+
+def has_frozen_scope_inputs(osii_root: Path, scope: dict) -> bool:
+    value = _SCOPE_INPUTS.get()
+    return bool(value and value[:2] == (str(osii_root.resolve()), scope))

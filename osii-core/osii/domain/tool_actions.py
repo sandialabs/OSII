@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 
+from osii.expert_context import frozen_scope_context
 from osii.configuration import load_models_config, model_connection, resolve_tool_models
 from osii.domain.artifacts.products import product_provenance, validate_scope
 from osii.domain.processing.jobs import (
@@ -137,12 +138,22 @@ def tool_catalog(root: Path) -> dict:
     }
 
 
-def submit_tool(root: Path, payload: dict) -> dict:
+def resolve_scope_method(root: Path, processor: str, scope: dict, method_kind: str):
+    if method_kind == "synthesis":
+        from osii.domain.processing.standalone import SynthesisAction
+
+        return SynthesisAction(root, processor, scope)
+    if method_kind != "enricher":
+        raise ValueError("Unsupported scope operation")
+    return resolve_enricher(processor)
+
+
+def submit_tool(root: Path, payload: dict, *, method_kind: str = "enricher") -> dict:
     processor = str(payload.get("enricher_name") or "").strip()
     if not processor:
         raise ValueError("Choose a tool method.")
     scope = validate_scope(payload.get("scope") or {})
-    enricher = resolve_enricher(processor)
+    enricher = resolve_scope_method(root, processor, scope, method_kind)
     descriptor = enricher.describe()
     scopes = descriptor.get("capabilities", {}).get("scope_types")
     if scopes and scope["scope_type"] not in scopes:
@@ -161,14 +172,25 @@ def submit_tool(root: Path, payload: dict) -> dict:
         }
         for cap, alias in bindings.items()
     }
-    snapshot = snapshot_scope(root, scope)
+    if method_kind == "synthesis":
+        from osii.domain.processing.standalone import synthesis_inputs
+
+        snapshot = synthesis_inputs(root, scope)
+    else:
+        snapshot = snapshot_scope(root, scope)
     config = merged_processor_settings(root, processor, payload.get("enricher_config"))
     validate_tool_config(descriptor.get("config_schema") or {}, config)
     # Freeze expert context at submission, too; retry must not pick up a changed scope note.
     from osii.expert_context import resolve_expert_context
 
     expert_context = resolve_expert_context(root, scope, payload.get("expert_context"))
-    run = create_run_record([root], root, root, osii_root=root)
+    from osii.domain.artifacts.enrichment_artifacts import _scope_enrichment_dir
+
+    scope_directory = _scope_enrichment_dir(root, scope)[1]
+    scope_path = (
+        scope_directory if scope["scope_type"] == "folder" else scope_directory.parent
+    )
+    run = create_run_record([scope_path], root, root, osii_root=root)
     run.update(
         status="queued",
         workflow="tool",
@@ -181,6 +203,12 @@ def submit_tool(root: Path, payload: dict) -> dict:
         control_state="running",
     )
     run["items"][0]["display"] = run["tool_label"]
+    if method_kind == "synthesis":
+        input_path = root / "state" / "job-inputs" / f"{run['id']}.json"
+        atomic_write_text(input_path, json.dumps(snapshot))
+        queued_snapshot = {"path": str(input_path.relative_to(root))}
+    else:
+        queued_snapshot = snapshot
     save_run(run)
     enqueue_run(
         run["id"],
@@ -188,10 +216,15 @@ def submit_tool(root: Path, payload: dict) -> dict:
             "job_kind": "tool",
             "osii_store": str(root),
             "processor": processor,
+            "method_kind": method_kind,
             "descriptor_version": descriptor.get("version"),
             "descriptor_fingerprint": _fingerprint(descriptor),
             "scope": scope,
-            "snapshot": snapshot,
+            "scope_path": str(scope_path),
+            "document_paths": [
+                str(root / "objects" / file_id) for file_id in snapshot["member_ids"]
+            ],
+            "snapshot": queued_snapshot,
             "config": config,
             "expert_context": expert_context,
             "bindings": bindings,
@@ -228,7 +261,17 @@ def execute_tool(job: dict):
         if marker.is_file():
             result = json.loads(marker.read_text(encoding="utf-8"))
         else:
-            enricher = resolve_enricher(payload["processor"])
+            enricher = resolve_scope_method(
+                root,
+                payload["processor"],
+                payload["scope"],
+                payload.get("method_kind", "enricher"),
+            )
+            snapshot = payload["snapshot"]
+            if "path" in snapshot:
+                snapshot = json.loads(
+                    (root / snapshot["path"]).read_text(encoding="utf-8")
+                )
             if _fingerprint(enricher.describe()) != payload.get(
                 "descriptor_fingerprint"
             ):
@@ -256,10 +299,10 @@ def execute_tool(job: dict):
                 "version": payload.get("descriptor_version"),
                 "scope": payload["scope"],
                 "models": payload.get("model_targets", payload["bindings"]),
-                "member_ids": payload["snapshot"]["member_ids"],
+                "member_ids": snapshot["member_ids"],
                 "inputs": [
-                    {k: v for k, v in doc.items() if k != "text"}
-                    for doc in payload["snapshot"]["documents"]
+                    {k: v for k, v in doc.items() if k not in {"text", "native_text"}}
+                    for doc in snapshot["documents"]
                 ],
             }
             token = _BINDINGS.set(
@@ -271,10 +314,11 @@ def execute_tool(job: dict):
             )
             try:
                 with (
-                    frozen_scope_inputs(
-                        root, payload["scope"], payload["snapshot"]["documents"]
-                    ),
+                    frozen_scope_inputs(root, payload["scope"], snapshot["documents"]),
                     product_provenance(provenance),
+                    frozen_scope_context(
+                        root, payload["scope"], payload.get("expert_context")
+                    ),
                 ):
                     result = enricher.enrich(
                         osii_store=root,
@@ -293,6 +337,10 @@ def execute_tool(job: dict):
         run["items"][0].update(
             status="done", enrichment=result.get("result"), error=None
         )
+        if payload.get("method_kind") == "synthesis":
+            run["items"][0]["synthesis"] = result.get("result")
+            if payload["scope"]["scope_type"] == "object":
+                run["items"][0]["file_id"] = payload["scope"]["file_id"]
         run["completed"] = 1
         if run.get("control_state") not in {"pause_requested", "cancel_requested"}:
             run.update(

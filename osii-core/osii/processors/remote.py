@@ -353,8 +353,13 @@ class RemoteSynthesizer:
         expert_context: str | None = None,
         synthesizer_config: dict | None = None,
     ) -> dict:
-        preferred = get_preferred_text_representation(osii_store, file_id)
-        expert_context = resolve_expert_context(
+        from osii.enrichment.common import frozen_object_text
+        from osii.domain.tool_actions import frozen_expert_context
+        preferred = frozen_object_text(osii_store, file_id)
+        if preferred is None:
+            preferred = get_preferred_text_representation(osii_store, file_id)
+        frozen, context = frozen_expert_context(self.name)
+        expert_context = context if frozen else resolve_expert_context(
             osii_store, {"scope_type": "object", "file_id": file_id}, expert_context
         )
         meta = get_doc_meta(osii_store, file_id) or {}

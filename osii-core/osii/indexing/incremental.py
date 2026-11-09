@@ -134,13 +134,17 @@ def _vectors(
 
 
 def _merge_chunks(
-    osii_root: Path, completed: set[str], documents: dict[str, list[dict]]
+    osii_root: Path,
+    completed: set[str],
+    documents: dict[str, list[dict]],
+    *,
+    replace_all: bool = False,
 ) -> None:
     path = embeddings_chunks_manifest_path(osii_root)
     fd, name = tempfile.mkstemp(prefix=".chunks-", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as output:
-            if path.exists():
+            if path.exists() and not replace_all:
                 with path.open(encoding="utf-8") as previous:
                     for line in previous:
                         if (
@@ -171,6 +175,7 @@ def embed_selected_documents(
     expected_identity: dict | None = None,
     on_progress: Callable[[dict], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
+    rebuild_id: str | None = None,
 ) -> dict:
     """Only selected sidecar text reaches the provider. Originals are never opened.
 
@@ -189,6 +194,7 @@ def embed_selected_documents(
             expected_identity=expected_identity,
             on_progress=on_progress,
             should_stop=should_stop,
+            rebuild_id=rebuild_id,
         )
 
 
@@ -204,6 +210,7 @@ def _embed_selected(
     expected_identity,
     on_progress,
     should_stop,
+    rebuild_id,
 ):
     model = model or get_embedding_model()
     provider = selected_processor("embedder", osii_root=osii_root)
@@ -221,7 +228,14 @@ def _embed_selected(
             "This run's embedding connection changed; restore its provider/model/endpoint before retrying"
         )
     directory = ensure_embeddings_dir(osii_root, model=model, provider=provider)
-    old_index, old_rows, metadata = _existing(directory, model, provider)
+    if rebuild_id is not None:
+        import re
+
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", rebuild_id):
+            raise ValueError("Invalid full rebuild identity")
+        old_index, old_rows, metadata = None, [], {}
+    else:
+        old_index, old_rows, metadata = _existing(directory, model, provider)
     old_meta = metadata.get("embeddings", {})
     report = {
         "identity": identity,
@@ -250,7 +264,15 @@ def _embed_selected(
             report["failures"][file_id] = str(exc)
     # WAL and FULL commits retain each successful response across worker exits.
     with closing(
-        sqlite3.connect(directory / "incremental.sqlite3", timeout=30)
+        sqlite3.connect(
+            directory
+            / (
+                f"full-build-{rebuild_id}.sqlite3"
+                if rebuild_id
+                else "incremental.sqlite3"
+            ),
+            timeout=30,
+        )
     ) as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=FULL")
@@ -313,9 +335,14 @@ def _embed_selected(
         report["reused_chunks"] = len(cached)
 
         def progress():
-            report["completed_documents"] = sum(
-                all(key in cached for key in group) for group in keys.values()
-            )
+            finished = [
+                file_id
+                for file_id, group in keys.items()
+                if all(key in cached for key in group)
+            ]
+            report["completed_documents"] = len(finished)
+            if rebuild_id:
+                report["completed_file_ids"] = finished
             if on_progress:
                 on_progress(report.copy())
 
@@ -424,7 +451,15 @@ def _embed_selected(
                 report["failures"][file_id] = (
                     "Text changed while embedding; retry the current text revision"
                 )
-        if completed:
+        publish = bool(completed) and (
+            not rebuild_id
+            or (
+                not report["failures"]
+                and not report["paused"]
+                and len(completed) == len(file_ids)
+            )
+        )
+        if publish:
             index = faiss.IndexFlatIP(dimension)
             final_rows = []
             for ordinal, row in enumerate(old_rows):
@@ -465,6 +500,7 @@ def _embed_selected(
                     if getattr(client, "semantic", None) is not None
                     else provider != "local.hashing",
                     "created_utc": datetime.now(UTC).isoformat(),
+                    **({"rebuild_run_id": rebuild_id} if rebuild_id else {}),
                     **({"model_digest": digest} if digest else {}),
                 },
                 "chunking": {
@@ -474,15 +510,50 @@ def _embed_selected(
                     "per_document": True,
                 },
             }
+            if rebuild_id:
+                from osii.indexing.common import (
+                    get_model_token_limit,
+                    APPROX_CHARS_PER_TOKEN,
+                )
+
+                meta["embeddings"].update(
+                    index_type="faiss.IndexFlatIP",
+                    unit="derived-text-chunk",
+                    max_tokens=get_model_token_limit(model),
+                    approx_chars_per_token=APPROX_CHARS_PER_TOKEN,
+                    max_chars=get_model_char_limit(model),
+                )
+                meta["lexical"] = {
+                    "index_type": "bm25s",
+                    "chunk_manifest_path": str(
+                        embeddings_chunks_manifest_path(osii_root)
+                    ),
+                }
+                meta["stats"] = {
+                    "truncated_count": sum(
+                        bool(row.get("truncated")) for row in final_rows
+                    ),
+                    "skipped_count": 0,
+                }
+                meta["warnings"], meta["skipped"] = [], []
             (snapshot / "segments.meta.toml").write_text(
                 tomli_w.dumps(meta), encoding="utf-8"
             )
             publish_snapshot(directory, snapshot)
             for file_id in completed:
                 clear_artifacts_stale(osii_root, file_id, "embeddings", "search_chunks")
-            _merge_chunks(osii_root, completed, documents)
+            _merge_chunks(osii_root, completed, documents, replace_all=bool(rebuild_id))
+            if rebuild_id:
+                # New vector dimensions/configuration may supersede an older
+                # incremental cache; the next intake can import this snapshot.
+                for suffix in ("", "-wal", "-shm"):
+                    (directory / ("incremental.sqlite3" + suffix)).unlink(
+                        missing_ok=True
+                    )
             refresh_semantic_indexes(osii_root)
         report["completed_documents"] = len(completed)
+        if rebuild_id:
+            report["completed_file_ids"] = sorted(completed)
         if on_progress:
             on_progress(report.copy())
         if report["failures"] and not report["paused"]:

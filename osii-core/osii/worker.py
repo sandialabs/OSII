@@ -18,6 +18,7 @@ from osii.domain.processing.jobs import (
     get_run,
     heartbeat_queue_job,
     heartbeat_worker,
+    honor_run_control,
     pause_queue_job,
     recover_stale_queue_jobs,
     register_worker,
@@ -39,6 +40,15 @@ def execute_job(job: dict) -> None:
         return
 
     run = get_run(job["run_id"])
+    if payload.get("job_kind") == "full_index":
+        if run and run.get("indexing_status") == "done":
+            run["status"] = "done"
+            save_run(run)
+            return
+        if honor_run_control(job["run_id"]):
+            return
+        from osii.domain.processing.standalone import validate_embedding_binding
+        validate_embedding_binding(osii_root, payload)
     # An interrupted/retried embedding phase never repeats original reads,
     # extraction, summaries, or enrichment from the completed file phase.
     if not run or run.get("file_processing_status") != "done":
@@ -81,7 +91,6 @@ def execute_job(job: dict) -> None:
         save_run(run)
 
     if payload.get("build_embeddings"):
-        from osii.api.runs_routes import _honor_run_control
         from osii.indexing.incremental import (
             embed_selected_documents,
             IncrementalEmbeddingError,
@@ -114,22 +123,31 @@ def execute_job(job: dict) -> None:
             current["indexing_progress"] = {
                 key: value for key, value in report.items() if key != "identity"
             }
+            if payload.get("job_kind") == "full_index":
+                finished = set(report.get("completed_file_ids", []))
+                current["completed"] = len(finished)
+                for item in current["items"]:
+                    item["status"] = "done" if item.get("file_id") in finished else "error" if item.get("file_id") in report["failures"] else "pending"
+                    item["error"] = report["failures"].get(item.get("file_id"))
             save_run(current)
 
         try:
+            if payload.get("job_kind") == "full_index" and not file_ids:
+                raise ValueError("No documents are available to embed")
             report = embed_selected_documents(
                 osii_root,
                 file_ids,
-                model=selected_model("embedder", osii_root=osii_root),
+                model=payload.get("embedding_model") or selected_model("embedder", osii_root=osii_root),
                 batch_size=int(payload.get("embedding_batch_size", 64)),
                 chunking_method=payload.get("chunking_method") or "sentence_window",
                 chunk_size=int(payload.get("chunk_size", 768)),
                 chunk_overlap=int(payload.get("chunk_overlap", 128)),
                 expected_identity=run.get("embedding_target"),
                 on_progress=progress,
-                should_stop=lambda: _honor_run_control(job["run_id"]),
+                should_stop=lambda: honor_run_control(job["run_id"]),
+                **({"rebuild_id": job["run_id"]} if payload.get("job_kind") == "full_index" else {}),
             )
-            if report["paused"] or _honor_run_control(job["run_id"]):
+            if report["paused"] or honor_run_control(job["run_id"]):
                 run = get_run(job["run_id"])
                 run["indexing_status"] = run["status"]
                 save_run(run)
@@ -145,7 +163,7 @@ def execute_job(job: dict) -> None:
             save_run(run)
             append_log(
                 job["run_id"],
-                "Selected-document embeddings saved; existing library vectors preserved.",
+                "Full index saved." if payload.get("job_kind") == "full_index" else "Selected-document embeddings saved; existing library vectors preserved.",
             )
         except Exception as exc:
             run = get_run(job["run_id"])
@@ -206,6 +224,7 @@ def main() -> None:
             heartbeat.start()
             try:
                 execute_job(job)
+                honor_run_control(job["run_id"])
                 run = get_run(job["run_id"])
                 if run and run.get("control_state") == "cancel_requested":
                     run["status"] = "cancelled"

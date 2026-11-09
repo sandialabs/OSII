@@ -299,3 +299,23 @@ def test_startup_profile_file_and_explicit_routing_survive_launcher(monkeypatch,
     assert "http://127.0.0.1:8095/openai/synthesizer" not in env["OSII_PROCESSORS"]
     monkeypatch.setenv("OSII_DEFAULT_EXTRACTOR", "local.native-text")
     assert DEV_STACK.build_environment(False)["OSII_DEFAULT_EXTRACTOR"] == "local.native-text"
+
+
+def test_default_startup_leaves_chat_selection_to_saved_models(monkeypatch, tmp_path):
+    checkout = tmp_path / "checkout"
+    source = checkout / "source"
+    source.mkdir(parents=True)
+    monkeypatch.setattr(DEV_STACK, "REPOSITORY_ROOT", checkout)
+    monkeypatch.setattr(DEV_STACK, "load_dotenv", lambda _: {"OSII_SOURCE_DIR": str(source)})
+    monkeypatch.setenv("OSII_CONFIG_DIR", str(tmp_path / "config"))
+    for name in ("CHAT_PROVIDER", "CHAT_PROVIDER_CHAIN", "CHAT_MODEL", "OSII_SOURCE_DIR", "OSII_ROOT", "OSII_RUNTIME_DIR", "OSII_INVENTORY_DB", "OSII_VOLUME_DB"):
+        monkeypatch.delenv(name, raising=False)
+    env = DEV_STACK.build_environment(False)
+    assert "CHAT_PROVIDER" not in env
+    assert "CHAT_PROVIDER_CHAIN" not in env
+
+
+def test_public_env_template_uses_current_model_and_endpoint_keys():
+    settings = DEV_STACK.load_dotenv(ROOT / ".env.example")
+    assert {"OSII_CHAT_MODEL", "OSII_EMBEDDING_MODEL", "OPENAI_BASE_URL"} <= settings.keys()
+    assert not ({"CHAT_PROVIDER", "CHAT_PROVIDER_CHAIN", "CHAT_MODEL", "OSII_MODEL_BASE_URL", "OSII_MODEL_API_KEY", "OPENAI_CHAT_MODEL", "OPENAI_SYNTHESIS_MODEL"} & settings.keys())

@@ -81,7 +81,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
               >
                 <Stack>
                   <Typography fontWeight={600}>
-                    {run.workflow === "tool" ? run.tool_label ?? "Tool run" : run.workflow === "library" ? "Library processing" : "New file intake"} · {run.id.slice(0, 8)}
+                    {run.tool_label ?? (run.workflow === "tool" ? "Tool run" : run.workflow === "library" ? "Library processing" : "New file intake")} · {run.id.slice(0, 8)}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     {run.completed ?? 0} / {run.total ?? 0} {run.workflow === "tool" ? "operations" : "files"} · {new Date(run.created_at).toLocaleString()}

@@ -35,8 +35,8 @@ Runtime data defaults to `osii-data/`, separately from original documents.
 Configuration is in `osii-data/config/`. Preserve these directories and your
 `.env` when updating the checkout.
 
-For the shared model endpoint set `OPENAI_BASE_URL`, `OPENAI_CHAT_MODEL`, and
-`OPENAI_EMBEDDING_MODEL` if embeddings are available. Enter credentials in
+For the shared model endpoint set `OPENAI_BASE_URL`, `OSII_CHAT_MODEL`, and
+`OSII_EMBEDDING_MODEL` if embeddings are available. Enter credentials in
 Setup or inject `OPENAI_API_KEY`. Existing saved model settings are retained;
 change them in Setup rather than expecting new defaults to overwrite them.
 
@@ -362,3 +362,40 @@ boundary days in UTC. Clear filters to restore the complete Files grid.
 For names and sizes of source files that have not been ingested, use **File
 inventory** and its metadata scan. Content and semantic retrieval remain in
 **Search**.
+
+## Durable processing APIs
+
+Standalone document synthesis (`POST /api/synthesis/objects/{file_id}`), collection
+synthesis (`POST /api/collections/{collection_id}/syntheses`), and full-index builds
+(`POST /api/embeddings/build`) all queue work for the normal local worker started
+by `make dev`. Their existing request fields and response identifiers remain
+available. Synthesis returns a `run_id` and an initial `queued` status. Use
+Activity or `/api/runs/{run_id}` for status, logs, pause, resume, cancel, and retry.
+
+Embedding build requests retain `job_id: "segments"` and the legacy in-progress
+`status: "running"`. The additive `queue_status` exposes the actual queued state,
+and `run_id` identifies this specific build. `GET /api/embeddings/build/segments`
+tracks the most recently submitted full build, including after API restart.
+`GET /api/embeddings/build/{run_id}` provides stable polling when builds overlap.
+Unknown embedding job IDs retain the existing JSON error response.
+
+A worker killed mid-build resumes from committed vectors. Failed documents are
+reported in the run's `indexing_progress.failures`; healthy documents continue
+and their vectors are retained. Retry the same run after fixing a transient
+failure. A full rebuild keeps the previous index published until all selected
+members succeed; it then replaces that provider/model's full snapshot. New files
+added after submission belong in another build. Text changed before retry is
+rechunked, with matching successful chunks reused. Models, endpoints, and method
+versions cannot silently change within a run; start another run for a changed
+configuration. Pause and cancel are cooperative between provider requests.
+
+Synthesis saves its input text and expert context before queueing. Its completed
+result checkpoint prevents regeneration after a restart or lost queue completion
+acknowledgement. A process lost after a provider response but before persistence
+can still repeat that response; provider requests are at least once.
+
+Environment templates expose current endpoint/model names and Intake settings.
+Use `OSII_CHAT_MODEL` and `OSII_EMBEDDING_MODEL`; saved choices in Setup remain
+authoritative. Obsolete shared-endpoint aliases and separate `CHAT_PROVIDER*`
+routing flags are omitted from the templates. Older external configurations can
+still be read, but normal startup no longer injects overrides of saved chat defaults.

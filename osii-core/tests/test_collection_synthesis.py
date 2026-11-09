@@ -72,28 +72,6 @@ def test_run_collection_synthesis_endpoint(
     )
     add_documents_to_collection(temp_osii_root, collection["id"], [file_id])
 
-    class FakeCollectionSynthesizer:
-        def synthesize_collection(
-            self,
-            *,
-            osii_store,
-            collection_id,
-            expert_context=None,
-            synthesizer_config=None,
-        ):
-            return {
-                "scope_type": "collection",
-                "collection_id": collection_id,
-                "method": "collection_firstn",
-                "text_path": f"collections/{collection_id}/syntheses/collection_firstn.txt",
-                "metadata_path": f"collections/{collection_id}/syntheses/collection_firstn.json",
-            }
-
-    monkeypatch.setattr(
-        "osii.api.collection_synthesis_routes.CollectionFirstNSynthesizer",
-        FakeCollectionSynthesizer,
-    )
-
     response = client.post(
         f"/api/collections/{collection['id']}/syntheses",
         json={

@@ -473,3 +473,40 @@ def test_search_pins_one_snapshot_during_concurrent_publication(library, monkeyp
     assert (
         len(_scan_indexes(root)) == 1
     )  # Old/orphan generations are not duplicate spaces.
+
+
+def test_full_rebuild_keeps_old_index_until_retry_finishes(library):
+    root, client = library
+    old = document(root, "old", "Old published text")
+    embed(root, [old])
+    previous = published(root)[0]
+    good = document(root, "new-good", "Healthy new text")
+    bad = document(root, "new-bad", "Temporarily rejected text")
+    client.bad = {"Temporarily rejected text"}
+    client.calls.clear()
+    with pytest.raises(incremental.IncrementalEmbeddingError):
+        embed(root, [good, bad], rebuild_id="full-rebuild", batch_size=1)
+    assert published(root)[0] == previous
+    assert any("Healthy new text" in batch for batch in client.calls)
+    client.bad.clear()
+    client.calls.clear()
+    result = embed(root, [good, bad], rebuild_id="full-rebuild", batch_size=1)
+    assert result["completed_documents"] == 2
+    assert client.calls == [["Temporarily rejected text"]]
+    assert {row["file_id"] for row in published(root)[1]} == {good, bad}
+
+
+def test_full_rebuild_can_replace_dimensions_and_pause_without_publication(library):
+    root, client = library
+    item = document(root, "document", "Document text")
+    embed(root, [item])
+    original = published(root)[0]
+    client.dimension = 4
+    paused = embed(root, [item], rebuild_id="new-dimension", should_stop=lambda: True)
+    assert paused["paused"]
+    assert published(root)[0] == original
+    embed(root, [item], rebuild_id="new-dimension")
+    assert len(next(iter(published(root)[2].values()))) == 4
+    client.calls.clear()
+    embed(root, [item])  # Imports rebuilt vectors, with no stale dimension cache.
+    assert client.calls == []

@@ -1,12 +1,10 @@
-def test_synthesis_api_starts_job(client, monkeypatch, sample_osii_object):
+from osii.domain.processing.jobs import claim_next_queue_job, get_run
+from osii.worker import execute_job
+
+
+def test_synthesis_api_starts_job(client, sample_osii_object, monkeypatch):
+    monkeypatch.delenv("OSII_SYNTHESIZER_FALLBACKS", raising=False)
     file_id = sample_osii_object["file_id"]
-
-    class FakeSynth:
-        def synthesize(self, *, osii_store, file_id, expert_context=None, synthesizer_config=None):
-            return {"synth_rel": f"objects/{file_id}/synth.txt"}
-
-    monkeypatch.setattr("osii.api.synthesis_routes.get_synthesizer", lambda name: FakeSynth())
-
     response = client.post(
         f"/api/synthesis/objects/{file_id}",
         json={
@@ -19,4 +17,10 @@ def test_synthesis_api_starts_job(client, monkeypatch, sample_osii_object):
     data = response.json()
     assert data["file_id"] == file_id
     assert data["synthesizer_name"] == "firstN"
-    assert "run_id" in data
+    assert data["status"] == "queued"
+    execute_job(claim_next_queue_job())
+    assert get_run(data["run_id"])["status"] == "done"
+    assert (
+        get_run(data["run_id"])["items"][0]["synthesis"]
+        == f"objects/{file_id}/synth.txt"
+    )

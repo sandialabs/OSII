@@ -317,12 +317,8 @@ def build_environment(core_only: bool) -> dict[str, str]:
             "EMBEDDING_MODEL": env.get("EMBEDDING_MODEL") or ollama_embedding_model,
         })
         if provider_profile in {"baseline", "ollama"}:
-            env.setdefault("CHAT_PROVIDER", "ollama")
-            env.setdefault("CHAT_PROVIDER_CHAIN", "ollama,extractive")
             env.setdefault("OSII_SYNTHESIZER_FALLBACKS", "ollama.synthesizer,local.extractive-preview")
         elif provider_profile == "openai":
-            env.setdefault("CHAT_PROVIDER", "openai")
-            env.setdefault("CHAT_PROVIDER_CHAIN", "openai,extractive")
             env.setdefault("OSII_SYNTHESIZER_FALLBACKS", "openai.synthesizer,local.extractive-preview")
     return env
 
