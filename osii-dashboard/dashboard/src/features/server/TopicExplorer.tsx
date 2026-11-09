@@ -1,3 +1,4 @@
+import { SuggestedMetadata } from "../files/components/SuggestedMetadata";
 import { useEffect, useState } from "react";
 import { Alert, Button, Chip, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
 import { api, type Scope } from "./api";
@@ -35,7 +36,7 @@ export function TopicExplorer({ scope, open, onSelect }: { scope: Scope; open: (
         <TextDocumentList points={map.points} selected={selected} choose={setSelected} />
       </>}
     </>}
-    {related && <Paper sx={{ p: 2 }}><Stack spacing={2}><Typography variant="h6">Related to {related.document.document_title || related.document.filename}</Typography><Stack direction="row" spacing={1}><Button onClick={() => open(related.document.file_id)}>Open document</Button><Button onClick={() => onSelect(related.document.file_id)}>Select for collection</Button></Stack>{!related.results.length && <Typography>No other indexed documents in this scope.</Typography>}{related.results.map(doc => <Stack key={doc.file_id} direction="row" spacing={1} alignItems="center"><Button onClick={() => setSelected(doc.file_id)}>{doc.document_title || doc.filename}</Button><Typography variant="caption">Cosine similarity: {doc.similarity.toFixed(3)}</Typography><Button onClick={() => open(doc.file_id)}>Open</Button><Button onClick={() => onSelect(doc.file_id)}>Select for collection</Button></Stack>)}</Stack></Paper>}
+    {related && <Paper sx={{ p: 2 }}><Stack spacing={2}><Typography variant="h6">Related to {related.document.document_title || related.document.filename}</Typography><SuggestedMetadata metadata={related.document.document_metadata}/><Stack direction="row" spacing={1}><Button onClick={() => open(related.document.file_id)}>Open document</Button><Button onClick={() => onSelect(related.document.file_id)}>Select for collection</Button></Stack>{!related.results.length && <Typography>No other indexed documents in this scope.</Typography>}{related.results.map(doc => <Stack key={doc.file_id} direction="row" spacing={1} alignItems="center"><Button onClick={() => setSelected(doc.file_id)}>{doc.document_title || doc.filename}</Button><Typography variant="caption">Cosine similarity: {doc.similarity.toFixed(3)}</Typography><Button onClick={() => open(doc.file_id)}>Open</Button><Button onClick={() => onSelect(doc.file_id)}>Select for collection</Button></Stack>)}</Stack></Paper>}
   </Stack>;
 }
 

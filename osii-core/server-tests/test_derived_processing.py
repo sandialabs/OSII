@@ -17,6 +17,8 @@ from osii.processor_sdk import (Capability, ProcessorDescriptor, ProcessorKind, 
 
 def create_plan(app, paths, **options):
     store=app.state.store
+    if options.get('synthesizer_name') == 'openai.synthesizer':
+        options.setdefault('synthesizer_config', {'extract_metadata': False})
     payload=plan(store,app.state.settings,paths,operation='process',embed=False,**options)
     return store.enqueue('plan',payload,status='staged')
 
@@ -270,3 +272,29 @@ def test_long_model_free_outputs_do_not_require_model_or_truncate_canonical_text
     assert result['status']=='done',result['logs']
     assert store.document(doc['file_id'])['text']==text
     assert len(store.list_artifacts(doc['file_id']))==2
+
+
+def test_ai_synthesis_runs_metadata_step_and_keeps_canonical_text(app):
+    import json
+    store=app.state.store
+    doc=document(store,app.state.settings.source_root,content='Grow vegetables at home during wartime.')
+    canonical=store.document(doc['file_id'])['text']
+    store.save_configuration({'chat_model':'selected-chat'})
+    jid=create_plan(app,[doc['source_relpath']],synthesizer_name='openai.synthesizer',synthesizer_config={'extract_metadata':True})
+    assert store.job(jid)['payload']['synthesis_calls_estimate']==2
+    class MetadataProvider(Provider):
+        calls=0
+        def chat(self,model,messages,**kwargs):
+            self.calls+=1
+            if 'OSII DOCUMENT METADATA EXTRACTION' in messages[0]['content']:
+                return json.dumps({'title':{'value':'Wartime Garden Guide'},'author':{'value':None,'qualifier':'Not identified'},'date':{'value':'circa 1940s','qualifier':'Approximate period'}}),{}
+            return '# Garden Report\n\nGrow vegetables.',{}
+    provider=MetadataProvider();start(app,jid)
+    result=execute(app,jid,provider=provider)
+    assert result['status']=='done',result['logs']
+    assert provider.calls==2
+    record=store.list_artifacts(doc['file_id'])[0]['payload']['response']['metadata']
+    assert record['document_title']=='Wartime Garden Guide'
+    assert record['document_metadata']['author']['value'] is None
+    assert record['document_metadata']['date']['value']=='circa 1940s'
+    assert store.document(doc['file_id'])['text']==canonical

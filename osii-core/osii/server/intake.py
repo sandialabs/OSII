@@ -104,7 +104,7 @@ def plan(store, settings, paths: list[str], *, operation: str, embed: bool, synt
             raise ValueError(f"Extract text before embedding: {relative}")
         items.append({'display': relative, 'path': relative, 'size_bytes': stat.st_size,
                       'mtime_ns': stat.st_mtime_ns, 'status': 'pending', 'indexed': relative in docs,
-                      'synthesis_calls_estimate': synthesis_call_estimate(lengths[relative], synth_config.get('window_chars',100000)) if synthesizer_name == 'openai.synthesizer' and relative in lengths else None})
+                      'synthesis_calls_estimate': synthesis_call_estimate(lengths[relative], synth_config.get('window_chars',100000), extract_metadata=synth_config.get('extract_metadata',True)) if synthesizer_name == 'openai.synthesizer' and relative in lengths else None})
     if stamp != configuration_stamp(store, settings):
         raise ValueError("Model settings changed during preview. Preview the files again.")
     return {'synthesis_calls_estimate': sum(item['synthesis_calls_estimate'] or 0 for item in items), 'version': 1, 'workflow': 'library' if operation != 'missing' else 'intake',

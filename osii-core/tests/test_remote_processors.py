@@ -108,6 +108,7 @@ def test_remote_synthesis_omits_absent_citation_fields_from_toml(
                 request_id=request.request_id,
                 processor=ProcessorDescriptor.model_validate(descriptor),
                 markdown="Grounded preview.",
+                metadata={"document_metadata":{"schema_version":1,"method":"text_llm", "model":"test", "title":{"value":"Detector Readings"},"author":{"value":None,"qualifier":"Unknown author"},"date":{"value":None}}},
                 citations=[ProvenanceRef(file_id=sample_osii_object["file_id"])],
             )
 
@@ -130,6 +131,10 @@ def test_remote_synthesis_omits_absent_citation_fields_from_toml(
         {"file_id": sample_osii_object["file_id"], "source_origin": {}}
     ]
     assert provenance["synthesis"]["config"]["expert_context"] == "Temperature readings are in kelvin."
+    from osii.domain.read.synthesis import get_suggested_metadata
+    saved=get_suggested_metadata(temp_osii_root,sample_osii_object["file_id"])
+    assert saved["document_title"] == "Detector Readings"
+    assert saved["document_metadata"]["author"]["value"] is None
 
 
 def test_remote_extractor_receives_saved_context_in_standard_field(tmp_path):

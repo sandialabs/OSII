@@ -15,15 +15,18 @@ from osii.processor_sdk import (
     SynthesisResponse,
 )
 from osii.processors.text import synthesis_prompt, model_synthesis_response
+from osii.processors.document_metadata import metadata_prompt, parse_document_metadata
 
 
-def synthesis_call_estimate(characters: int, window_chars: int = 100_000) -> int:
+def synthesis_call_estimate(
+    characters: int, window_chars: int = 100_000, *, extract_metadata: bool = True
+) -> int:
     windows = max(1, (characters + window_chars - 1) // window_chars)
     calls = windows
     while windows > 1:
         calls += windows // 4 + int(windows % 4 > 1)
         windows = (windows + 3) // 4
-    return calls
+    return calls + int(extract_metadata)
 
 
 def synthesize_bounded(
@@ -58,7 +61,7 @@ def synthesize_bounded(
         )
     logical_calls = 0
 
-    def call(messages):
+    def call(messages, validate=None):
         nonlocal logical_calls
         logical_calls += 1
         if logical_calls > max_windows * 2 + 8:
@@ -80,6 +83,8 @@ def synthesize_bounded(
         ):
             raise ValueError("The model returned empty or oversized synthesis text")
         markdown = markdown.replace("\x00", "\ufffd")
+        if validate:
+            validate(markdown)
         if checkpoint:
             checkpoint(key, {"markdown": markdown, "usage": usage})
         return markdown
@@ -165,7 +170,19 @@ def synthesize_bounded(
                 )
             summaries = combined
         markdown = summaries[0]
-    return model_synthesis_response(
+    inferred = None
+    if request.config.get("extract_metadata", True) and len(documents) == 1:
+        text = documents[0].text or ""
+
+        def validate_metadata(raw):
+            return parse_document_metadata(raw, text=text, model=model)
+
+        raw = call(
+            [{"role": "user", "content": metadata_prompt(text, markdown)}],
+            validate=validate_metadata,
+        )
+        inferred = validate_metadata(raw)
+    response = model_synthesis_response(
         request,
         descriptor,
         markdown,
@@ -177,3 +194,11 @@ def synthesize_bounded(
             "strategy": "bounded_map_reduce" if windows > 1 else "single_pass",
         },
     )
+
+    if inferred is not None:
+        response.metadata.update(
+            document_metadata=inferred,
+            document_title=inferred["title"]["value"],
+            title_method="text_llm",
+        )
+    return response

@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 
 
+from osii.domain.document_metadata import document_labels, synthesis_labels
 from osii.domain.topic_projection import TopicIndexUnavailable, project_documents
 
 
@@ -44,8 +45,7 @@ def document_space(documents: list[dict], rows: Iterable[Mapping[str, Any]], mod
         fid = doc["file_id"]
         if fid not in sums or np.linalg.norm(sums[fid]) <= 1e-12:
             continue
-        indexed.append({k: doc[k] for k in ("file_id", "filename", "source_relpath")}|{"chunk_count":counts[fid],
-            "document_title": doc.get("document_title"), "title_method": doc.get("title_method")})
+        indexed.append({**document_labels(doc), **synthesis_labels(doc), "chunk_count": counts[fid]})
         vectors.append(sums[fid]/np.linalg.norm(sums[fid]))
     stale -= {d["file_id"] for d in indexed}
     index = {"id":hashlib.sha256(f"{revision}:{model}:{dimensions}".encode()).hexdigest()[:20],

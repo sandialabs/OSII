@@ -1,3 +1,5 @@
+import { SuggestedMetadata } from "../files/components/SuggestedMetadata";
+import type { DocumentMetadata } from "../../api/documentMetadata";
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Box, Button, Dialog, DialogContent, DialogTitle, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { ProcessingOutputCard } from "../files/components/ProcessingOutputCard";
@@ -9,7 +11,7 @@ import { EnrichmentArtifactView } from "../files/components/EnrichmentArtifactVi
 import type { ManifestRecord } from "../../api/types";
 import { api, type Doc } from "./api";
 
-type SavedResponse = { processor: { display_name: string; name: string; version: string }; markdown?: string; artifacts?: { id: string; kind: string; standard_data?: { artifact_type?: string }; json_data?: unknown; text?: string }[]; metadata?: { model?: string }; warnings?: string[] };
+type SavedResponse = { processor: { display_name: string; name: string; version: string }; markdown?: string; artifacts?: { id: string; kind: string; standard_data?: { artifact_type?: string }; json_data?: unknown; text?: string }[]; metadata?: { model?: string; document_metadata?: DocumentMetadata }; warnings?: string[] };
 type Artifact = { stale?: boolean; id: string; kind: string; payload: { response?: SavedResponse; created_at?: string; input_extraction_id?: string; id?: string; standard_data?: unknown; json_data?: unknown; text?: string } };
 type Extraction = { id: string; primary: boolean; created_at: string; response: { processor: { name: string; version: string }; segments: { id: string; text: string; source_origin: Record<string, unknown> }[]; artifacts?: { id: string; kind: string; standard_data?: unknown; json_data?: unknown; text?: string }[] } };
 export function DocumentView({ doc, close, onProcess }: { doc: Doc; close: () => void; onProcess?: () => void }) {
@@ -54,7 +56,7 @@ export function DocumentView({ doc, close, onProcess }: { doc: Doc; close: () =>
       {["syntheses", "wiki", "enrichments"].includes(tab) && <>
         {onProcess && <Button color="secondary" variant="outlined" onClick={onProcess}>Stage processing for this document</Button>}
         {products.map(item => <ProcessingOutputCard key={item.id} title={item.payload.response?.processor.display_name || item.kind} createdAt={item.payload.created_at} model={item.payload.response?.metadata?.model} stale={item.stale} markdown={item.kind === "synthesis" ? item.payload.response?.markdown : undefined}>
-          <Typography variant="caption" color="text.secondary">Processor {item.payload.response?.processor.name} · v{item.payload.response?.processor.version}</Typography>
+          <SuggestedMetadata metadata={item.payload.response?.metadata?.document_metadata}/><Typography variant="caption" color="text.secondary">Processor {item.payload.response?.processor.name} · v{item.payload.response?.processor.version}</Typography>
           {(item.payload.response?.warnings ?? []).map((warning,index) => <Alert key={index} severity="info">{warning}</Alert>)}
           {item.payload.response?.artifacts?.filter(a => tab !== "wiki" || a.standard_data?.artifact_type === "wiki_markdown").map(artifact => <EnrichmentArtifactView key={artifact.id} data={artifact.standard_data ?? artifact.json_data ?? artifact.text} />)}
         </ProcessingOutputCard>)}

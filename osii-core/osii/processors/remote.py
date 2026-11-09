@@ -45,6 +45,7 @@ from osii.extraction.common import (
     persist_segment,
     update_provenance,
 )
+from osii.processor_sdk.document_metadata import DocumentMetadata
 from osii.synthesis.common import write_synth_text
 from osii.domain.artifacts.synth_artifacts import (
     write_collection_synthesis_variant,
@@ -415,6 +416,7 @@ class RemoteSynthesizer:
                 "processor_url": self.base_url,
                 "document_title": response.metadata.get("document_title"),
                 "title_method": response.metadata.get("title_method"),
+                **({"document_metadata": DocumentMetadata.model_validate(response.metadata["document_metadata"]).model_dump(mode="json", exclude_none=True)} if response.metadata.get("document_metadata") else {}),
                 "expert_context": expert_context,
                 # Processor API citations have optional grounding fields. TOML
                 # cannot encode None, so provenance records only supplied data.

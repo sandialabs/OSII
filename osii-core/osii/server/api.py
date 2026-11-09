@@ -16,6 +16,8 @@ from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 
+from osii.domain.topic_cache import topic_cache_key, hydrate_topic_map, pack_topic_map
+from osii.domain.document_metadata import synthesis_labels
 from osii.domain.library import Library, scope_documents
 from osii.domain.topics import topic_map, related_documents, TopicIndexUnavailable
 from osii.server.sources import browse, resolve_directory
@@ -400,7 +402,15 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
     def topics(payload: TopicRequest, account=Depends(require())):
         with store.topic_snapshot() as (revision, documents, rows):
             docs = scope_documents(documents, payload.scope, store.collection_records(account['id']))
-            return topic_map(docs, rows([doc['file_id'] for doc in docs]), store.configuration().get("embedding_model", ""), revision)
+            model = store.configuration().get("embedding_model", "")
+            docs = [{**doc, **synthesis_labels(doc)} for doc in docs]
+            key = topic_cache_key([revision, model], docs, 500)
+            cached = hydrate_topic_map(store.cached_topic_map(key), docs)
+            if cached is not None:
+                return cached
+            result = topic_map(docs, rows([doc['file_id'] for doc in docs]), model, revision)
+        store.save_topic_map(key, pack_topic_map(result))
+        return result
 
     @app.post("/api/topics/related")
     def related(payload: RelatedRequest, account=Depends(require())):

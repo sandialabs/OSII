@@ -1,3 +1,5 @@
+import { SuggestedMetadata } from "./SuggestedMetadata";
+import { ProcessingOutputCard } from "../components/ProcessingOutputCard";
 // src/features/files/components/FileSynthesesPanel.tsx
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -91,18 +93,8 @@ export function FileSynthesesPanel({ fileId }: FileSynthesesPanelProps) {
       {!synthesis.isLoading && !synthesis.isError && !synthesis.data ? <Alert severity="info">No synthesis data available.</Alert> : null}
       {synthesis.data ? (
         <>
-          <Card>
-            <CardContent>
-              <Stack spacing={1}>
-                <Typography variant="subtitle1" fontWeight={600}>
-                  Current Synthesis
-                </Typography>
-                <Typography variant="body2">
-                  {synthesis.data.current_text ?? "No current synthesis text is available."}
-                </Typography>
-              </Stack>
-            </CardContent>
-          </Card>
+          <SuggestedMetadata metadata={synthesis.data.document_metadata} />
+          <ProcessingOutputCard title="Current Synthesis" text={synthesis.data.current_text ?? "No current synthesis text is available."} />
 
           <Card>
             <CardContent>

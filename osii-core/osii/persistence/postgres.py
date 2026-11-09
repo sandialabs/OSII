@@ -502,10 +502,11 @@ class PostgresStore:
                     extractions.c.file_id, extractions.c.created_at.desc(), extractions.c.id).subquery()
                 title = artifacts.c.payload['response']['metadata']['document_title'].astext
                 method = artifacts.c.payload['response']['metadata']['title_method'].astext
+                metadata = artifacts.c.payload['response']['metadata']['document_metadata']
                 titles = {}
-                for row in c.execute(select(artifacts.c.file_id, title.label('document_title'), method.label('title_method')).join(
+                for row in c.execute(select(artifacts.c.file_id, title.label('document_title'), method.label('title_method'), metadata.label('document_metadata')).join(
                     latest, latest.c.file_id == artifacts.c.file_id).join(documents,documents.c.file_id == artifacts.c.file_id).where(artifacts.c.kind == 'synthesis',
-                    artifacts.c.payload['input_extraction_id'].astext == func.coalesce(documents.c.metadata['primary_extraction_id'].astext,latest.c.id), title.is_not(None)).order_by(
+                    artifacts.c.payload['input_extraction_id'].astext == func.coalesce(documents.c.metadata['primary_extraction_id'].astext,latest.c.id), or_(title.is_not(None), metadata.is_not(None))).order_by(
                     artifacts.c.payload['created_at'].astext.desc(), artifacts.c.id)).mappings():
                     titles.setdefault(row['file_id'], dict(row))
                 for doc in docs:
@@ -542,3 +543,17 @@ class PostgresStore:
         with self.engine.connect() as c:
             return [dict(row) for row in c.execute(select(documents.c.file_id, documents.c.filename, documents.c.source_relpath,
                 documents.c.media_type, documents.c.size_bytes, documents.c.updated_at).where(documents.c.active)).mappings()]
+
+
+    def cached_topic_map(self, key: str) -> dict | None:
+        return self.setting("topic_map_cache:" + key, {}).get("result")
+
+    def save_topic_map(self, key: str, result: dict) -> None:
+        """Bounded derived geometry only; no user labels or document contents."""
+        from sqlalchemy.dialects.postgresql import insert as upsert
+        with self.transaction() as c:
+            c.execute(text("SELECT pg_advisory_xact_lock(hashtext('osii:topic-map-cache'))"))
+            stmt = upsert(settings).values(id="topic_map_cache:" + key, value={"created_at": now().isoformat(), "result": result})
+            c.execute(stmt.on_conflict_do_update(index_elements=[settings.c.id], set_={"value": stmt.excluded.value}))
+            old = select(settings.c.id).where(settings.c.id.like("topic_map_cache:%")).order_by(settings.c.value['created_at'].astext.desc(), settings.c.id).offset(16)
+            c.execute(delete(settings).where(settings.c.id.in_(old)))

@@ -153,7 +153,7 @@ def synthesis_prompt(request: SynthesisRequest) -> str:
 def chat_synthesizer_descriptor(provider: str = "openai") -> ProcessorDescriptor:
     return ProcessorDescriptor(
         name=f"{provider}.synthesizer",
-        version="1.0.0",
+        version="1.1.0",
         display_name=f"{provider.title()} Synthesizer",
         description=f"Processor API adapter for an explicitly selected {provider} chat model.",
         kind=ProcessorKind.SYNTHESIZER,
@@ -171,6 +171,7 @@ def chat_synthesizer_descriptor(provider: str = "openai") -> ProcessorDescriptor
                     "description": "Lower values make synthesis more repeatable.",
                     "minimum": 0, "maximum": 2, "default": 0.2,
                 },
+                "extract_metadata": {"type":"boolean", "title":"Suggest title, author and date", "description":"One additional text-model call per document; fields may be blank or qualified.", "default":True},
                 "window_chars": {"type":"integer", "title":"Characters per synthesis window", "minimum":4000, "maximum":160000, "default":100000},
                 "max_input_windows": {"type":"integer", "title":"Maximum input windows", "minimum":1, "maximum":64, "default":32},
                 "max_tokens": {

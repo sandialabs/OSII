@@ -222,3 +222,64 @@ def test_json_null_embedding_is_not_counted_and_snapshot_vectors_are_compact(app
     with store.transaction() as c:
         c.execute(update(chunks).where(chunks.c.file_id==doc['file_id']).values(embedding=None))
     assert store.statistics()['embedded_chunks']==0
+
+
+def test_persistent_topic_map_skips_vectors_and_refreshes_metadata(client, app, monkeypatch):
+    from contextlib import contextmanager
+    from sqlalchemy import insert
+    from osii.persistence.postgres import artifacts, now
+    from osii.domain import topics as domain_topics
+    store=app.state.store
+    store.save_configuration({'embedding_model':'test-embeddings'})
+    doc=document(store,app.state.settings.source_root,name='OPAQUE.txt')
+    login(client,'reader')
+    first=client.post('/api/topics/map',json={})
+    assert first.status_code==200,first.text
+    original=store.topic_snapshot
+    @contextmanager
+    def headers_only():
+        with original() as (revision,docs,rows):
+            yield revision,docs,lambda _: pytest.fail('A cached map must not read vectors')
+    monkeypatch.setattr(store,'topic_snapshot',headers_only)
+    monkeypatch.setattr(domain_topics,'project_documents',lambda _:pytest.fail('A cached map must not reproject'))
+    assert client.post('/api/topics/map',json={}).json()==first.json()
+    metadata={'schema_version':1,'method':'text_llm','title':{'value':'Neutron Detector Notes'},
+        'author':{'value':None,'qualifier':'No author identified'},'date':{'value':'circa 1950s','qualifier':'Approximate period'}}
+    with store.transaction() as c:
+        c.execute(insert(artifacts).values(id='metadata-test',file_id=doc['file_id'],kind='synthesis',payload={
+            'input_extraction_id':store.extraction_records(doc['file_id'])[0]['id'], 'created_at':now().isoformat(),
+            'response':{'metadata':{'document_metadata':metadata}}}))
+    second=client.post('/api/topics/map',json={})
+    assert second.status_code==200,second.text
+    point=second.json()['points'][0]
+    assert point['document_title']=='Neutron Detector Notes'
+    assert point['document_metadata']['author']['value'] is None
+    assert point['x']==first.json()['points'][0]['x']
+    # A new store/app process can reuse the persisted geometry as well.
+    from osii.persistence.postgres import PostgresStore
+    fresh=PostgresStore(store.engine.url.render_as_string(hide_password=False))
+    try:
+        assert fresh.cached_topic_map(next(k.split(':',1)[1] for k in _topic_cache_ids(store)))
+    finally:
+        fresh.engine.dispose()
+
+
+def _topic_cache_ids(store):
+    from sqlalchemy import select
+    from osii.persistence.postgres import settings
+    with store.engine.connect() as c:
+        return list(c.execute(select(settings.c.id).where(settings.c.id.like('topic_map_cache:%'))).scalars())
+
+
+def test_topic_cache_is_bounded_and_model_changes_invalidate(client, app):
+    store=app.state.store
+    store.save_configuration({'embedding_model':'test-embeddings'})
+    doc=document(store,app.state.settings.source_root)
+    login(client,'reader')
+    first=client.post('/api/topics/map',json={}).json()
+    assert first['indexed_count']==1
+    for index in range(20): store.save_topic_map(f'eviction-{index}',{'points':[]})
+    assert len(_topic_cache_ids(store))==16
+    assert store.document(doc['file_id'])
+    store.save_configuration({'embedding_model':'different-space'})
+    assert client.post('/api/topics/map',json={}).json()['indexed_count']==0
