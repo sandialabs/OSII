@@ -73,8 +73,15 @@ class OpenAICompatibleClient:
         if not isinstance(rows, list) or len(rows) != len(texts):
             raise RuntimeError("Embedding service returned an invalid response.")
         try:
+            if not all(isinstance(row, dict) for row in rows):
+                raise ValueError("Invalid embedding response rows")
+            if any("index" in row for row in rows):
+                indices = [row.get("index") for row in rows]
+                if any(type(index) is not int for index in indices) or set(indices) != set(range(len(texts))):
+                    raise ValueError("Invalid embedding input indices")
+                rows = sorted(rows, key=lambda row: row["index"])
             return [list(row["embedding"]) for row in rows]
-        except (KeyError, TypeError) as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             raise RuntimeError("Embedding service returned invalid vectors.") from exc
 
 

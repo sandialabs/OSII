@@ -748,7 +748,17 @@ export type ProcessingRun = {
   embedding_model?: string;
   indexing_status?: string;
   indexing_error?: string | null;
+  error_phase?: string | null;
+  embedding_target?: { provider: string; model: string };
+  indexing_progress?: {
+    total_documents: number;
+    completed_documents: number;
+    embedded_chunks: number;
+    reused_chunks: number;
+    failures: Record<string, string>;
+  };
   items?: Array<{
+    file_id?: string;
     display: string;
     status: string;
     error?: string | null;

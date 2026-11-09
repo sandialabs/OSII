@@ -752,8 +752,8 @@ export function DiscoveryIntakePanel({
         <Typography variant="caption">
           Intake accepts up to 10,000 files per batch and 50 MiB per file.
           Processing pauses between files after one hour; resume in Activity.
-          The optional embedding step updates the library index, including
-          previously processed documents. Changed or unreadable files fail
+          The optional embedding step processes only this batch and reuses saved
+          vectors; other library vectors are preserved. Changed or unreadable files fail
           individually; the remaining files continue. Older observations outside
           the latest scan are excluded.
         </Typography>

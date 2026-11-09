@@ -116,7 +116,7 @@ def selection_preview(
     steps = [
         ("extract", "Read text", operations.get("run_extraction", True)),
         ("synthesize", "Summaries", operations.get("synthesizer_name")),
-        ("embed", "Update library search index", operations.get("build_embeddings")),
+        ("embed", "Embed selected documents", operations.get("build_embeddings")),
         ("enrich", "Enrichment", operations.get("enricher_name")),
     ]
     preview["processing_plan"] = {
@@ -126,7 +126,7 @@ def selection_preview(
         "extracted_count": processed,
         "missing_extraction_count": len(files) - processed,
         "blocked_count": 0,
-        "note": "Frozen membership. Content identity, reuse, and read permission are checked in the worker; duplicate content may share an object. Embeddings update the existing library index.",
+        "note": "Frozen membership. Content identity, reuse, and read permission are checked in the worker; duplicate content may share an object. Embeddings process only these documents and preserve other library vectors.",
         "steps": [
             {
                 "id": step,

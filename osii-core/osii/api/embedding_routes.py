@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
-from osii.indexing.common import embeddings_index_path, embeddings_mapping_path, embeddings_meta_path
+from osii.indexing.common import embeddings_meta_path
 from osii.build_vector_index import main as build_vector_index_main
 from osii.indexing.chunking import (
     DEFAULT_CHUNK_OVERLAP,
@@ -107,8 +107,8 @@ async def embeddings_meta(request: Request):
     if not path.exists():
         return {"error": "Embeddings metadata not found"}
     return {
-        "index_path": str(embeddings_index_path(osii_root)),
-        "mapping_path": str(embeddings_mapping_path(osii_root)),
+        "index_path": str(path.parent / "segments.faiss"),
+        "mapping_path": str(path.parent / "segments.mapping.jsonl"),
         "meta_path": str(path),
         "meta_text": path.read_text(encoding="utf-8"),
     }

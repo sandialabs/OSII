@@ -29,6 +29,12 @@ from osii.search.lexical import build_bm25_index
 from osii.domain.catalog_db import rebuild_catalog
 from osii.domain.model_provider_config import selected_model, selected_processor
 from osii.domain.storage.atomic import atomic_write_text
+from osii.domain.storage.embedding_snapshot import (
+    active_snapshot,
+    embedding_writer,
+    new_snapshot,
+    publish_snapshot,
+)
 from osii.domain.artifacts.artifact_staleness import clear_artifacts_stale
 
 
@@ -50,18 +56,26 @@ def get_model_char_limit(model: str) -> int:
     return get_model_token_limit(model) * APPROX_CHARS_PER_TOKEN
 
 
-def embedding_namespace(model: str | None = None, provider: str | None = None) -> tuple[str, str]:
+def embedding_namespace(
+    model: str | None = None, provider: str | None = None
+) -> tuple[str, str]:
     provider_name = provider or selected_processor("embedder")
     model_name = model or get_embedding_model()
-    safe_provider = re.sub(r"[^A-Za-z0-9_.-]+", "-", provider_name).strip("-") or "unknown"
-    safe_model = re.sub(r"[^A-Za-z0-9_.-]+", "-", model_name).strip("-")[:48] or "unknown"
+    safe_provider = (
+        re.sub(r"[^A-Za-z0-9_.-]+", "-", provider_name).strip("-") or "unknown"
+    )
+    safe_model = (
+        re.sub(r"[^A-Za-z0-9_.-]+", "-", model_name).strip("-")[:48] or "unknown"
+    )
     digest = hashlib.sha256(model_name.encode("utf-8")).hexdigest()[:12]
     return safe_provider, f"{safe_model}-{digest}"
 
 
-def ensure_embeddings_dir(osii_root: Path) -> Path:
-    provider, model = embedding_namespace()
-    path = (osii_embeddings_dir(osii_root).resolve() / "providers" / provider / model)
+def ensure_embeddings_dir(
+    osii_root: Path, *, model: str | None = None, provider: str | None = None
+) -> Path:
+    provider, model = embedding_namespace(model=model, provider=provider)
+    path = osii_embeddings_dir(osii_root).resolve() / "providers" / provider / model
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -73,15 +87,15 @@ def build_dir(osii_root: Path) -> Path:
 
 
 def embeddings_index_path(osii_root: Path) -> Path:
-    return ensure_embeddings_dir(osii_root) / "segments.faiss"
+    return active_snapshot(ensure_embeddings_dir(osii_root)) / "segments.faiss"
 
 
 def embeddings_mapping_path(osii_root: Path) -> Path:
-    return ensure_embeddings_dir(osii_root) / "segments.mapping.jsonl"
+    return active_snapshot(ensure_embeddings_dir(osii_root)) / "segments.mapping.jsonl"
 
 
 def embeddings_meta_path(osii_root: Path) -> Path:
-    return ensure_embeddings_dir(osii_root) / "segments.meta.toml"
+    return active_snapshot(ensure_embeddings_dir(osii_root)) / "segments.meta.toml"
 
 
 def build_index_tmp_path(osii_root: Path) -> Path:
@@ -102,6 +116,30 @@ def truncate_for_embedding(text: str, *, max_chars: int) -> tuple[str, str | Non
         f"({len(text)} chars > {max_chars} chars); truncated before embedding."
     )
     return truncated, warning
+
+
+def embedding_input_key(row: dict, model: str) -> str:
+    """Exact text/revision/chunk-policy identity; never just a chunk ordinal."""
+    payload = {
+        key: row.get(key)
+        for key in (
+            "file_id",
+            "source_extraction_id",
+            "source_text_representation",
+            "source_text_kind",
+            "chunk_method",
+            "chunk_size",
+            "chunk_overlap",
+            "char_start",
+            "char_end",
+        )
+    }
+    payload.update(
+        text_sha256=hashlib.sha256(row["text"].encode()).hexdigest(),
+        max_chars=get_model_char_limit(model),
+        policy=1,
+    )
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
 def collect_text_chunks(
@@ -130,11 +168,16 @@ def collect_text_chunks(
 
         truncated_text, warning = truncate_for_embedding(text, max_chars=max_chars)
         if warning:
-            warnings.append(f"{row.get('source_relpath')} :: {row.get('chunk_id')} :: {warning}")
+            warnings.append(
+                f"{row.get('source_relpath')} :: {row.get('chunk_id')} :: {warning}"
+            )
 
         items.append(
             {
                 "chunk_id": row["chunk_id"],
+                "embedding_key": embedding_input_key(row, model),
+                "chunk_size": row.get("chunk_size"),
+                "chunk_overlap": row.get("chunk_overlap"),
                 "file_id": row["file_id"],
                 "source_relpath": row["source_relpath"],
                 "chunk_method": row["chunk_method"],
@@ -261,6 +304,9 @@ def _embedding_mapping_row(
 ) -> dict:
     return {
         "faiss_id": faiss_id,
+        "embedding_key": item.get("embedding_key"),
+        "chunk_size": item.get("chunk_size"),
+        "chunk_overlap": item.get("chunk_overlap"),
         "source_item_index": source_item_index,
         "chunk_id": item["chunk_id"],
         "file_id": item["file_id"],
@@ -344,9 +390,11 @@ def finalize_outputs(
     endpoint_type: str | None = None,
     semantic: bool | None = None,
 ) -> tuple[Path, Path, Path]:
-    final_index = embeddings_index_path(osii_root)
-    final_mapping = embeddings_mapping_path(osii_root)
-    final_meta = embeddings_meta_path(osii_root)
+    directory = ensure_embeddings_dir(osii_root)
+    snapshot = new_snapshot(directory)
+    final_index = snapshot / "segments.faiss"
+    final_mapping = snapshot / "segments.mapping.jsonl"
+    final_meta = snapshot / "segments.meta.toml"
 
     faiss.write_index(index, str(final_index))
 
@@ -357,17 +405,23 @@ def finalize_outputs(
     payload = {
         "embeddings": {
             "model": model,
-            "provider": provider or "openai-compatible",
-            "provider_id": provider or "openai-compatible",
+            "provider": provider or selected_processor("embedder", osii_root=osii_root),
+            "provider_id": provider
+            or selected_processor("embedder", osii_root=osii_root),
             **({"model_digest": model_digest} if model_digest else {}),
             **({"endpoint_type": endpoint_type} if endpoint_type else {}),
-            "semantic": bool(semantic) if semantic is not None else (provider != "local.hashing"),
+            "semantic": bool(semantic)
+            if semantic is not None
+            else (provider != "local.hashing"),
             "count": len(final_mapping_rows),
             "dimension": index.d,
             "normalized": True,
             "index_type": "faiss.IndexFlatIP",
             "unit": "derived-text-chunk",
-            "created_utc": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "created_utc": datetime.now(UTC)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z"),
             "max_tokens": get_model_token_limit(model),
             "approx_chars_per_token": APPROX_CHARS_PER_TOKEN,
             "max_chars": get_model_char_limit(model),
@@ -383,7 +437,9 @@ def finalize_outputs(
             "chunk_manifest_path": str(embeddings_chunks_manifest_path(osii_root)),
         },
         "stats": {
-            "truncated_count": sum(1 for row in final_mapping_rows if row.get("truncated")),
+            "truncated_count": sum(
+                1 for row in final_mapping_rows if row.get("truncated")
+            ),
             "skipped_count": len(skipped),
         },
         "warnings": warnings,
@@ -391,7 +447,15 @@ def finalize_outputs(
     }
     final_meta.write_text(tomli_w.dumps(payload), encoding="utf-8")
 
-    for file_id in {str(row.get("file_id")) for row in final_mapping_rows if row.get("file_id")}:
+    publish_snapshot(directory, snapshot)
+    # An explicit complete rebuild supersedes old incremental checkpoints. Its
+    # fingerprinted rows can seed the next selected update without model calls.
+    for suffix in ("", "-wal", "-shm"):
+        (directory / ("incremental.sqlite3" + suffix)).unlink(missing_ok=True)
+
+    for file_id in {
+        str(row.get("file_id")) for row in final_mapping_rows if row.get("file_id")
+    }:
         clear_artifacts_stale(osii_root, file_id, "embeddings", "search_chunks")
 
     shutil.rmtree(build_dir(osii_root), ignore_errors=True)
@@ -400,7 +464,7 @@ def finalize_outputs(
     return final_index, final_mapping, final_meta
 
 
-def embed_collection_resumable(
+def _embed_collection_resumable(
     osii_root: Path,
     *,
     model: str,
@@ -432,7 +496,8 @@ def embed_collection_resumable(
         max(
             int(row.get("source_item_index", index))
             for index, row in enumerate(partial_rows)
-        ) + 1
+        )
+        + 1
         if partial_rows
         else 0
     )
@@ -453,7 +518,9 @@ def embed_collection_resumable(
 
     if already_done >= len(items):
         if index is None:
-            raise RuntimeError("Partial mapping exists but FAISS checkpoint is missing.")
+            raise RuntimeError(
+                "Partial mapping exists but FAISS checkpoint is missing."
+            )
         build_bm25_index(osii_root)
         return finalize_outputs(
             osii_root,
@@ -475,7 +542,7 @@ def embed_collection_resumable(
 
     effective_batch_size = max(1, int(batch_size))
     for batch_start in range(already_done, len(items), effective_batch_size):
-        batch_items = items[batch_start:batch_start + effective_batch_size]
+        batch_items = items[batch_start : batch_start + effective_batch_size]
         batch_texts = [item["text"] for item in batch_items]
 
         try:
@@ -514,7 +581,9 @@ def embed_collection_resumable(
                 last_exc = batch_exc
                 for candidate_text in [text, *more_aggressive_truncation(text)]:
                     try:
-                        vectors = _embed_batch(client, model, [candidate_text], retries=3)
+                        vectors = _embed_batch(
+                            client, model, [candidate_text], retries=3
+                        )
                         vec = np.array(vectors, dtype="float32")
                         faiss.normalize_L2(vec)
                         if index is None:
@@ -580,3 +649,26 @@ def embed_collection_resumable(
 
 class IncompatibleIndexError(RuntimeError):
     pass
+
+
+def embed_collection_resumable(
+    osii_root: Path,
+    *,
+    model: str,
+    batch_size: int = 1,
+    checkpoint_every: int = 100,
+    chunking_method: str = DEFAULT_CHUNKING_METHOD,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+) -> tuple[Path, Path, Path]:
+    """Explicit whole-library rebuild; Intake uses incremental selected documents."""
+    with embedding_writer(osii_root):
+        return _embed_collection_resumable(
+            osii_root,
+            model=model,
+            batch_size=batch_size,
+            checkpoint_every=checkpoint_every,
+            chunking_method=chunking_method,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )

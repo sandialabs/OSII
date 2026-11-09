@@ -93,6 +93,8 @@ def _semantic_index(osii_root: Path) -> tuple[dict[str, Any], frozenset[str]]:
     model = selected_model("embedder", osii_root=osii_root)
     provider_dir, model_dir = embedding_namespace(model=model, provider=provider)
     directory = osii_root / "embeddings" / "providers" / provider_dir / model_dir
+    from osii.domain.storage.embedding_snapshot import active_snapshot
+    directory = active_snapshot(directory)
     try:
         signature = tuple(
             (path.stat().st_mtime_ns, path.stat().st_size)

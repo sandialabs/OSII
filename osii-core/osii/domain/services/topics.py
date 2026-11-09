@@ -11,6 +11,7 @@ import faiss
 import numpy as np
 
 from osii.domain.storage.store import provenance_path
+from osii.domain.storage.embedding_snapshot import active_snapshot
 from osii.domain.topic_projection import TopicIndexUnavailable, project_documents
 
 from osii.domain.artifacts.artifact_staleness import get_artifact_staleness
@@ -40,6 +41,7 @@ def load_document_space(osii_root: Path, scope: dict) -> DocumentSpace:
         raise TopicIndexUnavailable("Choose a folder or collection with at most 5,000 documents.")
     provider, model = embedding_namespace()
     directory = osii_root / "embeddings" / "providers" / provider / model
+    directory = active_snapshot(directory)
     paths = [directory / name for name in ("segments.faiss", "segments.mapping.jsonl", "segments.meta.toml")]
 
     def signature():

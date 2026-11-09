@@ -184,8 +184,9 @@ New selections exclude older observations not visited in the latest scan.
 
 Reader deadlines apply to metadata discovery. Content processing still uses
 normal filesystem calls and processor timeouts, with time budgets checked between
-files. Embeddings retain normal library-wide backfill behavior, disclosed in
-Intake; the source-read/extraction batch remains frozen. Staged document sidecars
+files. Embeddings now process only the selected batch, preserve other library
+vectors, and retry from durable chunk checkpoints without repeating completed
+file processing; see the [incremental embeddings decision](../concepts/adr-incremental-embeddings.md). Staged document sidecars
 and selection manifests are authoritative for the processed batch; legacy whole-
 folder rehashing is skipped. Metadata cannot prove a filesystem snapshot or
 prevent every same-metadata mutation between validation and extraction.

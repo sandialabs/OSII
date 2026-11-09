@@ -492,7 +492,10 @@ def control_run(run_id: str, action: str) -> dict:
     run = get_run(run_id)
     if run is None:
         raise KeyError("run not found")
-    if run.get("status") in {"done", "cancelled"}:
+    embedding_retry = action == "retry" and run.get("indexing_status") == "error" and (
+        run.get("file_processing_status") == "done" or run.get("status") == "done"
+    )
+    if run.get("status") == "cancelled" or (run.get("status") == "done" and not embedding_retry):
         raise ValueError(f"cannot {action} a {run.get('status')} run")
     if run.get("status") == "error" and action != "retry":
         raise ValueError("a failed run can be retried; it does not need cancellation")
@@ -507,8 +510,15 @@ def control_run(run_id: str, action: str) -> dict:
 
         queue_status = str(row["status"])
         if action == "retry":
-            if queue_status != "error" or run.get("status") != "error":
+            if not (embedding_retry and queue_status in {"done", "error"}) and (
+                queue_status != "error" or run.get("status") != "error"
+            ):
                 raise ValueError("only a failed run can be retried")
+            if embedding_retry:
+                # Older workers left failed embedding phases marked done. Their
+                # original-file results are still complete and must be retained.
+                run["error_phase"] = "embedding"
+                run["file_processing_status"] = "done"
             conn.execute(
                 """
                 UPDATE queue_jobs
@@ -523,7 +533,7 @@ def control_run(run_id: str, action: str) -> dict:
             run["error"] = None
             run["finished_at"] = None
             for item in run.get("items", []):
-                if item.get("status") == "error":
+                if item.get("status") == "error" and run.get("error_phase") != "embedding":
                     item["status"] = "pending"
                     item["error"] = None
                     item["started_at"] = None
@@ -532,7 +542,7 @@ def control_run(run_id: str, action: str) -> dict:
             run["completed"] = sum(
                 1
                 for item in run.get("items", [])
-                if item.get("status") in {"done", "partial"}
+                if item.get("status") in ({"done", "partial", "error"} if run.get("error_phase") == "embedding" else {"done", "partial"})
             )
         elif action == "pause":
             if queue_status == "paused":

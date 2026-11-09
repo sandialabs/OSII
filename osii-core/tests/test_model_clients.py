@@ -18,7 +18,9 @@ def test_openai_compatible_capabilities_do_not_require_gateway_sdk(monkeypatch):
     def fake_post(url, *, json, headers, timeout):
         calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
         if url.endswith("/chat/completions"):
-            return FakeResponse({"choices": [{"message": {"content": "grounded answer"}}]})
+            return FakeResponse(
+                {"choices": [{"message": {"content": "grounded answer"}}]}
+            )
         return FakeResponse({"data": [{"embedding": [0.1, 0.2]}]})
 
     monkeypatch.setenv("OSII_MODEL_BASE_URL", "https://models.example.test/v1")
@@ -47,6 +49,43 @@ def test_distinct_endpoints_never_receive_the_shared_key(monkeypatch):
     monkeypatch.setenv("OSII_EMBEDDING_API_KEY", "embedding-key")
     chat, embedding = create_chat_client(), create_embedding_client()
     assert (chat.base_url, chat.api_key) == ("https://chat.test/v1", "chat-key")
-    assert (embedding.base_url, embedding.api_key) == ("https://embed.test/v1", "embedding-key")
+    assert (embedding.base_url, embedding.api_key) == (
+        "https://embed.test/v1",
+        "embedding-key",
+    )
     monkeypatch.delenv("OSII_EMBEDDING_API_KEY")
     assert create_embedding_client().api_key is None
+
+
+def test_openai_embedding_response_indices_preserve_input_identity(monkeypatch):
+    from osii.model_clients import OpenAICompatibleClient
+
+    client = OpenAICompatibleClient("http://example.invalid/v1")
+    monkeypatch.setattr(
+        client,
+        "_post",
+        lambda *_: {
+            "data": [
+                {"index": 1, "embedding": [0.0, 1.0]},
+                {"index": 0, "embedding": [1.0, 0.0]},
+            ]
+        },
+    )
+    assert client.embed(model="test", texts=["first", "second"]) == [
+        [1.0, 0.0],
+        [0.0, 1.0],
+    ]
+    monkeypatch.setattr(
+        client,
+        "_post",
+        lambda *_: {
+            "data": [
+                {"index": 0, "embedding": [0.0, 1.0]},
+                {"index": 0, "embedding": [1.0, 0.0]},
+            ]
+        },
+    )
+    import pytest
+
+    with pytest.raises(RuntimeError, match="invalid vectors"):
+        client.embed(model="test", texts=["first", "second"])

@@ -387,7 +387,8 @@ def _scan_extraction_variants(osii_root: Path) -> list[dict[str, Any]]:
 
 def _scan_indexes(osii_root: Path) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    for path in (osii_root / "embeddings").rglob("segments.meta.toml") if (osii_root / "embeddings").exists() else []:
+    from osii.domain.storage.embedding_snapshot import active_index_metadata
+    for path in active_index_metadata(osii_root):
         data = _read_toml(path) or {}
         meta = data.get("embeddings", data.get("index", {}))
         provider = str(meta.get("provider_id") or meta.get("provider") or meta.get("embedder") or "unknown")
@@ -439,6 +440,20 @@ def _populate(conn: sqlite3.Connection, osii_root: Path) -> None:
             :dimensions, :normalized, :semantic, :chunking_json, :relpath, :created_utc, :compatible)""",
             index,
         )
+
+
+def refresh_semantic_indexes(osii_root: Path) -> None:
+    """Refresh published index records without scanning document sidecars."""
+    if not catalog_path(osii_root).exists():
+        return  # A first normal catalog read will discover the published index.
+    records = _scan_indexes(osii_root)
+    with closing(connect_catalog(osii_root)) as conn:
+        with conn:
+            conn.execute("DELETE FROM semantic_indexes")
+            for index in records:
+                conn.execute(
+                    """INSERT INTO semantic_indexes VALUES (:index_id, :provider_id, :endpoint_type, :model, :model_digest,
+                    :dimensions, :normalized, :semantic, :chunking_json, :relpath, :created_utc, :compatible)""", index)
 
 
 def rebuild_catalog(osii_root: Path) -> dict[str, Any]:

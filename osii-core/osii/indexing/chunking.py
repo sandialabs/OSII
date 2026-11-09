@@ -3,11 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import re
+import tomllib
 
 from osii.domain.read.catalog import load_files_catalog
 from osii.domain.read.segments import list_segments
 from osii.domain.artifacts.text_representations import get_preferred_text_representation
-from osii.domain.storage.store import embeddings_chunks_manifest_path
+from osii.domain.storage.store import embeddings_chunks_manifest_path, meta_toml_path
+from osii.domain.storage.atomic import atomic_write_text
 
 
 DEFAULT_CHUNKING_METHOD = "sentence_window"
@@ -63,8 +65,7 @@ def validate_chunking_settings(method: str, chunk_size: int, overlap: int) -> No
 def _boundary_positions(text: str) -> tuple[list[int], list[int]]:
     paragraph_boundaries = [match.start() for match in re.finditer(r"\n\s*\n", text)]
     sentence_boundaries = [
-        match.end()
-        for match in re.finditer(r"[.!?](?:[\"')\]]+)?(?=\s|$)", text)
+        match.end() for match in re.finditer(r"[.!?](?:[\"')\]]+)?(?=\s|$)", text)
     ]
     return paragraph_boundaries, sentence_boundaries
 
@@ -96,10 +97,9 @@ def _structured_window_spans(
         end = hard_end
         if hard_end < len(text):
             useful_minimum = start + max(1, chunk_size // 2)
-            end = (
-                _last_boundary_between(paragraph_boundaries, useful_minimum, hard_end)
-                or _last_boundary_between(sentence_boundaries, useful_minimum, hard_end)
-            )
+            end = _last_boundary_between(
+                paragraph_boundaries, useful_minimum, hard_end
+            ) or _last_boundary_between(sentence_boundaries, useful_minimum, hard_end)
             if end is None:
                 whitespace = text.rfind(" ", useful_minimum, hard_end + 1)
                 end = whitespace if whitespace > start else hard_end
@@ -116,7 +116,9 @@ def _structured_window_spans(
         # Prefer a nearby structural boundary without allowing one unusually
         # long sentence to turn the next window into a near-duplicate.
         boundary_floor = max(start + 1, desired_start - overlap)
-        next_start = _last_boundary_between(all_boundaries, boundary_floor, desired_start)
+        next_start = _last_boundary_between(
+            all_boundaries, boundary_floor, desired_start
+        )
         if next_start is None:
             whitespace = text.rfind(" ", boundary_floor, desired_start + 1)
             next_start = whitespace if whitespace > start else desired_start
@@ -157,9 +159,26 @@ def generate_chunk_records(
     method: str = DEFAULT_CHUNKING_METHOD,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     overlap: int = DEFAULT_CHUNK_OVERLAP,
+    file_ids: set[str] | None = None,
 ) -> list[dict]:
     validate_chunking_settings(method, chunk_size, overlap)
-    files = sorted(load_files_catalog(osii_root), key=lambda x: str(x.get("source_relpath", "")).lower())
+    if file_ids is None:
+        files = load_files_catalog(osii_root)
+    else:
+        files = []
+        for file_id in sorted(file_ids):
+            if not file_id or Path(file_id).name != file_id or file_id in {".", ".."}:
+                raise ValueError("Invalid document identity")
+            meta = tomllib.loads(
+                meta_toml_path(osii_root, file_id).read_text(encoding="utf-8")
+            )
+            files.append(
+                {
+                    "file_id": file_id,
+                    "source_relpath": meta.get("file", {}).get("source_relpath", ""),
+                }
+            )
+    files = sorted(files, key=lambda x: str(x.get("source_relpath", "")).lower())
     rows = []
 
     for entry in files:
@@ -179,7 +198,9 @@ def generate_chunk_records(
         if method == "paragraph":
             spans = _paragraph_spans(text)
         elif method == "sentence_window":
-            spans = _structured_window_spans(text, chunk_size=chunk_size, overlap=overlap)
+            spans = _structured_window_spans(
+                text, chunk_size=chunk_size, overlap=overlap
+            )
         elif method == "window":
             spans = _window_spans(text, chunk_size=chunk_size, overlap=overlap)
 
@@ -223,9 +244,7 @@ def generate_chunk_records(
             row["previous_chunk_id"] = previous["chunk_id"] if previous else None
             row["next_chunk_id"] = following["chunk_id"] if following else None
             row["overlap_with_previous"] = (
-                max(0, previous["char_end"] - row["char_start"])
-                if previous
-                else 0
+                max(0, previous["char_end"] - row["char_start"]) if previous else 0
             )
         rows.extend(file_rows)
 
@@ -257,7 +276,9 @@ def write_chunk_manifest(
             try:
                 line = json.dumps(row, ensure_ascii=False)
             except Exception as exc:
-                raise RuntimeError(f"Could not serialize chunk row {row.get('chunk_id')}: {exc}") from exc
+                raise RuntimeError(
+                    f"Could not serialize chunk row {row.get('chunk_id')}: {exc}"
+                ) from exc
             f.write(line)
             f.write("\n")
 

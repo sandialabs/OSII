@@ -177,3 +177,21 @@ Scope suggestions come from the canonical
 six ranked phrases and launches hybrid search in the same root or collection
 scope. BM25 remains the backend fallback when semantic retrieval is
 unavailable. No history or suggestion state is exported with `.osii`.
+
+
+## Incremental Intake embeddings
+
+Intake updates embeddings only for document identities in its durable selected
+run. Unchanged text/chunk settings reuse saved vectors; a changed preferred text
+revision receives fresh vectors. Other documents retain their existing vectors.
+Only complete document replacements are published, with contiguous FAISS IDs and
+matching mapping/metadata in one immutable snapshot. Search, Topics, overview,
+and metadata endpoints read the active snapshot; previous generations remain
+available to readers already using them.
+
+A failed embedding phase makes the run retryable rather than reporting a finished
+index. Activity exposes selected-document progress and per-document errors.
+Retrying reuses successful chunk responses, including successes after a failed
+chunk, and does not repeat completed original-file processing. See the
+[incremental embeddings decision](../../concepts/adr-incremental-embeddings.md)
+for persistence and compatibility details.

@@ -71,7 +71,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
             const canPause = controllable && ["queued", "pending", "running"].includes(run.status);
             const canResume = controllable && run.status === "paused";
             const canCancel = controllable && ["staged", "queued", "pending", "running", "pausing", "paused"].includes(run.status);
-            const canRetry = controllable && run.status === "error";
+            const canRetry = controllable && (run.status === "error" || run.indexing_status === "error");
             return (
               <Paper key={run.id} variant="outlined" sx={{ p: 1.5 }}>
               <Stack
@@ -86,7 +86,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
                   <Typography variant="body2" color="text.secondary">
                     {run.completed ?? 0} / {run.total ?? 0} files · {run.created_at}
                   </Typography>
-                  {run.embedding_model && <Typography variant="caption" color="text.secondary">Embedding model: {run.embedding_model}</Typography>}
+                  {(run.embedding_target?.model || run.embedding_model) && <Typography variant="caption" color="text.secondary">Embedding model: {run.embedding_target?.model || run.embedding_model}</Typography>}
                   {run.expert_context ? (
                     <Typography
                       variant="body2"
@@ -153,7 +153,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
                       Cancel
                     </Button>
                   ) : null}
-                  {run.status === "error" && onRestage && <Button color="secondary" variant="outlined" onClick={() => onRestage(run)}>Restage failed files</Button>}
+                  {run.status === "error" && itemErrors.length > 0 && onRestage && <Button color="secondary" variant="outlined" onClick={() => onRestage(run)}>Restage failed files</Button>}
                   {canRetry ? (
                     <Button
                       size="small"
@@ -162,7 +162,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
                       disabled={controllingRun !== null || workerAvailable === false}
                       onClick={() => void controlRun(run, "retry")}
                     >
-                      Retry failed run
+                      {(run.error_phase === "embedding" || run.indexing_status === "error") ? "Retry embeddings" : "Retry failed run"}
                     </Button>
                   ) : null}
                   <Chip
@@ -182,8 +182,10 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
               <Stack spacing={0.5} sx={{ mt: 1.5 }}>
                 <Typography variant="caption">File processing: {run.completed ?? 0} of {run.total ?? 0} finished{itemErrors.length ? ` · ${itemErrors.length} with errors` : ""}</Typography>
                 <LinearProgress aria-label={`File progress for run ${run.id}`} variant="determinate" value={(run.total ?? 0) > 0 ? Math.min(100, (run.completed ?? 0) / (run.total ?? 1) * 100) : 0} color={itemErrors.length || run.status === "error" ? "error" : "secondary"} sx={{ height: 7, borderRadius: 1 }} />
-                {run.operations?.embed ? <Typography variant="caption" color={run.indexing_status === "error" ? "error.main" : "text.secondary"}>Semantic index: {run.indexing_status === "done" ? "saved — library checkpoints will refresh" : run.indexing_status === "running" ? "building; finished files do not mean the index is ready yet" : run.indexing_status === "error" ? "failed — retry before relying on semantic search" : "waiting for file processing"}</Typography> : null}
+                {run.operations?.embed ? <Typography variant="caption" color={run.indexing_status === "error" ? "error.main" : "text.secondary"}>Semantic index: {run.indexing_status === "done" ? "saved — library checkpoints will refresh" : run.indexing_status === "running" ? "building; finished files do not mean the index is ready yet" : run.indexing_status === "error" ? "incomplete — retry reuses saved chunks and completed documents" : "waiting or paused; saved chunks are retained"}</Typography> : null}
                 {run.indexing_status === "running" ? <LinearProgress aria-label="Building semantic index" /> : null}
+                {run.indexing_progress && <Typography variant="caption">Selected embeddings: {run.indexing_progress.completed_documents} of {run.indexing_progress.total_documents} documents complete · {run.indexing_progress.embedded_chunks} chunks saved this attempt · {run.indexing_progress.reused_chunks} reused from checkpoints or the index</Typography>}
+                {run.indexing_progress && Object.keys(run.indexing_progress.failures).length > 0 && <Alert severity="warning">{Object.keys(run.indexing_progress.failures).length} document(s) still need embeddings. Successful work is retained.<details><summary>Embedding failures</summary>{Object.entries(run.indexing_progress.failures).map(([id, error]) => <Typography key={id} variant="caption" component="div" sx={{ overflowWrap: "anywhere" }}>{run.items?.find(item => item.file_id === id)?.display || id}: {error}</Typography>)}</details></Alert>}
               </Stack>
               {run.started_at ? (
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
@@ -195,7 +197,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
               {run.status === "pausing" ? <Alert severity="info" sx={{ mt: 1 }}>Finishing the current file before pausing.</Alert> : null}
               {run.status === "cancelling" ? <Alert severity="info" sx={{ mt: 1 }}>Finishing the current file before cancelling.</Alert> : null}
               {run.error ? <Alert severity="error" sx={{ mt: 1 }}>{run.error}</Alert> : null}
-              {run.indexing_error ? <Alert severity="warning" sx={{ mt: 1 }}>{run.indexing_error}</Alert> : null}
+              {run.indexing_error && run.indexing_error !== run.error ? <Alert severity="error" sx={{ mt: 1 }}>{run.indexing_error}</Alert> : null}
               {itemErrors.length ? (
                 <Alert severity="error" sx={{ mt: 1 }}>
                   {itemErrors.slice(0, 3).map((item, index) => (

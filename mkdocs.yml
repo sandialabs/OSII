@@ -49,6 +49,7 @@ nav:
   - Understand OSII:
       - Architecture: concepts/architecture.md
       - Inventory database decision: concepts/adr-volume-store.md
+      - Incremental embeddings decision: concepts/adr-incremental-embeddings.md
       - Extraction: concepts/extraction.md
       - Tables and tabular extraction: concepts/tabular-extraction.md
       - Collections and enrichments: concepts/collections-and-enrichments.md

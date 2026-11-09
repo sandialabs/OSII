@@ -81,9 +81,13 @@ hashes, OCR, or model endpoints.
 Processing checks the one-hour default time budget between files, then pauses
 for explicit resume; the API accepts `max_processing_seconds` from 1 to 86,400
 for a staged run. A filesystem call already blocked in the OS can exceed this
-budget. The optional embedding step retains normal Intake behavior: it updates
-the entire existing library index, including documents outside this selection.
+budget. The optional embedding step embeds only the selected documents, reuses
+completed chunk checkpoints, and preserves vectors for the rest of the library.
+On an embedding failure, use **Activity → Retry embeddings** to continue without
+repeating completed extraction, summaries, enrichment, or embedding requests.
 Source reads, extraction, summaries, and enrichment use only the frozen members.
+The [incremental embeddings decision](../concepts/adr-incremental-embeddings.md)
+describes snapshot consistency, legacy indexes, and checkpoint recovery.
 Staged Intake writes normal document sidecars and a metadata-only frozen manifest;
 it avoids legacy whole-folder rehashing and does not claim that this batch is a
 complete folder manifest. The manifest records selection metadata, while document

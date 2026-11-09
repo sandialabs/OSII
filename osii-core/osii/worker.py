@@ -33,76 +33,138 @@ def execute_job(job: dict) -> None:
     osii_root = Path(payload["osii_store"]).resolve()
     configure_job_store(osii_root)
 
-    run_worker(
-        run_id=job["run_id"],
-        resolved_files=[Path(path) for path in payload["resolved_files"]],
-        queue_items=payload["queue_items"],
-        include_subfolders=payload["include_subfolders"],
-        include_patterns=payload["include_patterns"],
-        exclude_patterns=payload["exclude_patterns"],
-        context=payload["context"],
-        intake_name=payload["intake_name"],
-        data_volume_root=Path(payload["data_volume_root"]),
-        osii_store=osii_root,
-        shared_root=Path(payload["shared_root"]),
-        upload_root=Path(payload["upload_root"]),
-        parser_routes_path=Path(payload["parser_routes_path"]),
-        shared_root_host_path=payload.get("shared_root_host_path") or None,
-        synthesizer_name=payload.get("synthesizer_name") or None,
-        synthesizer_config=payload.get("synthesizer_config") or {},
-        extractor_overrides=payload.get("extractor_overrides") or {},
-        workflow=payload.get("workflow") or "intake",
-        run_extraction=bool(payload.get("run_extraction", True)),
-        extract_mode=payload.get("extract_mode") or "always",
-        extraction_policy=payload.get("extraction_policy") or "make_primary",
-        enricher_name=payload.get("enricher_name") or None,
-        enricher_config=payload.get("enricher_config") or {},
-        collection_id=payload.get("collection_id") or None,
-        staging=payload.get("staging"),
-    )
+    run = get_run(job["run_id"])
+    # An interrupted/retried embedding phase never repeats original reads,
+    # extraction, summaries, or enrichment from the completed file phase.
+    if not run or run.get("file_processing_status") != "done":
+        run_worker(
+            run_id=job["run_id"],
+            resolved_files=[Path(path) for path in payload["resolved_files"]],
+            queue_items=payload["queue_items"],
+            include_subfolders=payload["include_subfolders"],
+            include_patterns=payload["include_patterns"],
+            exclude_patterns=payload["exclude_patterns"],
+            context=payload["context"],
+            intake_name=payload["intake_name"],
+            data_volume_root=Path(payload["data_volume_root"]),
+            osii_store=osii_root,
+            shared_root=Path(payload["shared_root"]),
+            upload_root=Path(payload["upload_root"]),
+            parser_routes_path=Path(payload["parser_routes_path"]),
+            shared_root_host_path=payload.get("shared_root_host_path") or None,
+            synthesizer_name=payload.get("synthesizer_name") or None,
+            synthesizer_config=payload.get("synthesizer_config") or {},
+            extractor_overrides=payload.get("extractor_overrides") or {},
+            workflow=payload.get("workflow") or "intake",
+            run_extraction=bool(payload.get("run_extraction", True)),
+            extract_mode=payload.get("extract_mode") or "always",
+            extraction_policy=payload.get("extraction_policy") or "make_primary",
+            enricher_name=payload.get("enricher_name") or None,
+            enricher_config=payload.get("enricher_config") or {},
+            collection_id=payload.get("collection_id") or None,
+            staging=payload.get("staging"),
+        )
 
     run = get_run(job["run_id"])
     if run and run.get("status") in {"paused", "cancelled"}:
         return
 
-    if payload.get("build_embeddings"):
-        from osii.build_vector_index import main as build_vector_index_main
-        import sys
+    if run and run.get("status") == "error":
+        raise RuntimeError(run.get("error") or "Run failed")
+    if run:
+        run["file_processing_status"] = "done"
+        save_run(run)
 
-        old_argv = sys.argv[:]
-        sys.argv = [
-            "build_vector_index",
-            "--osii-root",
-            str(osii_root),
-            "--batch-size",
-            str(payload.get("embedding_batch_size", 64)),
-            "--chunking-method",
-            str(payload.get("chunking_method") or "sentence_window"),
-            "--chunk-size",
-            str(payload.get("chunk_size", 768)),
-            "--chunk-overlap",
-            str(payload.get("chunk_overlap", 128)),
-        ]
+    if payload.get("build_embeddings"):
+        from osii.api.runs_routes import _honor_run_control
+        from osii.indexing.incremental import (
+            embed_selected_documents,
+            IncrementalEmbeddingError,
+        )
+        from osii.domain.model_provider_config import selected_model
+
+        run = get_run(job["run_id"])
+        file_ids = run.get("indexing_file_ids")
+        if file_ids is None:
+            file_ids = sorted(
+                {
+                    item.get("file_id") or Path(item.get("osii", "")).name
+                    for item in run["items"]
+                    if item.get("status") in {"done", "partial"}
+                    and (item.get("file_id") or item.get("osii"))
+                }
+            )
+            run["indexing_file_ids"] = file_ids
+        run.update(
+            status="running",
+            indexing_status="running",
+            indexing_error=None,
+            finished_at=None,
+        )
+        save_run(run)
+
+        def progress(report):
+            current = get_run(job["run_id"])
+            current["embedding_target"] = report["identity"]
+            current["indexing_progress"] = {
+                key: value for key, value in report.items() if key != "identity"
+            }
+            save_run(current)
+
         try:
-            run = get_run(job["run_id"])
-            if run:
-                run["indexing_status"] = "running"
+            report = embed_selected_documents(
+                osii_root,
+                file_ids,
+                model=selected_model("embedder", osii_root=osii_root),
+                batch_size=int(payload.get("embedding_batch_size", 64)),
+                chunking_method=payload.get("chunking_method") or "sentence_window",
+                chunk_size=int(payload.get("chunk_size", 768)),
+                chunk_overlap=int(payload.get("chunk_overlap", 128)),
+                expected_identity=run.get("embedding_target"),
+                on_progress=progress,
+                should_stop=lambda: _honor_run_control(job["run_id"]),
+            )
+            if report["paused"] or _honor_run_control(job["run_id"]):
+                run = get_run(job["run_id"])
+                run["indexing_status"] = run["status"]
                 save_run(run)
-            build_vector_index_main()
-            append_log(job["run_id"], "Local search embeddings built.")
+                return
             run = get_run(job["run_id"])
-            if run:
-                run["indexing_status"] = "done"
-                save_run(run)
+            run.update(
+                status="done",
+                indexing_status="done",
+                error=None,
+                error_phase=None,
+                finished_at=datetime.now(UTC).isoformat(),
+            )
+            save_run(run)
+            append_log(
+                job["run_id"],
+                "Selected-document embeddings saved; existing library vectors preserved.",
+            )
         except Exception as exc:
             run = get_run(job["run_id"])
             if run:
-                run["indexing_status"] = "error"
-                run["indexing_error"] = str(exc)
+                run.update(
+                    status="error",
+                    indexing_status="error",
+                    indexing_error=str(exc),
+                    error=str(exc),
+                    error_phase="embedding",
+                    finished_at=datetime.now(UTC).isoformat(),
+                )
+                if isinstance(exc, IncrementalEmbeddingError):
+                    run["indexing_progress"] = {
+                        key: value
+                        for key, value in exc.report.items()
+                        if key != "identity"
+                    }
                 save_run(run)
-            append_log(job["run_id"], f"Embedding backfill failed; extracted documents remain available: {exc}")
-        finally:
-            sys.argv = old_argv
+            append_log(
+                job["run_id"],
+                f"Embeddings incomplete; retry will reuse saved vectors and completed file processing: {exc}",
+            )
+            raise
 
     run = get_run(job["run_id"])
     if run and run.get("status") == "error":
