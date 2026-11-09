@@ -25,6 +25,7 @@ def save_manifest(
     osii_root: Path,
     shared_root: Path,
     upload_root: Path,
+    staging: dict | None = None,
 ) -> Path:
     manifests_dir = osii_root / "manifests"
     manifests_dir.mkdir(parents=True, exist_ok=True)
@@ -33,7 +34,12 @@ def save_manifest(
     manifest_path = manifests_dir / f"intake-manifest-{timestamp.strftime('%Y%m%dT%H%M%SZ')}.json"
 
     files_payload = []
-    for p in resolved_files:
+    for index, p in enumerate(resolved_files):
+        if staging is not None:
+            member = staging["members"][index]
+            files_payload.append({"path": str(p), "display": member["path"], "size": member["size_bytes"],
+                                  "sha256": None, "inventory_entry_id": member["entry_id"], "revision": member["revision"]})
+            continue
         try:
             size = p.stat().st_size
         except Exception:
@@ -62,6 +68,8 @@ def save_manifest(
         "exclude_patterns": exclude_patterns,
         "expert_context": context or None,
         "files": files_payload,
+        "inventory_selection_id": staging["selection_id"] if staging else None,
+        "discovery_coverage": staging["coverage"] if staging else None,
     }
 
     manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

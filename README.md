@@ -16,8 +16,8 @@ an AI model.
 
 ## What you can do
 
-- Scan file metadata to understand a folder's contents, sizes, and formats before
-  choosing what to process.
+- Discover shared-drive metadata with resumable scans, then filter or sample
+  a bounded batch for Intake.
 - Extract text, with optional OCR for scanned documents, and inspect the sources.
 - Browse files and collections, search by keywords or document meaning, and ask
   grounded questions with an optional model connection.

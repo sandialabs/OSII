@@ -106,15 +106,18 @@ def create_run_record(
     upload_root: Path,
     *,
     osii_root: Path | None = None,
+    run_id: str | None = None,
+    displays: dict[str, str] | None = None,
 ) -> dict:
     if osii_root is not None:
         configure_job_store(osii_root)
 
-    run_id = uuid.uuid4().hex
+    run_id = run_id or uuid.uuid4().hex
     items = [
         {
             "path": str(p),
-            "display": display_rel(p, shared_root, upload_root),
+            "display": (displays[str(p)] if displays is not None
+                        else display_rel(p, shared_root, upload_root)),
             "status": "pending",
             "artifact": None,
             "datacard": None,
@@ -137,6 +140,9 @@ def create_run_record(
         "error": None,
     }
     with RUNS_LOCK:
+        existing = _load_run(run_id)
+        if existing is not None:
+            return existing
         RUNS[run_id] = run
         save_run(run)
     return run
@@ -224,12 +230,12 @@ def list_runs(*, limit: int = 100) -> list[dict]:
     ]
 
 
-def enqueue_run(run_id: str, payload: dict[str, Any]) -> dict:
-    job_id = uuid.uuid4().hex
+def enqueue_run(run_id: str, payload: dict[str, Any], *, job_id: str | None = None) -> dict:
+    job_id = job_id or uuid.uuid4().hex
     now = _now()
     with _connection() as conn:
         conn.execute(
-            """INSERT INTO queue_jobs(id, run_id, payload_json, status, created_at)
+            """INSERT OR IGNORE INTO queue_jobs(id, run_id, payload_json, status, created_at)
                VALUES (?, ?, ?, 'queued', ?)""",
             (job_id, run_id, json.dumps(payload), now),
         )

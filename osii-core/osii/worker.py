@@ -58,6 +58,7 @@ def execute_job(job: dict) -> None:
         enricher_name=payload.get("enricher_name") or None,
         enricher_config=payload.get("enricher_config") or {},
         collection_id=payload.get("collection_id") or None,
+        staging=payload.get("staging"),
     )
 
     run = get_run(job["run_id"])

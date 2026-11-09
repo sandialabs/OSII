@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .models import Filters, ProcessRequest, SelectionRequest
+from .models import Filters, ProcessRequest, SelectionRequest, ScanOptions
 from .store import VolumeStore, database_path
 
 
@@ -29,7 +29,9 @@ def create_app(path: Path | None = None, *, api_prefix: str = "/api/volume") -> 
     async def lifespan(app):
         store.initialize()
         # An existing catalog remains browsable when a registered share disconnects.
-        source_root = getattr(app.state, "source_root", os.getenv("SHARED_VOLUME_ROOT", ""))
+        source_root = getattr(
+            app.state, "source_root", os.getenv("SHARED_VOLUME_ROOT", "")
+        )
         if source_root and Path(source_root).is_dir():
             store.register_source(Path(source_root))
         yield
@@ -93,7 +95,11 @@ def create_app(path: Path | None = None, *, api_prefix: str = "/api/volume") -> 
 
     @app.get("/api/runtime")
     def runtime():
-        return {"storage_mode": "local", "user_authentication": False, "database": str(store.path)}
+        return {
+            "storage_mode": "local",
+            "user_authentication": False,
+            "database": str(store.path),
+        }
 
     @app.get(api_prefix + "/sources")
     def sources():
@@ -103,9 +109,18 @@ def create_app(path: Path | None = None, *, api_prefix: str = "/api/volume") -> 
     def register(payload: SourceRequest):
         return store.register_source(Path(payload.root), payload.name)
 
+    @app.post(api_prefix + "/sources/{source_id}/rebind")
+    def rebind(source_id: int, payload: SourceRequest):
+        return store.rebind_source(source_id, payload.root)
+
+    @app.get(api_prefix + "/sources/{source_id}/scans")
+    def source_scans(source_id: int):
+        return {"items": store.source_scans(source_id)}
+
     @app.post(api_prefix + "/sources/{source_id}/scan")
-    def scan(source_id: int):
-        return store.run(store.new_scan(source_id))
+    def scan(source_id: int, payload: ScanOptions = ScanOptions()):
+        payload.isolate = True
+        return store.run(store.new_scan(source_id, payload))
 
     @app.get(api_prefix + "/summary")
     def summary(filters: Filters = Depends()):
@@ -187,6 +202,10 @@ def create_app(path: Path | None = None, *, api_prefix: str = "/api/volume") -> 
     @app.get(api_prefix + "/selections")
     def selections(cursor: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100)):
         return {"items": store.selections(cursor, limit)}
+
+    @app.get(api_prefix + "/selections/{selection_id}")
+    def selection(selection_id: int):
+        return store.selection(selection_id)
 
     @app.get(api_prefix + "/selections/{selection_id}/entries")
     def selection_entries(

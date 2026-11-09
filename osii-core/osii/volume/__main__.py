@@ -8,7 +8,7 @@ from pathlib import Path
 import sqlite3
 import sys
 
-from .models import Filters, ProcessRequest, SelectionRequest
+from .models import Filters, ProcessRequest, SelectionRequest, ScanOptions
 from .store import VolumeStore, database_path, encode
 
 
@@ -24,6 +24,12 @@ def add_filters(parser):
     parser.add_argument("--max-bytes", type=int)
     parser.add_argument("--modified-after", type=int, help="UTC Unix seconds")
     parser.add_argument("--modified-before", type=int, help="UTC Unix seconds")
+    parser.add_argument(
+        "--metadata-state", choices=["any", "known", "unavailable"], default="any"
+    )
+    parser.add_argument(
+        "--sidecar-state", choices=["any", "processed", "missing"], default="any"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -38,12 +44,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init")
+    p = sub.add_parser("migrate")
+    p.add_argument("--backup", type=Path, required=True)
     p = sub.add_parser("register")
     p.add_argument("root", type=Path)
     p.add_argument("--name", default="")
     sub.add_parser("sources")
     p = sub.add_parser("scan")
     p.add_argument("source_id", type=int)
+    p.add_argument("--readers", type=int, default=2)
+    p.add_argument("--include", action="append", default=[])
+    p.add_argument("--exclude", action="append", default=[])
+    p.add_argument("--max-depth", type=int)
+    p.add_argument("--show-hidden", action="store_true")
+    p.add_argument("--cross-filesystems", action="store_true")
     p = sub.add_parser("status")
     p.add_argument("run_id", type=int)
     sub.add_parser("runs")
@@ -59,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
         if command == "list":
             p.add_argument("--cursor", type=int, default=0)
         if command == "select":
+            p.add_argument("--allow-partial", action="store_true")
             p.add_argument("--sample", action="store_true")
             p.add_argument("--seed", default="osii")
             p.add_argument("--per-stratum", type=int, default=2)
@@ -92,6 +107,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     store = VolumeStore(args.db)
     try:
+        if args.command == "migrate":
+            store.migrate(args.backup)
         store.initialize()
         command = args.command
         result = None
@@ -105,7 +122,19 @@ def main(argv: list[str] | None = None) -> int:
         elif command == "sources":
             result = store.sources()
         elif command == "scan":
-            result = store.run(store.new_scan(args.source_id))
+            result = store.run(
+                store.new_scan(
+                    args.source_id,
+                    ScanOptions(
+                        readers=args.readers,
+                        include_patterns=args.include,
+                        exclude_patterns=args.exclude,
+                        max_depth=args.max_depth,
+                        show_hidden=args.show_hidden,
+                        cross_filesystems=args.cross_filesystems,
+                    ),
+                )
+            )
         elif command == "status":
             result = store.run(args.run_id)
         elif command == "runs":
@@ -122,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
             result = store.select(
                 SelectionRequest(
                     filters=filters,
+                    allow_partial=args.allow_partial,
                     sample=args.sample,
                     seed=args.seed,
                     per_stratum=args.per_stratum,

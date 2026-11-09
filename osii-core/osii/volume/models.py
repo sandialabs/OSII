@@ -16,6 +16,8 @@ class Filters(BaseModel):
     max_bytes: int | None = Field(None, ge=0)
     modified_after: int | None = None  # UTC seconds
     modified_before: int | None = None
+    metadata_state: Literal["any", "known", "unavailable"] = "any"
+    sidecar_state: Literal["any", "processed", "missing"] = "any"
 
     @model_validator(mode="after")
     def valid_ranges(self):
@@ -34,6 +36,19 @@ class SelectionRequest(BaseModel):
     per_stratum: int = Field(2, ge=1, le=100)
     max_files: int = Field(100, ge=1, le=1_000_000)
     max_bytes: int = Field(1024**3, ge=1)
+    allow_partial: bool = False
+
+
+class ScanOptions(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    include_patterns: list[str] = Field(default_factory=list, max_length=100)
+    exclude_patterns: list[str] = Field(default_factory=list, max_length=100)
+    show_hidden: bool = False
+    max_depth: int | None = Field(None, ge=0, le=256)
+    cross_filesystems: bool = False
+    readers: int = Field(2, ge=1, le=8)
+    isolate: bool = True
+    timeout_seconds: int = Field(30, ge=1, le=300)
 
 
 class ProcessRequest(BaseModel):

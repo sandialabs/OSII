@@ -38,12 +38,17 @@ def measure(count: int, filesystem: bool = False) -> dict:
             execute(store, store.claim("benchmark"), "benchmark", threading.Event())
         else:
             prepare = 0
+            scan_id = store.new_scan(source["id"])
             with store.connect() as conn:
+                conn.execute("UPDATE runs SET status='done' WHERE id=?", (scan_id,))
+                conn.execute(
+                    "UPDATE directories SET status='done' WHERE run_id=?", (scan_id,)
+                )
                 for batch in range(0, count, 1000):
                     conn.executemany(
                         """INSERT INTO entries(source_id,path,parent,name,kind,suffix,
-                      size_bytes,mtime_ns,ctime_ns,device,inode,observed,seen_token)
-                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      size_bytes,mtime_ns,ctime_ns,device,inode,observed,seen_token,scan_run_id)
+                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (
                             (
                                 source["id"],
@@ -59,6 +64,7 @@ def measure(count: int, filesystem: bool = False) -> dict:
                                 i,
                                 1700000000,
                                 "benchmark",
+                                scan_id,
                             )
                             for i in range(batch, min(count, batch + 1000))
                         ),
@@ -76,7 +82,7 @@ def measure(count: int, filesystem: bool = False) -> dict:
         start = time.perf_counter()
         selected = store.select(SelectionRequest(sample=True, max_files=100))
         sample_seconds = time.perf_counter() - start
-        assert selected["count"] <= 100
+        assert 0 < selected["count"] <= 100
         peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         # macOS reports bytes; Linux reports KiB.
         peak_mib = peak / (1024**2 if sys.platform == "darwin" else 1024)

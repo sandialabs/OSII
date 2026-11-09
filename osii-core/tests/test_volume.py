@@ -19,7 +19,7 @@ from osii.processor_sdk.models import (
     ProvenanceRef,
 )
 from osii.volume.api import create_app
-from osii.volume.models import Filters, ProcessRequest, SelectionRequest
+from osii.volume.models import Filters, ProcessRequest, SelectionRequest, ScanOptions
 from osii.volume.store import VolumeStore
 from osii.volume.worker import execute
 
@@ -42,7 +42,7 @@ def work(store, factory=None):
 
 
 def scan(store, source):
-    store.new_scan(source)
+    store.new_scan(source, ScanOptions(readers=1, isolate=False, show_hidden=True))
     return work(store)
 
 
@@ -133,14 +133,18 @@ def test_inventory_never_reads_contents_or_creates_sidecars(library, monkeypatch
     }
 
 
-def test_inventory_is_available_in_normal_local_app_without_user_auth(test_app, monkeypatch):
+def test_inventory_is_available_in_normal_local_app_without_user_auth(
+    test_app, monkeypatch
+):
     from osii.main import inventory_app
     from osii.volume.store import database_path
 
     monkeypatch.delenv("OSII_INVENTORY_DB", raising=False)
     monkeypatch.delenv("OSII_VOLUME_DB", raising=False)
     root = test_app.state.shared_volume_root
-    (root / "report.txt").write_text("This content should not be extracted by a metadata scan.")
+    (root / "report.txt").write_text(
+        "This content should not be extracted by a metadata scan."
+    )
     marker = test_app.state.osii_root / "preserve-existing-library.txt"
     marker.write_text("existing sidecar evidence")
     with TestClient(test_app) as client:
@@ -152,7 +156,7 @@ def test_inventory_is_available_in_normal_local_app_without_user_auth(test_app, 
         assert client.get("/api/auth/me").status_code == 404
         sources = client.get("/api/volume/sources").json()["items"]
         source = next(s for s in sources if s["root"] == str(root))
-        response = client.post(f'/api/volume/sources/{source["id"]}/scan')
+        response = client.post(f"/api/volume/sources/{source['id']}/scan")
         assert response.status_code == 200
         store = inventory_app.state.volume_store
         assert store.path == database_path(test_app.state.osii_root)
@@ -168,8 +172,11 @@ def test_inventory_is_available_in_normal_local_app_without_user_auth(test_app, 
         assert marker.read_text() == "existing sidecar evidence"
 
 
-def test_inventory_database_path_supports_local_default_and_existing_pilot(monkeypatch, tmp_path):
+def test_inventory_database_path_supports_local_default_and_existing_pilot(
+    monkeypatch, tmp_path
+):
     from osii.volume.store import database_path
+
     monkeypatch.delenv("OSII_INVENTORY_DB", raising=False)
     monkeypatch.delenv("OSII_VOLUME_DB", raising=False)
     root = tmp_path / ".osii"
@@ -252,7 +259,9 @@ def test_restart_replays_large_directory_without_false_absence(library, monkeypa
         stopping.set()
 
     monkeypatch.setattr(scanner, "_write_batch", interrupted)
-    rid = store.new_scan(source)
+    rid = store.new_scan(
+        source, ScanOptions(readers=1, isolate=False, show_hidden=True)
+    )
     execute(store, store.claim("test-worker"), "test-worker", stopping)
     assert store.run(rid)["status"] == "queued"
     assert store.summary(Filters())["files"] == 3
@@ -275,7 +284,9 @@ def test_restart_replays_large_directory_without_false_absence(library, monkeypa
 def test_expired_lease_prevents_old_worker_commit(library):
     store, root, source = library
     (root / "a.txt").write_text("alpha")
-    rid = store.new_scan(source)
+    rid = store.new_scan(
+        source, ScanOptions(readers=1, isolate=False, show_hidden=True)
+    )
     old = store.claim("old")
     assert store.claim("other") is None
     with store.connect() as conn:
@@ -416,12 +427,16 @@ def test_root_identity_change_preserves_previous_inventory(library):
 
 def test_pause_cancel_and_resume(library):
     store, root, source = library
-    rid = store.new_scan(source)
+    rid = store.new_scan(
+        source, ScanOptions(readers=1, isolate=False, show_hidden=True)
+    )
     store.control(rid, "pause")
     assert store.claim("worker") is None
     store.control(rid, "resume")
     assert work(store)["status"] == "done"
-    rid = store.new_scan(source)
+    rid = store.new_scan(
+        source, ScanOptions(readers=1, isolate=False, show_hidden=True)
+    )
     store.control(rid, "cancel")
     assert store.claim("worker") is None
 

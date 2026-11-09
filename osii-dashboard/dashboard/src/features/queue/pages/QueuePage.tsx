@@ -1,3 +1,4 @@
+import { DiscoveryIntakePanel } from "../components/DiscoveryIntakePanel";
 import { ProcessorStepControl } from "../components/ProcessorStepControl";
 import {
   ChangeEvent,
@@ -106,6 +107,8 @@ export function QueuePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const requestedStep = searchParams.get("step");
+  const [sourceMode, setSourceMode] = useState<"quick" | "discovery">("discovery");
+  const [frozenSelection, setFrozenSelection] = useState<number | null>(null);
   const [path, setPath] = useState("");
   const [selectedFolder, setSelectedFolder] =
     useState<QueueBrowseResponse | null>(null);
@@ -125,6 +128,7 @@ export function QueuePage() {
   const [includeSubfolders, setIncludeSubfolders] = useState(true);
   const [showHidden, setShowHidden] = useState(false);
   const [section, setSection] = useState<"add" | "process" | "activity">(requestedStep === "index" ? "process" : "add");
+  const useDiscovery = sourceMode === "discovery" && section !== "process";
   const [libraryGoal, setLibraryGoal] = useState<
     "embed" | "synthesize" | "reextract" | "enrich" | "custom"
   >("embed");
@@ -206,6 +210,7 @@ export function QueuePage() {
   const rootBrowse = useQuery({
     queryKey: ["intake", "browse", "shared-root"],
     queryFn: () => browseIntake(),
+    enabled: !useDiscovery,
   });
   const browse = useQuery({
     queryKey: ["intake", "folders", browsePath],
@@ -259,7 +264,7 @@ export function QueuePage() {
       ...uploadedItems.map((item) => item.path),
     ];
   }, [selectedFolder, uploadedItems]);
-  const folderChanged =
+  const folderChanged = !useDiscovery &&
     path.trim() !==
     (selectedFolder?.host_path ?? selectedFolder?.current_path ?? "");
 
@@ -267,6 +272,8 @@ export function QueuePage() {
     queryKey: [
       "intake",
       "preview",
+      useDiscovery ? frozenSelection : null,
+      useDiscovery,
       queuePaths,
       excludedPaths,
       includeSubfolders,
@@ -284,7 +291,8 @@ export function QueuePage() {
     ],
     queryFn: ({ signal }) =>
       resolveIntake({
-        queue_paths: queuePaths,
+        inventory_selection_id: useDiscovery ? frozenSelection : undefined,
+        queue_paths: useDiscovery ? [] : queuePaths,
         excluded_paths: excludedPaths,
         include_subfolders: includeSubfolders,
         include_patterns: deferredIncludePatterns,
@@ -304,7 +312,7 @@ export function QueuePage() {
             "local.stats-keywords"
           : null,
       }, signal),
-    enabled: queuePaths.length > 0 && section !== "activity",
+    enabled: (useDiscovery ? Boolean(frozenSelection) : queuePaths.length > 0) && section !== "activity",
     retry: false,
     staleTime: 30_000,
     refetchOnWindowFocus: false,
@@ -460,14 +468,14 @@ export function QueuePage() {
 
   const start = async () => {
     if (
-      !queuePaths.length ||
+      !(useDiscovery ? frozenSelection : queuePaths.length) ||
       !preview.data?.preview.matched_count ||
       preview.isFetching ||
       preview.isError ||
       filtersUpdating ||
       selectingFolder ||
       folderChanged ||
-      folderError ||
+      (!useDiscovery && folderError) ||
       (createCollection && !collectionName.trim())
     )
       return;
@@ -475,7 +483,8 @@ export function QueuePage() {
     setNotice(null);
     try {
       const run = await createProcessingRun({
-        queue_paths: queuePaths,
+        inventory_selection_id: useDiscovery ? frozenSelection : undefined,
+        queue_paths: useDiscovery ? [] : queuePaths,
         excluded_paths: excludedPaths,
         include_subfolders: includeSubfolders,
         include_patterns: includePatterns,
@@ -631,8 +640,8 @@ export function QueuePage() {
           Intake
         </Typography>
         <Typography color="text.secondary">
-          Choose a folder and start with the defaults. OSII never changes your
-          original files.
+          Discover a share or choose a folder, then process a selected batch. OSII
+          never changes your original files.
         </Typography>
       </Stack>
 
@@ -723,6 +732,11 @@ export function QueuePage() {
             </Paper>
           ) : null}
 
+          {section === "add" && <TextField select size="small" label="Source selection" value={sourceMode} onChange={e => setSourceMode(e.target.value as "quick" | "discovery")}>
+            <MenuItem value="discovery">Discover a shared drive — resumable metadata scan</MenuItem>
+            <MenuItem value="quick">Quick folder selection</MenuItem>
+          </TextField>}
+          {useDiscovery ? <DiscoveryIntakePanel selectedId={frozenSelection} onSelect={setFrozenSelection} /> : <>
           <Paper
             variant="outlined"
             sx={{
@@ -973,6 +987,8 @@ export function QueuePage() {
               ) : null}
             </Stack>
           </Paper>
+
+          </>}
 
           <Dialog
             open={browseOpen}
@@ -1398,7 +1414,7 @@ export function QueuePage() {
                 </Typography>
               </Stack>
 
-              {preview.isLoading || rootBrowse.isLoading ? (
+              {preview.isLoading || (!useDiscovery && rootBrowse.isLoading) ? (
                 <LinearProgress />
               ) : null}
               {preview.isError ? (
@@ -1459,9 +1475,9 @@ export function QueuePage() {
                 </Stack>
               ) : null}
 
-              {!selectedFolder && !uploadedItems.length ? (
+              {(useDiscovery ? !frozenSelection : !selectedFolder && !uploadedItems.length) ? (
                 <Alert severity="info">
-                  Choose a document folder or add files from elsewhere.
+                  {useDiscovery ? "Freeze a discovery selection above to review this batch." : "Choose a document folder or add files from elsewhere."}
                 </Alert>
               ) : null}
               {readiness.isError ? (
@@ -1503,7 +1519,7 @@ export function QueuePage() {
                 color="secondary"
                 startIcon={<PlayArrowOutlinedIcon />}
                 disabled={
-                  !queuePaths.length ||
+                  !(useDiscovery ? frozenSelection : queuePaths.length) ||
                   (!runExtraction && !synthesize && !embed && !enrich) ||
                   !matchedCount ||
                   starting ||
@@ -1512,7 +1528,7 @@ export function QueuePage() {
                   preview.isError ||
                   selectingFolder ||
                   folderChanged ||
-                  Boolean(folderError) ||
+                  (!useDiscovery && Boolean(folderError)) ||
                   readiness.isLoading ||
                   sourceStatus?.osii_writable === false ||
                   runs.data?.worker?.available === false ||

@@ -3,6 +3,8 @@ import os
 from pathlib import Path
 from osii.expert_context import resolve_expert_context
 import sqlite3
+import threading
+from time import monotonic
 
 from fastapi import APIRouter, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
@@ -10,7 +12,7 @@ from osii.api.intake_routes import resolve_requested_path
 
 from osii.domain.processing.capability_readiness import embedding_readiness
 from osii.domain.catalog_db import rebuild_catalog, upsert_document
-from osii.domain.scopes.collections import add_documents_to_collection, create_collection
+from osii.domain.scopes.collections import add_documents_to_collection, create_collection, get_collection
 from osii.domain.artifacts.extraction_variants import extract_document_variant
 from osii.domain.artifacts.text_representations import get_preferred_text_representation
 from osii.domain.processing.intake import (
@@ -23,6 +25,7 @@ from osii.domain.processing.jobs import (
     append_log,
     control_run,
     create_run_record,
+    configure_job_store,
     enqueue_run,
     get_run,
     list_queue_jobs,
@@ -53,6 +56,7 @@ from osii.synthesis.file.firstn import FirstNSynthesizer
 from osii.synthesis.file.recursive import RecursiveSynthesizer
 
 router = APIRouter(prefix="/api", tags=["runs"])
+_STAGING_LOCK = threading.Lock()
 
 
 def _finish_item_timing(item: dict, started: datetime) -> None:
@@ -297,7 +301,9 @@ def run_worker(
     enricher_name: str | None = None,
     enricher_config: dict | None = None,
     collection_id: str | None = None,
+    staging: dict | None = None,
 ) -> None:
+    attempt_started = monotonic()
     try:
         ensure_osii_store_layout(osii_store)
         parser_routes = load_parser_routes(parser_routes_path)
@@ -349,6 +355,7 @@ def run_worker(
                 osii_root=osii_store,
                 shared_root=shared_root,
                 upload_root=upload_root,
+                staging=staging,
             )
             run = get_run(run_id)
             if run is None:
@@ -359,6 +366,12 @@ def run_worker(
             append_log(run_id, f"Run manifest saved: {manifest_path.name}")
 
         for index, src in enumerate(resolved_files):
+            if staging and monotonic() - attempt_started >= staging["max_seconds"]:
+                run = get_run(run_id)
+                run.update(status="paused", control_state="paused")
+                save_run(run)
+                append_log(run_id, "Batch time budget reached between files; resume to continue with the frozen selection.")
+                return
             if _honor_run_control(run_id):
                 return
             run = get_run(run_id)
@@ -387,7 +400,12 @@ def run_worker(
             save_run(run)
 
             try:
+                if staging:
+                    from osii.volume.staging import validate_member
+                    validate_member(staging, staging["members"][index])
                 file_id = compute_file_id(src)
+                if staging:
+                    validate_member(staging, staging["members"][index])
                 document_context = resolve_expert_context(
                     osii_store, {"scope_type": "object", "file_id": file_id}, context
                 )
@@ -443,6 +461,7 @@ def run_worker(
                 run["items"][index]["file_id"] = file_id
                 run["items"][index]["extraction_variant_id"] = extract_result.get("variant_id") if extract_result else None
                 run["items"][index]["extract_error"] = extract_result.get("error") if extract_result else None
+                save_run(run)
 
                 synthesis_result = None
                 synthesis_error = None
@@ -486,6 +505,11 @@ def run_worker(
                 if run is None:
                     return
 
+                if staging:
+                    validate_member(staging, staging["members"][index])
+                    from osii.volume.store import VolumeStore
+                    VolumeStore(Path(staging["database"])).link_sidecar(staging["members"][index], file_id, run_id)
+
                 errors = [item for item in [extract_result.get("error") if extract_result else None, synthesis_error, enrichment_error] if item]
                 run["items"][index]["status"] = "partial" if errors else "done"
                 run["items"][index]["osii"] = extract_result["osii_rel"] if extract_result else f"objects/{file_id}"
@@ -511,7 +535,8 @@ def run_worker(
                     return
 
                 try:
-                    run["items"][index]["file_id"] = compute_file_id(src)
+                    if not staging:
+                        run["items"][index]["file_id"] = compute_file_id(src)
                 except Exception:
                     pass
 
@@ -526,7 +551,7 @@ def run_worker(
         if _honor_run_control(run_id):
             return
 
-        if workflow == "intake":
+        if workflow == "intake" and not staging:
             top_level_doc_count, top_level_subfolder_count = build_folder_artifacts(
                 resolved_files=resolved_files,
                 data_volume_root=data_volume_root,
@@ -575,14 +600,43 @@ def run_worker(
 
 @router.post("/runs")
 async def start_run(request: Request, payload: dict):
+    if payload.get("inventory_selection_id") is not None:
+        return await run_in_threadpool(_start_staged_run, request, payload)
     return await run_in_threadpool(_start_run, request, payload)
 
 
+def _start_staged_run(request: Request, payload: dict):
+    # Serialize local handoffs across the two durable stores. A stable run/job ID
+    # also recovers the gap if the API exits between their commits.
+    with _STAGING_LOCK:
+        return _start_run(request, payload)
+
+
 def _start_run(request: Request, payload: dict):
-    shared_root = request.app.state.shared_volume_root.resolve()
+    staging = None
+    staged_run_id = None
+    if payload.get("inventory_selection_id") is not None:
+        configure_job_store(request.app.state.osii_root)
+        from osii.volume.staging import staged_bundle, selection_id as validate_selection_id
+        from osii.volume.store import VolumeStore, database_path
+        try:
+            store = VolumeStore(database_path(request.app.state.osii_root))
+            selection_id = validate_selection_id(payload["inventory_selection_id"])
+            store.selection(selection_id)
+            staged_run_id = store.handoff(selection_id, payload)
+            existing = get_run(staged_run_id)
+            if existing and queue_status_for_run(staged_run_id) is not None:
+                return {**existing, "run_id": existing["id"], "resolved_count": existing["total"]}
+            staging = staged_bundle(request.app.state.osii_root, selection_id)
+            staging["max_seconds"] = int(payload.get("max_processing_seconds", 3600))
+            if not 1 <= staging["max_seconds"] <= 86400:
+                raise ValueError("Processing time budget must be between 1 and 86,400 seconds")
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    shared_root = request.app.state.shared_volume_root if staging else request.app.state.shared_volume_root.resolve()
     upload_root = request.app.state.upload_originals_root.resolve()
     osii_store = request.app.state.osii_root.resolve()
-    data_volume_root = shared_root.parent.resolve()
+    data_volume_root = shared_root.parent if staging else shared_root.parent.resolve()
 
     queue_paths = payload.get("queue_paths", [])
     include_subfolders = bool(payload.get("include_subfolders", True))
@@ -651,52 +705,61 @@ def _start_run(request: Request, payload: dict):
     max_files_int = int(max_files) if max_files not in (None, "") else None
     max_total_size = int(float(max_total_size_mb) * 1024 * 1024) if max_total_size_mb not in (None, "") else None
 
-    queue_items = []
-    for raw in queue_paths:
-        p = resolve_requested_path(request, raw)
-        if p.exists():
-            queue_items.append(
-                {
-                    "path": str(p),
-                    "display": display_rel(p, shared_root, upload_root),
-                    "kind": "folder" if p.is_dir() else "file",
-                    "source": "shared" if path_within(shared_root, p) else "upload",
-                }
-            )
+    if staging:
+        if workflow != "intake":
+            raise HTTPException(status_code=422, detail="Frozen discovery selections enter the Intake workflow")
+        from osii.volume.staging import member_path, selection_preview
+        resolved_files = [member_path(member) for member in staging["members"]]
+        queue_items = [{"path": member["root"], "display": member["root"], "kind": "folder", "source": "shared"}
+                       for member in {m["source_id"]: m for m in staging["members"]}.values()]
+        preview = selection_preview(staging, extractor_overrides, payload)["preview"]
+    else:
+        queue_items = []
+        for raw in queue_paths:
+            p = resolve_requested_path(request, raw)
+            if p.exists():
+                queue_items.append(
+                    {
+                        "path": str(p),
+                        "display": display_rel(p, shared_root, upload_root),
+                        "kind": "folder" if p.is_dir() else "file",
+                        "source": "shared" if path_within(shared_root, p) else "upload",
+                    }
+                )
 
-    resolved_files, preview = expand_queue_to_files(
-        queue_items=queue_items,
-        include_subfolders=include_subfolders,
-        include_patterns=include_patterns,
-        exclude_patterns=exclude_patterns,
-        show_hidden=show_hidden,
-        max_files=max_files_int,
-        max_total_size=max_total_size,
-        shared_root=shared_root,
-        upload_root=upload_root,
-        excluded_paths=payload.get("excluded_paths", []),
-    )
-    if getattr(request.app.state, "filesystem_mode", "local") == "mounted":
-        for file in preview["available_files"]:
-            resolve_requested_path(request, file["path"])
-    add_processed_counts(preview, resolved_files, data_volume_root, osii_store)
-    add_extractor_plan(preview, resolved_files, extractor_overrides)
-    # Intake review computes the detailed plan through /api/resolve. Starting
-    # the durable run must not reread every original just to repeat that plan;
-    # hashing and extraction belong to the worker. Folder I/O runs in FastAPI's
-    # thread pool so a slow shared drive cannot block health and activity reads.
+        resolved_files, preview = expand_queue_to_files(
+            queue_items=queue_items,
+            include_subfolders=include_subfolders,
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+            show_hidden=show_hidden,
+            max_files=max_files_int,
+            max_total_size=max_total_size,
+            shared_root=shared_root,
+            upload_root=upload_root,
+            excluded_paths=payload.get("excluded_paths", []),
+        )
+        if getattr(request.app.state, "filesystem_mode", "local") == "mounted":
+            for file in preview["available_files"]:
+                resolve_requested_path(request, file["path"])
+        add_processed_counts(preview, resolved_files, data_volume_root, osii_store)
+        add_extractor_plan(preview, resolved_files, extractor_overrides)
+        # Intake review computes the detailed plan through /api/resolve. Starting
+        # the durable run must not reread every original just to repeat that plan;
+        # hashing and extraction belong to the worker. Folder I/O runs in FastAPI's
+        # thread pool so a slow shared drive cannot block health and activity reads.
 
-    if workflow == "library" and not run_extraction:
-        resolved_files = [
-            path
-            for path in resolved_files
-            if get_preferred_text_representation(osii_store, compute_file_id(path)) is not None
-        ]
-    if workflow == "library":
-        unique_files: dict[str, Path] = {}
-        for path in resolved_files:
-            unique_files.setdefault(compute_file_id(path), path)
-        resolved_files = list(unique_files.values())
+        if workflow == "library" and not run_extraction:
+            resolved_files = [
+                path
+                for path in resolved_files
+                if get_preferred_text_representation(osii_store, compute_file_id(path)) is not None
+            ]
+        if workflow == "library":
+            unique_files: dict[str, Path] = {}
+            for path in resolved_files:
+                unique_files.setdefault(compute_file_id(path), path)
+            resolved_files = list(unique_files.values())
     if not resolved_files:
         raise HTTPException(status_code=409, detail="No eligible documents matched this processing plan.")
 
@@ -726,7 +789,9 @@ def _start_run(request: Request, payload: dict):
                 ),
             )
 
-    if collection_name is not None:
+    if staging and existing and existing.get("collection_id"):
+        collection = get_collection(osii_store, existing["collection_id"])
+    if collection_name is not None and collection is None:
         try:
             collection = create_collection(
                 osii_store,
@@ -744,7 +809,10 @@ def _start_run(request: Request, payload: dict):
         shared_root,
         upload_root,
         osii_root=osii_store,
+        run_id=staged_run_id,
+        displays={str(member_path(m)): m["path"] for m in staging["members"]} if staging else None,
     )
+    run["inventory_selection_id"] = staging["selection_id"] if staging else None
     run["workflow"] = workflow
     run["expert_context"] = context or None
     run["collection_id"] = collection["id"] if collection else None
@@ -765,6 +833,12 @@ def _start_run(request: Request, payload: dict):
 
     parser_routes_path = extractor_routes_path()
     shared_root_host_path = getattr(request.app.state, "shared_volume_host_path", "")
+
+    if staged_run_id:
+        run["status"] = "queued"
+        run["control_state"] = "running"
+        run["queue_job_id"] = staged_run_id
+        save_run(run)
 
     queue_job = enqueue_run(
         run["id"],
@@ -797,12 +871,15 @@ def _start_run(request: Request, payload: dict):
             "enricher_name": enricher_name,
             "enricher_config": enricher_config,
             "collection_id": collection["id"] if collection else None,
+            "staging": staging,
         },
+        job_id=staged_run_id,
     )
-    run["status"] = "queued"
-    run["control_state"] = "running"
-    run["queue_job_id"] = queue_job["id"]
-    save_run(run)
+    if not staging:
+        run["status"] = "queued"
+        run["control_state"] = "running"
+        run["queue_job_id"] = queue_job["id"]
+        save_run(run)
 
     return {
         "id": run["id"],

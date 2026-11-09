@@ -211,6 +211,15 @@ def browse(
 
 @router.post("/resolve")
 def resolve_queue(request: Request, payload: dict):
+    if payload.get("inventory_selection_id") is not None:
+        from osii.volume.staging import staged_bundle, selection_preview, selection_id
+        try:
+            return selection_preview(
+                staged_bundle(request.app.state.osii_root, selection_id(payload["inventory_selection_id"])),
+                payload.get("extractor_overrides"), payload,
+            )
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
     shared_root = request.app.state.shared_volume_root.resolve()
     upload_root = request.app.state.upload_originals_root.resolve()
 

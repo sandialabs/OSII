@@ -1,7 +1,9 @@
 # Resumable shared-drive discovery and Intake staging
 
-Status: proposed implementation plan. The immediate preview fix below is
-implemented; the large-volume integration and concurrency work are planned.
+Status: discovery and staging implemented in OSII-local on 9 November 2026.
+The numbered sections retain the design rationale. See the
+[operating guide](../operations/large-volumes.md) for the current workflow.
+Corporate-scale NFS validation remains a rollout prerequisite.
 
 ## Goal and current findings
 
@@ -47,11 +49,9 @@ or corporate-capacity benchmarks. No extraction or model processing was started.
 - Separate metadata discovery and explicit content extraction. Discovery never
   opens documents, hashes content, invokes OCR/models, or expands archives.
 
-The gaps are important: discovery currently has one coordinator, a failed child
-stat can fail its whole directory, long directories are replayed rather than
-resumed at a portable iterator offset, and File inventory processing is separate
-from normal sidecar Intake. Reuse and improve this code rather than add another
-scanner, storage mode, branch, or hosted service.
+The implementation retains one writer and directory replay, adds isolated
+bounded readers and per-entry failures, and connects frozen selections to normal
+sidecar Intake. It reuses the scanner and does not add a separate storage mode.
 
 ## 1. Give Intake two explicit source-selection paths
 
@@ -172,3 +172,26 @@ Pilot a narrow branch, then several mixed-permission branches, then a scheduled
 larger scan with operator-approved concurrency. Keep periodic delta scans and
 retention policies explicit; do not promise filesystem snapshots or per-user ACL
 mirroring in OSII-local's cached inventory.
+
+## Delivered scope and limits
+
+Intake defaults to discovery, with quick folder selection available alongside it.
+Scan rules and progress, pause/resume, local SQL filters, explicit partial-coverage
+acknowledgement, frozen file/byte-limited selections, source rebinding, and the
+normal sidecar processing handoff are implemented. Version 2 requires a backed-up
+explicit migration. Unknown-size files cannot enter a frozen processing batch.
+New selections exclude older observations not visited in the latest scan.
+
+Reader deadlines apply to metadata discovery. Content processing still uses
+normal filesystem calls and processor timeouts, with time budgets checked between
+files. Embeddings retain normal library-wide backfill behavior, disclosed in
+Intake; the source-read/extraction batch remains frozen. Staged document sidecars
+and selection manifests are authoritative for the processed batch; legacy whole-
+folder rehashing is skipped. Metadata cannot prove a filesystem snapshot or
+prevent every same-metadata mutation between validation and extraction.
+
+Automatic retries do not spin on denied paths: errors remain visible until the
+operator resumes. Interrupted directory recovery has a three-attempt limit;
+resume resets it. Changed roots require explicit verification/rebinding and fresh
+discovery. Hard kernel stalls may require mount recovery. Millions-of-entry and
+35 TB corporate NFS/mixed-ACL rollout measurements remain unverified.

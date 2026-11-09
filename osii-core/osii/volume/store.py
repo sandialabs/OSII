@@ -11,9 +11,9 @@ import sqlite3
 import time
 from typing import Iterator
 
-from .models import Filters, ProcessRequest, SelectionRequest
+from .models import Filters, ProcessRequest, SelectionRequest, ScanOptions
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SCHEMA = """
 CREATE TABLE sources(id INTEGER PRIMARY KEY, name TEXT NOT NULL, root TEXT NOT NULL UNIQUE,
  device TEXT NOT NULL, inode TEXT NOT NULL);
@@ -77,12 +77,60 @@ CREATE TRIGGER extraction_insert AFTER INSERT ON extractions BEGIN
 END;
 """
 
+MIGRATION_2 = """
+ALTER TABLE sources ADD COLUMN generation INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE entries ADD COLUMN metadata_state TEXT NOT NULL DEFAULT 'known';
+ALTER TABLE entries ADD COLUMN metadata_error TEXT;
+ALTER TABLE entries ADD COLUMN scan_run_id INTEGER;
+ALTER TABLE directories ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE directories ADD COLUMN updated REAL;
+ALTER TABLE runs ADD COLUMN observed_entries INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE runs ADD COLUMN known_bytes INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE runs ADD COLUMN metadata_errors INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE selections ADD COLUMN coverage TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE selection_members ADD COLUMN source_id INTEGER;
+ALTER TABLE selection_members ADD COLUMN path TEXT;
+ALTER TABLE selection_members ADD COLUMN size_bytes INTEGER;
+ALTER TABLE selection_members ADD COLUMN mtime_ns INTEGER;
+ALTER TABLE selection_members ADD COLUMN ctime_ns INTEGER;
+ALTER TABLE selection_members ADD COLUMN source_generation INTEGER;
+ALTER TABLE selection_members ADD COLUMN file_device TEXT;
+ALTER TABLE selection_members ADD COLUMN file_inode TEXT;
+UPDATE selection_members SET
+ source_id=(SELECT source_id FROM entries WHERE id=entry_id),
+ path=(SELECT path FROM entries WHERE id=entry_id),
+ size_bytes=(SELECT size_bytes FROM entries WHERE id=entry_id),
+ mtime_ns=(SELECT mtime_ns FROM entries WHERE id=entry_id),
+ ctime_ns=(SELECT ctime_ns FROM entries WHERE id=entry_id),
+ source_generation=(SELECT s.generation FROM entries e JOIN sources s ON s.id=e.source_id WHERE e.id=entry_id),
+ file_device=(SELECT device FROM entries WHERE id=entry_id),
+ file_inode=(SELECT inode FROM entries WHERE id=entry_id);
+CREATE TABLE sidecar_links(entry_id INTEGER NOT NULL, revision INTEGER NOT NULL,
+ file_id TEXT NOT NULL, run_id TEXT NOT NULL, updated REAL NOT NULL,
+ PRIMARY KEY(entry_id,revision));
+CREATE TABLE intake_handoffs(selection_id INTEGER NOT NULL, request_key TEXT NOT NULL,
+ run_id TEXT NOT NULL UNIQUE, created REAL NOT NULL, PRIMARY KEY(selection_id,request_key));
+CREATE INDEX entries_source_observed ON entries(source_id,status,id);
+CREATE INDEX runs_source_kind ON runs(source_id,kind,id);
+"""
+
+
+def _statements(conn: sqlite3.Connection, sql: str) -> None:
+    statement = ""
+    for line in sql.splitlines(keepends=True):
+        statement += line
+        if sqlite3.complete_statement(statement):
+            conn.execute(statement)
+            statement = ""
+
 
 def database_path(osii_root: Path | None = None) -> Path:
     root = osii_root or Path(os.getenv("OSII_ROOT", "./data_volume/.osii"))
     # Honor an explicitly configured pilot database without migrating it.
     configured = os.getenv("OSII_INVENTORY_DB", "") or os.getenv("OSII_VOLUME_DB", "")
-    return Path(configured or root / "state" / "inventory.sqlite3").expanduser().resolve()
+    return (
+        Path(configured or root / "state" / "inventory.sqlite3").expanduser().resolve()
+    )
 
 
 def encode(value) -> str:
@@ -94,7 +142,7 @@ def prefix_like(value: str) -> str:
 
 
 def predicate(filters: Filters, alias: str = "e") -> tuple[str, list]:
-    terms = [f"{alias}.kind='file'", f"{alias}.status='present'"]
+    terms = [f"{alias}.kind IN ('file','unknown')", f"{alias}.status='present'"]
     values: list = []
     if filters.source_id is not None:
         terms.append(f"{alias}.source_id=?")
@@ -115,14 +163,23 @@ def predicate(filters: Filters, alias: str = "e") -> tuple[str, list]:
         terms.append(
             f"{alias}.extraction_id IS {'NULL' if filters.text_state == 'metadata_only' else 'NOT NULL'}"
         )
-    terms.append(f"{alias}.size_bytes>=?")
-    values.append(filters.min_bytes)
+    if filters.metadata_state != "any":
+        terms.append(f"{alias}.metadata_state=?")
+        values.append(filters.metadata_state)
+    if filters.sidecar_state != "any":
+        terms.append(
+            f"{'NOT ' if filters.sidecar_state == 'missing' else ''}EXISTS (SELECT 1 FROM sidecar_links l WHERE l.entry_id={alias}.id AND l.revision={alias}.revision)"
+        )
+    if filters.min_bytes or filters.max_bytes is not None:
+        terms.append(f"{alias}.metadata_state='known' AND {alias}.size_bytes>=?")
+        values.append(filters.min_bytes)
     if filters.max_bytes is not None:
         terms.append(f"{alias}.size_bytes<=?")
         values.append(filters.max_bytes)
     for attribute, operator in (("modified_after", ">="), ("modified_before", "<")):
         value = getattr(filters, attribute)
         if value is not None:
+            terms.append(f"{alias}.metadata_state='known'")
             terms.append(f"{alias}.mtime_ns{operator}?")
             values.append(
                 (value + (1 if attribute == "modified_before" else 0)) * 1_000_000_000
@@ -170,17 +227,39 @@ class VolumeStore:
                     ).fetchone()
                 ):
                     raise ValueError(
-                        "Unsupported canonical volume schema; preserve the database and use an explicit migration"
+                        "Inventory schema requires an explicit migration. Stop OSII and run python -m osii.volume migrate --backup PATH; evidence has not been reset."
                     )
-                statement = ""
-                for line in SCHEMA.splitlines(keepends=True):
-                    statement += line
-                    if sqlite3.complete_statement(statement):
-                        conn.execute(statement)
-                        statement = ""
+                _statements(conn, SCHEMA)
+                _statements(conn, MIGRATION_2)
                 conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             conn.commit()
             conn.execute("PRAGMA journal_mode=WAL")
+
+    def migrate(self, backup: Path) -> None:
+        with self.connect() as conn:
+            if conn.execute("PRAGMA user_version").fetchone()[0] != 1:
+                raise ValueError("Migration requires an existing version 1 inventory")
+            if conn.execute(
+                "SELECT 1 FROM runs WHERE owner IS NOT NULL AND lease_until>?",
+                (time.time(),),
+            ).fetchone():
+                raise ValueError(
+                    "Stop the inventory worker and wait for its lease to end before migration"
+                )
+        self.backup(backup)
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if conn.execute("PRAGMA user_version").fetchone()[0] != 1:
+                raise ValueError("Inventory schema changed during migration")
+            if conn.execute(
+                "SELECT 1 FROM runs WHERE owner IS NOT NULL AND lease_until>?",
+                (time.time(),),
+            ).fetchone():
+                raise ValueError(
+                    "Inventory worker restarted during migration; stop it before retrying"
+                )
+            _statements(conn, MIGRATION_2)
+            conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
     def register_source(self, root: Path, name: str = "") -> dict:
         root = Path(root).expanduser().resolve(strict=True)
@@ -232,8 +311,49 @@ class VolumeStore:
                 dict(row) for row in conn.execute("SELECT * FROM sources ORDER BY id")
             ]
 
-    def new_scan(self, source_id: int) -> int:
-        self.source(source_id)
+    def source_scans(self, source_id: int) -> list[dict]:
+        with self.connect() as conn:
+            return [
+                dict(row)
+                for row in conn.execute(
+                    "SELECT * FROM runs WHERE source_id=? AND kind='scan' ORDER BY id DESC LIMIT 20",
+                    (source_id,),
+                )
+            ]
+
+    def rebind_source(self, source_id: int, confirmed_root: str) -> dict:
+        source = self.source(source_id)
+        if confirmed_root != source["root"]:
+            raise ValueError(
+                "Confirm the exact registered root after verifying the mounted dataset"
+            )
+        root = Path(confirmed_root)
+        if root.resolve(strict=True) != root or not root.is_dir():
+            raise ValueError(
+                "The registered directory must be mounted at its original path"
+            )
+        info = root.stat()
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if conn.execute(
+                "SELECT 1 FROM runs WHERE source_id=? AND (status IN ('running','queued','paused') OR (owner IS NOT NULL AND lease_until>?))",
+                (source_id, time.time()),
+            ).fetchone():
+                raise ValueError(
+                    "Cancel active scans and wait for the worker to release them before rebinding"
+                )
+            conn.execute(
+                "UPDATE sources SET device=?,inode=?,generation=generation+1 WHERE id=?",
+                (str(info.st_dev), str(info.st_ino), source_id),
+            )
+            conn.execute(
+                "UPDATE entries SET status='unverified',revision=revision+1,scan_run_id=NULL,extraction_id=NULL WHERE source_id=?",
+                (source_id,),
+            )
+        return self.source(source_id)
+
+    def new_scan(self, source_id: int, options: ScanOptions | None = None) -> int:
+        source = self.source(source_id)
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             if conn.execute(
@@ -245,8 +365,18 @@ class VolumeStore:
                 )
             now = time.time()
             run_id = conn.execute(
-                "INSERT INTO runs(kind,source_id,created,updated) VALUES('scan',?,?,?)",
-                (source_id, now, now),
+                "INSERT INTO runs(kind,source_id,payload,created,updated) VALUES('scan',?,?,?,?)",
+                (
+                    source_id,
+                    encode(
+                        {
+                            **(options or ScanOptions()).model_dump(),
+                            "source_generation": source["generation"],
+                        }
+                    ),
+                    now,
+                    now,
+                ),
             ).lastrowid
             conn.execute("INSERT INTO directories(run_id,path) VALUES(?,'')", (run_id,))
             return run_id
@@ -256,7 +386,7 @@ class VolumeStore:
         with self.connect() as conn:
             row = dict(
                 conn.execute(
-                    f"SELECT count(*) AS files,coalesce(sum(size_bytes),0) AS bytes, count(extraction_id) AS extracted FROM entries e WHERE {where}",
+                    f"SELECT count(*) AS files,coalesce(sum(CASE WHEN metadata_state='known' THEN size_bytes ELSE 0 END),0) AS bytes, count(extraction_id) AS extracted,coalesce(sum(metadata_state!='known'),0) AS unknown_sizes FROM entries e WHERE {where}",
                     values,
                 ).fetchone()
             )
@@ -287,6 +417,9 @@ class VolumeStore:
                     [*values, after, limit + 1],
                 )
             ]
+        for row in rows:
+            if row["metadata_state"] != "known":
+                row["size_bytes"] = row["mtime_ns"] = row["ctime_ns"] = None
         return {
             "items": rows[:limit],
             "next_cursor": rows[limit - 1]["id"] if len(rows) > limit else None,
@@ -310,7 +443,8 @@ class VolumeStore:
 
     def select(self, request: SelectionRequest) -> dict:
         where, values = predicate(request.filters)
-        where += " AND e.size_bytes<=?"
+        where += " AND e.metadata_state='known' AND e.kind='file' AND e.size_bytes<=?"
+        where += " AND e.scan_run_id=(SELECT max(r.id) FROM runs r WHERE r.kind='scan' AND r.source_id=e.source_id)"
         values.append(request.max_bytes)
         # Interleave strata, then reproducibly choose entries within each stratum.
         order = "id"
@@ -335,6 +469,18 @@ class VolumeStore:
           row_number() OVER(ORDER BY {order}) AS position FROM candidates)
           SELECT ?,id,revision FROM bounded WHERE position<=? AND running_bytes<=?"""
         with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            incomplete = conn.execute(
+                "SELECT 1 FROM runs r WHERE kind='scan' AND id=(SELECT max(id) FROM runs x WHERE x.source_id=r.source_id AND x.kind='scan') AND status!='done'"
+                + (" AND source_id=?" if request.filters.source_id is not None else ""),
+                [request.filters.source_id]
+                if request.filters.source_id is not None
+                else [],
+            ).fetchone()
+            if incomplete and not request.allow_partial:
+                raise ValueError(
+                    "Discovery coverage is incomplete. Wait for completion or explicitly allow a partial selection."
+                )
             now = time.time()
             sid = conn.execute(
                 "INSERT INTO selections(request,created) VALUES(?,?)",
@@ -346,8 +492,38 @@ class VolumeStore:
                 [*values, sid, request.max_files, request.max_bytes],
             )
             conn.execute(
+                """UPDATE selection_members SET
+              source_id=(SELECT source_id FROM entries WHERE id=entry_id),
+              path=(SELECT path FROM entries WHERE id=entry_id),
+              size_bytes=(SELECT size_bytes FROM entries WHERE id=entry_id),
+              mtime_ns=(SELECT mtime_ns FROM entries WHERE id=entry_id),
+              ctime_ns=(SELECT ctime_ns FROM entries WHERE id=entry_id),
+              source_generation=(SELECT s.generation FROM entries e JOIN sources s ON s.id=e.source_id WHERE e.id=entry_id),
+              file_device=(SELECT device FROM entries WHERE id=entry_id),
+              file_inode=(SELECT inode FROM entries WHERE id=entry_id)
+              WHERE selection_id=?""",
+                (sid,),
+            )
+            conn.execute(
                 "UPDATE selections SET count=(SELECT count(*) FROM selection_members WHERE selection_id=?),bytes=(SELECT coalesce(sum(e.size_bytes),0) FROM selection_members m JOIN entries e ON e.id=m.entry_id WHERE m.selection_id=?) WHERE id=?",
                 (sid, sid, sid),
+            )
+            coverage = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT id,source_id,status,payload,updated FROM runs r WHERE kind='scan' AND id=(SELECT max(id) FROM runs x WHERE x.source_id=r.source_id AND x.kind='scan')"
+                    + (
+                        " AND source_id=?"
+                        if request.filters.source_id is not None
+                        else ""
+                    ),
+                    [request.filters.source_id]
+                    if request.filters.source_id is not None
+                    else [],
+                )
+            ]
+            conn.execute(
+                "UPDATE selections SET coverage=? WHERE id=?", (encode(coverage), sid)
             )
             return dict(
                 conn.execute("SELECT * FROM selections WHERE id=?", (sid,)).fetchone()
@@ -363,6 +539,70 @@ class VolumeStore:
                 )
             ]
 
+    def selection(self, selection_id: int) -> dict:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM selections WHERE id=?", (selection_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError("Selection not found")
+            return dict(row)
+
+    def staged_members(self, selection_id: int) -> list[dict]:
+        """Read a bounded immutable snapshot, never expand a source directory."""
+        selection = self.selection(selection_id)
+        if not 0 < selection["count"] <= 10_000:
+            raise ValueError(
+                "Intake requires between 1 and 10,000 frozen files; select a smaller batch"
+            )
+        with self.connect() as conn:
+            rows = [
+                dict(row)
+                for row in conn.execute(
+                    """SELECT m.*,s.root,s.device,s.inode,
+                s.generation,e.revision AS current_revision,e.status,e.metadata_state,
+                EXISTS(SELECT 1 FROM sidecar_links l WHERE l.entry_id=e.id AND l.revision=m.revision) AS sidecar_processed
+                FROM selection_members m JOIN sources s ON s.id=m.source_id
+                JOIN entries e ON e.id=m.entry_id WHERE selection_id=? ORDER BY entry_id LIMIT 10001""",
+                    (selection_id,),
+                )
+            ]
+        if len(rows) != selection["count"] or any(
+            row["size_bytes"] is None for row in rows
+        ):
+            raise ValueError("Selection has incomplete metadata; scan and select again")
+        if any(
+            row["revision"] != row["current_revision"]
+            or row["status"] != "present"
+            or row["metadata_state"] != "known"
+            or row["source_generation"] != row["generation"]
+            for row in rows
+        ):
+            raise ValueError("Selection is stale; scan and select again")
+        return rows
+
+    def handoff(self, selection_id: int, settings: dict) -> str:
+        key = hashlib.sha256(encode(settings).encode()).hexdigest()
+        run_id = hashlib.sha256(
+            f"{self.path}:{selection_id}:{key}".encode()
+        ).hexdigest()[:32]
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO intake_handoffs VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
+                (selection_id, key, run_id, time.time()),
+            )
+            return conn.execute(
+                "SELECT run_id FROM intake_handoffs WHERE selection_id=? AND request_key=?",
+                (selection_id, key),
+            ).fetchone()[0]
+
+    def link_sidecar(self, member: dict, file_id: str, run_id: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO sidecar_links VALUES(?,?,?,?,?) ON CONFLICT(entry_id,revision) DO UPDATE SET file_id=excluded.file_id,run_id=excluded.run_id,updated=excluded.updated",
+                (member["entry_id"], member["revision"], file_id, run_id, time.time()),
+            )
+
     def selection_entries(
         self, selection_id: int, after: int = 0, limit: int = 100
     ) -> dict:
@@ -370,10 +610,16 @@ class VolumeStore:
             rows = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT e.*,m.revision AS selected_revision,e.revision!=m.revision OR e.status!='present' AS stale FROM selection_members m JOIN entries e ON e.id=m.entry_id WHERE m.selection_id=? AND e.id>? ORDER BY e.id LIMIT ?",
+                    "SELECT e.*,m.path AS selected_path,m.size_bytes AS selected_size,m.mtime_ns AS selected_mtime,m.revision AS selected_revision,e.revision!=m.revision OR e.status!='present' AS stale FROM selection_members m JOIN entries e ON e.id=m.entry_id WHERE m.selection_id=? AND e.id>? ORDER BY e.id LIMIT ?",
                     (selection_id, after, limit + 1),
                 )
             ]
+        for row in rows:
+            row.update(
+                path=row.pop("selected_path"),
+                size_bytes=row.pop("selected_size"),
+                mtime_ns=row.pop("selected_mtime"),
+            )
         return {
             "items": rows[:limit],
             "next_cursor": rows[limit - 1]["id"] if len(rows) > limit else None,
@@ -411,6 +657,21 @@ class VolumeStore:
             if not row:
                 raise KeyError("Run not found")
             result = dict(row)
+            if result["kind"] == "scan":
+                result["directories"] = {
+                    r["status"]: r["count"]
+                    for r in conn.execute(
+                        "SELECT status,count(*) AS count FROM directories WHERE run_id=? GROUP BY status",
+                        (run_id,),
+                    )
+                }
+                result["current_paths"] = [
+                    r[0]
+                    for r in conn.execute(
+                        "SELECT path FROM directories WHERE run_id=? AND status='running' LIMIT 8",
+                        (run_id,),
+                    )
+                ]
             result["items"] = [
                 dict(r)
                 for r in conn.execute(
@@ -448,13 +709,26 @@ class VolumeStore:
                     (time.time(), run_id),
                 )
             elif action == "resume" and state in {"paused", "error"}:
+                scan = conn.execute(
+                    "SELECT kind,source_id FROM runs WHERE id=?", (run_id,)
+                ).fetchone()
+                if (
+                    scan["kind"] == "scan"
+                    and conn.execute(
+                        "SELECT 1 FROM runs WHERE kind='scan' AND source_id=? AND id>?",
+                        (scan["source_id"], run_id),
+                    ).fetchone()
+                ):
+                    raise ValueError(
+                        "A newer scan superseded this one; resume the latest scan or start a fresh scan"
+                    )
                 # Do not release an in-flight worker's lease. It will exit at its next boundary.
                 conn.execute(
                     "UPDATE runs SET status='queued',error=NULL,updated=? WHERE id=?",
                     (time.time(), run_id),
                 )
                 conn.execute(
-                    "UPDATE directories SET status='pending',error=NULL WHERE run_id=? AND status='error'",
+                    "UPDATE directories SET status='pending',error=NULL,attempts=0 WHERE run_id=? AND status='error'",
                     (run_id,),
                 )
                 conn.execute(
@@ -658,6 +932,7 @@ class VolumeStore:
                 conn.backup(target, pages=512)
         finally:
             target.close()
+        destination.chmod(0o600)
 
     def rebuild_search(self) -> None:
         with self.connect() as conn:

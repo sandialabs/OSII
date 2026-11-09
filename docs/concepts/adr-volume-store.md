@@ -1,6 +1,7 @@
 # ADR: Single-host canonical volume database
 
-Status: accepted 5 November 2026; integrated into normal OSII-local 8 November 2026.
+Status: accepted 5 November 2026; integrated into normal OSII-local 8 November 2026;
+Intake discovery and staging added 9 November 2026.
 
 ## Context
 
@@ -43,6 +44,27 @@ OCR, synthesis, and enrichment commit separately. An embedded FTS5 index is
 rebuildable from canonical text. Processor configurations are checked against
 descriptor JSON Schemas without remote reference retrieval.
 
+## Intake discovery and staging
+
+Version 2 adds saved traversal rules, per-entry metadata availability, directory
+attempts and checkpoints, source generations, frozen membership metadata, and
+links to normal sidecar results. An explicit backed-up migration preserves the
+canonical version-1 database. There is no automatic migration or replacement.
+
+The coordinator remains the only inventory writer. It supervises at most eight
+reader processes (default two), each with two bounded batches in flight. Reader
+progress deadlines and a circuit breaker limit retries; a hard kernel filesystem
+hang may still require mount recovery. Directory completion is the sole absence
+boundary, and denied entries do not discard readable siblings or imply deletion.
+
+Intake filters and freezes inventory evidence through local SQL. The bridge
+uses stable run/job IDs and existing durable sidecar jobs, so an API restart
+between the inventory, run, and queue commits is recoverable without another
+batch. Original I/O begins in the worker, which validates frozen identities and
+metadata before content reads and records per-file failures. Normal processor,
+sidecar, provenance, and Activity boundaries are reused. Inventory-only extraction
+experiments remain separate; they are not implicitly migrated into sidecars.
+
 ## Consequences
 
 The inventory needs no database service, corporate hosting, distributed queue, or
@@ -50,9 +72,9 @@ mandatory sidecars. It needs an explicit schema version, transactional backup,
 disk capacity for canonical text and artifacts, and a single owning host. WAL
 is unsuitable for a database file shared across hosts over SMB/NFS.
 
-The first implementation is one operator and one visibility group. Model-wide
-processing, vectors, cross-document research, per-user share ACLs, and distributed
-workers remain follow-up work. A future server implementation may reuse the
+The inventory serves one operator and one visibility group. Inventory-native
+vectors, cross-document research, per-user share ACLs, and distributed workers
+remain follow-up work; staged documents can use the existing sidecar tools. A future server implementation may reuse the
 source/revision/job concepts without making SQLite a PostgreSQL fallback.
 
 Operational details and recovery procedures are in
