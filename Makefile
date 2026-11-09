@@ -1,6 +1,7 @@
 # One supported workstation workflow: source services on the host.
 UV ?= uv
 OSII_PYTHON_VERSION ?= 3.12
+ENV_FILE ?= .env
 export UV_PROJECT_ENVIRONMENT := $(CURDIR)/osii-env
 unexport VIRTUAL_ENV
 .DEFAULT_GOAL := help
@@ -13,12 +14,13 @@ help:
 	@echo "make docs       Check documentation"
 	@echo "make doctor     Report disk usage without deleting anything"
 	@echo "Configure source paths and the model endpoint in .env (optional)."
+	@echo "Choose another private startup profile with ENV_FILE=.env.personal"
 
 dev:
-	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) python scripts/dev_stack.py
+	OSII_STARTUP_ENV="$(ENV_FILE)" $(UV) run --no-project --python $(OSII_PYTHON_VERSION) python scripts/dev_stack.py
 
 demo: demo-data
-	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) python scripts/dev_stack.py
+	OSII_STARTUP_ENV="$(ENV_FILE)" $(UV) run --no-project --python $(OSII_PYTHON_VERSION) python scripts/dev_stack.py
 
 demo-data:
 	$(UV) run --no-project --python $(OSII_PYTHON_VERSION) --with 'scikit-learn>=1.5,<2' python scripts/import_example_data.py

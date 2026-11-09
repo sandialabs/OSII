@@ -7,6 +7,7 @@ import CollectionsBookmarkOutlined from "@mui/icons-material/CollectionsBookmark
 import MoveToInboxOutlined from "@mui/icons-material/MoveToInboxOutlined";
 import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
 import ScatterPlotOutlined from "@mui/icons-material/ScatterPlotOutlined";
+import InsightsOutlined from "@mui/icons-material/InsightsOutlined";
 
 export type WorkbenchTool = {
   id: string;
@@ -28,6 +29,8 @@ export const workbenchTools: readonly WorkbenchTool[] = [
     Page: lazy(() => import("../features/admin/pages/ProcessorsPage").then(m => ({ default: m.ProcessorsPage }))) },
   { id: "files", path: "/", label: "Files", group: "documents", icon: HomeOutlined,
     Page: lazy(() => import("../features/home/pages/HomePage").then(m => ({ default: m.HomePage }))) },
+  { id: "library-overview", path: "/library-overview", label: "Library at a glance", group: "documents", icon: InsightsOutlined,
+    Page: lazy(() => import("../features/library/pages/LibraryOverviewPage").then(m => ({ default: m.LibraryOverviewPage }))) },
   { id: "browse", path: "/browse", label: "Browse", group: "documents", icon: FolderOutlined,
     Page: lazy(() => import("../features/browse/pages/BrowsePage").then(m => ({ default: m.BrowsePage }))) },
   { id: "search", path: "/search", label: "Search", group: "documents", icon: SearchOutlined,

@@ -276,3 +276,26 @@ def test_relative_configuration_override_is_checkout_relative(monkeypatch, tmp_p
     env = DEV_STACK.build_environment(core_only=True)
 
     assert env["OSII_CONFIG_DIR"] == str(checkout / "custom-config")
+
+
+def test_startup_profile_file_and_explicit_routing_survive_launcher(monkeypatch, tmp_path):
+    checkout = tmp_path / "checkout"
+    source = checkout / "source"
+    source.mkdir(parents=True)
+    profile = checkout / ".env.corporate"
+    profile.write_text(f'OSII_SOURCE_DIR={source}\nOSII_CHAT_BASE_URL=https://models.test/v1\nOSII_DEFAULT_EXTRACTOR=toolbox.tesseract-opencv\nCHAT_PROVIDER=openai\nCHAT_PROVIDER_CHAIN=openai,extractive\n')
+    monkeypatch.setattr(DEV_STACK, "REPOSITORY_ROOT", checkout)
+    monkeypatch.setenv("OSII_STARTUP_ENV", ".env.corporate")
+    monkeypatch.setenv("OSII_MODEL_BRIDGE_PORT", "18095")
+    monkeypatch.setenv("OSII_CONFIG_DIR", str(tmp_path / "config"))
+    for key in ("OSII_SOURCE_DIR", "OSII_DEFAULT_EXTRACTOR", "CHAT_PROVIDER", "CHAT_PROVIDER_CHAIN", "OSII_INVENTORY_DB", "OSII_VOLUME_DB", "OSII_ROOT", "OSII_RUNTIME_DIR"):
+        monkeypatch.delenv(key, raising=False)
+    env = DEV_STACK.build_environment(False)
+    assert env["SHARED_VOLUME_ROOT"] == str(source)
+    assert env["OSII_DEFAULT_EXTRACTOR"] == "toolbox.tesseract-opencv"
+    assert env["CHAT_PROVIDER_CHAIN"] == "openai,extractive"
+    assert env["OSII_DEFAULT_SYNTHESIZER"] == "openai.synthesizer"
+    assert "http://127.0.0.1:18095/openai/synthesizer" in env["OSII_PROCESSORS"]
+    assert "http://127.0.0.1:8095/openai/synthesizer" not in env["OSII_PROCESSORS"]
+    monkeypatch.setenv("OSII_DEFAULT_EXTRACTOR", "local.native-text")
+    assert DEV_STACK.build_environment(False)["OSII_DEFAULT_EXTRACTOR"] == "local.native-text"

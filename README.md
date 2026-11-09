@@ -48,6 +48,8 @@ OSII. For sample files, use
 configure optional model connections in **Setup**. The
 [Banyan Toolbox extractor](osii-toolbox/banyan-nemotron-parse/README.md) uses its
 own local Nemotron endpoint configuration. Keep credentials outside Git.
+Choose an Intake preset for each batch; the startup guide covers provider
+profiles and configurable processing defaults.
 
 See the [startup guide](docs/operations/runbook-development.md) for setup and
 troubleshooting, [architecture](docs/concepts/architecture.md) for the design,

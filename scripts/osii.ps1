@@ -6,6 +6,7 @@ param(
     [string]$SourceDir = "",
     [string]$RuntimeDir = "",
     [string]$PythonVersion = "3.12",
+    [string]$EnvFile = ".env",
     [switch]$DryRun
 )
 $ErrorActionPreference = "Stop"
@@ -14,7 +15,7 @@ if ($Command -eq "help") {
     Write-Host ".\scripts\osii.ps1 dev        Start OSII and all Toolbox services"
     Write-Host ".\scripts\osii.ps1 demo       Add sample data, then start OSII"
     Write-Host ".\scripts\osii.ps1 doctor     Report disk usage"
-    Write-Host "Optional: -SourceDir <folder> -RuntimeDir <folder> -DryRun"
+    Write-Host "Optional: -EnvFile <file> -SourceDir <folder> -RuntimeDir <folder> -DryRun"
     exit 0
 }
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
@@ -23,6 +24,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 Push-Location $RepositoryRoot
 try {
     $env:OSII_PYTHON_VERSION = $PythonVersion
+    $env:OSII_STARTUP_ENV = $EnvFile
     $env:UV_PROJECT_ENVIRONMENT = Join-Path $RepositoryRoot "osii-env"
     Remove-Item Env:VIRTUAL_ENV -ErrorAction SilentlyContinue
     if ($SourceDir) { $env:OSII_SOURCE_DIR = $SourceDir }

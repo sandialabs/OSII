@@ -4,6 +4,7 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -39,6 +40,7 @@ import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { apiJson } from "../../../api/client";
 import { FileSelectionList } from "../components/FileSelectionList";
 import { IntakeSections } from "../components/IntakeSections";
 import { ProcessingActivity } from "../components/ProcessingActivity";
@@ -146,6 +148,36 @@ export function QueuePage() {
   const [selectedSynthesizer, setSelectedSynthesizer] = useState("");
   const [selectedEnricher, setSelectedEnricher] = useState("");
   const [expertContext, setExpertContext] = useState("");
+  const [intakePreset, setIntakePreset] = useState("summary-search");
+  const defaultsApplied = useRef(false);
+  const intakeDefaults = useQuery({
+    queryKey: ["intake", "defaults"],
+    queryFn: () => apiJson<{
+      preset: string; synthesize: boolean; build_embeddings: boolean; enrich: boolean;
+      presets: { id: string; label: string; synthesize: boolean; build_embeddings: boolean; enrich: boolean }[];
+      include_subfolders: boolean; show_hidden: boolean; include_patterns: string; exclude_patterns: string;
+      chunk_size: number; chunk_overlap: number; synthesizer: string; enricher: string;
+    }>("/api/intake/defaults"),
+    staleTime: Infinity,
+  });
+  const applyIntakePreset = (id: string) => {
+    const preset = intakeDefaults.data?.presets.find(item => item.id === id);
+    if (!preset) return;
+    setIntakePreset(id);
+    setRunExtraction(true); setExtractMode("missing"); setExtractionPolicy("make_primary");
+    setSynthesize(preset.synthesize); setEmbed(preset.build_embeddings); setEnrich(preset.enrich);
+  };
+  useEffect(() => {
+    const defaults = intakeDefaults.data;
+    if (!defaults || defaultsApplied.current) return;
+    defaultsApplied.current = true;
+    if (requestedStep !== "index") applyIntakePreset(defaults.preset);
+    setIncludeSubfolders(defaults.include_subfolders); setShowHidden(defaults.show_hidden);
+    if (defaults.include_patterns) { setFilterPreset("custom"); setCustomIncludes(defaults.include_patterns); }
+    setExcludePatterns(defaults.exclude_patterns);
+    setChunkSize(defaults.chunk_size); setChunkOverlap(defaults.chunk_overlap);
+    setSelectedSynthesizer(defaults.synthesizer); setSelectedEnricher(defaults.enricher);
+  }, [intakeDefaults.data]);
   const [uploading, setUploading] = useState(false);
   const [starting, setStarting] = useState(false);
   const [rescanning, setRescanning] = useState(false);
@@ -516,8 +548,7 @@ export function QueuePage() {
     setSection(next);
     setNotice(null);
     if (next === "add") {
-      setRunExtraction(true); setExtractMode("missing"); setExtractionPolicy("make_primary");
-      setSynthesize(true); setEmbed(true); setEnrich(false);
+      applyIntakePreset(intakePreset);
     } else if (next === "process") {
       chooseLibraryGoal(libraryGoal);
     }
@@ -588,6 +619,7 @@ export function QueuePage() {
 
   const useTextOnlyIntake = () => {
     changeSection("add");
+    setIntakePreset("text");
     setRunExtraction(true); setSynthesize(false); setEmbed(false); setEnrich(false);
     setNotice({ severity: "info", text: "Text-only intake selected explicitly. Browsing and keyword search can work after extraction; semantic search and AI chat still need the remaining checkpoints." });
   };
@@ -610,6 +642,10 @@ export function QueuePage() {
       <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
         <IntakeSections value={section} onChange={changeSection} />
       </Box>
+
+                      {section === "add" && <TextField select size="small" label="Intake preset" value={intakePreset} disabled={!intakeDefaults.data} onChange={e => applyIntakePreset(e.target.value)} helperText="Choose a starting point, then adjust individual steps below.">
+                        {(intakeDefaults.data?.presets ?? [{ id: "summary-search", label: "Loading intake defaults…" }]).map(preset => <MenuItem key={preset.id} value={preset.id}>{preset.label}</MenuItem>)}
+                      </TextField>}
 
       {notice ? <Alert severity={notice.severity}>{notice.text}</Alert> : null}
 
@@ -1128,6 +1164,7 @@ export function QueuePage() {
                   <Stack spacing={1.5}>
                     <Stack spacing={0.25}>
                       <Typography fontWeight={700}>Processing steps</Typography>
+                      {intakeDefaults.isError && <Alert severity="error">Could not load intake defaults: {intakeDefaults.error.message}</Alert>}
                       <Typography variant="body2" color="text.secondary">
                         {section === "process"
                           ? "Only the selected steps run. Downstream work uses each document's current primary extraction."

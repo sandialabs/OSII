@@ -25,6 +25,15 @@ from osii.domain.catalog_db import rebuild_catalog
 router = APIRouter(prefix="/api", tags=["intake"])
 
 
+@router.get("/intake/defaults")
+def default_intake_settings():
+    from osii.domain.processing.defaults import intake_defaults
+    try:
+        return intake_defaults()
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 def _safe_upload_name(filename: str | None) -> str:
     name = Path(filename or "upload.bin").name
     safe = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip(".-")

@@ -134,7 +134,12 @@ def command_path(name: str) -> str:
 def build_environment(core_only: bool) -> dict[str, str]:
     env = os.environ.copy()
     env.pop("VIRTUAL_ENV", None)
-    for key, value in load_dotenv(REPOSITORY_ROOT / ".env").items():
+    startup_file = Path(env.get("OSII_STARTUP_ENV", ".env")).expanduser()
+    if not startup_file.is_absolute():
+        startup_file = REPOSITORY_ROOT / startup_file
+    if str(env.get("OSII_STARTUP_ENV", ".env")) != ".env" and not startup_file.is_file():
+        raise RuntimeError(f"Startup environment file does not exist: {startup_file}")
+    for key, value in load_dotenv(startup_file).items():
         env.setdefault(key, value)
 
     runtime_value = env.get("OSII_RUNTIME_DIR", "./osii-data")
@@ -267,7 +272,7 @@ def build_environment(core_only: bool) -> dict[str, str]:
             "OSII_MODEL_GATEWAY_PUBLIC_URL": f"http://127.0.0.1:{env.get('OSII_MODEL_BRIDGE_PORT', '8095')}/v1",
         }
     )
-    provider_profile = "openai" if env.get("OPENAI_BASE_URL", "").strip() else "ollama"
+    provider_profile = "openai" if any(env.get(key, "").strip() for key in ("OPENAI_BASE_URL", "OSII_MODEL_BASE_URL", "OSII_CHAT_BASE_URL", "OSII_EMBEDDING_BASE_URL")) else "ollama"
     if not core_only:
         ollama_embedding_model = env.get("OLLAMA_EMBEDDING_MODEL", "").strip() or "all-minilm"
         ollama_chat_model = env.get("OLLAMA_CHAT_MODEL", "").strip() or "llama3.2:1b"
@@ -282,8 +287,8 @@ def build_environment(core_only: bool) -> dict[str, str]:
             f"http://127.0.0.1:{env.get('OSII_LOCAL_SYNTHESIZER_PORT', '8093')}",
             f"http://127.0.0.1:{embeddings_port}",
             f"http://127.0.0.1:{env.get('OSII_LOCAL_ENRICHER_PORT', '8094')}",
-            "http://127.0.0.1:8095/ollama/embedder",
-            "http://127.0.0.1:8095/ollama/synthesizer",
+            f"http://127.0.0.1:{env.get('OSII_MODEL_BRIDGE_PORT', '8095')}/ollama/embedder",
+            f"http://127.0.0.1:{env.get('OSII_MODEL_BRIDGE_PORT', '8095')}/ollama/synthesizer",
         ]
         if shutil.which("tesseract") is not None:
             local_urls.insert(
@@ -293,8 +298,8 @@ def build_environment(core_only: bool) -> dict[str, str]:
         configured = [item for item in env.get("OSII_PROCESSORS", "").split(",") if item]
         if provider_profile == "openai":
             local_urls.extend([
-                "http://127.0.0.1:8095/openai/embedder",
-                "http://127.0.0.1:8095/openai/synthesizer",
+                f"http://127.0.0.1:{env.get('OSII_MODEL_BRIDGE_PORT', '8095')}/openai/embedder",
+                f"http://127.0.0.1:{env.get('OSII_MODEL_BRIDGE_PORT', '8095')}/openai/synthesizer",
             ])
         # Retain registrations when startup is disabled so Setup can start a
         # tool on demand without requiring a Core restart or URL registration.
@@ -302,19 +307,23 @@ def build_environment(core_only: bool) -> dict[str, str]:
                           for service in toolbox_services("uv", env))
         env.update({
             "OSII_PROCESSORS": ",".join(local_urls + configured),
-            "OSII_DEFAULT_EXTRACTOR": "local.native-text",
-            "OSII_DEFAULT_SYNTHESIZER": (
+            "OSII_DEFAULT_EXTRACTOR": env.get("OSII_DEFAULT_EXTRACTOR") or "local.native-text",
+            "OSII_DEFAULT_SYNTHESIZER": env.get("OSII_DEFAULT_SYNTHESIZER") or (
                 "openai.synthesizer" if provider_profile == "openai"
                 else "ollama.synthesizer"
             ),
-            "OSII_DEFAULT_EMBEDDER": "openai.embedder" if provider_profile == "openai" else "ollama.embedder",
-            "OSII_DEFAULT_ENRICHER": "local.stats-keywords",
-            "EMBEDDING_MODEL": ollama_embedding_model,
+            "OSII_DEFAULT_EMBEDDER": env.get("OSII_DEFAULT_EMBEDDER") or ("openai.embedder" if provider_profile == "openai" else "ollama.embedder"),
+            "OSII_DEFAULT_ENRICHER": env.get("OSII_DEFAULT_ENRICHER") or "local.stats-keywords",
+            "EMBEDDING_MODEL": env.get("EMBEDDING_MODEL") or ollama_embedding_model,
         })
         if provider_profile in {"baseline", "ollama"}:
-            env.update({"CHAT_PROVIDER": "ollama", "CHAT_PROVIDER_CHAIN": "ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "ollama.synthesizer,local.extractive-preview"})
+            env.setdefault("CHAT_PROVIDER", "ollama")
+            env.setdefault("CHAT_PROVIDER_CHAIN", "ollama,extractive")
+            env.setdefault("OSII_SYNTHESIZER_FALLBACKS", "ollama.synthesizer,local.extractive-preview")
         elif provider_profile == "openai":
-            env.update({"CHAT_PROVIDER": "openai", "CHAT_PROVIDER_CHAIN": "openai,ollama,extractive", "OSII_SYNTHESIZER_FALLBACKS": "openai.synthesizer,ollama.synthesizer,local.extractive-preview"})
+            env.setdefault("CHAT_PROVIDER", "openai")
+            env.setdefault("CHAT_PROVIDER_CHAIN", "openai,extractive")
+            env.setdefault("OSII_SYNTHESIZER_FALLBACKS", "openai.synthesizer,local.extractive-preview")
     return env
 
 
@@ -840,7 +849,7 @@ def run(
         npm = command_path("npm")
         env = build_environment(core_only)
         env.setdefault("OSII_MODEL_GATEWAY_SECRET", secrets.token_urlsafe(48))
-        provider_profile = "openai" if env.get("OPENAI_BASE_URL", "").strip() else "ollama"
+        provider_profile = "openai" if any(env.get(key, "").strip() for key in ("OPENAI_BASE_URL", "OSII_MODEL_BASE_URL", "OSII_CHAT_BASE_URL", "OSII_EMBEDDING_BASE_URL")) else "ollama"
         services = service_commands(uv, npm, env, core_only)
 
         supervisor: CapabilitySupervisor | None = None

@@ -289,3 +289,65 @@ adapter enforces scope and snapshot semantics before returning evidence; the
 strategy cannot authenticate an arbitrary developer-supplied callable. Supply
 `ChatDecider` or your own decision function to run model-backed experiments.
 Importing the contracts alone loads no store, web server, or Haystack framework.
+
+## Choose startup and intake defaults
+
+`.env.example` documents the complete host configuration. Copy it to an ignored
+`.env` once, or keep several private files and select one at startup:
+
+```bash
+make dev ENV_FILE=.env.personal
+```
+
+```powershell
+.\scripts\osii.ps1 dev -EnvFile .env.personal
+```
+
+The process environment wins over the selected file. Restart the launcher after
+changing environment settings. Paths are checkout-relative; values are literal,
+without shell variable interpolation. This selects a configuration file, not a
+user account. OSII-local has no login.
+
+Set `OSII_INTAKE_PRESET` to `text`, `search`, `summary-search`, or `full`.
+Intake displays the preset prominently and lets you switch for each batch, then
+adjust individual steps. These presets initialize the form, never start work.
+`text` needs no model; `search` adds semantic embeddings; `summary-search` adds
+summaries; `full` also enables the selected enrichment. Explicit API run payloads
+remain authoritative. Patterns, subfolders, hidden files, chunk sizes, and method
+overrides have documented `OSII_INTAKE_*` settings in the example file. The
+processor and model must be available before model-backed work can run.
+
+For an OpenRouter or corporate OpenAI-compatible provider, set its API base URL,
+exact chat and embedding model IDs, and credentials. Shared `OPENAI_BASE_URL`
+and `OPENAI_API_KEY` are the simplest arrangement. Independent
+`OSII_CHAT_BASE_URL` / `OSII_EMBEDDING_BASE_URL` use only their own capability's
+key or key file; they deliberately never inherit the shared key. Use only one credential source per capability; leave an inline key blank when
+using its key file. Use Setup's connection test before starting a paid intake.
+
+Model environment values seed **new** `models.toml` files. Existing saved
+selections are preserved. Use a separate `OSII_CONFIG_DIR` for each provider
+profile, or change existing selections in Setup. `OSII_RUNTIME_DIR` controls the
+library independently: switching provider configuration does not require moving
+or deleting your documents. Changing embedding models requires rebuilding the
+semantic index; vectors from different models must not be combined.
+
+Private environment templates such as `.env.example.openrouter` are ignored by
+Git and are not distributed with the repository. If you maintain one locally,
+launch it with `make dev ENV_FILE=.env.example.openrouter`. For corporate transfer,
+replace URLs, model IDs, credential locations, and source/runtime paths; keep
+runtime databases on local disk. Do not copy provider secrets into committed files.
+
+## Library overview and file metadata search
+
+**Library at a glance** is a left-menu tool with format, date, processing, and
+topic summaries. It is separate from the home **Files** grid. Use **Search metadata**
+in Files to open the drawer and combine filename/path words, file format, size,
+modification date, extracted-text availability, summaries, and enrichments.
+Filters apply to recorded metadata for the files in the local library; they do
+not read original contents or call a model. Missing size/date metadata is excluded
+only when that field is constrained. Modification-date filters include both
+boundary days in UTC. Clear filters to restore the complete Files grid.
+
+For names and sizes of source files that have not been ingested, use **File
+inventory** and its metadata scan. Content and semantic retrieval remain in
+**Search**.
