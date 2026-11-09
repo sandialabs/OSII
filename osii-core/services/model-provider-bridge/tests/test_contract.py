@@ -58,7 +58,7 @@ def test_ollama_embedding_and_synthesis_contract(monkeypatch):
     embedded = client.post("/ollama/embedder/v1/embed", json={"request_id": "r1", "inputs": [{"id": "a", "text": "hello"}]})
     assert embedded.status_code == 200
     assert embedded.json()["vectors"] == [{"id": "a", "vector": [0.0, 1.0], "dimensions": 2}]
-    synthesized = client.post("/ollama/synthesizer/v1/synthesize", json={"request_id": "r2", "scope": {"scope_type": "object", "scope_id": "a", "documents": [{"file_id": "a", "filename": "a.txt", "text": "hello"}]}})
+    synthesized = client.post("/ollama/synthesizer/v1/synthesize", json={"config":{"extract_metadata":False},"request_id": "r2", "scope": {"scope_type": "object", "scope_id": "a", "documents": [{"file_id": "a", "filename": "a.txt", "text": "hello"}]}})
     assert synthesized.status_code == 200
     assert synthesized.json()["metadata"]["provider"] == "ollama"
 
@@ -86,6 +86,7 @@ def test_synthesis_passes_wiki_guidance_and_output_limit_to_ollama(monkeypatch, 
             "config": {
                 "instructions": "Create a grounded wiki.",
                 "max_tokens": 1800,
+                "extract_metadata": False,
             },
         },
     )
@@ -140,6 +141,7 @@ def test_openai_chat_and_synthesis_use_openai_compatible_route(monkeypatch, tmp_
         "/openai/synthesizer/v1/synthesize",
         json={
             "request_id": "s1",
+            "config": {"extract_metadata": False},
             "scope": {
                 "scope_type": "object",
                 "scope_id": "doc-1",
@@ -391,7 +393,7 @@ def test_long_synthesis_windows_cover_all_text_and_resume_successful_calls():
     from osii.processors.text import chat_synthesizer_descriptor
     from osii.processors.synthesis import synthesize_bounded, synthesis_call_estimate
     text = 'START_MARKER ' + 'x' * 205550 + ' END_MARKER'
-    request = SynthesisRequest(request_id='bounded', scope={'scope_type':'object', 'scope_id':'doc',
+    request = SynthesisRequest(request_id='bounded', config={'extract_metadata':False}, scope={'scope_type':'object', 'scope_id':'doc',
         'documents':[{'file_id':'doc','filename':'OPAQUE.pdf','text':text}]})
     saved={}; calls=[]; failed=[False]
     def checkpoint(key, value=None):
@@ -407,7 +409,7 @@ def test_long_synthesis_windows_cover_all_text_and_resume_successful_calls():
         synthesize_bounded(request,chat_synthesizer_descriptor(),'test-model',complete,checkpoint=checkpoint)
     result=synthesize_bounded(request,chat_synthesizer_descriptor(),'test-model',complete,checkpoint=checkpoint)
     assert result.metadata['input_windows']==3
-    assert result.metadata['model_calls']==synthesis_call_estimate(len(text))==4
+    assert result.metadata['model_calls']==synthesis_call_estimate(len(text),extract_metadata=False)==4
     assert result.metadata['document_title']=='Gardening and Landscape Design'
     assert result.metadata['title_method']=='model_generated'
     assert sum('START_MARKER' in prompt for prompt in calls)==1

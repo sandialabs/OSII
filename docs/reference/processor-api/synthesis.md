@@ -323,24 +323,58 @@ Next: [enrichment](enrichment.md) for structured knowledge, or
 [embedding](embedding.md) for numerical text representations.
 
 
-## Suggested titles and long inputs
+## Suggested document metadata and long inputs
 
-The shared chat synthesizer requests a descriptive Markdown heading. Core stores
-that heading as `metadata.document_title` with `title_method=model_generated`;
-it is a derived suggestion, not a filename change. If no useful heading is
-returned, the first short source line may supply a `source_first_line` heuristic.
-Multi-document syntheses do not assign a title to any individual document.
-Topic Explorer prefers these titles when their synthesis still matches the
-primary extraction; filenames and paths remain visible.
+AI synthesis includes a separate bounded **Suggest title, author and date** step
+(`extract_metadata`, default true). Disable it in processor settings for summary-only
+runs. It adds one model call per document, included in the hosted preview estimate.
+The model reads the first 16,000 and last 8,000 characters plus up to 24,000 characters
+of the all-window synthesis. This intentionally favors title pages and colophons;
+it can miss details elsewhere. It does not inspect the whole library or images.
 
-The built-in chat synthesizer and model-provider bridge share
-`osii.processors.synthesis.synthesize_bounded`. Source text is divided into
-100,000-character windows by default, summarized, then reduced in groups of up
-to four. All source windows are included. `window_chars` and
-`max_input_windows` bound requests and cost; defaults allow 32 input windows.
-Smaller-context models may require smaller windows. Intermediate summaries are
-derived model output and can lose detail, so inspect the original evidence.
-Hosted Intake estimates call counts from current extracted text, and saves
-successful model calls privately in the run for retry. Estimates can change
-when re-extraction changes the text. External processors retain their own
-input limits; Core does not silently split arbitrary enrichment requests.
+`osii.processor_sdk.DocumentMetadata` is the shared, versioned interchange contract.
+The response carries it in `metadata.document_metadata`:
+
+```json
+{
+  "schema_version": 1,
+  "method": "text_llm",
+  "model": "selected-chat-model",
+  "title": {"value": "Kitchen Garden Guide", "qualifier": "Inferred from subject matter", "evidence": "Grow vegetables at home"},
+  "author": {"value": null, "qualifier": "No author identified", "evidence": null},
+  "date": {"value": "circa 1940s", "qualifier": "Approximate period; publication date unknown", "evidence": "wartime"}
+}
+```
+
+Values are suggestions, not authoritative bibliographic facts. All three fields
+accept null/blank values and qualitative qualifiers. Dates remain strings so
+approximate periods and ambiguous interpretations are not forced into fake ISO
+dates. Evidence is an optional exact quotation; Core removes a quotation that
+cannot be found in supplied text and marks it unverified in the qualifier.
+This checks quotation presence, not whether the inference is true. Invalid JSON
+fails the metadata step rather than silently fabricating a completed record.
+
+`osii.processors.document_metadata` owns text prompting and parsing;
+`osii.processors.synthesis` orchestrates summary windows and the metadata call.
+A future VLM synthesizer can return the same `DocumentMetadata` contract with an
+explicit vision method and model; no new Toolbox component kind is required.
+The caller remains responsible for source/extraction provenance. Core stores the
+record in the existing synthesis output (PostgreSQL in server; portable provenance
+in local). Local TOML omits null keys; the read adapter restores them as unknowns.
+A changed primary extraction makes suggestions stale. Originals and search text
+are never renamed or rewritten by inferred metadata.
+
+Topic Explorer prefers the suggested title, falls back to the filename when blank,
+and displays author/date qualifiers on hover and in the selected-document panel.
+Legacy synthesis headings and the model-free first-line heuristic remain supported
+and are not presented as newly extracted AI metadata. Re-run AI synthesis to add
+structured metadata to existing documents; viewing the map makes no model call.
+
+The shared bounded synthesizer uses 100,000-character source windows by default,
+then reduces intermediate summaries in groups of up to four. All source windows
+are included in the summary. `window_chars` and `max_input_windows` bound requests
+and cost; defaults allow 32 windows. Smaller-context models may need smaller
+windows. Intermediate summaries can lose detail; inspect original evidence.
+Hosted runs checkpoint successful summary and validated metadata calls privately
+for retry. External processors retain their own limits; Core does not silently
+split arbitrary enrichment requests. Model-free synthesis makes no metadata call.

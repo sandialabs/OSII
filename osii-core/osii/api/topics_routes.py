@@ -1,9 +1,11 @@
+from osii.processor_sdk import DocumentMetadata
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
-from osii.domain.services.topics import TopicIndexUnavailable, related_documents, topic_map
+from osii.domain.services.topics import TopicIndexUnavailable
+from osii.domain.services.topic_cache import related_documents, topic_map
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
 
@@ -50,6 +52,10 @@ class DocumentResponse(BaseModel):
     filename: str
     source_relpath: str
     chunk_count: int
+    media_type: str | None = None
+    document_title: str | None = None
+    title_method: str | None = None
+    document_metadata: DocumentMetadata | None = None
 
 
 class PointResponse(DocumentResponse):

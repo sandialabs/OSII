@@ -1,3 +1,4 @@
+import { SuggestedMetadata } from "../../files/components/SuggestedMetadata";
 import { useMemo, useState } from "react";
 import { Alert, Box, Button, Card, CardContent, Chip, LinearProgress, List, ListItemButton, ListItemText, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
@@ -23,7 +24,7 @@ export function TopicExplorerPage() {
   const related = useRelatedDocuments(scope, selectedId, map.data?.index.id);
   const data = map.data;
   const points = data?.points ?? [];
-  const visible = points.filter(p => p.source_relpath.toLocaleLowerCase().includes(filter.toLocaleLowerCase()));
+  const visible = points.filter(p => [p.source_relpath, p.filename, p.document_title || ""].some(value => value.toLocaleLowerCase().includes(filter.toLocaleLowerCase())));
   const relatedIds = new Set(related.data?.results.map(p => p.file_id));
   const selected = related.data?.document ?? points.find(p => p.file_id === selectedId);
   const select = (id: string) => { const next = new URLSearchParams(params); next.set("file_id", id); setParams(next); };
@@ -47,7 +48,7 @@ export function TopicExplorerPage() {
         {(folders.data?.scopes ?? []).map(f => <MenuItem key={f.folder_id} value={`folder:${f.folder_id}`}>Folder: {f.path || "/"}</MenuItem>)}
         {!knownScope && <MenuItem value={scopeValue}>Selected scope (unavailable)</MenuItem>}
       </TextField>
-      <TextField size="small" label="Filter mapped documents by name or path" value={filter} onChange={event => setFilter(event.target.value)} fullWidth />
+      <TextField size="small" label="Filter mapped documents by title, filename or path" value={filter} onChange={event => setFilter(event.target.value)} fullWidth />
     </Stack>
     {(collections.isError || folders.isError) && <Alert severity="warning">Some scopes could not be loaded. Refresh the page to retry.</Alert>}
     {map.isFetching && <LinearProgress aria-label="Loading embedding map" />}
@@ -78,6 +79,7 @@ export function TopicExplorerPage() {
           {selected && <Box><Typography fontWeight={700} sx={{ overflowWrap: "anywhere" }}>{selected.document_title || selected.filename}</Typography>
             <Typography variant="caption" color="text.secondary">{selected.chunk_count} indexed chunk{selected.chunk_count === 1 ? "" : "s"} · {selected.source_relpath}</Typography>
             <Box sx={{ mt: 1 }}><Button component={Link} to={buildFileRoute({ fileId: selected.file_id })} size="small">Open document</Button></Box></Box>}
+          <SuggestedMetadata metadata={selected?.document_metadata} />
           {related.isFetching && <LinearProgress aria-label="Finding related documents" />}
           {related.isError && <Alert severity="warning">{related.error.message}</Alert>}
           {related.data && !related.isError && <>

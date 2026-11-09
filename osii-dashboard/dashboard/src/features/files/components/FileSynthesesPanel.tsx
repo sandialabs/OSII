@@ -1,3 +1,4 @@
+import { SuggestedMetadata } from "./SuggestedMetadata";
 import { ProcessingOutputCard } from "../components/ProcessingOutputCard";
 // src/features/files/components/FileSynthesesPanel.tsx
 import { useState } from "react";
@@ -92,6 +93,7 @@ export function FileSynthesesPanel({ fileId }: FileSynthesesPanelProps) {
       {!synthesis.isLoading && !synthesis.isError && !synthesis.data ? <Alert severity="info">No synthesis data available.</Alert> : null}
       {synthesis.data ? (
         <>
+          <SuggestedMetadata metadata={synthesis.data.document_metadata} />
           <ProcessingOutputCard title="Current Synthesis" text={synthesis.data.current_text ?? "No current synthesis text is available."} />
 
           <Card>

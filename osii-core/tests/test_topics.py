@@ -156,3 +156,43 @@ def test_degenerate_projection_has_finite_coordinates():
         assert coordinates.shape == (len(vectors), 2)
         assert np.isfinite(coordinates).all()
         assert variance == 0
+
+
+def test_cached_map_skips_faiss_and_refreshes_synthesis_metadata(client, topic_index, monkeypatch):
+    from osii.domain.storage.objects import update_synthesis_provenance
+    first=client.post('/api/topics/map',json={}).json()
+    monkeypatch.setattr(topics.faiss,'read_index',lambda _:pytest.fail('Cached map must not reload the vector index'))
+    assert client.post('/api/topics/map',json={}).json()==first
+    update_synthesis_provenance(topic_index,'a',synthesizer_name='test',synthesizer_version='1',config={
+        'document_metadata':{'schema_version':1,'method':'text_llm',
+            'title':{'value':'Kitchen Garden Guide'},'author':{'qualifier':'Not identified'},'date':{'value':'circa 1940s'}}})
+    second=client.post('/api/topics/map',json={}).json()
+    assert second['points'][0]['document_title']=='Kitchen Garden Guide'
+    assert second['points'][0]['document_metadata']['author']['value'] is None
+    assert [(p['x'],p['y']) for p in second['points']]==[(p['x'],p['y']) for p in first['points']]
+    mark_artifacts_stale(topic_index,'a',syntheses=True)
+    assert client.post('/api/topics/map',json={}).json()['points'][0]['document_metadata'] is None
+
+
+def test_vector_and_scope_changes_invalidate_persisted_map(client, topic_index, monkeypatch):
+    original=topics.faiss.read_index
+    calls=[]
+    def spy(path):
+        calls.append(path);return original(path)
+    monkeypatch.setattr(topics.faiss,'read_index',spy)
+    client.post('/api/topics/map',json={});client.post('/api/topics/map',json={})
+    assert len(calls)==1
+    path=embeddings_mapping_path(topic_index)
+    path.write_text(path.read_text().replace('"file_id": "d"','"file_id": "deleted"'))
+    assert client.post('/api/topics/map',json={}).json()['indexed_count']==3
+    assert len(calls)==2
+    assert client.post('/api/topics/map',json={'scope':{'scope_type':'object','file_id':'a'}}).json()['shown_count']==1
+    assert len(calls)==3
+
+
+def test_corrupt_cached_geometry_is_rebuilt_without_touching_sources(client, topic_index):
+    client.post('/api/topics/map',json={})
+    cache=next((topic_index/'cache/topics').glob('*.json'))
+    cache.write_text('{"projection":"pca","points":[{"x":"not-a-number"}]}')
+    assert client.post('/api/topics/map',json={}).status_code==200
+    assert (topic_index/'objects/a/meta.toml').is_file()

@@ -19,7 +19,7 @@ from osii.domain.artifacts.text_representations import (
 from osii.domain.read.docs import get_doc_meta, get_doc_overview
 from osii.domain.read.manifest import list_manifest_records
 from osii.domain.read.segments import list_segments
-from osii.domain.read.synthesis import get_synth_text, get_synth_toml, list_syntheses
+from osii.domain.read.synthesis import get_synth_text, get_synth_toml, list_syntheses, get_suggested_metadata
 from osii.domain.scopes.collections import list_collections_for_file
 from osii.domain.keywords.manual import get_manual_keywords, write_manual_keywords
 from osii.domain.governance import get_governance, write_governance
@@ -276,6 +276,7 @@ async def get_object_syntheses(request: Request, file_id: str):
     return {
         "file_id": file_id,
         "current_text": get_synth_text(osii_root, file_id),
+        "document_metadata": get_suggested_metadata(osii_root, file_id).get("document_metadata"),
         "current_toml": get_synth_toml(osii_root, file_id),
         "syntheses": list_syntheses(osii_root, file_id),
     }

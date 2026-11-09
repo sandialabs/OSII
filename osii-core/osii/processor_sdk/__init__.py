@@ -1,5 +1,6 @@
 """Public Processor API contracts and helpers, included with OSII."""
 
+from .document_metadata import DocumentMetadata, MetadataSuggestion
 from .client import ProcessorClient, ProcessorClientError
 from .models import (
     Artifact,
@@ -43,6 +44,8 @@ __all__ = [
     "Artifact",
     "Capability",
     "DocumentInput",
+    "DocumentMetadata",
+    "MetadataSuggestion",
     "EmbeddingInput",
     "EmbeddingRequest",
     "EmbeddingResponse",
