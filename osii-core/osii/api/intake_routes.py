@@ -58,7 +58,7 @@ def resolve_requested_path(request: Request, raw: str | None) -> Path:
 
 
 @router.get("/intake/readiness")
-async def intake_readiness(request: Request):
+def intake_readiness(request: Request):
     osii_root = request.app.state.osii_root.resolve()
     payload = intake_capability_readiness(osii_root)
     payload["source"] = source_access_summary(
@@ -108,7 +108,7 @@ def rescan_sources(request: Request, payload: dict):
 
 
 @router.get("/browse")
-async def browse(
+def browse(
     request: Request,
     path: str | None = Query(default=None),
     include_patterns: str = Query(default=""),
@@ -210,7 +210,7 @@ async def browse(
 
 
 @router.post("/resolve")
-async def resolve_queue(request: Request, payload: dict):
+def resolve_queue(request: Request, payload: dict):
     shared_root = request.app.state.shared_volume_root.resolve()
     upload_root = request.app.state.upload_originals_root.resolve()
 
@@ -244,18 +244,24 @@ async def resolve_queue(request: Request, payload: dict):
                 }
             )
 
-    resolved_files, preview = expand_queue_to_files(
-        queue_items=queue_items,
-        include_subfolders=include_subfolders,
-        include_patterns=include_patterns,
-        exclude_patterns=exclude_patterns,
-        show_hidden=show_hidden,
-        max_files=max_files_int,
-        max_total_size=max_total_size,
-        shared_root=shared_root,
-        upload_root=upload_root,
-        excluded_paths=payload.get("excluded_paths", []),
-    )
+    try:
+        resolved_files, preview = expand_queue_to_files(
+            queue_items=queue_items,
+            include_subfolders=include_subfolders,
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+            show_hidden=show_hidden,
+            max_files=max_files_int,
+            max_total_size=max_total_size,
+            shared_root=shared_root,
+            upload_root=upload_root,
+            excluded_paths=payload.get("excluded_paths", []),
+        )
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail=(
+            f"Could not finish listing this folder ({type(exc).__name__}). "
+            "Check share access, choose a narrower folder, or use File inventory for resumable discovery."
+        )) from exc
     if getattr(request.app.state, "filesystem_mode", "local") == "mounted":
         for file in preview["available_files"]:
             resolve_requested_path(request, file["path"])
@@ -265,6 +271,7 @@ async def resolve_queue(request: Request, payload: dict):
         preview,
         resolved_files,
         request.app.state.osii_root,
+        data_volume_root=shared_root.parent,
         run_extraction=bool(payload.get("run_extraction", True)),
         extract_mode=str(payload.get("extract_mode") or "missing"),
         synthesize=bool(payload.get("synthesizer_name")),
@@ -272,12 +279,13 @@ async def resolve_queue(request: Request, payload: dict):
         enrich=bool(payload.get("enricher_name")),
     )
 
+    displays = {item["path"]: item["display"] for item in preview["available_files"]}
     return {
         "queue_items": queue_items,
         "resolved_files": [
             {
                 "path": str(p),
-                "display": display_rel(p, shared_root, upload_root),
+                "display": displays[str(p)],
             }
             for p in resolved_files
         ],

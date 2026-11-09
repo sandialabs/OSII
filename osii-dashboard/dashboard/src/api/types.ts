@@ -593,6 +593,8 @@ export type IntakePreview = {
   }>;
   stopped_reason?: string | null;
   processing_plan?: {
+    estimated?: boolean;
+    note?: string;
     matched_count: number;
     unique_document_count: number;
     extracted_count: number;

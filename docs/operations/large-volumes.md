@@ -1,5 +1,9 @@
 # File inventory and progressive processing
 
+For the proposed integration of resumable discovery and staging into normal
+Intake, including mixed permissions and bounded parallel traversal, see the
+[shared-drive Intake plan](../planning/shared-drive-intake.md).
+
 File inventory is included in normal OSII-local on one workstation or SSH-accessible
 node, using a
 canonical SQLite database on that machine's **local disk**. Originals stay in

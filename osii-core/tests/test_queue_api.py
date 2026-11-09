@@ -655,3 +655,62 @@ def test_intake_rejects_invalid_expert_context(
 
     assert response.status_code == 422
     assert response.json()["detail"] == "expert_context must be a string or null"
+
+
+def test_selection_preview_never_reads_source_contents(client, temp_data_root, temp_osii_root, monkeypatch):
+    from osii.domain.storage import ids
+    for name in ('one.pdf', 'two.pdf'):
+        (temp_data_root / name).write_bytes(b'not read during a metadata preview')
+    original_open = Path.open
+    def guarded_open(path, *args, **kwargs):
+        if path.is_relative_to(temp_data_root):
+            pytest.fail('Selection preview opened source contents')
+        return original_open(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'open', guarded_open)
+    monkeypatch.setattr(ids, 'compute_file_id', lambda *args: pytest.fail('Selection preview hashed content'))
+    response = client.post('/api/resolve', json={
+        'queue_paths': [str(temp_data_root)], 'synthesizer_name': 'openai.synthesizer',
+        'build_embeddings': True, 'enricher_name': 'local.stats-keywords',
+    })
+    assert response.status_code == 200
+    preview = response.json()['preview']
+    assert preview['matched_count'] == 2
+    assert preview['processing_plan']['estimated'] is True
+    assert preview['processing_plan']['unique_document_count'] == 2  # Dedupe waits for processing.
+    assert preview['processing_plan']['missing_extraction_count'] == 2
+    assert not list((temp_osii_root / 'objects').glob('sha256-*'))
+
+
+def test_slow_share_preview_does_not_block_api_health(test_app, temp_data_root, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    from fastapi.testclient import TestClient
+    from osii.api import intake_routes
+    (temp_data_root / 'one.txt').write_text('metadata only')
+    entered, release = threading.Event(), threading.Event()
+    original = intake_routes.expand_queue_to_files
+    def slow_share(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(intake_routes, 'expand_queue_to_files', slow_share)
+    with TestClient(test_app) as client, ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(client.post, '/api/resolve', json={'queue_paths': [str(temp_data_root)]})
+        try:
+            assert entered.wait(3)
+            assert client.get('/health').status_code == 200
+        finally:
+            release.set()
+        assert future.result(timeout=5).status_code == 200
+
+
+def test_preview_directory_failure_is_actionable(client, temp_data_root, monkeypatch):
+    from osii.api import intake_routes
+    def denied(*args, **kwargs):
+        raise PermissionError('private platform details')
+    monkeypatch.setattr(intake_routes, 'expand_queue_to_files', denied)
+    response = client.post('/api/resolve', json={'queue_paths': [str(temp_data_root)]})
+    assert response.status_code == 503
+    assert 'File inventory' in response.json()['detail']
+    assert 'PermissionError' in response.json()['detail']
+    assert 'private platform details' not in response.text

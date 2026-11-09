@@ -143,6 +143,17 @@ Use `make demo` (Windows: `.\\scripts\\osii.ps1 demo`) to install the small
 example corpus and start the same application. Demo setup requires download
 access; plain `make dev` does not download the demo corpus.
 
+## If file selection takes too long
+
+If Intake remains on **Updating file selection**, quick preview should only
+enumerate metadata, not hash PDF contents. The client stops waiting after 30
+seconds with Retry and File inventory options. Choose a narrower folder or use
+**File inventory** for resumable discovery. Processing counts in quick preview
+are estimates from saved catalog identities; content hashes and deduplication
+are verified only when processing begins. Network calls already in progress
+may outlive the browser timeout. See the [shared-drive workflow plan](../planning/shared-drive-intake.md)
+for the proposed background discovery/staging integration for very large shares.
+
 ## If startup fails
 
 - Confirm `uv --version`, `node --version`, and `npm --version` work.

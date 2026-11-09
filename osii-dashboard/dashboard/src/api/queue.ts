@@ -47,8 +47,22 @@ export async function createProcessingRun(payload: Record<string, unknown>): Pro
   return apiJson<ProcessingRun>("/api/runs", { method: "POST", json: payload });
 }
 
-export async function resolveIntake(payload: Record<string, unknown>): Promise<IntakeResolveResponse> {
-  return apiJson<IntakeResolveResponse>("/api/resolve", { method: "POST", json: payload });
+export async function resolveIntake(payload: Record<string, unknown>, signal?: AbortSignal): Promise<IntakeResolveResponse> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const abort = () => controller.abort();
+  if (signal?.aborted) abort();
+  signal?.addEventListener("abort", abort, { once: true });
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 30_000);
+  try {
+    return await apiJson<IntakeResolveResponse>("/api/resolve", { method: "POST", json: payload, signal: controller.signal });
+  } catch (error) {
+    if (timedOut) throw new Error("File selection took longer than 30 seconds. Retry, narrow the folder, or use File inventory for resumable metadata discovery.");
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", abort);
+  }
 }
 
 export async function getIntakeReadiness(): Promise<IntakeReadiness> {

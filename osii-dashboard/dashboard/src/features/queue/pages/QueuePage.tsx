@@ -278,14 +278,11 @@ export function QueuePage() {
       extractMode,
       synthesize,
       embed,
-      chunkingMethod,
-      chunkSize,
-      chunkOverlap,
       enrich,
       effectiveSynthesizer,
       selectedEnricher,
     ],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       resolveIntake({
         queue_paths: queuePaths,
         excluded_paths: excludedPaths,
@@ -306,8 +303,11 @@ export function QueuePage() {
             readiness.data?.defaults.enricher ||
             "local.stats-keywords"
           : null,
-      }),
+      }, signal),
     enabled: queuePaths.length > 0 && section !== "activity",
+    retry: false,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 
   const recentRuns = useMemo(
@@ -912,12 +912,14 @@ export function QueuePage() {
                 <LinearProgress />
               ) : null}
               {preview.isError ? (
-                <Alert severity="error">
+                <Alert severity="error" action={<Button color="inherit" onClick={() => void preview.refetch()}>Retry</Button>}>
                   {preview.error instanceof Error
                     ? preview.error.message
                     : "Could not list files for this folder."}
                 </Alert>
               ) : null}
+              <Typography variant="caption" color="text.secondary">Quick selection walks the chosen folder. For a large or partially accessible share, use resumable discovery instead.</Typography>
+              <Button sx={{ alignSelf: "flex-start" }} onClick={() => navigate("/inventory")}>Open File inventory · coarse scan</Button>
               <FileSelectionList files={availableFiles.slice(0, visibleFileCount).map(file => ({ path: file.path, display: documentLabel(file.path, file.display), size_bytes: "size_bytes" in file && typeof file.size_bytes === "number" ? file.size_bytes : null }))} excludedPaths={excludedPaths}
                 onToggle={path => setExcludedPaths(paths => paths.includes(path) ? paths.filter(item => item !== path) : [...paths, path])} />
               {availableFiles.length > visibleFileCount ? (
@@ -1439,13 +1441,14 @@ export function QueuePage() {
                     >
                       <Typography variant="body2">{step.label}</Typography>
                       <Typography variant="body2" fontWeight={600}>
-                        {step.eligible_count} queued
+                        {step.eligible_count} {preview.data?.preview.processing_plan?.estimated ? "planned" : "queued"}
                         {step.current_count
-                          ? ` · ${step.current_count} already current`
+                          ? ` · ${step.current_count} recorded in library`
                           : ""}
                       </Typography>
                     </Stack>
                   ))}
+                  {preview.data.preview.processing_plan.note && <Typography variant="caption" color="text.secondary">{preview.data.preview.processing_plan.note}</Typography>}
                   {preview.data.preview.processing_plan.blocked_count ? (
                     <Alert severity="warning">
                       {preview.data.preview.processing_plan.blocked_count}{" "}
