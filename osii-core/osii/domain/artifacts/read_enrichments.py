@@ -11,6 +11,7 @@ from osii.domain.storage.store import (
 )
 from osii.domain.artifacts.products import read_product, delete_product, validate_scope
 from osii.domain.scopes.scopes import normalize_scope_type
+from osii.domain.read.sidecar import SidecarLibraryReader
 
 
 def _list_enrichment_dir(path: Path, rel_prefix: str) -> list[dict]:
@@ -112,10 +113,13 @@ def _read_json_if_exists(path: Path):
 
 
 def get_object_enrichment_payload(osii_root: Path, file_id: str, filename: str) -> dict | None:
-    path = object_enrichments_dir(osii_root, file_id) / filename
-    data = read_product(path)["data"]
-    if data is None:
+    reader = SidecarLibraryReader(osii_root, product_reader=read_product)
+    # Existing HTTP responses retain their full-payload behavior; new callers
+    # get the reader's bounded default unless they opt out explicitly.
+    artifact = reader.get_artifact(file_id, f"enrichments/{filename}", max_bytes=None)
+    if artifact is None:
         return None
+    data = json.loads(artifact.data)
 
     return {
         "file_id": file_id,
@@ -150,7 +154,12 @@ def get_scope_enrichment_payload(osii_root: Path, scope: dict, filename: str) ->
     else:
         raise ValueError(f"Unsupported scope type: {scope_type}")
 
-    data = read_product(base_dir / filename)["data"]
+    if scope_type == "object":
+        artifact = SidecarLibraryReader(osii_root, product_reader=read_product).get_artifact(
+            scope_id, f"enrichments/{filename}", max_bytes=None)
+        data = json.loads(artifact.data) if artifact else None
+    else:
+        data = read_product(base_dir / filename)["data"]
     if data is None:
         return None
     return {

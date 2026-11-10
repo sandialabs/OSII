@@ -42,6 +42,8 @@ as a service. Core handles storing the results when invoked through its workflow
 ## Understand OSII
 
 - [Architecture and component boundaries](concepts/architecture.md)
+- [Shared document and artifact read interfaces](reference/library-reads.md)
+- [Storage boundaries and staged implementation plan](concepts/adr-storage-boundaries.md)
 - [Extraction architecture](concepts/extraction.md)
 - [Synthesis architecture](concepts/synthesis.md)
 - [OSII store structure](reference/osii-store.md)

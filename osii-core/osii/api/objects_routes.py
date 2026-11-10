@@ -16,10 +16,10 @@ from osii.domain.artifacts.object_summaries import get_object_summaries
 from osii.domain.artifacts.read_enrichments import list_scope_enrichments
 from osii.domain.artifacts.source_files import get_source_file_path
 from osii.domain.artifacts.text_representations import (
-    get_preferred_text_representation,
     list_text_representations,
 )
 from osii.domain.read.docs import get_doc_meta, get_doc_overview
+from osii.domain.read.sidecar import SidecarLibraryReader
 from osii.domain.read.manifest import list_manifest_records
 from osii.domain.read.segments import list_segments
 from osii.domain.read.synthesis import (
@@ -265,16 +265,17 @@ async def get_object_text_representations_route(request: Request, file_id: str):
 async def get_object_preferred_text(request: Request, file_id: str):
     osii_root = request.app.state.osii_root.resolve()
 
-    preferred = get_preferred_text_representation(osii_root, file_id)
+    reader = SidecarLibraryReader(osii_root)
+    preferred = reader.get_representation(file_id)
     if preferred is None:
         return {"error": "unknown file_id or text not found"}
 
     return {
         "file_id": file_id,
-        "representation": preferred["name"],
-        "kind": preferred["kind"],
-        "text": preferred["text"],
-        "path": preferred["path"],
+        "representation": "edited" if preferred.kind == "edited_text" else "canonical",
+        "kind": preferred.kind,
+        "text": preferred.text,
+        "path": reader.representation_path(file_id).relative_to(osii_root).as_posix(),
     }
 
 

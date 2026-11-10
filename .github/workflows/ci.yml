@@ -18,6 +18,15 @@ jobs:
       - uses: astral-sh/setup-uv@v10.1.0
       - name: Core and SDK
         run: uv run --frozen --python 3.12 --package osii --extra dev python -m pytest osii-core/tests osii-core/processor-sdk/tests -q
+      - name: Isolated PostgreSQL read-contract database
+        run: |
+          sudo systemctl start postgresql
+          sudo -u postgres psql -c "CREATE ROLE osii_read_test LOGIN PASSWORD 'osii-read-test-only';"
+          sudo -u postgres createdb -O osii_read_test osii_reads_test
+      - name: Shared sidecar and PostgreSQL read contracts
+        env:
+          OSII_READ_TEST_DATABASE_URL: postgresql+psycopg://osii_read_test:osii-read-test-only@localhost:5432/osii_reads_test
+        run: uv run --frozen --python 3.12 --package osii --extra postgres --extra dev python -m pytest --noconftest osii-core/tests/test_library_reads.py -q
       - name: Shared RAG strategies
         run: uv run --frozen --python 3.12 --package osii --extra rag-haystack --extra dev python -m pytest osii-core/rag-tests osii-core/tests/test_rag_experiments_api.py -q
       - name: MCP
