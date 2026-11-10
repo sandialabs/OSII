@@ -111,8 +111,9 @@ API tests additionally exercise the adapter against the migrated production
 schema. No models, processors, containers, or original documents are needed for
 the contract itself.
 
-The initial [processing commit boundary](processing-commits.md) now handles
-document results. Broader write adoption, durable job interfaces,
+The [processing commit boundary](processing-commits.md) now handles document
+results and folder/collection/root synthesis and enrichment products.
+Broader legacy write adoption, durable job interfaces,
 backend-neutral collection commands, complete authoring parity, and explicit
 library transfer remain later work. Replacing
 whole-corpus server retrieval snapshots is also separate from these read APIs.

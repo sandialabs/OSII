@@ -11,15 +11,17 @@ import json
 import uuid
 
 from osii.domain.storage.commits import (CommitConflict, CommitReceipt, JobCheckpoint,
-    ProcessingCommit, embedding_identity, extraction_material, text_digest)
-from osii.processor_sdk import EmbeddingResponse, ExtractionResponse
+    ProcessingCommit, ScopeProcessingCommit, ScopeInputRevision, InputRevision,
+    embedding_identity, extraction_material, text_digest)
+from osii.processor_sdk import EmbeddingResponse, ExtractionResponse, SynthesisResponse
 
 
 class PostgresProcessingCommitter:
-    def __init__(self, engine):
+    def __init__(self, engine, *, actor_id: str | None = None):
         if engine.dialect.name != "postgresql":
             raise ValueError("PostgresProcessingCommitter requires PostgreSQL")
         self.engine = engine
+        self.actor_id = actor_id
 
     @staticmethod
     def _sql(conn, query, **values):
@@ -34,20 +36,36 @@ class PostgresProcessingCommitter:
             raise CommitConflict("Worker no longer owns this processing run")
         return row["payload"]
 
-    def commit(self, command: ProcessingCommit, *, checkpoint: JobCheckpoint | None = None) -> CommitReceipt:
+    def commit(self, command: ProcessingCommit | ScopeProcessingCommit, *, checkpoint: JobCheckpoint | None = None) -> CommitReceipt:
         command.validate()
         if checkpoint and ((checkpoint.index is None) != (checkpoint.item is None)):
             raise ValueError("Checkpoint index and item must be supplied together")
         fingerprint = command.fingerprint()
         key = "processing_commit:" + command.commit_id
         with self.engine.begin() as conn:
-            self._sql(conn, "SELECT pg_advisory_xact_lock(hashtextextended(:key,0))", key="osii-processing:" + command.file_id)
+            scoped = isinstance(command, ScopeProcessingCommit)
+            if scoped:
+                # Membership predicates and full-text revisions must come from
+                # one coherent snapshot, including concurrent new documents.
+                self._sql(conn, "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+            lock = (f"scope:{command.scope.kind}:{command.scope.identifier}" if scoped else command.file_id)
+            self._sql(conn, "SELECT pg_advisory_xact_lock(hashtextextended(:key,0))", key="osii-processing:" + lock)
             job_payload = self._lease(conn, checkpoint) if checkpoint else None
+            if scoped:
+                actor = self.actor_id or (job_payload or {}).get("actor_id")
+                current = self._scope_current(conn, command.scope, actor, len(command.input_revision.member_ids) + 1)
             saved = self._sql(conn, "SELECT value FROM settings WHERE id=:key", key=key).scalar()
             if saved:
                 if saved["fingerprint"] != fingerprint:
                     raise CommitConflict("Operation ID was already used for a different result")
                 receipt = replace(CommitReceipt(**saved["receipt"]), replayed=True)
+            elif scoped:
+                command.input_revision.verify_current(current)
+                result = self._scope_products(conn, command, checkpoint, actor)
+                receipt = CommitReceipt(command.commit_id, None, command.kind, result,
+                    scope_type=command.scope.kind, scope_id=command.scope.identifier)
+                self._sql(conn, "INSERT INTO settings(id,value) VALUES (:key,CAST(:value AS jsonb))",
+                    key=key, value=json.dumps({"fingerprint": fingerprint, "receipt": asdict(receipt)}))
             else:
                 doc = self._sql(conn, "SELECT * FROM documents WHERE file_id=:id FOR UPDATE", id=command.file_id).mappings().first()
                 if command.input_revision:
@@ -75,6 +93,73 @@ class PostgresProcessingCommitter:
                 self._sql(conn, "UPDATE jobs SET payload=CAST(:body AS jsonb) WHERE id=:id",
                     id=checkpoint.job_id, body=json.dumps(job_payload))
         return receipt
+
+    def _scope_current(self, conn, scope, actor, limit):
+        where, values = "d.active", {"identity": scope.identifier, "actor": actor, "limit": limit}
+        if scope.kind == "object":
+            where += " AND d.file_id=:identity"
+        elif scope.kind == "folder" and scope.identifier.strip("/") not in {"", "."}:
+            prefix = scope.identifier.strip("/")
+            where += ' AND d.source_relpath COLLATE "C" >= :lower AND d.source_relpath COLLATE "C" < :upper'
+            values.update(lower=prefix + "/", upper=prefix + "0")
+        elif scope.kind == "collection":
+            collection = self._sql(conn, """SELECT members FROM collections WHERE id=:identity
+                AND (visibility='shared' OR owner_id=:actor) FOR SHARE""", **values).mappings().first()
+            if collection is None:
+                raise CommitConflict("Collection is unavailable to this processing context")
+            where += " AND d.file_id IN (SELECT jsonb_array_elements_text(CAST(:members AS jsonb)))"
+            values["members"] = json.dumps(collection["members"])
+        rows = self._sql(conn, f"""SELECT d.file_id,encode(sha256(convert_to(d.text,'UTF8')),'hex') AS text_sha256,
+            COALESCE(d.metadata->>'primary_extraction_id',
+            (SELECT e.id FROM extractions e WHERE e.file_id=d.file_id ORDER BY e.created_at DESC,e.id LIMIT 1),
+            'canonical') AS representation_id FROM documents d WHERE {where}
+            ORDER BY d.file_id COLLATE "C" LIMIT :limit FOR SHARE""", **values).mappings().all()
+        return ScopeInputRevision(tuple(row["file_id"] for row in rows), tuple(
+            InputRevision(row["file_id"], row["representation_id"], row["text_sha256"]) for row in rows))
+
+    def _scope_products(self, conn, command, checkpoint, actor):
+        """Use the existing hosted scope-product/revision tables and addresses."""
+        import hashlib
+        response = command.response
+        if isinstance(response, SynthesisResponse):
+            outputs = [{"id": "wiki", "family": "synthesis", "data": {
+                "artifact_type": "wiki_markdown",
+                "title": f"{command.provenance.get('scope_title') or command.scope.identifier} · {response.processor.display_name}",
+                "markdown": response.markdown,
+                "citations": [row.model_dump(mode="json") for row in response.citations]}}]
+        else:
+            outputs = [{"id": item.id, "family": "enrichment", "data": item.standard_data.model_dump(mode="json")}
+                       for item in response.artifacts]
+        provenance = {**command.provenance, "commit_id": command.commit_id,
+            "commit_fingerprint": command.fingerprint(), "processing_input": asdict(command.input_revision),
+            "processor": response.processor.model_dump(mode="json"), "config": command.request.config,
+            "expert_context": command.request.expert_context, "response_metadata": response.metadata,
+            "warnings": response.warnings}
+        results = []
+        for output in outputs:
+            name = "tool-" + hashlib.sha256(f"{response.processor.name}:{output['id']}".encode()).hexdigest()[:24] + ".json"
+            data = output["data"]
+            self._sql(conn, """INSERT INTO scope_products(id,scope_type,scope_id,filename,family,method,title,artifact_type)
+                VALUES (:id,:kind,:scope,:name,:family,:method,:title,:type)
+                ON CONFLICT ON CONSTRAINT scope_product_address DO NOTHING""",
+                id=str(uuid.uuid4()), kind=command.scope.kind, scope=command.scope.identifier, name=name,
+                family=output["family"], method=response.processor.name, title=data.get("title", output["id"]), type=data["artifact_type"])
+            product = self._sql(conn, """SELECT * FROM scope_products WHERE scope_type=:kind AND scope_id=:scope
+                AND filename=:name FOR UPDATE""", kind=command.scope.kind, scope=command.scope.identifier, name=name).mappings().one()
+            parent = (product["current_revision"] if command.product_parents is None
+                      else command.product_parents.get(name))
+            current_origin = self._sql(conn, "SELECT origin FROM scope_revisions WHERE id=:id", id=product["current_revision"]).scalar()
+            run = checkpoint.job_id if checkpoint else command.commit_id
+            revision = str(uuid.uuid5(uuid.NAMESPACE_URL, f"osii:scope-product:{run}:{output['id']}"))
+            self._sql(conn, """INSERT INTO scope_revisions(id,product_id,parent,origin,created_at,actor_id,data,provenance)
+                VALUES (:id,:product,:parent,'generated',:created,:actor,CAST(:data AS jsonb),CAST(:provenance AS jsonb))""",
+                id=revision, product=product["id"], parent=parent, created=datetime.now(UTC).isoformat(), actor=actor,
+                data=json.dumps(data), provenance=json.dumps(provenance))
+            if product["current_revision"] is None or (product["current_revision"] == parent and current_origin != "human"):
+                self._sql(conn, "UPDATE scope_products SET current_revision=:revision,title=:title,artifact_type=:type WHERE id=:id",
+                    revision=revision, title=data.get("title", product["title"]), type=data["artifact_type"], id=product["id"])
+            results.append({"filename": name, "revision_id": revision, "family": output["family"]})
+        return {"products": results, "scope_type": command.scope.kind, "scope_id": command.scope.identifier}
 
     def _extract(self, conn, command, previous):
         source, response = command.source, command.response

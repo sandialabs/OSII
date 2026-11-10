@@ -1,7 +1,7 @@
 """Validated Core processing commits; independent of storage and transport.
 
 These are Core contracts, not another processor protocol. Processors still return
-the existing SDK responses. One command commits one document's completed step.
+the existing SDK responses. Commands commit a document step or a scope product.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ import uuid
 
 from pydantic import BaseModel
 
-from osii.domain.read.contracts import LibraryReader
+from osii.domain.read.contracts import LibraryReader, ReadScope
 from osii.processor_sdk import (EmbeddingRequest, EmbeddingResponse, EnrichmentRequest,
     EnrichmentResponse, ExtractionRequest, ExtractionResponse, ProcessorDescriptor,
     ProvenanceRef, SynthesisRequest, SynthesisResponse)
@@ -53,6 +53,90 @@ class InputRevision:
     def verify(self, reader: LibraryReader) -> None:
         if self != self.capture(reader, self.file_id):
             raise CommitConflict("Preferred text changed; stage a new processing step")
+
+
+@dataclass(frozen=True)
+class ScopeInputRevision:
+    """Full membership and available preferred-text revisions, before processing.
+
+    Membership is resolved by the composition: local folders have logical IDs,
+    while hosted folders use source-relative paths. Processor requests may carry
+    only bounded excerpts; these fingerprints always describe the full input.
+    """
+
+    member_ids: tuple[str, ...]
+    inputs: tuple[InputRevision, ...]
+
+    @classmethod
+    def from_dict(cls, value: dict) -> ScopeInputRevision:
+        return cls(tuple(value["member_ids"]), tuple(InputRevision(**row) for row in value["inputs"]))
+
+    @classmethod
+    def capture(cls, reader: LibraryReader, member_ids) -> ScopeInputRevision:
+        members = tuple(sorted(set(member_ids)))
+        inputs = []
+        for file_id in members:
+            representation = reader.get_representation(file_id)
+            if representation is not None:
+                inputs.append(InputRevision(file_id, representation.representation_id,
+                                            text_digest(representation.text)))
+        return cls(members, tuple(inputs))
+
+    def verify(self, reader: LibraryReader, member_ids) -> None:
+        self.verify_current(self.capture(reader, member_ids))
+
+    def verify_current(self, current: ScopeInputRevision) -> None:
+        if self.member_ids != current.member_ids:
+            raise CommitConflict("Scope membership changed; stage a new processing step")
+        if self.inputs != current.inputs:
+            raise CommitConflict("Scope input text changed; stage a new processing step")
+
+
+def _validate_response(request, response, expected):
+    response = type(response).model_validate(response.model_dump(mode="json"))
+    if (response.request_id != request.request_id or
+        (response.processor.name, response.processor.version, response.processor.kind) !=
+        (expected.name, expected.version, expected.kind)):
+        raise ValueError("Processor response does not match the requested operation")
+    pairs = {ExtractionRequest: ExtractionResponse, SynthesisRequest: SynthesisResponse,
+             EnrichmentRequest: EnrichmentResponse, EmbeddingRequest: EmbeddingResponse}
+    kinds = {ExtractionResponse: "extractor", SynthesisResponse: "synthesizer",
+             EnrichmentResponse: "enricher", EmbeddingResponse: "embedder"}
+    if pairs.get(type(request)) is not type(response) or expected.kind.value != kinds[type(response)]:
+        raise ValueError("Request, response, and processor kinds must agree")
+    return response
+
+
+def _validate_scope_output(request, response):
+    documents = {doc.file_id: len(doc.text or "") for doc in request.scope.documents}
+    if None in documents or len(documents) != len(request.scope.documents):
+        raise ValueError("Scope inputs need unique document identifiers")
+
+    def check(value):
+        if isinstance(value, ProvenanceRef):
+            file_id = value.file_id
+            if file_id is None and len(documents) == 1:
+                file_id = next(iter(documents))
+            if file_id is not None and file_id not in documents:
+                raise ValueError("Citation escapes the committed scope")
+            if value.char_start is not None or value.char_end is not None:
+                if file_id is None:
+                    raise ValueError("A multi-document citation span needs a document ID")
+                if (value.char_start is not None and not 0 <= value.char_start <= documents[file_id] or
+                    value.char_end is not None and not 0 <= value.char_end <= documents[file_id] or
+                    value.char_start is not None and value.char_end is not None and value.char_start > value.char_end):
+                    raise ValueError("Citation span is outside the supplied text")
+        elif isinstance(value, BaseModel):
+            for name in type(value).model_fields:
+                check(getattr(value, name))
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                check(child)
+    check(response)
+    if isinstance(response, EnrichmentResponse):
+        for item in response.artifacts:
+            if any(char in item.kind + item.id for char in "/\\\0") or item.kind.startswith("."):
+                raise ValueError("Unsafe product name")
 
 
 @dataclass(frozen=True)
@@ -115,18 +199,7 @@ class ProcessingCommit:
             raise ValueError("A bounded operation_id is required")
         if not self.file_id or self.file_id in {".", ".."} or any(c in self.file_id for c in "/\\\0"):
             raise ValueError("Invalid document identifier")
-        response = type(self.response).model_validate(self.response.model_dump(mode="json"))
-        expected = self.expected_processor
-        if (response.request_id != self.request.request_id or
-            (response.processor.name, response.processor.version, response.processor.kind) !=
-            (expected.name, expected.version, expected.kind)):
-            raise ValueError("Processor response does not match the requested operation")
-        pairs = {ExtractionRequest: ExtractionResponse, SynthesisRequest: SynthesisResponse,
-                 EnrichmentRequest: EnrichmentResponse, EmbeddingRequest: EmbeddingResponse}
-        kinds = {ExtractionResponse: "extractor", SynthesisResponse: "synthesizer",
-                 EnrichmentResponse: "enricher", EmbeddingResponse: "embedder"}
-        if pairs.get(type(self.request)) is not type(response) or expected.kind.value != kinds[type(response)]:
-            raise ValueError("Request, response, and processor kinds must agree")
+        response = _validate_response(self.request, self.response, self.expected_processor)
         if isinstance(response, ExtractionResponse):
             if not self.source or self.source.file_id != self.file_id or self.request.document.file_id != self.file_id:
                 raise ValueError("Extraction needs explicit matching source identity")
@@ -148,24 +221,7 @@ class ProcessingCommit:
             scope = self.request.scope
             if scope.scope_type != "object" or scope.scope_id != self.file_id or {doc.file_id for doc in scope.documents} != {self.file_id}:
                 raise ValueError("This commit boundary accepts one explicit document scope")
-            length = len(scope.documents[0].text or "")
-            def check(value):
-                if isinstance(value, ProvenanceRef):
-                    if value.file_id not in {None, self.file_id}:
-                        raise ValueError("Citation escapes the committed scope")
-                    if value.char_start is not None and value.char_end is not None and not 0 <= value.char_start <= value.char_end <= length:
-                        raise ValueError("Citation span is outside the supplied text")
-                elif isinstance(value, BaseModel):
-                    for name in type(value).model_fields:
-                        check(getattr(value, name))
-                elif isinstance(value, (list, tuple)):
-                    for child in value:
-                        check(child)
-            check(response)
-        if isinstance(response, EnrichmentResponse):
-            for item in response.artifacts:
-                if any(char in item.kind + item.id for char in "/\\\0") or item.kind.startswith("."):
-                    raise ValueError("Unsafe product name")
+            _validate_scope_output(self.request, response)
         if isinstance(response, EmbeddingResponse):
             if self.request.config.get("model") not in {None, response.model}:
                 raise ValueError("Embedding model does not match the requested vector space")
@@ -189,6 +245,67 @@ class ProcessingCommit:
                     row["text"] != text[row["char_start"]:row["char_end"]]):
                     raise ValueError("Chunk does not match the committed extraction")
         self.fingerprint()  # Reject non-JSON/NaN metadata before any writes.
+
+
+@dataclass(frozen=True)
+class ScopeProcessingCommit:
+    """A synthesis/enrichment product over an explicitly frozen library scope.
+
+    Extraction and embedding still commit per document; they do not turn a
+    folder or collection into a synthetic document or mix vector spaces.
+    """
+
+    operation_id: str
+    scope: ReadScope
+    request: SynthesisRequest | EnrichmentRequest
+    response: SynthesisResponse | EnrichmentResponse
+    expected_processor: ProcessorDescriptor
+    input_revision: ScopeInputRevision
+    provenance: dict[str, Any] = field(default_factory=dict)
+    product_parents: dict[str, str | None] | None = None
+
+    @property
+    def kind(self) -> str:
+        return "synthesis" if isinstance(self.response, SynthesisResponse) else "enrichment"
+
+    @property
+    def commit_id(self) -> str:
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, json.dumps([
+            "osii-scope-commit-v1", self.scope.kind, self.scope.identifier, self.operation_id])))
+
+    def fingerprint(self) -> str:
+        from dataclasses import asdict
+        return digest({"scope": asdict(self.scope), "request": self.request.model_dump(mode="json",
+            exclude={"model_context", "request_id"}), "response": self.response.model_dump(mode="json",
+            exclude={"request_id"}), "processor": self.expected_processor.model_dump(mode="json"),
+            "input": asdict(self.input_revision), "provenance": self.provenance, "parents": self.product_parents})
+
+    def validate(self) -> None:
+        if not self.operation_id or len(self.operation_id) > 1000:
+            raise ValueError("A bounded operation_id is required")
+        if self.scope.kind not in {"root", "folder", "collection", "object"}:
+            raise ValueError("Unsupported processing scope")
+        if (len(self.scope.identifier) > 4096 or "\0" in self.scope.identifier or
+            self.scope.kind == "root" and self.scope.identifier != "root"):
+            raise ValueError("Invalid processing scope identifier")
+        if not isinstance(self.request, (SynthesisRequest, EnrichmentRequest)):
+            raise ValueError("Scope products support synthesis and enrichment only")
+        if (self.request.scope.scope_type, self.request.scope.scope_id) != (self.scope.kind, self.scope.identifier):
+            raise ValueError("Request does not match the committed scope")
+        response = _validate_response(self.request, self.response, self.expected_processor)
+        supported = self.expected_processor.capabilities.scope_types
+        if supported and self.scope.kind not in supported:
+            raise ValueError("Processor does not support the committed scope")
+        members = self.input_revision.member_ids
+        inputs = self.input_revision.inputs
+        if (members != tuple(sorted(set(members))) or
+            tuple(row.file_id for row in inputs) != tuple(sorted({row.file_id for row in inputs})) or
+            not {row.file_id for row in inputs}.issubset(members)):
+            raise ValueError("Scope input revisions must be unique, ordered members")
+        if not self.request.scope.documents or not {doc.file_id for doc in self.request.scope.documents}.issubset({row.file_id for row in inputs}):
+            raise ValueError("Scope request needs explicit frozen input revisions")
+        _validate_scope_output(self.request, response)
+        self.fingerprint()
 
 
 def extraction_material(command: ProcessingCommit) -> tuple[str, list[dict]]:
@@ -215,11 +332,13 @@ def embedding_identity(response: EmbeddingResponse) -> dict:
 @dataclass(frozen=True)
 class CommitReceipt:
     commit_id: str
-    file_id: str
+    file_id: str | None
     kind: str
     result: dict[str, Any]
     replayed: bool = False
+    scope_type: str = "object"
+    scope_id: str = ""
 
 
 class ProcessingCommitter(Protocol):
-    def commit(self, command: ProcessingCommit, *, checkpoint: JobCheckpoint | None = None) -> CommitReceipt: ...
+    def commit(self, command: ProcessingCommit | ScopeProcessingCommit, *, checkpoint: JobCheckpoint | None = None) -> CommitReceipt: ...
