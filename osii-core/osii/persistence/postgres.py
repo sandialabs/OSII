@@ -277,17 +277,53 @@ class PostgresStore:
             statement = upsert(settings).values(id=key, value=value)
             c.execute(statement.on_conflict_do_update(index_elements=[settings.c.id], set_={"value": value}))
 
-    def statistics(self) -> dict:
-        model = self.configuration().get("embedding_model", "")
+    def statistics(self, *, use_cache: bool = False) -> dict:
+        """Read-only derived counts; UI refreshes can reuse revision-bound counts."""
+        from sqlalchemy.dialects.postgresql import insert as upsert
+        with self.transaction() as c:
+            if use_cache:
+                # Coalesce simultaneous Setup/source requests across API processes.
+                c.execute(text("SELECT pg_advisory_xact_lock(hashtext('osii:readiness-statistics'))"))
+            model = (c.execute(select(settings.c.value).where(settings.c.id == "models")).scalar() or {}).get("embedding_model", "")
+            revision = c.execute(select(datasets.c.revision).where(datasets.c.id == "shared")).scalar() or 0
+            identity = ["readiness-v1", revision, model]
+            if use_cache:
+                cached = c.execute(select(settings.c.value).where(settings.c.id == "readiness_statistics")).scalar() or {}
+                if not isinstance(cached, dict):
+                    cached = {}
+                result = cached.get("result")
+                keys = {"documents", "text_documents", "indexed_documents", "chunks", "embedded_chunks"}
+                if (cached.get("identity") == identity and isinstance(result, dict)
+                    and result.keys() == keys and all(type(v) is int and v >= 0 for v in result.values())
+                    and max(result["text_documents"], result["indexed_documents"]) <= result["documents"]
+                    and result["embedded_chunks"] <= result["chunks"]):
+                    return result
+            result, revision = self._calculate_statistics(c, model)
+            if use_cache:
+                value = {"identity": ["readiness-v1", revision, model], "result": result}
+                statement = upsert(settings).values(id="readiness_statistics", value=value)
+                c.execute(statement.on_conflict_do_update(index_elements=[settings.c.id], set_={"value": value}))
+            return result
+
+    @staticmethod
+    def _calculate_statistics(c: Connection, model: str) -> tuple[dict, int]:
         nonempty = case((func.jsonb_typeof(chunks.c.embedding) == "array", func.jsonb_array_length(chunks.c.embedding) > 0), else_=False)
         compatible = func.coalesce((chunks.c.embedding_model == model) & nonempty, False)
-        coverage = select(chunks.c.file_id).group_by(chunks.c.file_id).having(func.bool_and(compatible)).subquery()
-        with self.engine.connect() as c:
-            return {"documents": c.execute(select(func.count()).select_from(documents).where(documents.c.active)).scalar(),
-                "text_documents": c.execute(select(func.count()).select_from(documents).where(documents.c.active, func.length(func.trim(documents.c.text)) > 0)).scalar(),
-                "indexed_documents": c.execute(select(func.count()).select_from(documents.join(coverage, documents.c.file_id == coverage.c.file_id)).where(documents.c.active)).scalar() if model else 0,
-                "chunks": c.execute(select(func.count()).select_from(chunks.join(documents)).where(documents.c.active)).scalar(),
-                "embedded_chunks": c.execute(select(func.count()).select_from(chunks.join(documents)).where(documents.c.active, func.jsonb_typeof(chunks.c.embedding) == "array")).scalar()}
+        coverage = select(chunks.c.file_id).select_from(chunks.join(documents)).where(documents.c.active).group_by(chunks.c.file_id).having(func.bool_and(compatible)).subquery()
+        metrics = {
+            "documents": select(func.count()).select_from(documents).where(documents.c.active),
+            "text_documents": select(func.count()).select_from(documents).where(documents.c.active, func.length(func.trim(documents.c.text)) > 0),
+            "indexed_documents": select(func.count()).select_from(documents.join(coverage, documents.c.file_id == coverage.c.file_id)).where(documents.c.active) if model else select(0),
+            "chunks": select(func.count()).select_from(chunks.join(documents)).where(documents.c.active),
+            "embedded_chunks": select(func.count()).select_from(chunks.join(documents)).where(documents.c.active, func.jsonb_typeof(chunks.c.embedding) == "array"),
+        }
+        # One SQL snapshot keeps counts and their cache revision consistent even
+        # when the worker commits a document while these aggregates run.
+        query = select(*(query.scalar_subquery().label(key) for key, query in metrics.items()),
+            func.coalesce(select(datasets.c.revision).where(datasets.c.id == "shared").scalar_subquery(), 0).label("revision"))
+        row = dict(c.execute(query).mappings().one())
+        revision = row.pop("revision")
+        return row, revision
 
 
     def save_collection(self, value: dict, previous: dict | None = None) -> bool:

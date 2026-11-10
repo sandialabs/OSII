@@ -547,7 +547,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
         except (ValueError, OSError):
             available, readable = False, False
         return {"mount_root": str(settings.source_root), **selection, "available": available,
-            "readable": readable, "statistics": store.statistics(), "models": store.configuration(),
+            "readable": readable, "statistics": store.statistics(use_cache=True), "models": store.configuration(),
             "extractor_url": settings.extractor_url, "ocr_configured": bool(settings.ocr_url)}
 
     @app.get("/api/admin/source/browse")

@@ -243,7 +243,10 @@ been extracted or embedded.
 Its numbered readiness panel distinguishes saved model selections from service
 verification: model sample tests run only on demand. Text and semantic coverage
 come from PostgreSQL counts; semantic coverage requires every chunk of a document
-to have a nonempty vector for the selected model. Opening Setup never calls a model.
+to have a nonempty vector for the selected model. Readiness counts are cached by
+dataset revision and selected embedding model. Intake and re-embedding invalidate
+them; simultaneous refreshes share one aggregation. Source availability is still
+checked live. The cache contains only derived counts and is rebuildable. Opening Setup never calls a model.
 Old `#source`, `#models` and `#processors` bookmarks still open the corresponding
 Setup section, with the same account checks.
 

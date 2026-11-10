@@ -206,7 +206,7 @@ def test_file_cards_report_saved_products_without_loading_corpus_payloads(client
 def test_setup_statistics_check_current_model_coverage_and_remain_admin_only(client, app, monkeypatch):
     from conftest import document, login, Provider
     from sqlalchemy import update, insert
-    from osii.persistence.postgres import chunks
+    from osii.persistence.postgres import chunks, datasets
     store = app.state.store
     store.save_configuration({'embedding_model':'test-embeddings'})
     first = document(store, app.state.settings.source_root, name='first.txt')
@@ -223,9 +223,58 @@ def test_setup_statistics_check_current_model_coverage_and_remain_admin_only(cli
     with store.transaction() as c:
         c.execute(insert(chunks).values(chunk_id='stale-extra',file_id=first['file_id'],text='old',char_start=0,char_end=3,source_origin={},embedding=[1,0],embedding_model='old-model'))
         c.execute(update(chunks).where(chunks.c.file_id==second['file_id']).values(embedding=[]))
+        c.execute(update(datasets).where(datasets.c.id=='shared').values(revision=datasets.c.revision+1))
     assert client.get('/api/admin/source').json()['statistics']['indexed_documents']==0
     with store.transaction() as c:
         c.execute(update(chunks).where(chunks.c.file_id==second['file_id']).values(embedding=None))
     assert store.statistics()['indexed_documents']==0
     store.save_configuration({'embedding_model':''})
     assert store.statistics()['indexed_documents']==0
+
+
+def test_readiness_cache_tracks_real_commits_and_selected_model(app, monkeypatch):
+    store = app.state.store
+    store.save_configuration({'embedding_model':'test-embeddings'})
+    first = document(store, app.state.settings.source_root)
+    calculate = store._calculate_statistics
+    calls = []
+    def spy(connection, model):
+        calls.append(model)
+        return calculate(connection, model)
+    monkeypatch.setattr(store, '_calculate_statistics', spy)
+    original = store.statistics(use_cache=True)
+    assert store.statistics(use_cache=True) == original and len(calls) == 1
+    # A new API process can reuse the same derived PostgreSQL record.
+    from osii.persistence.postgres import PostgresStore
+    fresh = PostgresStore(store.engine.url.render_as_string(hide_password=False))
+    monkeypatch.setattr(fresh, '_calculate_statistics', lambda *_: pytest.fail('A valid persisted cache must skip vector aggregates'))
+    try:
+        assert fresh.statistics(use_cache=True) == original
+    finally:
+        fresh.engine.dispose()
+    rows=store.document_chunks(first['file_id'])
+    store.replace_embeddings(first['file_id'], [{**row,'embedding':None} for row in rows], 'test-embeddings')
+    assert store.statistics(use_cache=True)['indexed_documents'] == 0 and len(calls) == 2
+    # Changing the selected model invalidates counts even without a new dataset revision.
+    store.save_configuration({'embedding_model':'different'})
+    assert store.statistics(use_cache=True)['indexed_documents'] == 0 and len(calls) == 3
+    store.save_setting('readiness_statistics', {'identity':store.setting('readiness_statistics', {})['identity'],'result':{'documents':'corrupt'}})
+    assert store.statistics(use_cache=True)['documents'] == 1 and len(calls) == 4
+    document(store, app.state.settings.source_root, name='new.txt',content='A new source document')
+    assert store.statistics(use_cache=True)['documents'] == 2 and len(calls) == 5
+
+
+def test_simultaneous_readiness_requests_share_one_calculation(app, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    store = app.state.store
+    document(store, app.state.settings.source_root)
+    calculate = store._calculate_statistics
+    calls = []
+    def spy(connection, model):
+        calls.append(model)
+        return calculate(connection, model)
+    monkeypatch.setattr(store, '_calculate_statistics', spy)
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        results = list(executor.map(lambda _: store.statistics(use_cache=True), range(3)))
+    assert results[0] == results[1] == results[2]
+    assert len(calls) == 1
