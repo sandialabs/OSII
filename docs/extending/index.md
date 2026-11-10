@@ -67,3 +67,12 @@ for integrating a domain service with the dashboard.
 Core has commit adapters for all four Processor API kinds. External processors
 remain bounded services: they receive explicit data, return a typed response,
 and never mount or write the OSII store.
+
+
+The shared inventory reader lives in `domain/processing/directory_scan.py` and
+reads directory entries/stat metadata only. Local `volume/scanner.py` retains
+SQLite persistence and processing coordination; hosted Core supplies PostgreSQL
+and worker adapters. The shared discovery and scope-tool widgets accept optional
+capability metadata rather than embedding hosted accounts or storage access.
+`configureApiClient` lets the hosted composition supply transport policy; local
+continues to use its account-free loopback API.

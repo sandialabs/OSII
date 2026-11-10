@@ -227,7 +227,7 @@ def test_disconnect_preserves_inventory_and_resume(library, monkeypatch):
     store, root, source = library
     (root / "a.txt").write_text("alpha")
     scan(store, source)
-    import osii.volume.scanner as scanner
+    import osii.domain.processing.directory_scan as scanner
 
     real_scandir = scanner.os.scandir
 

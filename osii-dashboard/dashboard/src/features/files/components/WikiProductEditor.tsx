@@ -41,9 +41,9 @@ function Editor({ scope, filename, history, draftKey }: { scope: ScopeDescribeRe
   return <Stack spacing={1.5}>
     <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
       <Tabs value={tab} onChange={(_, value: string) => value === "edit" ? startEdit() : (value === "history" && setCompare(history.revisions[history.revisions.length - 1]?.id ?? ""), setTab(value))} aria-label="Wiki views">
-        <Tab value="read" label="Read" /><Tab value="edit" label="Edit" /><Tab value="history" label={`History (${history.revisions.length})`} />
+        <Tab value="read" label="Read" /><Tab value="edit" label="Edit" disabled={history.permissions?.edit === false} /><Tab value="history" label={`History (${history.revisions.length})`} />
       </Tabs>
-      {tab !== "edit" ? <Button size="small" startIcon={<EditOutlined />} onClick={startEdit}>{draft ? "Resume draft" : "Edit"}</Button> : null}
+      {tab !== "edit" && history.permissions?.edit !== false ? <Button size="small" startIcon={<EditOutlined />} onClick={startEdit}>{draft ? "Resume draft" : "Edit"}</Button> : null}
     </Stack>
     {history.input_state === "stale" ? <Alert severity="warning">Source text or scope membership changed since this version was generated.</Alert> : null}
     {hasCandidates ? <Alert severity="info" action={<Button size="small" onClick={() => { setCompare(history.revisions[history.revisions.length - 1]?.id ?? ""); setTab("history"); }}>Review</Button>}>A generated version is ready for review.</Alert> : null}
@@ -68,7 +68,7 @@ function Editor({ scope, filename, history, draftKey }: { scope: ScopeDescribeRe
         <Stack flex={1} minWidth={0}><Typography fontWeight={700}>Current</Typography><EnrichmentArtifactView data={history.data} showTitle={false} /></Stack>
         <Stack flex={1} minWidth={0}><Typography fontWeight={700}>Selected revision</Typography>{candidate ? <EnrichmentArtifactView data={candidate.data} showTitle={false} /> : null}</Stack>
       </Stack>
-      {candidate && candidate.id !== history.current ? <Button variant="outlined" disabled={save.isPending} onClick={() => save.mutate({ revision: candidate.id })} sx={{ alignSelf: "flex-start" }}>Use this revision</Button> : null}
+      {candidate && candidate.id !== history.current && history.permissions?.edit !== false ? <Button variant="outlined" disabled={save.isPending} onClick={() => save.mutate({ revision: candidate.id })} sx={{ alignSelf: "flex-start" }}>Use this revision</Button> : null}
       {candidate?.provenance.inputs ? <Stack direction="row" spacing={1}>
         <Chip size="small" label={`${candidate.provenance.inputs.length} source documents`} />
         {candidate.provenance.inputs.some(item => item.truncated) ? <Chip size="small" label="Bounded excerpts" /> : null}

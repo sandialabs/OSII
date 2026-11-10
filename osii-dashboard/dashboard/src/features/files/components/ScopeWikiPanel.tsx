@@ -20,7 +20,7 @@ function WikiArtifactCard({ scope, entry }: {
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const remove = useMutation({
-    mutationFn: () => deleteScopeEnrichment({ scope, filename: entry.name }),
+    mutationFn: () => deleteScopeEnrichment({ scope, filename: entry.name, expected_revision: entry.current_revision }),
     onSuccess: async () => {
       setDeleteOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["enrichments"] });
@@ -38,7 +38,7 @@ function WikiArtifactCard({ scope, entry }: {
                 Wiki
               </Typography>
             </Stack>
-            <Button color="error" size="small" startIcon={<DeleteOutlineOutlinedIcon />} onClick={() => setDeleteOpen(true)} sx={{ alignSelf: "flex-start" }}>
+            <Button disabled={entry.can_edit === false} color="error" size="small" startIcon={<DeleteOutlineOutlinedIcon />} onClick={() => setDeleteOpen(true)} sx={{ alignSelf: "flex-start" }}>
               Delete
             </Button>
           </Stack>

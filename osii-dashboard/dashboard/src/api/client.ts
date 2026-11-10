@@ -11,10 +11,15 @@ export class ApiError extends Error {
   }
 }
 
+type ApiPolicy = { headers?: () => HeadersInit; unauthorized?: () => void };
+let policy: ApiPolicy = {};
+export function configureApiClient(value: ApiPolicy) { policy = value; }
+
 type JsonBody = Record<string, unknown> | Array<unknown> | null;
 
 function buildHeaders(init?: HeadersInit): Headers {
-  const headers = new Headers(init);
+  const headers = new Headers(policy.headers?.());
+  new Headers(init).forEach((value, key) => headers.set(key, value));
   headers.set("Accept", "application/json");
   return headers;
 }
@@ -48,6 +53,7 @@ export async function apiJson<TResponse>(
     body,
   });
 
+  if (response.status === 401) policy.unauthorized?.();
   const contentType = response.headers.get("Content-Type") ?? "";
   const isJson = contentType.includes("application/json");
 

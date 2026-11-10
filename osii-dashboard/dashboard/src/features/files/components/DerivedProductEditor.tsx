@@ -23,6 +23,7 @@ type Revision = {
   parent?: string;
 };
 type History = {
+  permissions?: { edit: boolean };
   library_id: string;
   current: string;
   data: unknown;
@@ -138,7 +139,7 @@ function Editor({
         aria-label="Product views"
       >
         <Tab value="read" label="Read" />
-        <Tab value="edit" label={draft ? "Resume draft" : "Edit"} />
+        <Tab value="edit" label={draft ? "Resume draft" : "Edit"} disabled={history.permissions?.edit === false} />
         <Tab value="history" label={`History (${history.revisions.length})`} />
       </Tabs>
       {generatedCandidate ? (
@@ -240,7 +241,7 @@ function Editor({
             <>
               <Typography fontWeight={700}>Selected revision</Typography>
               {render(candidate.data)}
-              {candidate.id !== history.current ? (
+              {candidate.id !== history.current && history.permissions?.edit !== false ? (
                 <Button
                   onClick={() =>
                     save.mutate({

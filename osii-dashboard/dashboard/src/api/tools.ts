@@ -12,6 +12,7 @@ export type ToolMethod = {
 };
 export type ToolCatalog = {
   library_id: string;
+  permissions?: { run: boolean; edit: boolean };
   methods: ToolMethod[];
   models: { id: string; label: string; capabilities: string[] }[];
   defaults: Record<string, string>;
@@ -24,7 +25,7 @@ export type ProductRevision = {
   grounding_needs_review?: boolean;
   provenance: { run_id?: string; inputs?: { file_id: string; truncated?: boolean }[]; [key: string]: unknown };
 };
-export type ProductHistory = { library_id: string; input_state?: string; current: string; data: ProductRevision["data"]; revisions: ProductRevision[] };
+export type ProductHistory = { permissions?: { edit: boolean }; library_id: string; input_state?: string; current: string; data: ProductRevision["data"]; revisions: ProductRevision[] };
 export const getProductHistory = (scope: ScopeDescribeRequest, filename: string) =>
   apiJson<ProductHistory>("/api/enrichments/revisions", { method: "POST", json: { scope, filename } });
 export const saveProduct = (scope: ScopeDescribeRequest, filename: string, expected_revision: string, change: { markdown: string } | { revision: string }) =>

@@ -63,7 +63,7 @@ def test_stat_failure_keeps_readable_siblings_unknown_size_and_no_false_absence(
     store.new_scan(sid, ScanOptions(readers=1, isolate=False, show_hidden=True))
     assert work(store)["status"] == "done"
     (root / "old.txt").unlink()
-    from osii.volume import scanner
+    import osii.domain.processing.directory_scan as scanner
 
     original = scanner.os.scandir
 

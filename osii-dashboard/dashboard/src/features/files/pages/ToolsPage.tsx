@@ -28,7 +28,7 @@ export function ToolsPage() {
     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
       <Button component={Link} to="/topics" variant="outlined">Topic explorer ↗</Button>
       <Button component={Link} to="/library-overview" variant="outlined">Library at a glance ↗</Button>
-      <Button component={Link} to="/admin/processors">＋ Connect a tool</Button>
+      <Button component={Link} disabled={catalog.data?.permissions?.run === false} to="/admin/processors">＋ Connect a tool</Button>
     </Stack>
     {catalog.isError ? <Alert severity="error">Tools could not be loaded.</Alert> : null}
     <TextField select size="small" label="Operation" value={action} onChange={event => setAction(event.target.value)} sx={{ maxWidth: 340 }}>

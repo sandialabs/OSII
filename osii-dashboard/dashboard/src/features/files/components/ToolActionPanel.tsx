@@ -31,6 +31,7 @@ export function ToolActionPanel({ scope, action, title }: { scope: ScopeDescribe
     if (run.data && ["done", "error", "cancelled"].includes(run.data.status)) {
       void client.invalidateQueries({ queryKey: ["enrichments"] });
       void client.invalidateQueries({ queryKey: ["product-history"] });
+      void client.invalidateQueries({ queryKey: ["products"] });
     }
   }, [run.data?.status, client]);
   const control = useMutation({ mutationFn: (command: "pause" | "resume" | "cancel" | "retry") => controlProcessingRun(runId, command), onSuccess: () => { void run.refetch(); } });
@@ -61,10 +62,11 @@ export function ToolActionPanel({ scope, action, title }: { scope: ScopeDescribe
         {configuredModel?.id !== libraryModel?.id ? <MenuItem value="__library__">Library default — {libraryModel?.label ?? "Choose in Setup"}</MenuItem> : null}
         {chatModels.map(item => <MenuItem value={item.id} key={item.id}>{item.label}</MenuItem>)}
       </TextField> : null}
-      <Button variant="contained" startIcon={<PlayArrowOutlined />} disabled={active || Boolean(method.configuration_error && model === "__configured__") || Boolean(method.model_requirements.chat === "required" && !chatModels.length)} onClick={() => { void generate().catch(() => {}); }}>
+      <Button variant="contained" startIcon={<PlayArrowOutlined />} disabled={catalog.data?.permissions?.run === false || active || Boolean(method.configuration_error && model === "__configured__") || Boolean(method.model_requirements.chat === "required" && !chatModels.length)} onClick={() => { void generate().catch(() => {}); }}>
         {active ? "Working…" : action === "wiki.write" ? "Generate wiki" : "Run"}
       </Button>
     </Stack>
+    {catalog.data?.permissions?.run === false ? <Typography variant="caption">An administrator can run shared processing tools.</Typography> : null}
     {method.configuration_error && model === "__configured__" ? <Alert severity="warning">{method.configuration_error} Choose a model above or <Link to="/admin/processors">open Setup</Link>.</Alert> : null}
     {Object.keys(method.config_schema.properties ?? {}).filter(name => name !== "title").length ? <Accordion disableGutters elevation={0}>
       <AccordionSummary expandIcon={<ExpandMoreOutlined />}><Typography variant="body2">Options</Typography></AccordionSummary>
@@ -74,9 +76,10 @@ export function ToolActionPanel({ scope, action, title }: { scope: ScopeDescribe
     {runId ? <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
       <Chip size="small" icon={active ? <CircularProgress size={12} /> : undefined} label={run.data?.status === "done" ? "Saved" : run.data?.status ?? "Queued"} color={run.data?.status === "error" ? "error" : run.data?.status === "done" ? "success" : "default"} />
       <Button component={Link} to="/intake?tab=activity" size="small">Activity ↗</Button>
-      {run.data?.status === "error" ? <Button size="small" disabled={control.isPending} onClick={() => control.mutate("retry")}>Retry</Button> : null}
-      {run.data?.status === "paused" ? <Button size="small" onClick={() => control.mutate("resume")}>Resume</Button> : null}
-      {active ? <Button size="small" disabled={control.isPending} onClick={() => control.mutate("cancel")}>Cancel</Button> : null}
+      {run.data?.status === "running" || run.data?.status === "queued" ? <Button size="small" disabled={catalog.data?.permissions?.run === false || control.isPending} onClick={() => control.mutate("pause")}>Pause</Button> : null}
+      {run.data?.status === "error" ? <Button size="small" disabled={catalog.data?.permissions?.run === false || control.isPending} onClick={() => control.mutate("retry")}>Retry</Button> : null}
+      {run.data?.status === "paused" ? <Button size="small" disabled={catalog.data?.permissions?.run === false} onClick={() => control.mutate("resume")}>Resume</Button> : null}
+      {active ? <Button size="small" disabled={catalog.data?.permissions?.run === false || control.isPending} onClick={() => control.mutate("cancel")}>Cancel</Button> : null}
     </Stack> : null}
     {active ? <Typography variant="caption" color="text.secondary">You can leave this page. Your last saved result stays available.</Typography> : null}
     {run.data?.status === "error" ? <Alert severity="error">{run.data.error || "The tool failed. Its inputs are saved for retry."}</Alert> : null}

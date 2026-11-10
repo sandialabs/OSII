@@ -32,7 +32,7 @@ export type Scan = {
   current_paths?: string[];
 };
 export const isActiveScan = (run: Scan) =>
-  ["queued", "running"].includes(run.status);
+  ["queued", "running", "pausing", "cancelling"].includes(run.status);
 export function useDiscoveryRuns() {
   return useQuery({
     queryKey: ["discovery", "runs"],
@@ -138,7 +138,7 @@ export function ScanCard({
           <LinearProgress aria-label="Scan in progress; total unknown" />
         )}
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-          {isActiveScan(run) && (
+          {["queued", "running"].includes(run.status) && (
             <Button disabled={busy} onClick={() => void control("pause")}>
               Pause
             </Button>

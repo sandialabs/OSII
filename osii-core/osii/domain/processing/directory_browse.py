@@ -12,7 +12,8 @@ from pathlib import Path
 import time
 import uuid
 
-from .source_access import resolve_intake_path
+from contextlib import ExitStack
+from .directory_scan import checked_path, open_directory
 
 
 def _reader(
@@ -25,10 +26,19 @@ def _reader(
     hidden: bool,
 ) -> None:
     try:
-        current = resolve_intake_path(
-            raw, Path(source), Path(uploads), filesystem_mode=mode, host_root=host
-        )
-        with os.scandir(current) as iterator:
+        with ExitStack() as stack:
+            if mode == "mounted_strict":
+                root = Path(source)
+                path = Path(raw) if raw else root
+                relative = path.relative_to(root).as_posix() if path.is_absolute() else path.as_posix()
+                relative = "" if relative == "." else relative
+                current = checked_path(root, relative)
+                target, _ = stack.enter_context(open_directory(root, relative))
+            else:
+                from .source_access import resolve_intake_path
+                current = resolve_intake_path(raw, Path(source), Path(uploads), filesystem_mode=mode, host_root=host)
+                target = current
+            iterator = stack.enter_context(os.scandir(target))
             while connection.poll(45):
                 limit = connection.recv()
                 entries = []
@@ -41,7 +51,7 @@ def _reader(
                         break
                     if not hidden and child.name.startswith("."):
                         continue
-                    item = {"name": child.name, "path": child.path, "size_bytes": None}
+                    item = {"name": child.name, "path": str(current / child.name), "size_bytes": None}
                     try:
                         item["type"] = (
                             "link"
@@ -62,7 +72,7 @@ def _reader(
                         item.update(type="unavailable", error=str(exc))
                     entries.append(item)
                 parent = str(current.parent) if current.parent != current else None
-                if mode == "mounted" and current in (Path(source), Path(uploads)):
+                if mode in {"mounted", "mounted_strict"} and current in (Path(source), Path(uploads)):
                     parent = None
                 connection.send(
                     {

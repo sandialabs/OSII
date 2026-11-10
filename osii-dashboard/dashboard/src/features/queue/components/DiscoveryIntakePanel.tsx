@@ -65,7 +65,11 @@ export function DiscoveryIntakePanel({
   onSelect,
   directFiles,
   onFiles,
+  allowUploads = true,
+  boundaryPath,
 }: {
+  allowUploads?: boolean;
+  boundaryPath?: string;
   selectedId: number | null;
   onSelect: (id: number | null) => void;
   directFiles: PickedFile[];
@@ -461,7 +465,7 @@ export function DiscoveryIntakePanel({
           >
             Add location
           </Button>
-          <Button
+          {allowUploads && <Button
             component="label"
             startIcon={<UploadFileOutlinedIcon />}
             disabled={busy}
@@ -469,7 +473,7 @@ export function DiscoveryIntakePanel({
           >
             Upload files
             <input hidden type="file" multiple onChange={upload} />
-          </Button>
+          </Button>}
         </Stack>
         <Divider />
         <Typography variant="h6" component="h2" fontWeight={750}>
@@ -1015,7 +1019,8 @@ export function DiscoveryIntakePanel({
         <LocationBrowser
           open={folderBrowser}
           foldersOnly
-          initialPath={root || undefined}
+          initialPath={root || boundaryPath}
+          boundaryPath={boundaryPath}
           onClose={() => setFolderBrowser(false)}
           onFolder={(path) => {
             setRoot(path);

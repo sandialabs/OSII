@@ -117,6 +117,7 @@ export type ScopeSummariesResponse = {
 };
 
 export type ScopeOverview = {
+  permissions?: { run: boolean };
   scope: ScopeDescribeRequest;
   file_count: number;
   size_known_count: number;
@@ -234,6 +235,8 @@ export type EnrichmentBundleFileEntry = {
 };
 
 export type EnrichmentListEntryFile = {
+  can_edit?: boolean;
+  current_revision?: string;
   name: string;
   kind: "file";
   relpath: string;
