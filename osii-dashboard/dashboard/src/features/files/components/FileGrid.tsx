@@ -1,6 +1,8 @@
 // src/features/files/components/FileGrid.tsx
 import {
   Alert,
+  Box,
+  Checkbox,
   Button,
   CircularProgress,
   Grid,
@@ -89,6 +91,8 @@ type FileGridProps = {
   error?: unknown;
   emptyMessage?: string;
   onOpen: (fileId: string) => void;
+  selectedIds?: ReadonlySet<string>;
+  onToggle?: (fileId: string) => void;
 };
 
 export function FileGrid({
@@ -100,6 +104,8 @@ export function FileGrid({
   error,
   emptyMessage = "No files found.",
   onOpen,
+  selectedIds,
+  onToggle,
 }: FileGridProps) {
   const [visibleCount, setVisibleCount] = useState(FILES_PER_PAGE);
   const [query, setQuery] = useState("");
@@ -211,7 +217,11 @@ export function FileGrid({
           <Grid container spacing={1.5}>
             {visibleFiles.map((file) => (
               <Grid item xs={12} sm={6} md={4} lg={3} xl={2} key={file.fileId}>
-                <FileCard file={file} onOpen={onOpen} />
+                <Box sx={{ position: "relative" }}>
+                  {onToggle && <Checkbox checked={selectedIds?.has(file.fileId) ?? false} onChange={() => onToggle(file.fileId)}
+                    inputProps={{ "aria-label": `Select ${file.title}` }} sx={{ position: "absolute", top: 4, left: 4, zIndex: 1, bgcolor: "background.paper", borderRadius: 1 }} />}
+                  <FileCard file={file} onOpen={onOpen} />
+                </Box>
               </Grid>
             ))}
           </Grid>

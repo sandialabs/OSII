@@ -1,15 +1,15 @@
 import { Alert, Button, Checkbox, Drawer, FormControlLabel, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { emptyFileFilters, type FileFilters } from "../../../domain/fileFilters";
 
-export function MetadataSearchDrawer({ open, onClose, filters, onChange, formats, count, error }: {
+export function MetadataSearchDrawer({ open, onClose, filters, onChange, formats, count, error, helperText }: {
   open: boolean; onClose: () => void; filters: FileFilters; onChange: (filters: FileFilters) => void;
-  formats: string[]; count: number; error: string;
+  formats: string[]; count: number; error: string; helperText?: string;
 }) {
   const field = (key: keyof FileFilters, value: string | boolean) => onChange({ ...filters, [key]: value });
   return <Drawer anchor="right" open={open} onClose={onClose} PaperProps={{ sx: { width: { xs: "100%", sm: 380 }, p: 3 } }}>
     <Stack spacing={2} role="search" aria-label="File metadata search">
       <Stack direction="row" justifyContent="space-between"><Typography variant="h6">Search file metadata</Typography><Button onClick={onClose}>Close</Button></Stack>
-      <Typography variant="body2" color="text.secondary">Search recorded filenames, paths, formats, sizes, dates, and processing status. No model is used. Dates are UTC.</Typography>
+      <Typography variant="body2" color="text.secondary">{helperText || "Search recorded filenames, paths, formats, sizes, dates, and processing status. No model is used. Dates are UTC."}</Typography>
       <TextField label="Filename or path" value={filters.query} onChange={e => field("query", e.target.value)} />
       <TextField select label="File format" value={filters.format} onChange={e => field("format", e.target.value)}>
         <MenuItem value="">All formats</MenuItem>{formats.map(format => <MenuItem key={format} value={format}>{format}</MenuItem>)}
