@@ -1,16 +1,16 @@
 # OSII Local and OSII Server: Expanded Functional Scope
 
-Date: 4 November 2026
+Date: 9 November 2026
 
 Status: Technical scope specification for the expanded software
 
 ## 1. Purpose and baseline
 
 OSII—the On-Store Intelligence Index—has expanded from a file-based information
-architecture into software for preparing, exploring, searching, and using a
-document library. This specification describes the additional application,
-processing, integration, and hosted-service functionality in **OSII Local** and
-**OSII Server**.
+architecture into a modular software system for inventorying, preparing,
+exploring, searching, interpreting, and using documents and datasets. This
+specification describes the additional application, processing, integration,
+and hosted-service functionality in **OSII Local** and **OSII Server**.
 
 For this specification, the original scope is assumed to encompass the OSII
 file-based architecture: stable source identities; original-file references;
@@ -20,31 +20,38 @@ source evidence from derived information. Existing concepts for summaries,
 enrichments, embeddings, and rebuildable indexes are treated as architectural
 foundations, rather than asserted to be new additions in themselves.
 
-The expansion is the executable functionality built around those foundations:
-interactive applications, processing workflows, replaceable services, grounded
-question answering, agent-assisted knowledge maintenance, and a hosted,
-authenticated database-backed application. This is a functional comparison,
-not a reconstruction of the wording or boundaries of an earlier approval.
+The expanded scope includes the executable functionality built around those
+foundations, together with its interfaces, reusable components, supporting
+tools, tests, and documentation. It encompasses interactive applications,
+processing workflows, replaceable services, grounded question answering,
+agent-assisted knowledge maintenance, and hosted database-backed applications.
 
-The description reflects the inspected source worktrees, including uncommitted
-development. “Implemented” below means an implementation is present; it does
-not mean that a particular release has been published, a production deployment
-accepted, or all intended operating conditions validated.
+The descriptions and examples are illustrative and non-exhaustive. The scope
+includes combinations, adaptations, and extensions of these functional families
+across Local and Server, including alternative user interfaces, storage backends,
+processors, algorithms, model providers, and deployment arrangements. Named
+technologies identify representative implementations rather than required
+vendors or exclusive implementation methods. Current implementation details
+describe availability; they do not define the outer boundary of the expanded
+functional scope. Contemplated extensions are identified separately from
+present capabilities.
 
 ## 2. Two application forms
 
 | Aspect | OSII Local | OSII Server |
 | --- | --- | --- |
 | Intended use | A standalone library operated on a workstation or within a locally controlled environment. | One shared library accessed by authenticated users through a hosted service. |
-| Authoritative persistence | Portable, filesystem-backed `.osii` records; derived catalogs and search indexes support access. | PostgreSQL records for extracted content, provenance, chunks, vectors, artifacts, collections, accounts, settings, and jobs. |
+| Authoritative persistence | Portable `.osii` records, with a separate local database for file metadata inventory and selected-processing records; derived catalogs and search indexes support access. | PostgreSQL records for extracted content, provenance, chunks, vectors, artifacts, collections, accounts, settings, and jobs. |
 | Originals | References existing source files or accepts files through local intake workflows; extraction does not edit originals. | Reads a deployment-configured dataset from a read-only source volume. |
 | Interface | Browser Workbench, Core APIs, Python interfaces, and a Model Context Protocol adapter. | Role-aware browser application and authenticated HTTP APIs. |
-| Access model | Local operating-environment controls; not the Server account/permission system. | Reader, curator, and administrator accounts with server-enforced permissions. |
-| Current delivery | Host startup through `make dev` or the PowerShell equivalent. | Separate server branch with host development startup and OpenShift deployment resources. |
+| Access model | Local operating-environment controls, without application user accounts or a login. | Reader, curator, and administrator accounts with server-enforced permissions and owned collections. |
+| Delivery arrangements | Workstation processes, browser access, command-line and programmatic use. | Hosted application and worker processes, browser/API access, and containerized deployment including OpenShift. |
 
-These are separate persistence implementations. Server is not simply Local
-placed behind a web address. Local capabilities are not automatically exposed
-by Server, and there is no implied automatic migration between their stores.
+The two forms share information concepts and reusable functionality while
+adapting persistence, identity, permissions, and operation to their environments.
+Specific features may be available in one form before the other. Store migration
+and interchange are explicit operations rather than assumed side effects of
+switching application forms.
 
 ## 3. Additional OSII Local functionality
 
@@ -64,8 +71,9 @@ coordinates of canonical extracted evidence.
 
 The frontend also has an extension registry for independently routed tools.
 Tools consume Core APIs and use shared identities and scope definitions. They
-do not directly access the store or invoke model endpoints. The registry and
-topic explorer are present in current Local worktree development.
+do not directly access the store or invoke model endpoints. The extension
+mechanism supports additional analytical and task-oriented views without
+requiring a separate application for each tool.
 
 ### 3.2 Controlled intake and processing
 
@@ -74,6 +82,20 @@ resolving a proposed processing scope, and previewing eligible, current, stale,
 or blocked work before it is queued. Users can run extraction, summaries,
 embeddings, or enrichments separately instead of repeating the entire pipeline.
 Activity views expose processing progress and results.
+
+File inventory provides an earlier, lighter-weight entry point. Users can scan
+large directory trees or mounted shared drives for paths, sizes, formats,
+timestamps, availability, and processing state before choosing which contents
+to read. Metadata scanning operates without reading or hashing file contents
+or invoking models. A persistent local inventory supports filtering, aggregate
+summaries, paginated browsing, and export independently of extracted sidecars.
+
+Users can capture filtered selections or reproducible samples, apply file/byte
+budgets, and run selected extraction, OCR, synthesis, or enrichment stages.
+Selected processing records content identities, responses, and provenance and
+supports reuse of compatible results. Job controls include progress reporting,
+pause/resume/cancel behavior, restart recovery, and bounded processing attempts.
+This separates discovering a corpus from committing to the cost of processing it.
 
 Extraction upgrades preserve versioned outputs and allow a user to choose a
 primary extraction. Promoting a different version marks dependent outputs stale
@@ -103,6 +125,14 @@ These functions organize evidence for interpretation; they do not establish
 that every generated statement is true or supported by its citations. The
 software does not train a foundation model as part of this workflow.
 
+RAG strategy tooling also supports query decomposition, candidate retrieval,
+optional reranking, context selection, and bounded iterative retrieval and
+answering. Users and developers can compare strategy profiles and inspect the
+selected evidence, ranking scores, retrieval steps, stopping conditions, elapsed
+time, and available model-usage information. Strategies use explicit scopes and
+call budgets; they can reuse local functions or remote services. These are
+experimental orchestration capabilities in addition to ordinary library chat.
+
 ### 3.4 Derived knowledge products and library maintenance
 
 Users can request summaries and enrichment products at supported document,
@@ -128,12 +158,14 @@ The documentation workflow adds reuse of previously saved knowledge, metadata
 for applicability such as software/version, revision conflict checks, limited
 revision history, and freshness checks against source fingerprints. Changed
 evidence can make a page stale. The external assistant decides when to research,
-write, and revise; OSII is not independently running an autonomous research loop.
+write, and revise. This supports workflows in which an assistant accumulates
+source-cited software guidance, research findings, experimental lessons, and
+other reusable knowledge while carrying out a task.
 
 Saved pages remain derived and unreviewed. Citation validation checks locations
 and scope membership, not whether the cited passage proves the written claim.
-The existing filesystem-oriented MCP adapter is a Local capability and is not
-part of Server's authenticated interface.
+The current filesystem-oriented MCP adapter operates with Local; authenticated
+hosted adapters are a related integration path.
 
 ### 3.6 Topic exploration
 
@@ -145,14 +177,17 @@ related documents using cosine similarity in the full vector space.
 The view reports index identity, coverage, staleness, and projection limitations.
 It does not generate embeddings during browsing, automatically assign topic
 names, or treat graphical distance as a complete measure of relatedness.
-Lexical hashing is distinguished from semantic embeddings. This capability is
-present in the Local working tree and has not been ported to Server.
+Lexical hashing is distinguished from semantic embeddings. The topic-exploration
+capability is available with both Local's vector indexes and Server's stored
+vectors, through persistence-specific adapters. Scope selection, document
+selection, map/list navigation, related-document discovery, and links back to
+source views make the projection usable as part of a library workflow.
 
 ## 4. Processor and model integration
 
-The expanded software includes a Processor SDK and a versioned HTTP protocol
-for four roles: extraction, synthesis, embedding, and enrichment. Descriptors
-advertise capabilities and configuration; typed requests carry one document or
+The expanded software includes a Processor SDK, service/client helpers, and a
+versioned HTTP protocol for extraction, synthesis, embedding, and enrichment.
+Descriptors advertise capabilities and configuration; typed requests carry one document or
 a bounded scope snapshot; typed responses return segments, vectors, or artifacts.
 
 Core controls dispatch, validation, provenance, and persistence. A conforming
@@ -162,10 +197,18 @@ implementations without changing the library's fundamental information model.
 
 Included baseline services provide native document extraction, full-page OCR,
 local extractive summaries, lexical-hashing embeddings, basic statistical
-enrichment, and adapters to configured model services. Optional Toolbox
-implementations add region-based OpenCV/Tesseract OCR, tabular processing, and
-model-generated narrative or concept/entity wikis. Their presence in the source
-tree does not make them default services or establish Server integration.
+enrichment, and adapters to configured model services. Toolbox implementations
+add region-based OpenCV/Tesseract OCR, tabular processing, and model-generated
+narrative or concept/entity wikis. Model-backed document parsing includes
+page-image preparation, extraction of text and layout elements, and page/region
+provenance through integrations such as Banyan/Nemotron Parse. PDF, image,
+office-document, and tabular formats are representative inputs; supported
+formats depend on the selected implementation.
+
+Service startup, selection for a processing route, and invocation are separate
+operations. A running processor can advertise its capabilities before a user
+chooses to send it documents or invoke its configured model. Processors may
+operate in isolated local environments or as independently deployed services.
 
 Model adapters connect to separately operated inference services, including
 OpenAI-compatible endpoints and, in Local, local-model services such as Ollama.
@@ -173,20 +216,30 @@ An API-compatible service need not be operated by any particular vendor.
 The application selects models and sends requests; model weights, training
 systems, service subscriptions, and provider infrastructure are separate inputs.
 
-Local exposes connection settings and credential-source information in Setup.
-Server uses one deployment-configured model endpoint and credential, with model
-selection controlled by administrators. A model catalog listing is distinct
-from successfully invoking the selected generation or embedding model.
+Local exposes connection settings, model discovery, invocation tests, defaults,
+and credential-source information in Setup. Server supports administrator-managed
+connections and deployment defaults. Chat, embeddings, reranking, and specialized
+parsing may use independent endpoints, credentials, and models; they can also
+share a compatible service. A model catalog listing is distinct from successfully
+invoking the selected capability.
+
+A model gateway can give a processor controlled access to a selected model
+connection without disclosing the underlying provider credential. Access can be
+limited by tool, job, capability, connection, request size, expiry, and revocation.
+Core retains responsibility for authorizing requests and attributing results.
+Connection profiles and processing settings can be reused or transferred with
+credential values kept separate from shareable configuration.
 
 ## 5. Additional OSII Server functionality
 
 ### 5.1 Database-backed shared library
 
-Server replaces the authoritative filesystem store with PostgreSQL while
-retaining the separation of source evidence, provenance, and derived outputs.
+Server provides authoritative database persistence, currently using PostgreSQL,
+while retaining the separation of source evidence, provenance, and derived outputs.
 The database holds extracted text, extraction records, source identifiers,
 chunks, embeddings, artifacts, shared collections, configuration, and operational
-state. Originals remain on a separately managed source volume.
+state, including ownership and visibility for saved collections. Originals
+remain on a separately managed source volume.
 
 Only Core API and worker components access the database. Document processing
 commits related records transactionally, and corpus revisions identify changes
@@ -198,9 +251,10 @@ administrator creation are explicit operations.
 
 Server introduces application-managed password accounts and sessions:
 
-- Readers browse documents, inspect evidence, search, and ask questions.
-- Curators additionally process the configured dataset and manage shared
-  collections.
+- Readers browse documents, inspect evidence, search, ask questions, and manage
+  their own private collections.
+- Curators additionally process the configured dataset and publish or manage
+  shared collections.
 - Administrators additionally manage accounts and model selections.
 
 The implementation includes password hashing, temporary-password changes,
@@ -209,19 +263,37 @@ access, request-origin and cross-site request forgery checks, and recorded
 administrative/access events. The browser reflects these permissions, while
 the server checks permissions independently of which buttons are visible.
 
-The current model is one shared audience for one library. It is not a
-multi-tenant workspace system and does not provide private per-document access
-rules, personal uploads, public registration, or enterprise single sign-on.
-Accounts, session records, and audit events introduce operational user data
+Collection ownership and visibility support personal organization alongside
+shared curated groupings. Users can create, describe, rename, and delete their
+collections and change their membership; authorized users can publish collections
+for shared use. Concurrency checks protect edits that interact with visibility
+changes. A private collection protects its saved membership and metadata while
+the underlying corpus remains shared with the library audience.
+
+The current service uses one shared document library. Private document workspaces,
+user uploads, public registration, and enterprise single sign-on are contemplated
+extensions, distinct from currently available collection privacy. Accounts,
+session records, ownership, and audit events introduce operational user data
 beyond the original document information architecture.
 
 ### 5.3 Hosted processing, retrieval, and model-use controls
 
-A curator queues ingestion of the configured source directory. A separate
+A source browser exposes available folders and files before processing, and an
+administrator can select an allowed subfolder of the mounted dataset. Processing
+requests capture that selection so later setting changes do not redirect an
+already queued job. Existing indexed documents remain available independently
+of a subsequent source-folder selection.
+
+A curator previews and queues processing of the selected source scope. A separate
 worker claims jobs using database-backed leases and heartbeats, coordinates
 corpus writes, extracts text, creates chunks, optionally obtains embeddings,
 and commits results. Unchanged documents can be skipped; explicit reprocessing
 repeats extraction and configured model calls.
+
+The processing workflow also includes staged plans, extraction-version inspection,
+selected downstream stages, registered processors, progress records, and job
+controls. These provide repeatable operation and investigation of partial or
+failed work while keeping canonical commits within Core.
 
 An OCR endpoint can be configured for image-only documents. An empty extraction
 is reported as a failure rather than accepted as searchable content. Source
@@ -243,53 +315,73 @@ particular document collection.
 
 ### 5.4 Hosted delivery and operation
 
-The Server worktree includes container definitions and OpenShift resources for
+Hosted delivery includes container definitions and deployment resources for
 API, worker, extractor, dashboard, and database workloads. These specify storage,
 configuration and secret references, service routing, health/readiness checks,
-and network-policy boundaries. Deployment credentials and actual internal
+and network-policy boundaries. OpenShift is a current deployment target;
+headless backend use and other compatible hosting arrangements are also within
+the described functional scope. Deployment credentials and actual internal
 endpoints remain environment-specific configuration.
 
 Operating guidance covers dataset publication, explicit migrations, database
 backup/restore with matching originals, and rollback compatibility. Core and
 worker source mounts are read-only; processors have neither the source-volume
-mount nor database credentials. Hosted delivery is an implementation under
-development, not evidence of production authorization, high availability, or
-completed recovery validation.
+mount nor database credentials. Supporting functionality includes dependency
+preparation, configuration validation, service supervision, logs, graceful
+shutdown, diagnostics, release/build automation, and retrieval evaluation.
+Availability, scale, and recovery characteristics depend on the deployed
+configuration and its validation.
 
-## 6. Functional availability and limits
+## 6. Implementation coverage and related extensions
 
-| Capability | Local source | Server source |
+The following summarizes present implementation coverage. It describes where
+features can currently be used, rather than excluding combinations or related
+implementations from the functional scope.
+
+| Capability | OSII Local | OSII Server |
 | --- | --- | --- |
 | Browse, inspect sources, search, grounded answers | Implemented | Implemented for authenticated shared-library use |
-| Intake and processing management | Local selection/upload and multi-step workflows | Curator-triggered processing of the fixed dataset |
-| Version selection, editable text, package transfer, sensitivity annotations | Implemented Local workflows | Not part of the current hosted API |
-| Shared collections | Filesystem-backed collections | Database-backed, curator-managed collections |
-| Processor SDK and optional Toolbox | Implemented contracts and optional tools | Uses extraction contracts; full Toolbox workflow parity is not implemented |
-| Agent-maintained cited documentation wiki and MCP | Implemented | Filesystem MCP not exposed; hosted integration deferred |
-| Topic map and frontend tool registry | Present in Local working-tree development | Not ported |
-| Accounts, sessions, and roles | Not the hosted permission system | Present in Server working-tree development |
-| PostgreSQL and OpenShift resources | Not Local's persistence/startup path | Present in Server working-tree development |
-| Private uploads, private workspaces, retained private conversations, enterprise SSO | No claim of hosted isolation | Deferred |
+| Metadata inventory and source selection | Persistent metadata-only inventory, selection, sampling, and export | Browsing and subfolder selection within the mounted source dataset |
+| Intake and processing management | Local selection/upload, budgeted selections, and multi-step workflows | Curator-triggered planning, processing, job control, and reprocessing |
+| Extraction lineage and version inspection | Version preservation, inspection, and primary-extraction selection | Database extraction records and version inspection |
+| Editable text, package transfer, sensitivity annotations | Implemented Local workflows | Additional integration paths |
+| Collections | Filesystem-backed organization and transfer | Owned private collections and published shared collections |
+| Processor SDK, Toolbox, and model gateway | Implemented contracts, tools, and controlled model access | Registered processors and controlled model access; workflows vary by processor |
+| Agent-maintained cited documentation wiki and MCP | Implemented | Authenticated hosted integration is an extension path |
+| Topic exploration | Experimental interactive map and related-document navigation | Experimental map and related-document navigation over stored vectors |
+| RAG strategy experiments | Bounded strategies, profile comparisons, reranking, and traces | Core retrieval and chat; additional strategy integrations can reuse the contracts |
+| Independent model-capability connections | Configurable connections | Administrator-managed connections and deployment defaults |
+| Accounts, sessions, and roles | Relies on the local operating environment | Implemented application accounts and permissions |
+| Database and hosted deployment | Local inventory database plus portable sidecars | Shared relational persistence and hosted deployment resources |
 
-Desktop installers, workstation image catalogs, Compose-based distribution,
-multi-architecture publishing, and component-export workflows were previously
-developed but are archived on `archive/workstation-deployment-2026-11-03`.
-They are historical scope growth, not current supported entry points. Their
-inclusion in any distribution must be identified separately from current Local
-and Server source.
+Related extensions may include additional processors and document formats,
+alternative retrieval/reranking strategies, richer visualizations, agent
+workflows, new storage adapters, and integrations with external document or
+knowledge services. Hosted private workspaces, private uploads, retained personal
+conversations, and enterprise identity integration are contemplated extensions;
+their inclusion here does not represent them as currently implemented.
 
-Other future concepts, including autonomous multi-step research, hosted
-SharePoint/OneDrive ingestion, and isolated project workspaces, are not included
-as implemented functionality by this specification.
+Distribution-related functionality has also encompassed desktop installers,
+workstation image catalogs, Compose deployments, multi-architecture image
+publishing, and component-export workflows. These remain part of the description
+of how the software's scope has grown, although they are not current supported
+startup paths. Distribution and packaging may evolve independently of the
+underlying information-processing functionality.
 
 ## 7. Software, data, and external-resource boundaries
 
-The expanded software scope consists of the application source, user interfaces,
-API and SDK definitions, processing/orchestration logic, retrieval and
-model-integration logic, database schemas and migrations, deployment templates,
-tests, and accompanying technical documentation described above.
+The expanded software scope includes application and service implementations,
+user interfaces, command-line and programmatic interfaces, API and SDK
+definitions, processing/orchestration logic, storage and interoperability
+adapters, retrieval and model-integration logic, database schemas and migrations,
+deployment and packaging tools, configuration schemas and templates, tests,
+examples, and accompanying technical documentation. It includes software for
+creating, reading, validating, transforming, transferring, and managing the
+information products described above.
 
-The following remain distinct from that software scope:
+The software's data formats and processing functions are distinguished from
+particular content supplied to or produced by an installation. Relevant data
+categories include:
 
 - Original documents, datasets, and user-provided expert guidance.
 - Extracted corpus contents, generated summaries/wikis, embeddings, indexes,
@@ -308,38 +400,7 @@ The source uses third-party libraries and programs for the web application,
 document parsing, OCR, numerical operations, retrieval, database access, and
 service transport. Examples include React/MUI, FastAPI/Pydantic, PyMuPDF and
 pdfminer.six, Tesseract/OpenCV, NumPy/FAISS/BM25 libraries, and PostgreSQL-related
-components. These are dependencies, not claims of OSII authorship. An exact
-distribution requires its own versioned dependency and notice inventory;
-software permission does not by itself determine permission to redistribute
-input documents, model assets, or generated materials.
-
-## 8. Source basis and release boundary
-
-This specification was prepared from both development worktrees on the date
-above:
-
-| Worktree | Branch | Base commit inspected |
-| --- | --- | --- |
-| `osii` | `main` | `04d5c7e70d1bbf8abf692c7d0d3ec6cd41ffda41` |
-| `osii-server` | `osii-server` | `66fdc915714352c188c3bfcbae9f0830416796f4` |
-
-Both contained additional tracked and untracked development changes. The commit
-IDs therefore identify the starting revisions, not complete immutable snapshots
-of all functionality described here. A release scope should record the final
-commit/tag for each included implementation and identify any archived components
-included with it.
-
-The principal Local references are the [architecture](../concepts/architecture.md),
-[resource model](../reference/api/resource-model.md),
-[extraction lifecycle](../reference/extraction-versions.md),
-[transfer and deletion behavior](../operations/sensitive-data.md),
-[Processor SDK](https://github.com/sandialabs/OSII/blob/main/osii-core/processor-sdk/README.md),
-[MCP documentation workflow](https://github.com/sandialabs/OSII/blob/main/osii-mcp/README.md), and
-[frontend/topic explorer specification](../extending/frontend-tools.md).
-
-The Server evidence is in its separate worktree: `README.md`,
-`docs/operations/runbook-server.md`, `osii-core/osii/server/`,
-`osii-core/osii/persistence/`, `osii-core/osii/domain/library.py`,
-`osii-core/osii/search/engine.py`, `osii-core/server-tests/`, and
-`deploy/openshift/`. Older planning documents describe possible future designs;
-they do not override the narrower implemented Server scope recorded here.
+components. Their identities, versions, and applicable terms remain separately
+identifiable. The described scope includes OSII's integration, adaptation, and
+interoperability functionality without attributing authorship of those external
+components, input documents, or model assets to OSII.
