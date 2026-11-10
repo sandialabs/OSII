@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from osii.domain.topic_cache import topic_cache_key, hydrate_topic_map, pack_topic_map
 from osii.domain.document_metadata import synthesis_labels
 from osii.domain.library import Library, scope_documents
+from osii.domain.research import EvidenceChanged, ReportGenerationError, ReportRequest, ReportResponse, write_report
 from osii.domain.read.postgres import PostgresLibraryReader
 from osii.domain.topics import topic_map, related_documents, TopicIndexUnavailable
 from osii.server.sources import browse, resolve_directory
@@ -357,6 +358,24 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
         if not store.login_allowed(budget, failed=True) or not store.login_allowed("chat:global", failed=True, maximum=100):
             raise HTTPException(429, "Chat limit reached; try again in 15 minutes")
         return library.chat(payload.query, payload.scope, payload.history, account["id"])
+
+    @app.post("/api/research/report", response_model=ReportResponse)
+    def research_report(payload: ReportRequest, account=Depends(require())):
+        budget = "chat:" + account["id"]
+        if not store.login_allowed(budget, failed=True) or not store.login_allowed("chat:global", failed=True, maximum=100):
+            raise HTTPException(429, "Writing limit reached; try again in 15 minutes")
+        if payload.scope.scope_type == "collection":
+            visible_collection(payload.scope.collection_id, account)
+        model = store.configuration().get("chat_model", "")
+        def complete(messages):
+            return provider.chat(model, messages, max_tokens=6000)[0]
+        try:
+            return write_report(PostgresLibraryReader(store.engine, actor_id=account["id"]), payload,
+                complete if model else None, provider="openai" if model else "extractive", model=model or None)
+        except EvidenceChanged as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ReportGenerationError as exc:
+            raise HTTPException(502, str(exc)) from exc
 
     def collection_view(value, account):
         return {**value, "can_manage": value["owner_id"] == account["id"] or

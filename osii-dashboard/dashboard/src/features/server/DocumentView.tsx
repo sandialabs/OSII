@@ -1,6 +1,8 @@
+import { ReportPassage } from "../research/ReportPassage";
 import { SuggestedMetadata } from "../files/components/SuggestedMetadata";
 import type { DocumentMetadata } from "../../api/documentMetadata";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Alert, Box, Button, Dialog, DialogContent, DialogTitle, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { ProcessingOutputCard } from "../files/components/ProcessingOutputCard";
 import { FileDetailTabs, type FileTab } from "../files/components/FileDetailTabs";
@@ -15,19 +17,21 @@ type SavedResponse = { processor: { display_name: string; name: string; version:
 type Artifact = { stale?: boolean; id: string; kind: string; payload: { response?: SavedResponse; created_at?: string; input_extraction_id?: string; id?: string; standard_data?: unknown; json_data?: unknown; text?: string } };
 type Extraction = { id: string; primary: boolean; created_at: string; response: { processor: { name: string; version: string }; segments: { id: string; text: string; source_origin: Record<string, unknown> }[]; artifacts?: { id: string; kind: string; standard_data?: unknown; json_data?: unknown; text?: string }[] } };
 export function DocumentView({ doc, close, onProcess }: { doc: Doc; close: () => void; onProcess?: () => void }) {
+  const [params] = useSearchParams();
   const [tab, setTab] = useState<FileTab>("split");
-  const [page, setPage] = useState(1);
-  const [segment, setSegment] = useState<string | null>(null);
+  const [page, setPage] = useState(Number(params.get("page")) || 1);
+  const [segment, setSegment] = useState<string | null>(params.get("segment_id"));
   const [extractions, setExtractions] = useState<Extraction[]>([]);
+  const [extractionsLoaded, setExtractionsLoaded] = useState(false);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
-  const [variant, setVariant] = useState("");
+  const [variant, setVariant] = useState(params.get("extraction_id") ?? "");
   const [error, setError] = useState("");
   useEffect(() => { let current = true;
-    const refresh = () => Promise.all([api<{ items: Extraction[] }>(`/api/objects/${doc.file_id}/extractions`), api<{ items: Artifact[] }>(`/api/objects/${doc.file_id}/artifacts`)]).then(([history, products]) => { if (current) { setExtractions(history.items); setArtifacts(products.items); } }).catch(e => { if (current) setError(e.message); });
+    const refresh = () => Promise.all([api<{ items: Extraction[] }>(`/api/objects/${doc.file_id}/extractions`), api<{ items: Artifact[] }>(`/api/objects/${doc.file_id}/artifacts`)]).then(([history, products]) => { if (current) { setExtractions(history.items); setArtifacts(products.items); } }).catch(e => { if (current) setError(e.message); }).finally(() => { if (current) setExtractionsLoaded(true); });
     void refresh(); const timer = window.setInterval(() => void refresh(), 5000);
     return () => { current = false; window.clearInterval(timer); };
   }, [doc.file_id]);
-  const selected = extractions.find(item => item.id === variant) ?? extractions[0];
+  const selected = extractions.find(item => item.id === variant) ?? extractions.find(item => item.primary) ?? extractions[0];
   const { text, segments } = useMemo(() => {
     if (!selected) return { text: doc.text ?? "", segments: [] as ManifestRecord[] };
     let text = ""; const segments: ManifestRecord[] = [];
@@ -47,6 +51,7 @@ export function DocumentView({ doc, close, onProcess }: { doc: Doc; close: () =>
   return <Dialog open onClose={close} fullWidth maxWidth="xl"><DialogTitle><Stack direction="row" justifyContent="space-between" spacing={2}><Typography variant="h6">{doc.filename}</Typography><Button color="secondary" onClick={close}>Close document</Button></Stack><Typography variant="caption" color="text.secondary">{doc.source_relpath}</Typography></DialogTitle>
     <DialogContent><Stack spacing={2}>
       {error && <Alert severity="error">{error}</Alert>}
+      <ReportPassage text={text} loading={!extractionsLoaded} />
       <FileDetailTabs value={tab} onChange={setTab} />
       {["text", "source", "split"].includes(tab) && extractions.length > 0 && <TextField select size="small" label="Extraction representation" value={selected?.id ?? ""} onChange={e => { setVariant(e.target.value); setPage(1); setSegment(null); }} helperText="Compare preserved extractions. Browsing a version does not change the text used for search.">{extractions.map(item => <MenuItem key={item.id} value={item.id}>{item.response.processor.name} · {new Date(item.created_at).toLocaleString()}{item.primary ? " · Primary" : ""}</MenuItem>)}</TextField>}
       {tab === "text" && <Box component="pre" sx={{ maxHeight: "68vh", overflow: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{text}</Box>}
@@ -62,6 +67,7 @@ export function DocumentView({ doc, close, onProcess }: { doc: Doc; close: () =>
         </ProcessingOutputCard>)}
         {!products.length && <Alert severity="info">No {tab} have been saved for this document yet.</Alert>}
       </>}
+      <Button color="secondary" component="a" href={`/research?file_id=${encodeURIComponent(doc.file_id)}`}>Write a research report</Button>
       <Button color="secondary" component="a" href={`/api/objects/${doc.file_id}/source`} target="_blank" rel="noopener">Open original source</Button>
     </Stack></DialogContent>
   </Dialog>;

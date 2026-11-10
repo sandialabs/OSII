@@ -49,6 +49,7 @@ export function Collections({ collections, refresh, fail, user, browse, choose }
     <Button sx={{ alignSelf: "start" }} onClick={choose}>Choose files in the library</Button>
     {!collections.length && <Alert severity="info">Select documents in the library, search results, or topic explorer to create a collection.</Alert>}
     {collections.map(c => <Paper key={c.id} sx={{ p: 2 }}><Stack spacing={1}>
+      <Button component="a" href={`/research?collection_id=${encodeURIComponent(c.id)}`} sx={{ alignSelf: "start" }}>Write a research report</Button>
       <Typography variant="h6">{c.name}</Typography><Typography>{c.description}</Typography>
       <Typography variant="body2" color="text.secondary">{c.visibility === "private" ? "Private to you" : "Shared with everyone"} · {c.members.length} document references</Typography>
       <Stack direction="row" flexWrap="wrap" spacing={1}>{[["library", "Browse"], ["search", "Search"], ["chat", "Chat"], ["topics", "Explore topics"]].map(([page, label]) => <Button key={page} onClick={() => browse(c.id, page)}>{label}</Button>)}{c.can_manage && <Button onClick={() => setEditing({ ...c })}>Edit collection</Button>}</Stack>

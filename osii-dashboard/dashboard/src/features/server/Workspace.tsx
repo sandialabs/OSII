@@ -1,4 +1,5 @@
 import { useLocation, useNavigate } from "react-router-dom";
+import { ResearchPage } from "../research/ResearchPage";
 import { ToolsPage } from "../files/pages/ToolsPage";
 import { LibraryOverviewPage } from "../library/pages/LibraryOverviewPage";
 import { DiscoveryIntakePanel } from "../queue/components/DiscoveryIntakePanel";
@@ -51,7 +52,7 @@ import {
   type SearchMode,
 } from "../search/components/SearchModeSelect";
 
-const pagePaths: Record<string, string> = { library: "/", browse: "/browse", search: "/search", chat: "/chat", topics: "/topics", collections: "/collections", tools: "/tools", overview: "/library-overview", inventory: "/inventory", processing: "/intake", setup: "/setup", users: "/users" };
+const pagePaths: Record<string, string> = { library: "/", browse: "/browse", search: "/search", chat: "/chat", topics: "/topics", collections: "/collections", tools: "/tools", research: "/research", overview: "/library-overview", inventory: "/inventory", processing: "/intake", setup: "/setup", users: "/users" };
 
 function InventoryPage() {
   const navigate = useNavigate();
@@ -76,6 +77,7 @@ const pages: readonly NavigationItem[] = [
     group: "documents",
     icon: CollectionsBookmarkOutlined,
   },
+  { id: "research", label: "Research reports", group: "tools", icon: Search },
   { id: "tools", label: "All tools", group: "tools", icon: SettingsOutlined },
   { id: "overview", label: "Library at a glance", group: "tools", icon: Search },
   { id: "inventory", label: "File inventory", group: "start", icon: FolderOutlined },
@@ -535,6 +537,7 @@ export function Workspace({
           />
         )}
         {tab === "tools" && <ToolsPage />}
+        {tab === "research" && <ResearchPage draftKey={user.id} />}
         {tab === "overview" && <LibraryOverviewPage />}
         {tab === "inventory" && user.role === "admin" && <InventoryPage />}
         {tab === "processing" && user.role === "admin" && (
