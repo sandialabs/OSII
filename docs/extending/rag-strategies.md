@@ -4,6 +4,9 @@ Use this guide for custom retrieval, query decomposition, reranking, context
 selection, or iterative question answering. These extend **Core RAG**, not the
 Toolbox. Start in OSII-local; the same contracts transfer to the hosted server.
 
+For the research behind inspecting intermediate searches and evaluating their
+quality, see [Agent traces and evaluation for multi-step RAG](../concepts/agent-traces-research.md).
+
 ## Boundaries and code locations
 
 Toolbox contains exactly four OSII processor kinds: **extractor, synthesizer,
