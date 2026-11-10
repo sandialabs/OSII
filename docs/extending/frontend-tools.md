@@ -98,13 +98,14 @@ metadata contract, see [Topic Explorer extensions](topic-explorer.md).
 
 | Endpoint | Inputs | Result |
 | --- | --- | --- |
-| `POST /api/topics/map` | Scope; limit 1–500 | Active index identity/model, coverage counts, document projection, explained variance |
+| `POST /api/topics/map` | Scope; optional positive limit (default: all) | Active index identity/model, coverage counts, document projection, explained variance |
 | `POST /api/topics/related` | Scope, document ID; limit 1–50 | Related documents ranked in full embedding space with cosine similarities |
 
 The map averages normalized chunk vectors per document and uses centered PCA
-with stable axes. Axes are not inferred topic labels; scores are not confidence.
-A filename filter affects the displayed map, not related ranking. Counts disclose
-unindexed/stale documents and the stable displayed subset. Projection caches
+with stable axes, using a bounded approximate fit for larger datasets. Axes are not inferred topic labels; scores are not confidence.
+Search covers every mapped document; the default map includes the full indexed
+scope. Counts disclose unindexed/stale documents. An explicit API limit affects
+returned points only, never the fit; related ranking always uses the full space. Projection caches
 are keyed by index and scope evidence; they do not become canonical products.
 Neither endpoint builds embeddings or calls a model. Missing/incompatible or
 changing indexes return actionable errors. The page supports point/list
