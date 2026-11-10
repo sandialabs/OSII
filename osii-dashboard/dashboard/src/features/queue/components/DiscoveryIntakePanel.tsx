@@ -4,9 +4,6 @@ import {
   Alert,
   Button,
   Divider,
-  Step,
-  StepLabel,
-  Stepper,
   Checkbox,
   FormControlLabel,
   LinearProgress,
@@ -47,7 +44,10 @@ type Selection = {
   coverage: string;
   request: string;
 };
-const bytes = (value: number) => `${(value / 1024 / 1024).toFixed(1)} MiB`;
+const bytes = (value: number) => value < 1024 ? `${value} B`
+  : value < 1024 ** 2 ? `${(value / 1024).toFixed(1)} KiB`
+  : value < 1024 ** 3 ? `${(value / 1024 ** 2).toFixed(1)} MiB`
+  : `${(value / 1024 ** 3).toFixed(1)} GiB`;
 const lines = (value: string) =>
   value
     .split("\n")
@@ -222,17 +222,15 @@ export function DiscoveryIntakePanel({
     budget >= 1;
   const active = latest?.status === "queued" || latest?.status === "running";
   const status = run.data ?? latest;
+  const coverage = selection ? JSON.parse(selection.coverage) : [];
+  const partialBatch = Array.isArray(coverage) && coverage.some(scan => scan.status !== "done");
   return (
-    <Paper variant="outlined" sx={{ p: 3 }}>
+    <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 } }}>
       <Stack spacing={2}>
-        <Stepper activeStep={selection?.count ? 3 : status ? 2 : sourceId !== "" ? 1 : 0} alternativeLabel sx={{ pb: 2 }}>
-          {["Location", "Discover", "Select batch", "Process"].map(label => <Step key={label}><StepLabel>{label}</StepLabel></Step>)}
-        </Stepper>
-        <Typography variant="h6" fontWeight={750}>1. Location</Typography>
+        <Typography variant="h6" component="h2" fontWeight={750}>1. Discover files</Typography>
         {error && <Alert severity="error">{error}</Alert>}
-        {sources.isError && (
-          <Alert severity="error">{String(sources.error)}</Alert>
-        )}
+        {sources.isError && <Alert severity="error" action={<Button color="inherit" onClick={() => void sources.refetch()}>Retry</Button>}>{String(sources.error)}</Alert>}
+        {scans.isError || run.isError ? <Alert severity="error" action={<Button color="inherit" onClick={() => { void scans.refetch(); if (latest) void run.refetch(); }}>Retry</Button>}>Scan status unavailable.</Alert> : null}
         <Stack
           direction={{ xs: "column", sm: "row" }}
           spacing={1}
@@ -249,7 +247,7 @@ export function DiscoveryIntakePanel({
             select
             fullWidth
             size="small"
-            label="Registered source"
+            label="Location"
             value={sourceId}
             onChange={(e) => {
               setSourceId(Number(e.target.value));
@@ -293,8 +291,6 @@ export function DiscoveryIntakePanel({
           </Button>
         </Stack>
         </details>
-        <Divider />
-        <Typography variant="h6" fontWeight={750}>2. Discover files</Typography>
         <details><summary>Scan options</summary>
         <Stack
           direction={{ xs: "column", sm: "row" }}
@@ -364,8 +360,46 @@ export function DiscoveryIntakePanel({
             }
             label="Cross filesystem boundaries"
           />
-        </Stack></details>
-        <Stack direction="row" spacing={1}>
+        </Stack>
+        <details>
+          <summary>Advanced: reconnect a changed mount</summary>
+          <Stack spacing={1}>
+            <Typography variant="body2">
+              After a remount, verify that this is the original dataset. Cancel
+              active scans first. Rebinding invalidates old selections and
+              requires fresh discovery; it preserves historical evidence.
+            </Typography>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={verifiedMount}
+                  onChange={(e) => setVerifiedMount(e.target.checked)}
+                />
+              }
+              label="I verified the mounted dataset and entered its exact registered path above"
+            />
+            <Button
+              disabled={
+                busy || !verifiedMount || sourceId === "" || !root.trim()
+              }
+              onClick={() =>
+                void act(async () => {
+                  await apiJson(`/api/volume/sources/${sourceId}/rebind`, {
+                    method: "POST",
+                    json: { root: root.trim() },
+                  });
+                  setSelection(null);
+                  onSelect(null);
+                  setVerifiedMount(false);
+                })
+              }
+            >
+              Rebind verified source identity
+            </Button>
+          </Stack>
+        </details>
+        </details>
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
           <Button
             variant="contained"
             disabled={
@@ -392,7 +426,7 @@ export function DiscoveryIntakePanel({
               })
             }
           >
-            ▶ Scan files
+            Scan files
           </Button>
         </Stack>
         {status && (
@@ -435,12 +469,8 @@ export function DiscoveryIntakePanel({
             ))}
             </details>
             {status.error && <Alert severity="warning">{status.error}</Alert>}
-            <Alert severity={status.status === "done" ? "success" : "warning"}>
-              {status.status === "done"
-                ? "Scan complete. File access is checked again when processing."
-                : "Partial scan. Resume to continue, or explicitly accept partial coverage below."}
-            </Alert>
-            <Stack direction="row" spacing={1}>
+            {!active && status.status !== "done" ? <Alert severity="warning">{status.status === "cancelled" ? "Scan cancelled. Scan again or allow a partial batch below." : "Scan incomplete. Resume it or allow a partial batch below."}</Alert> : null}
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               {active && (
                 <Button
                   disabled={busy}
@@ -478,50 +508,13 @@ export function DiscoveryIntakePanel({
             )}
           </Stack>
         )}
-        <details>
-          <summary>Advanced: reconnect a changed mount</summary>
-          <Stack spacing={1}>
-            <Typography variant="body2">
-              After a remount, verify that this is the original dataset. Cancel
-              active scans first. Rebinding invalidates old selections and
-              requires fresh discovery; it preserves historical evidence.
-            </Typography>
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={verifiedMount}
-                  onChange={(e) => setVerifiedMount(e.target.checked)}
-                />
-              }
-              label="I verified the mounted dataset and entered its exact registered path above"
-            />
-            <Button
-              disabled={
-                busy || !verifiedMount || sourceId === "" || !root.trim()
-              }
-              onClick={() =>
-                void act(async () => {
-                  await apiJson(`/api/volume/sources/${sourceId}/rebind`, {
-                    method: "POST",
-                    json: { root: root.trim() },
-                  });
-                  setSelection(null);
-                  onSelect(null);
-                  setVerifiedMount(false);
-                })
-              }
-            >
-              Rebind verified source identity
-            </Button>
-          </Stack>
-        </details>
         <Divider />
-        <Typography variant="h6" fontWeight={750}>3. Select a batch</Typography>
+        <Typography variant="h6" component="h2" fontWeight={750}>2. Select a batch</Typography>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
           <TextField
             fullWidth
             size="small"
-            label="Filename contains"
+            label="Filename"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
@@ -637,41 +630,27 @@ export function DiscoveryIntakePanel({
         </details>
         {summary.data && (
           <Typography variant="body2">
-            {summary.data.files.toLocaleString()} matching cached names ·{" "}
-            {bytes(summary.data.bytes)} known bytes ·{" "}
-            {summary.data.unknown_sizes} unknown sizes
+            {summary.data.files.toLocaleString()} files · {bytes(summary.data.bytes)}
+            {summary.data.unknown_sizes ? ` · ${summary.data.unknown_sizes} unknown sizes` : ""}
           </Typography>
         )}
         {entries.isError && (
           <Alert severity="error">{String(entries.error)}</Alert>
         )}
-        <Stack sx={{ maxHeight: 300, overflow: "auto" }} spacing={0.5}>
-          {entries.data?.items.map((entry) => (
-            <Typography
-              key={entry.id}
-              variant="body2"
-              sx={{ overflowWrap: "anywhere" }}
-            >
-              {entry.path} ·{" "}
-              {entry.size_bytes === null
-                ? "size unavailable"
-                : bytes(entry.size_bytes)}{" "}
-              · observed {new Date(entry.observed * 1000).toLocaleString()}
-              {entry.metadata_error ? ` · ${entry.metadata_error}` : ""}
-            </Typography>
-          ))}
+        <Stack sx={{ maxHeight: 240, overflow: "auto" }} spacing={0.5}>
+          {entries.data?.items.map(entry => <Stack key={entry.id} spacing={0.25}>
+            <Stack direction="row" spacing={2} justifyContent="space-between" title={`Observed ${new Date(entry.observed * 1000).toLocaleString()}`}>
+              <Typography variant="body2" sx={{ overflowWrap: "anywhere", minWidth: 0 }}>{entry.path}</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>{entry.size_bytes === null ? "Size unknown" : bytes(entry.size_bytes)}</Typography>
+            </Stack>
+            {entry.metadata_error ? <Typography variant="caption" color="error">{entry.metadata_error}</Typography> : null}
+          </Stack>)}
+          {entries.data && !entries.data.items.length ? <Typography variant="body2" color="text.secondary">{latest ? "No matching files." : "Run a scan to choose files."}</Typography> : null}
         </Stack>
-        <Stack direction="row" spacing={1}>
-          <Button disabled={!cursor} onClick={() => setCursor(0)}>
-            First page
-          </Button>
-          <Button
-            disabled={entries.isFetching || !entries.data?.next_cursor}
-            onClick={() => setCursor(entries.data!.next_cursor!)}
-          >
-            Next 100 names
-          </Button>
-        </Stack>
+        {cursor || entries.data?.next_cursor ? <Stack direction="row" spacing={1}>
+          <Button disabled={!cursor} onClick={() => setCursor(0)}>First page</Button>
+          <Button disabled={entries.isFetching || !entries.data?.next_cursor} onClick={() => setCursor(entries.data!.next_cursor!)}>Next page</Button>
+        </Stack> : null}
         <Stack
           direction={{ xs: "column", sm: "row" }}
           spacing={1}
@@ -687,17 +666,21 @@ export function DiscoveryIntakePanel({
           <TextField
             size="small"
             type="number"
-            label="Batch file limit"
+            label="Files per batch"
             value={maxFiles}
             onChange={(e) => setMaxFiles(Number(e.target.value))}
+            error={!Number.isInteger(maxFiles) || maxFiles < 1 || maxFiles > 10000}
+            helperText={!Number.isInteger(maxFiles) || maxFiles < 1 || maxFiles > 10000 ? "1–10,000 files" : undefined}
             inputProps={{ min: 1, max: 10000 }}
           />
           <TextField
             size="small"
             type="number"
-            label="Batch budget (MiB)"
+            label="Batch size (MiB)"
             value={budget}
             onChange={(e) => setBudget(Number(e.target.value))}
+            error={!Number.isFinite(budget) || budget < 1}
+            helperText={!Number.isFinite(budget) || budget < 1 ? "At least 1 MiB" : undefined}
             inputProps={{ min: 1 }}
           />
           <FormControlLabel
@@ -707,7 +690,7 @@ export function DiscoveryIntakePanel({
                 onChange={(e) => setSample(e.target.checked)}
               />
             }
-            label="Seeded sample by folder/type/size"
+            label="Sample batch"
           />
           {sample && (
             <TextField
@@ -718,14 +701,14 @@ export function DiscoveryIntakePanel({
             />
           )}
         </Stack>
-        {latest?.status !== "done" && <FormControlLabel
+        {latest && latest.status !== "done" && <FormControlLabel
           control={
             <Checkbox
               checked={partial}
               onChange={(e) => setPartial(e.target.checked)}
             />
           }
-          label="Use files from this partial scan"
+          label="Allow a partial batch"
         />}
         <Button
           variant="outlined"
@@ -733,6 +716,7 @@ export function DiscoveryIntakePanel({
             busy ||
             !filtersReady ||
             !validBudgets ||
+            !summary.data?.files || summary.isError ||
             (latest?.status !== "done" && !partial)
           }
           onClick={() =>
@@ -762,9 +746,9 @@ export function DiscoveryIntakePanel({
             })
           }
         >
-          ✓ Select batch
+          {selection ? "Update batch" : "Use this batch"}
         </Button>
-        <details><summary>Batch limits & saved selections</summary>
+        <details><summary>Limits & saved batches</summary>
         <Typography variant="caption">
           Intake accepts up to 10,000 files per batch and 50 MiB per file.
           Processing pauses between files after one hour; resume in Activity.
@@ -776,7 +760,7 @@ export function DiscoveryIntakePanel({
         <Stack direction="row" spacing={1}>
           <TextField
             size="small"
-            label="Restore selection ID"
+            label="Saved batch ID"
             value={restoreId}
             onChange={(e) => setRestoreId(e.target.value)}
           />
@@ -792,19 +776,17 @@ export function DiscoveryIntakePanel({
               })
             }
           >
-            Restore frozen selection
+            Load batch
           </Button>
         </Stack>
         </details>
         {selection && (
           <Stack spacing={1}>
-            <Alert severity={selection.count ? "success" : "warning"}>
-              Selected batch #{selection.id}: {selection.count} files ·{" "}
-              {bytes(selection.bytes)}.{" "}
-              {selection.count
-                ? "Ready to process below."
-                : "No eligible files. Adjust filters or limits and select again."}
+            <Alert severity={selection.count && !partialBatch ? "success" : "warning"}>
+              Batch #{selection.id} · {selection.count} files · {bytes(selection.bytes)}
+              {!selection.count ? ". No eligible files; adjust the filters or limits." : partialBatch ? " · Partial scan" : ""}
             </Alert>
+            <details id="intake-selected-files" style={{ scrollMarginTop: 96 }}><summary>View selected files</summary>
             <Typography variant="caption">
               Coverage at selection:{" "}
               {(Array.isArray(JSON.parse(selection.coverage))
@@ -824,26 +806,27 @@ export function DiscoveryIntakePanel({
                 </Typography>
               ))}
             </Stack>
+            </details>
             <Stack direction="row">
-              <Button
+              {(frozenCursor || frozen.data?.next_cursor) ? <><Button
                 disabled={!frozenCursor}
                 onClick={() => setFrozenCursor(0)}
               >
-                First selected page
+                First page
               </Button>
               <Button
                 disabled={!frozen.data?.next_cursor}
                 onClick={() => setFrozenCursor(frozen.data!.next_cursor!)}
               >
-                Next selected page
-              </Button>
+                Next page
+              </Button></> : null}
               <Button
                 onClick={() => {
                   setSelection(null);
                   onSelect(null);
                 }}
               >
-                Clear selection
+                Clear batch
               </Button>
             </Stack>
           </Stack>

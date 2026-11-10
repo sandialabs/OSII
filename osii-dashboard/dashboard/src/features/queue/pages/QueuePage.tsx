@@ -514,11 +514,11 @@ export function QueuePage() {
             : undefined,
       });
       const collectionMessage = run.collection
-        ? ` A logical collection, “${run.collection.name}”, will include each document that finishes.`
+        ? ` Collection: ${run.collection.name}.`
         : "";
       setNotice({
         severity: "success",
-        text: `${section === "process" ? "Processing" : "Intake"} run ${run.id} is queued for ${run.resolved_count ?? preview.data.preview.matched_count} file(s).${collectionMessage}`,
+        text: `Queued ${run.resolved_count ?? preview.data.preview.matched_count} files.${collectionMessage}`,
       });
       setUploadedItems([]);
       setExcludedPaths([]);
@@ -630,22 +630,19 @@ export function QueuePage() {
     changeSection("add");
     setIntakePreset("text");
     setRunExtraction(true); setSynthesize(false); setEmbed(false); setEnrich(false);
-    setNotice({ severity: "info", text: "Text-only intake selected explicitly. Browsing and keyword search can work after extraction; semantic search and AI chat still need the remaining checkpoints." });
+    setNotice({ severity: "info", text: "Text-only preset selected." });
   };
+
+  useEffect(() => {
+    if (section !== "add" || !useDiscovery || frozenSelection === null) return;
+    const heading = document.getElementById("intake-processing");
+    heading?.focus({ preventScroll: true });
+    heading?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [frozenSelection, useDiscovery, section]);
 
   return (
     <Stack spacing={2.5} sx={{ maxWidth: 1100, mx: "auto" }}>
-      <Stack spacing={0.5}>
-        <Typography variant="h5" fontWeight={700}>
-          Intake
-        </Typography>
-        <Typography color="text.secondary">
-          Add documents and choose how to process them.
-        </Typography>
-      </Stack>
-
-      <Accordion disableGutters elevation={0}><AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}><Typography variant="body2">Library readiness</Typography></AccordionSummary><AccordionDetails><WorkflowProgress readiness={readiness.data} checking={readiness.isLoading} failed={readiness.isError} sourceReady={Boolean((selectedFolder || uploadedItems.length) && !folderChanged && !selectingFolder && !folderError && sourceStatus?.osii_writable !== false)} onStep={followWorkflowStep} /></AccordionDetails></Accordion>
-      {readiness.data && (!embeddingAvailable || !readiness.data.language_model?.available) && section !== "activity" ? <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }}><Typography variant="body2" color="text.secondary">Finish model setup for the full experience, or choose a deliberate first pass.</Typography><Button variant="outlined" sx={{ flexShrink: 0 }} onClick={useTextOnlyIntake}>Use text-only intake</Button></Stack> : null}
+      <Typography variant="h5" fontWeight={700}>Intake</Typography>
 
       <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
         <IntakeSections value={section} onChange={changeSection} />
@@ -690,12 +687,8 @@ export function QueuePage() {
             <Paper variant="outlined" sx={{ p: 2 }}>
               <Stack spacing={1.5}>
                 <Stack spacing={0.25}>
-                  <Typography fontWeight={700}>
-                    What would you like to add or improve?
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    OSII reuses the current primary extraction unless you
-                    explicitly upgrade it.
+                  <Typography variant="h6" component="h2" fontWeight={750}>
+                    1. Choose work
                   </Typography>
                 </Stack>
                 <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -719,19 +712,16 @@ export function QueuePage() {
                 </Stack>
                 {libraryGoal === "reextract" ? (
                   <Alert severity="info">
-                    The new extraction is saved as an immutable version. Making
-                    it primary changes what future chunking, embeddings,
-                    summaries, and enrichments use; the previous version remains
-                    available.
+                    Previous extractions are kept. Choose whether the new version becomes primary.
                   </Alert>
                 ) : null}
               </Stack>
             </Paper>
           ) : null}
 
-          {section === "add" && <TextField select size="small" label="Add from" value={sourceMode} onChange={e => setSourceMode(e.target.value as "quick" | "discovery")}>
-            <MenuItem value="discovery">Discover a shared drive — resumable metadata scan</MenuItem>
-            <MenuItem value="quick">Quick folder selection</MenuItem>
+          {section === "add" && <TextField select size="small" label="Find files" value={sourceMode} onChange={e => setSourceMode(e.target.value as "quick" | "discovery")}>
+            <MenuItem value="discovery">Scan a folder or share</MenuItem>
+            <MenuItem value="quick">Choose a small folder / upload files</MenuItem>
           </TextField>}
           {useDiscovery ? <DiscoveryIntakePanel selectedId={frozenSelection} onSelect={setFrozenSelection} /> : <>
           <Paper
@@ -745,12 +735,8 @@ export function QueuePage() {
           >
             <Stack spacing={2}>
               <Stack spacing={0.5}>
-                <Typography variant="h6" fontWeight={750}>
-                  Documents to process
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Choose a folder. All matching files are included
-                  automatically; uncheck only the files you want to leave out.
+                <Typography variant="h6" component="h2" fontWeight={750}>
+                  {section === "process" ? "2. Select documents" : "1. Choose files"}
                 </Typography>
               </Stack>
               <Box
@@ -777,7 +763,7 @@ export function QueuePage() {
                     helperText={
                       folderChanged || !selectedFolder
                         ? "Select Use folder to apply this location."
-                        : "This folder is selected. Originals stay where they are."
+                        : "Folder selected"
                     }
                   />
                   <Button
@@ -822,8 +808,8 @@ export function QueuePage() {
               ) : null}
 
               <Stack spacing={1}>
-                <Typography variant="body2" fontWeight={700}>
-                  File filters
+                <Typography variant={section === "add" ? "h6" : "body2"} component={section === "add" ? "h2" : "p"} fontWeight={750}>
+                  {section === "add" ? "2. Select a batch" : "File filters"}
                 </Typography>
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                   <TextField
@@ -841,6 +827,7 @@ export function QueuePage() {
                     ))}
                   </TextField>
                 </Stack>
+                <details><summary>More filters</summary>
                 <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
                   <TextField
                     fullWidth
@@ -852,7 +839,7 @@ export function QueuePage() {
                       setFilterPreset("custom");
                     }}
                     placeholder={"*.pdf\nreports/*.csv"}
-                    helperText="One wildcard pattern per line. Blank includes all files; File types fills these patterns."
+                    helperText="One pattern per line; blank includes all files."
                     multiline
                     maxRows={4}
                   />
@@ -863,7 +850,7 @@ export function QueuePage() {
                     value={excludePatterns}
                     onChange={(event) => setExcludePatterns(event.target.value)}
                     placeholder={"*.tmp\narchive/**"}
-                    helperText="One wildcard pattern per line. Exclusions take priority over includes."
+                    helperText="One pattern per line; exclusions take priority."
                     multiline
                     maxRows={4}
                   />
@@ -895,6 +882,7 @@ export function QueuePage() {
                     label="Include hidden files"
                   />
                 </Stack>
+                </details>
               </Stack>
 
               <Divider />
@@ -929,8 +917,7 @@ export function QueuePage() {
                     : "Could not list files for this folder."}
                 </Alert>
               ) : null}
-              <Typography variant="caption" color="text.secondary">Quick selection walks the chosen folder. For a large or partially accessible share, use resumable discovery instead.</Typography>
-              <Button sx={{ alignSelf: "flex-start" }} onClick={() => navigate("/inventory")}>Open File inventory · coarse scan</Button>
+              {section === "add" ? <Button sx={{ alignSelf: "flex-start" }} onClick={() => setSourceMode("discovery")}>Use resumable scan instead</Button> : null}
               <FileSelectionList files={availableFiles.slice(0, visibleFileCount).map(file => ({ path: file.path, display: documentLabel(file.path, file.display), size_bytes: "size_bytes" in file && typeof file.size_bytes === "number" ? file.size_bytes : null }))} excludedPaths={excludedPaths}
                 onToggle={path => setExcludedPaths(paths => paths.includes(path) ? paths.filter(item => item !== path) : [...paths, path])} />
               {availableFiles.length > visibleFileCount ? (
@@ -944,8 +931,7 @@ export function QueuePage() {
               ) : null}
               {preview.data && !availableFiles.length ? (
                 <Typography variant="body2" color="text.secondary">
-                  No files match. Check the folder and filters, or add files
-                  below.
+                  No matching files.
                 </Typography>
               ) : null}
               <Stack
@@ -957,7 +943,7 @@ export function QueuePage() {
                 <Typography variant="caption" color="text.secondary">
                   {preview.data
                     ? `${preview.data.preview.unprocessed_count} new · ${preview.data.preview.processed_count} already read · ${preview.data.preview.total_size_human}`
-                    : "Files already read by OSII keep their existing extraction by default."}
+                    : ""}
                 </Typography>
                 {section === "add" ? (
                   <Button
@@ -966,7 +952,7 @@ export function QueuePage() {
                     startIcon={<UploadFileOutlinedIcon />}
                     disabled={uploading}
                   >
-                    {uploading ? "Uploading…" : "Add files from elsewhere"}
+                    {uploading ? "Uploading…" : "Upload files"}
                     <input
                       hidden
                       type="file"
@@ -1106,9 +1092,13 @@ export function QueuePage() {
             </DialogActions>
           </Dialog>
 
-          {(!useDiscovery || frozenSelection !== null) && <>
-          <Typography variant="h6" fontWeight={750}>{useDiscovery ? "4. Process batch" : "Processing"}</Typography>
-                      {section === "add" && <TextField select size="small" label="Intake preset" value={intakePreset} disabled={!intakeDefaults.data} onChange={e => applyIntakePreset(e.target.value)}>
+          <Typography id="intake-processing" variant="h6" component="h2" tabIndex={-1} fontWeight={750} sx={{ scrollMarginTop: 96 }}>3. Process batch</Typography>
+          {useDiscovery && frozenSelection !== null ? <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+            <Typography variant="body2">Batch #{frozenSelection}{preview.data ? ` · ${matchedCount} files · ${preview.data.preview.total_size_human}` : ""}</Typography>
+            <Button size="small" onClick={() => { const files = document.getElementById("intake-selected-files") as HTMLDetailsElement | null; if (files) { files.open = true; files.querySelector("summary")?.focus(); files.scrollIntoView({ behavior: "smooth", block: "start" }); } }}>Review files</Button>
+          </Stack> : null}
+          {useDiscovery && frozenSelection === null ? <Typography color="text.secondary">Choose a batch above to continue.</Typography> : <>
+                      {section === "add" && <TextField select size="small" label="Processing preset" value={intakePreset} disabled={!intakeDefaults.data} onChange={e => applyIntakePreset(e.target.value)}>
                         {(intakeDefaults.data?.presets ?? [{ id: "summary-search", label: "Loading intake defaults…" }]).map(preset => <MenuItem key={preset.id} value={preset.id}>{preset.label}</MenuItem>)}
                       </TextField>}
           <Accordion
@@ -1177,18 +1167,13 @@ export function QueuePage() {
                   value={expertContext}
                   onChange={(event) => setExpertContext(event.target.value)}
                   inputProps={{ maxLength: 20_000 }}
-                  helperText="Guidance saved with selected documents for model-backed extraction, synthesis, and enrichment. Leave blank to reuse saved context. Tesseract does not use it."
+                  helperText="Blank reuses saved guidance. Tesseract ignores this field."
                 />
                 <Box>
                   <Stack spacing={1.5}>
                     <Stack spacing={0.25}>
                       <Typography fontWeight={700}>Processing steps</Typography>
                       {intakeDefaults.isError && <Alert severity="error">Could not load intake defaults: {intakeDefaults.error.message}</Alert>}
-                      <Typography variant="body2" color="text.secondary">
-                        {section === "process"
-                          ? "Only the selected steps run. Downstream work uses each document's current primary extraction."
-                          : "New documents receive a primary extraction. These optional steps create additional representations."}
-                      </Typography>
                     </Stack>
                     {section === "process" &&
                     (libraryGoal === "reextract" ||
@@ -1373,9 +1358,7 @@ export function QueuePage() {
                     Repair moved source paths
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Checks the launcher's default document folder for previously
-                    processed files moved within it. It does not select files
-                    for this run.
+                    Find moved files in the configured source folder.
                   </Typography>
                   <Button
                     startIcon={<RefreshOutlinedIcon />}
@@ -1406,15 +1389,6 @@ export function QueuePage() {
 
           <Box sx={{ px: { xs: 0, sm: 1 }, py: 1 }}>
             <Stack spacing={1.5}>
-              <Stack spacing={0.25}>
-                <Typography variant="h6" fontWeight={700}>
-                  Ready to start
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Review exactly what will run before adding it to the
-                  sequential processing queue.
-                </Typography>
-              </Stack>
 
               {preview.isLoading || (!useDiscovery && rootBrowse.isLoading) ? (
                 <LinearProgress />
@@ -1459,14 +1433,14 @@ export function QueuePage() {
                     >
                       <Typography variant="body2">{step.label}</Typography>
                       <Typography variant="body2" fontWeight={600}>
-                        {step.eligible_count} {preview.data?.preview.processing_plan?.estimated ? "planned" : "queued"}
+                        {step.eligible_count} {preview.data?.preview.processing_plan?.estimated ? "planned" : "to process"}
                         {step.current_count
-                          ? ` · ${step.current_count} recorded in library`
+                          ? ` · ${step.current_count} current`
                           : ""}
                       </Typography>
                     </Stack>
                   ))}
-                  {preview.data.preview.processing_plan.note && <Typography variant="caption" color="text.secondary">{preview.data.preview.processing_plan.note}</Typography>}
+                  {preview.data.preview.processing_plan.note && <Box component="details"><Typography component="summary" variant="caption" sx={{ cursor: "pointer" }}>Plan details</Typography><Typography variant="caption" color="text.secondary">{preview.data.preview.processing_plan.note}</Typography></Box>}
                   {preview.data.preview.processing_plan.blocked_count ? (
                     <Alert severity="warning">
                       {preview.data.preview.processing_plan.blocked_count}{" "}
@@ -1506,7 +1480,7 @@ export function QueuePage() {
                   summaries under Processing options.
                 </Alert>
               ) : null}
-              {readiness.data && embed && !embeddingAvailable ? <Alert severity="warning" action={<Button color="inherit" onClick={() => navigate("/admin/processors?step=embedding")}>Set up embeddings</Button>}>Semantic embeddings are selected, but the default embedding model is unavailable. {embeddingStatus?.detail} Configure it in Setup or explicitly choose text-only intake above.</Alert> : null}
+              {readiness.data && embed && !embeddingAvailable ? <Alert severity="warning" action={<Stack direction="row"><Button color="inherit" onClick={useTextOnlyIntake}>Text only</Button><Button color="inherit" onClick={() => navigate("/admin/processors?step=embedding")}>Setup</Button></Stack>}>Embedding model unavailable. Choose Text only or update Setup.</Alert> : null}
               {preview.data && matchedCount === 0 ? (
                 <Alert severity="warning">
                   No files match the current source scope and intake rules.
@@ -1550,13 +1524,15 @@ export function QueuePage() {
               >
                 {starting
                   ? "Queueing work…"
-                  : `${section === "process" ? "Queue processing" : "▶ Process batch"}${queuedDocumentCount ? ` (${queuedDocumentCount} document${queuedDocumentCount === 1 ? "" : "s"})` : ""}`}
+                  : `${section === "process" ? "Queue processing" : "Process batch"}${queuedDocumentCount ? ` (${queuedDocumentCount} document${queuedDocumentCount === 1 ? "" : "s"})` : ""}`}
               </Button>
             </Stack>
           </Box>
           </>}
         </>
       ) : null}
+
+      {section !== "activity" ? <Accordion disableGutters elevation={0}><AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}><Typography variant="body2">Library readiness</Typography></AccordionSummary><AccordionDetails><WorkflowProgress readiness={readiness.data} checking={readiness.isLoading} failed={readiness.isError} sourceReady={useDiscovery ? undefined : Boolean((selectedFolder || uploadedItems.length) && !folderChanged && !selectingFolder && !folderError && sourceStatus?.osii_writable !== false)} onStep={followWorkflowStep} /></AccordionDetails></Accordion> : null}
 
       {section === "activity" && <ProcessingActivity recentRuns={recentRuns} workerAvailable={runs.data?.worker?.available}
         selectedLogRunId={selectedLogRunId} setSelectedLogRunId={setSelectedLogRunId} controllingRun={controllingRun}

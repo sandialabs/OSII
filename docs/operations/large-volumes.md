@@ -24,7 +24,7 @@ OSII_START_TOOLBOX=false
 ```
 
 Run `make dev`, or `.\scripts\osii.ps1 dev` on Windows, and open **Intake →
-Add files → Discover a shared drive** in the normal dashboard. The regular API, sidecar intake worker, metadata inventory
+Add files → Scan a folder or share** in the normal dashboard. The regular API, sidecar intake worker, metadata inventory
 worker, MCP, and other tools run together. No branch or storage-mode switch is
 needed. `OSII_START_TOOLBOX=false` is an optional startup setting, not an
 inventory requirement.
@@ -42,8 +42,16 @@ hashes, OCR, or model endpoints.
 
 ## Discovery and staged Intake
 
+Intake follows three numbered stages: **1. Discover files**, **2. Select a batch**,
+and **3. Process batch**. Scan options and extra filters are collapsed by default.
+Selecting **Use this batch** moves to the processing preset and preview; **Review
+files** returns to the saved membership. **Update batch** creates a new selection
+from the current filters and limits; changing filters alone does not change a
+saved batch. Saved batch IDs can be reloaded under **Limits & saved batches**.
+Pause/resume controls, incomplete coverage, and scan failures remain visible.
+
 1. Select a registered source, or register an existing share/folder path. Sources
-   must not overlap. Use **Quick folder selection** for a small one-off folder;
+   must not overlap. Use **Choose a small folder / upload files** for a one-off folder;
    discovery does not run a recursive HTTP preview.
 2. Set scan include/exclude patterns, hidden-path policy, maximum depth, and
    whether to cross filesystem boundaries. Depth 0 reads root entries only.
@@ -63,13 +71,13 @@ hashes, OCR, or model endpoints.
    observations are labeled as such; new selections include only files observed
    in the latest scan. Content-read permission is checked later in the worker.
 6. Choose file/byte budgets and optionally a reproducible stratified sample.
-   **Freeze selection for Intake** saves source/path, revision, source generation,
+   **Use this batch** saves source/path, revision, source generation,
    file identity, size/times, request rules, and discovery coverage. Incomplete
    coverage requires explicit acknowledgement. Unknown-size entries are excluded.
    Defaults are 100 files and 1 GiB; Intake accepts up to 10,000 files per batch
    and 50 MiB per file. The frozen selection never grows with later discoveries.
 7. Review the frozen names and use the existing Intake preset and processing
-   options below. **Start intake** enqueues the normal sidecar worker. Changed,
+   options below. **Process batch** enqueues the normal sidecar worker. Changed,
    missing, denied, and malformed files fail individually; healthy files continue.
    Successful documents appear in Files and can feed Search, Topics, and Chat.
    No contents are read, hashed, or sent to models during freezing or enqueueing.
