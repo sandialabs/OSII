@@ -271,12 +271,15 @@ rollback rather than risk publishing private work.
 
 Topic explorer uses the selected embedding model's stored PostgreSQL chunk
 vectors. It normalizes chunks, averages each document's vectors, normalizes again,
-and projects the document vectors with deterministic PCA. It makes no provider
+and projects the document vectors with deterministic PCA (an approximate,
+bounded subspace fit for larger datasets). It makes no provider
 calls, stores no secondary corpus, and does not use FAISS or `.osii` directories.
-The interactive map shows at most 500 documents in stable ID order; related
-ranking uses cosine similarity across the full selected scope. Exploration is
-bounded to 5,000 documents, 8,192 dimensions, and 64 MiB of document vectors. A
-mixed dimension index is refused. Missing and stale model vectors are reported;
+The interactive map includes every currently indexed document in the selected
+scope; related ranking uses cosine similarity across the same full scope. All
+points are drawn on a canvas, with viewport-dependent thumbnail and label detail.
+Exploration allows up to 8,192 dimensions and a 64 MiB float32 document-vector
+matrix (about 10,922 documents at 1,536 dimensions). The memory guard returns an
+error rather than sampling a subset. A mixed dimension index is refused. Missing and stale model vectors are reported;
 selecting another embedding model requires processing to populate compatible
 vectors. The map is experimental: 2D proximity is approximate, not evidence of a
 factual relationship or an automatically inferred topic label.
