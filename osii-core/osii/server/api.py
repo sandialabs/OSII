@@ -421,7 +421,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
             docs = scope_documents(documents, payload.scope, store.collection_records(account['id']))
             model = store.configuration().get("embedding_model", "")
             docs = [{**doc, **synthesis_labels(doc)} for doc in docs]
-            key = topic_cache_key([revision, model], docs, 500)
+            key = topic_cache_key([revision, model], docs)
             cached = hydrate_topic_map(store.cached_topic_map(key), docs)
             if cached is not None:
                 return cached

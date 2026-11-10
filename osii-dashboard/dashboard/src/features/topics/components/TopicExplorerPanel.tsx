@@ -1,4 +1,4 @@
-import { Component, useState, type ReactNode } from "react";
+import { Component, useMemo, useState, type ReactNode } from "react";
 import {
   Alert,
   Autocomplete,
@@ -52,23 +52,30 @@ export function TopicExplorerPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const allowed = new Set(map.points.map((point) => point.file_id));
-  const relatedIds = new Set(
-    related?.results.map((document) => document.file_id) ?? [],
+  const allowed = useMemo(
+    () => new Set(map.points.map((point) => point.file_id)),
+    [map.points],
+  );
+  const relatedIds = useMemo(
+    () => new Set(related?.results.map((document) => document.file_id) ?? []),
+    [related],
   );
   const focused =
     map.points.find((point) => point.file_id === focusedId) ??
     (related?.document.file_id === focusedId ? related.document : undefined);
   const term = query.trim().toLocaleLowerCase();
-  const matches = searchTopicDocuments(map.points, query);
+  const matches = useMemo(
+    () => searchTopicDocuments(map.points, query),
+    [map.points, query],
+  );
   const select = (ids: string[], mode: SelectionMode) => {
     setSelected((current) => updateSelection(current, ids, mode, allowed));
     setNotice("");
   };
-  const reviewIds = preview.length ? preview : [...selected];
-  const review = map.points.filter((document) =>
-    reviewIds.includes(document.file_id),
-  );
+  const review = useMemo(() => {
+    const ids = preview.length ? new Set(preview) : selected;
+    return map.points.filter((document) => ids.has(document.file_id));
+  }, [map.points, preview, selected]);
   const View = (topicViews.find((view) => view.id === viewId) ?? topicViews[0])
     .View;
   const save = async (create: boolean) => {
@@ -79,8 +86,9 @@ export function TopicExplorerPanel({
     try {
       if (create) await collections.create(name.trim(), ids);
       else await collections.add(target, ids);
+      const saved = new Set(ids);
       setSelected(
-        (current) => new Set([...current].filter((id) => !ids.includes(id))),
+        (current) => new Set([...current].filter((id) => !saved.has(id))),
       );
       setPreview([]);
       setResetPreviewToken((value) => value + 1);
@@ -137,7 +145,7 @@ export function TopicExplorerPanel({
             helperText={
               term.length >= 2
                 ? `${matches.length} matches · showing up to 50. Search title, filename, path or metadata.`
-                : `Search the ${map.shown_count} documents in this map. Narrow the scope to explore documents outside the displayed subset.`
+                : `Search the ${map.shown_count} documents in this map.`
             }
           />
         )}

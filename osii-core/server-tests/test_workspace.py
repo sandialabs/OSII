@@ -325,3 +325,65 @@ def test_human_metadata_permissions_conflicts_and_map_overlay(client,app):
     assert client.get(url).json()['document_metadata']['descriptive_title']['value']=='Revised label'
     assert client.post('/api/topics/map',json={}).json()['points'][0]['document_title']=='Revised label'
     assert client.get('/api/objects/missing/metadata').status_code==404
+
+
+def test_large_projection_uses_bounded_subspace_and_preserves_dominant_structure(monkeypatch):
+    from osii.domain import topic_projection
+    rng = np.random.default_rng(13)
+    vectors = (rng.normal(size=(4096, 2)) @ rng.normal(size=(2, 128)) + rng.normal(scale=.002, size=(4096, 128))).astype(np.float32)
+    svd = np.linalg.svd
+    shapes = []
+    def bounded_svd(matrix, **kwargs):
+        shapes.append(matrix.shape)
+        assert min(matrix.shape) <= 12  # Never decompose the whole corpus.
+        return svd(matrix, **kwargs)
+    monkeypatch.setattr(topic_projection.np.linalg, "svd", bounded_svd)
+    coordinates, variance = topic_projection.project_documents(vectors)
+    again, _ = topic_projection.project_documents(vectors)
+    assert coordinates.shape == (4096, 2) and np.isfinite(coordinates).all()
+    assert np.array_equal(coordinates, again)
+    assert .999 < variance <= 1
+    centered = vectors - vectors.mean(axis=0)
+    expected = svd(centered, full_matrices=False)[1][:2]
+    assert np.allclose(np.linalg.svd(coordinates, compute_uv=False), expected, rtol=1e-4)
+    assert len(shapes) == 3
+
+
+def test_hosted_full_map_cache_covers_more_than_five_thousand_documents(client, app, monkeypatch):
+    from sqlalchemy import insert
+    from contextlib import contextmanager
+    from osii.persistence.postgres import documents, now
+    store = app.state.store
+    store.save_configuration({"embedding_model": "large-test"})
+    count = 6001
+    vectors = np.random.default_rng(2).normal(size=(count, 64)).astype(np.float32)
+    with store.transaction() as c:
+        c.execute(insert(documents), [dict(file_id=f"large-{i:05}", source_relpath=f"large/{i}.pdf", sha256=str(i), filename=f"{i}.pdf", media_type="application/pdf", size_bytes=0, text="", metadata={}, updated_at=now()) for i in range(count)])
+        c.execute(insert(chunks), [dict(chunk_id=f"chunk-{i}", file_id=f"large-{i:05}", text="", char_start=0, char_end=0, source_origin={}, embedding=vector.tolist(), embedding_model="large-test") for i, vector in enumerate(vectors)])
+    assert client.post("/api/topics/map", json={}).status_code == 401
+    login(client, "reader")
+    response = client.post("/api/topics/map", json={})
+    assert response.status_code == 200, response.text
+    full = response.json()
+    assert full["shown_count"] == full["indexed_count"] == count
+    assert len({p["file_id"] for p in full["points"]}) == count
+    snapshot = store.topic_snapshot
+    @contextmanager
+    def headers_only():
+        with snapshot() as (revision, docs, rows):
+            yield revision, docs, lambda _: pytest.fail("Full cached map must skip vector streaming")
+    monkeypatch.setattr(store, "topic_snapshot", headers_only)
+    assert client.post("/api/topics/map", json={}).json() == full
+
+
+def test_large_identical_vectors_have_no_artificial_structure():
+    coordinates, variance = project_documents(np.full((6001, 64), .1, dtype=np.float32))
+    assert not coordinates.any() and variance == 0
+
+
+def test_vector_budget_rejects_large_spaces_instead_of_sampling(monkeypatch):
+    from osii.domain import topics
+    monkeypatch.setattr(topics, "MAX_DOCUMENT_VECTOR_BYTES", 1)
+    docs = [{"file_id": "a", "filename": "a.pdf", "source_relpath": "a.pdf"}]
+    with pytest.raises(TopicIndexUnavailable, match="64 MiB"):
+        topic_map(docs, [{"file_id": "a", "embedding_model": "m", "embedding": [1, 0]}], "m", 1)

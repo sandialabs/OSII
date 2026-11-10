@@ -6,10 +6,10 @@ import json
 import math
 from osii.domain.document_metadata import document_labels
 
-CACHE_VERSION = "pca-map-v1"
+CACHE_VERSION = "pca-map-v2-full"
 
 
-def topic_cache_key(identity: object, documents: list[dict], limit: int) -> str:
+def topic_cache_key(identity: object, documents: list[dict], limit: int | None = None) -> str:
     return hashlib.sha256(
         json.dumps(
             [CACHE_VERSION, identity, sorted(d["file_id"] for d in documents), limit],
@@ -82,7 +82,6 @@ def hydrate_topic_map(cached: dict | None, documents: list[dict]) -> dict | None
             cached["projection"] != "pca"
             or cached["scope_count"] != len(documents)
             or not isinstance(points, list)
-            or len(points) > 500
             or len(points) != cached["shown_count"]
             or len({p["file_id"] for p in points}) != len(points)
             or not math.isfinite(cached["explained_variance"])

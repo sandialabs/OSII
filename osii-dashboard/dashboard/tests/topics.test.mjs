@@ -39,3 +39,20 @@ test("search is explicit and scales without making a giant dropdown",()=>{
  assert.equal(searchTopicDocuments(documents,"Garden").slice(0,50).length,50);
  assert.equal(searchTopicDocuments([doc],"Not identified").length,1);
 });
+
+
+import { detailPointIds, nearestPoint } from "../src/features/topics/components/geometry.ts";
+test("twenty thousand points remain selectable while detail work stays screen bounded", () => {
+ const points = Array.from({length:20000}, (_,i) => ({...doc,file_id:String(i),x:i%200,y:Math.floor(i/200)}));
+ const positions = mapPositions(points,{x:0,y:0,zoom:1});
+ assert.equal(positions.size,20000);
+ assert.equal(circleMembers(positions,{x:400,y:240},500).length,20000);
+ const details=detailPointIds(positions,90);
+ assert.ok(details.size < 100);
+ assert.ok([...details].some(id=>Number(id)>19500)); // Never just the first N IDs.
+ const zoomed=mapPositions(points,{x:-644,y:324,zoom:4});
+ assert.notDeepEqual([...detailPointIds(zoomed,90)],[...details]);
+ const last=positions.get("19999");
+ assert.equal(nearestPoint(positions,last),"19999");
+ assert.ok(positions.get("19999")); // Detail culling cannot remove selection targets.
+});

@@ -9,14 +9,12 @@ import numpy as np
 
 
 from osii.domain.document_metadata import document_labels, synthesis_labels
-from osii.domain.topic_projection import TopicIndexUnavailable, project_documents
+from osii.domain.topic_projection import MAX_DOCUMENT_VECTOR_BYTES, TopicIndexUnavailable, project_documents
 
 
 def document_space(documents: list[dict], rows: Iterable[Mapping[str, Any]], model: str, revision: int) -> tuple[list[dict], np.ndarray, dict, int]:
     if not model:
         raise TopicIndexUnavailable("An administrator must select an embedding model and a curator must process the dataset first.")
-    if len(documents) > 5000:
-        raise TopicIndexUnavailable("Choose a folder or collection with at most 5,000 documents.")
     sums, counts, dimensions = {}, {}, None
     stale = set()
     for row in rows:
@@ -26,19 +24,19 @@ def document_space(documents: list[dict], rows: Iterable[Mapping[str, Any]], mod
         if row.get("embedding_model") != model:
             stale.add(row["file_id"])
             continue
-        vector = np.asarray(values, dtype=np.float64)
+        vector = np.asarray(values, dtype=np.float32)
         if vector.ndim != 1 or not 1 <= len(vector) <= 8192 or not np.isfinite(vector).all():
             raise TopicIndexUnavailable("Invalid indexed vectors. Reprocess embeddings before exploring.")
         dimensions = dimensions or len(vector)
         if len(vector) != dimensions:
             raise TopicIndexUnavailable("Embedding dimensions disagree. Reprocess using one consistent model.")
-        if len(documents)*dimensions*8 > 64*1024*1024:
+        if (len(sums) + (row["file_id"] not in sums))*dimensions*4 > MAX_DOCUMENT_VECTOR_BYTES:
             raise TopicIndexUnavailable("Choose a smaller scope; document vectors exceed the 64 MiB exploration limit.")
         norm = np.linalg.norm(vector)
         if norm <= 1e-12:
             continue
         fid = row["file_id"]
-        sums.setdefault(fid, np.zeros(dimensions))[:] += vector/norm
+        sums.setdefault(fid, np.zeros(dimensions, dtype=np.float32))[:] += vector/norm
         counts[fid] = counts.get(fid, 0)+1
     indexed, vectors = [], []
     for doc in sorted(documents, key=lambda d: d["file_id"]):
@@ -50,12 +48,12 @@ def document_space(documents: list[dict], rows: Iterable[Mapping[str, Any]], mod
     stale -= {d["file_id"] for d in indexed}
     index = {"id":hashlib.sha256(f"{revision}:{model}:{dimensions}".encode()).hexdigest()[:20],
         "provider":"configured", "model":model, "dimensions":dimensions or 0, "semantic":True, "created_utc":None}
-    return indexed, np.array(vectors).reshape(len(vectors), dimensions or 0), index, len(stale)
+    return indexed, np.array(vectors, dtype=np.float32).reshape(len(vectors), dimensions or 0), index, len(stale)
 
 
-def topic_map(documents: list[dict], rows: Iterable[Mapping[str, Any]], model: str, revision: int, limit: int = 500) -> dict:
+def topic_map(documents: list[dict], rows: Iterable[Mapping[str, Any]], model: str, revision: int, limit: int | None = None) -> dict:
     docs, vectors, index, stale = document_space(documents, rows, model, revision)
-    coordinates, variance = project_documents(vectors[:limit])
+    coordinates, variance = project_documents(vectors)
     return {"index":index,"scope_count":len(documents),"indexed_count":len(docs),"stale_count":stale,
         "unindexed_count":len(documents)-len(docs)-stale,"shown_count":len(docs[:limit]),
         "projection":"pca","explained_variance":variance,
