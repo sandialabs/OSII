@@ -27,6 +27,8 @@ an AI model.
 - Explore related documents with the experimental Topic Explorer.
 - Compare experimental RAG strategies and inspect their evidence in Chat.
 - Extend processing and frontend tools through documented interfaces.
+- Write editable research reports with passage references, bibliography drafts,
+  reviewable revisions, and Markdown or Mathpix exports.
 
 ## Get started
 

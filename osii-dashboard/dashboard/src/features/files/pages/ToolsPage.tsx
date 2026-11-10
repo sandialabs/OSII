@@ -26,6 +26,7 @@ export function ToolsPage() {
   return <Stack spacing={3} sx={{ maxWidth: 1100, mx: "auto" }}>
     <Stack spacing={0.5}><Typography variant="h4" fontWeight={750}>Tools</Typography><Typography color="text.secondary">Choose an operation, then a method.</Typography></Stack>
     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+      <Button component={Link} to="/research" variant="contained">Write a research report ↗</Button>
       <Button component={Link} to="/topics" variant="outlined">Topic explorer ↗</Button>
       <Button component={Link} to="/library-overview" variant="outlined">Library at a glance ↗</Button>
       <Button component={Link} disabled={catalog.data?.permissions?.run === false} to="/admin/processors">＋ Connect a tool</Button>

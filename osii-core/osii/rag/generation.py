@@ -41,6 +41,13 @@ def run_chat_completion(
             ),
         },
     ]
+    return run_messages(provider=provider, settings=settings, model=model, messages=messages,
+                        max_tokens=settings.chat_max_tokens)
+
+
+def run_messages(*, provider: str, settings: ChatSettings, model: str,
+                 messages: list[dict], max_tokens: int) -> str:
+    """Generate a bounded Markdown artifact using the configured chat connection."""
     if provider == "ollama":
         response = requests.post(
             f"{settings.ollama_base_url}/api/chat",
@@ -48,7 +55,7 @@ def run_chat_completion(
                 "model": model,
                 "stream": False,
                 "messages": messages,
-                "options": {"num_predict": settings.chat_max_tokens},
+                "options": {"num_predict": max_tokens},
             },
             timeout=120,
         )
@@ -64,7 +71,7 @@ def run_chat_completion(
         headers["Authorization"] = f"Bearer {settings.openai_compatible_api_key}"
     response = requests.post(
         f"{settings.openai_compatible_base_url}/chat/completions",
-        json={"model": model, "messages": messages, "max_tokens": settings.chat_max_tokens},
+        json={"model": model, "messages": messages, "max_tokens": max_tokens},
         headers=headers,
         timeout=120,
     )

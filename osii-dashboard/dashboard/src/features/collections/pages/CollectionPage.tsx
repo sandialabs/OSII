@@ -140,6 +140,7 @@ export function CollectionPage() {
           </Stack>
 
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Button variant="contained" onClick={() => navigate(`/research?collection_id=${encodeURIComponent(collectionId)}`)}>Write research report</Button>
             <Button
               variant="outlined"
               startIcon={<SearchOutlinedIcon />}

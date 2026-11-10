@@ -1,3 +1,4 @@
+import { ReportPassage } from "../../research/ReportPassage";
 import { useQuery } from "@tanstack/react-query";
 import { getObjectExtractions, getExtractionText } from "../../../api/objects";
 // src/features/files/pages/FilePage.tsx
@@ -5,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useParams } from "react-router-dom";
 import {
   Alert,
+  Button,
   MenuItem,
   TextField,
   CircularProgress,
@@ -172,7 +174,9 @@ export function FilePage() {
   return (
     <Stack spacing={3}>
       <FileHeader file={detail} />
+      <Button component="a" href={`/research?file_id=${encodeURIComponent(fileId)}`} sx={{ alignSelf: "start" }}>Write research report</Button>
 
+      <ReportPassage text={visibleText} loading={extractionId ? versionText.isLoading : preferredTextQuery.isLoading} />
       <FileDetailTabs value={tab} onChange={value => { setTab(value); const next = new URLSearchParams(searchParams); next.set("tab", value); setSearchParams(next, { replace: true }); }} />
 
       {["text", "source", "split"].includes(tab) && versions.data?.variants.length ? <TextField select size="small" label="Text version" slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }} value={extractionId} onChange={event => {
@@ -182,6 +186,7 @@ export function FilePage() {
         setActiveSegmentId(null); setSearchParams(next);
       }} sx={{ maxWidth: 620 }}>
         <MenuItem value="">Primary text / corrections</MenuItem>
+        {extractionId === "canonical" && <MenuItem value="canonical">Canonical extracted text</MenuItem>}
         {versions.data.variants.map(item => <MenuItem key={item.id} value={item.id}>{item.extractor.name} · {new Date(item.created_utc).toLocaleString()}{item.primary ? " · Primary" : ""}</MenuItem>)}
       </TextField> : null}
       {extractionId && versionText.isError ? <Alert severity="error">This text version could not be loaded.</Alert> : null}

@@ -22,6 +22,8 @@ export type WorkbenchTool = {
 
 // One registration drives routing and navigation; feature pages stay independent.
 export const workbenchTools: readonly WorkbenchTool[] = [
+  { id: "research", path: "/research", label: "Research reports", group: "tools", icon: InsightsOutlined,
+    Page: lazy(() => import("../features/research/ResearchPage").then(m => ({ default: m.ResearchPage }))) },
   { id: "tools", path: "/tools", label: "All tools", group: "tools", icon: BuildOutlined,
     Page: lazy(() => import("../features/files/pages/ToolsPage").then(m => ({ default: m.ToolsPage }))) },
   { id: "intake", path: "/intake", label: "Add files", group: "start", icon: MoveToInboxOutlined,

@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from osii.api.collection_synthesis_routes import router as collection_synthesis_router
 from osii.api.catalog_routes import router as catalog_router
 from osii.api.chat_routes import router as chat_router
+from osii.api.research_routes import router as research_router
 from osii.api.collections_routes import router as collections_router
 from osii.api.embedding_routes import router as embedding_router
 from osii.api.enrichment_jobs_routes import router as enrichment_jobs_router
@@ -118,6 +119,7 @@ app.include_router(processor_settings_router)
 app.include_router(model_provider_router)
 app.include_router(setup_router)
 app.include_router(chat_router)
+app.include_router(research_router)
 app.mount("/api/volume", inventory_app)
 
 @app.get("/health")

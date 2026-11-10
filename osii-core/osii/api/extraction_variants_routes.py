@@ -10,6 +10,7 @@ from osii.domain.artifacts.extraction_variants import (
 from osii.domain.catalog_db import upsert_document
 from osii.domain.processing.pathing import path_within
 from osii.domain.read.docs import get_doc_meta
+from osii.domain.read.sidecar import SidecarLibraryReader
 from osii.domain.storage.ids import compute_file_id
 
 router = APIRouter(prefix="/api/objects", tags=["extraction-variants"])
@@ -38,6 +39,14 @@ def get_extraction_artifacts(request: Request, file_id: str, variant_id: str):
 
 @router.get("/{file_id}/extractions/{variant_id}/texts")
 def get_extraction_text(request: Request, file_id: str, variant_id: str):
+    if variant_id == "canonical":
+        record = SidecarLibraryReader(request.app.state.osii_root.resolve()).get_representation(file_id, "canonical")
+        if record is None:
+            raise HTTPException(404, "Canonical extracted text not found")
+        return {"file_id": file_id, "extraction_id": "canonical", "text": record.text,
+                "segments": [{"id": segment.segment_id, "kind": "text", "path": "text.txt",
+                              "span": {"char_start": segment.char_start, "char_end": segment.char_end},
+                              "source_origin": segment.source_origin} for segment in record.segments]}
     try:
         return read_extraction_text(
             request.app.state.osii_root.resolve(), file_id, variant_id

@@ -1048,3 +1048,61 @@ Use this overview together with:
 - `openapi.yaml`
 
 The Markdown documents explain behavior and conventions. The OpenAPI document should define exact schemas, parameters, and response contracts.
+
+
+## Research reports
+
+Open **Research reports** in Tools, select a collection or document, and describe
+its audience, question, structure, and desired level of detail. The brief accepts
+up to 60,000 characters. A configured chat model writes a Markdown report;
+without one, OSII creates clearly labelled extractive research notes. An empty
+scope prompts you to process its documents first.
+
+Click any source marker to inspect the exact excerpt alongside the report.
+**Open passage in document** opens its preserved text representation, page (when
+known), and character range. Source identity includes a SHA-256 fingerprint of
+the full extracted text; the document viewer checks that fingerprint when opening
+a report reference and flags changed text. Bibliographic entries use available metadata and simple
+title/year heuristics; they are best guesses and remain editable. Citation checks
+verify reference identity and location, not the model's interpretation.
+
+Use **Edit text** to change prose or bibliography details. **Make it better**
+proposes a revision against the report's original scope and brief. Review the
+removed and added lines, accept or reject individual changes, or choose
+**Accept all**. Pending changes never enter the report or its exports. Editing
+and new generation pause during review. **Undo / restore** restores the previous
+draft after a generation or completed revision.
+
+Drafts are retained in the current browser tab's session storage (separately per
+hosted account), not saved as canonical library artifacts. Export `.md` for normal
+Markdown or `.mmd` for LaTeX/Mathpix Markdown. Both preserve equations, clickable
+absolute OSII links, bibliography, coverage warnings, and exact excerpt/fingerprint
+notes. Document links require access to the same running OSII library; evidence
+notes can be read without it. Mathpix rendering uses the existing local renderer;
+no Mathpix account or external conversion is required.
+
+`POST /api/research/report` accepts:
+
+```json
+{
+  "scope": {"scope_type": "collection", "collection_id": "collection-id"},
+  "prompt": "Compare the findings and discuss the limitations.",
+  "format": "markdown"
+}
+```
+
+For a revision, also send `current_markdown`, `improvement`, and the `sources`
+returned with the report. Core re-reads those sources and ignores client-supplied
+paths and links. A changed/deleted extraction or out-of-scope reference returns
+409; an empty scope or invalid request returns 422; unusable model output or
+unknown references returns 502. The hosted endpoint requires authentication,
+collection visibility, CSRF protection, and the shared writing budget.
+
+Reports currently sample the first 24 documents in source-path order, selecting
+an introduction and a lexical prompt-matched passage per document (up to 1,400
+characters each). Revisions retain previously verified excerpts, with a maximum
+of 64 passages. This is bounded evidence sampling, not exhaustive literature
+review. The response exposes `documents_in_scope`, `documents_sampled`, source
+snapshots, writing provider/model, format, and coverage warnings. Narrow large
+collections for fuller coverage. Core rechecks text fingerprints after writing
+and rejects changed evidence rather than silently attaching stale locations.
