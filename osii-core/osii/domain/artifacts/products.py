@@ -408,6 +408,8 @@ def product_input_state(root: Path, scope: dict, history: dict) -> str:
             return "stale"
         for item in inputs:
             preferred = get_preferred_text_representation(root, item["file_id"])
+            if provenance.get('batch_run_id') and item.get('source_sha256') is None and not preferred:
+                continue
             if not preferred or hashlib.sha256(
                 preferred["text"].encode()
             ).hexdigest() != item.get("source_sha256"):

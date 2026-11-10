@@ -2,6 +2,29 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+from contextlib import contextmanager
+from contextvars import ContextVar
+
+_BATCH_OUTPUTS = ContextVar("scope_batch_outputs", default=None)
+
+@contextmanager
+def capture_batch_outputs():
+    """Adapt Core-owned legacy enrichers without publishing intermediate files."""
+    values = []
+    token = _BATCH_OUTPUTS.set(values)
+    try:
+        yield values
+    finally:
+        _BATCH_OUTPUTS.reset(token)
+
+
+def _capture_batch(kind, method, payload, metadata):
+    sink = _BATCH_OUTPUTS.get()
+    if sink is None: return None
+    identity = _variant_basename(kind, method)
+    sink.append({"id": identity, "data": payload, "metadata": metadata or {}})
+    return {"kind": kind, "method": method, "data_path": "batch:" + identity, "metadata_path": None}
+
 
 from osii.domain.artifacts.products import write_artifact, validate_scope, artifact_metadata
 from osii.domain.artifacts.extraction_variants import list_extraction_variants
@@ -58,6 +81,8 @@ def create_enrichment_output_dir(
     kind: str,
     method: str,
 ) -> dict:
+    if _BATCH_OUTPUTS.get() is not None:
+        raise ValueError("Batch processors must return artifacts through the typed artifact writers; directory output is unsupported")
     scope_type, base_dir, scope_id = _scope_enrichment_dir(osii_root, scope)
     dirname = _variant_basename(kind, method)
     out_dir = base_dir / dirname
@@ -91,6 +116,9 @@ def write_object_enrichment_variant(
     payload: dict | list,
     metadata: dict | None = None,
 ) -> dict:
+    captured = _capture_batch(kind, method, payload, metadata)
+    if captured is not None: return captured
+
     base = _variant_basename(kind, method)
     out_dir = object_enrichments_dir(osii_root, file_id)
 
@@ -124,6 +152,9 @@ def write_folder_enrichment_variant(
     payload: dict | list,
     metadata: dict | None = None,
 ) -> dict:
+    captured = _capture_batch(kind, method, payload, metadata)
+    if captured is not None: return captured
+
     base = _variant_basename(kind, method)
     out_dir = folder_enrichments_dir(osii_root, folder_id)
 
@@ -152,6 +183,9 @@ def write_collection_enrichment_variant(
     payload: dict | list,
     metadata: dict | None = None,
 ) -> dict:
+    captured = _capture_batch(kind, method, payload, metadata)
+    if captured is not None: return captured
+
     base = _variant_basename(kind, method)
     out_dir = collection_enrichments_dir(osii_root, collection_id)
 
@@ -179,6 +213,9 @@ def write_root_enrichment_variant(
     payload: dict | list,
     metadata: dict | None = None,
 ) -> dict:
+    captured = _capture_batch(kind, method, payload, metadata)
+    if captured is not None: return captured
+
     base = _variant_basename(kind, method)
     out_dir = root_enrichments_dir(osii_root)
 
@@ -207,6 +244,9 @@ def write_scope_enrichment_variant(
     payload: dict | list,
     metadata: dict | None = None,
 ) -> dict:
+    captured = _capture_batch(kind, method, payload, metadata)
+    if captured is not None: return captured
+
     scope_type, _, scope_id = _scope_enrichment_dir(osii_root, scope)
     if scope_type == "object":
         return write_object_enrichment_variant(

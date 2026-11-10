@@ -139,7 +139,7 @@ function Editor({
         aria-label="Product views"
       >
         <Tab value="read" label="Read" />
-        <Tab value="edit" label={draft ? "Resume draft" : "Edit"} disabled={history.permissions?.edit === false} />
+        <Tab value="edit" label={draft ? "Resume draft" : "Edit"} disabled={history.permissions?.edit === false || dataRecord.artifact_type === "scope_batch_run"} />
         <Tab value="history" label={`History (${history.revisions.length})`} />
       </Tabs>
       {generatedCandidate ? (

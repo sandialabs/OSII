@@ -157,7 +157,7 @@ def chat_synthesizer_descriptor(provider: str = "openai") -> ProcessorDescriptor
         display_name=f"{provider.title()} Synthesizer",
         description=f"Processor API adapter for an explicitly selected {provider} chat model.",
         kind=ProcessorKind.SYNTHESIZER,
-        capabilities=Capability(scope_types=["object", "folder", "collection", "root"], output_kinds=["wiki_markdown"]),
+        capabilities=Capability(batch_reduction="wiki", scope_types=["object", "folder", "collection", "root"], output_kinds=["wiki_markdown"]),
         config_schema={
             "type": "object",
             "properties": {

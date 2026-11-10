@@ -76,3 +76,13 @@ and worker adapters. The shared discovery and scope-tool widgets accept optional
 capability metadata rather than embedding hosted accounts or storage access.
 `configureApiClient` lets the hosted composition supply transport policy; local
 continues to use its account-free loopback API.
+
+
+Whole-scope processing uses the shared `domain/processing/scope_batches.py`
+engine and `BatchStorage` protocol. The request boundary is bounded while the
+corpus has no fixed document or total-text cutoff. Follow the
+[batch contract](../reference/processor-api/enrichment.md#whole-scope-batches)
+when adding a tool: preserve every supplied text window, return relative
+citations, and declare whether derived wiki summaries can be combined. The
+shared `ScopeBatchResults` component loads result metadata by page and opens
+individual results on demand.

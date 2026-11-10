@@ -38,8 +38,10 @@ def wiki(text):
         {"scope_type": "collection", "collection_id": "collection"},
     ],
 )
-def test_wiki_edits_keep_history_and_regeneration_candidates(temp_osii_root, scope):
+def test_wiki_edits_keep_history_and_regeneration_candidates(temp_osii_root, scope, sample_osii_object):
     root = temp_osii_root
+    if scope["scope_type"] == "object":
+        scope = {**scope, "file_id": sample_osii_object["file_id"]}
     filename = "wiki--test.json"
     write_scope_enrichment_variant(
         root, scope, kind="wiki", method="test", payload=wiki("Original")

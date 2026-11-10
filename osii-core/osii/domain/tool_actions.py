@@ -88,7 +88,8 @@ def tool_catalog(root: Path) -> dict:
                 "model_requirements": descriptor.get("model_requirements") or {},
                 "bindings": bindings,
                 "configuration_error": error,
-                "limits": {"documents": 1000, "characters": 200000},
+                "limits": {"documents": 32, "characters": 100000},
+                "batching": {"whole_scope": True, "documents": 32, "characters": 100000, "reduction": descriptor.get("capabilities", {}).get("batch_reduction", "partitioned")},
                 "execution": "scope",
                 "resume": "frozen-inputs",
             }
@@ -149,6 +150,9 @@ def resolve_scope_method(root: Path, processor: str, scope: dict, method_kind: s
 
 
 def submit_tool(root: Path, payload: dict, *, method_kind: str = "enricher") -> dict:
+    if method_kind == "enricher":
+        from osii.domain.processing.scope_batches_local import submit
+        return submit(root, payload)
     processor = str(payload.get("enricher_name") or "").strip()
     if not processor:
         raise ValueError("Choose a tool method.")
@@ -246,6 +250,9 @@ def submit_tool(root: Path, payload: dict, *, method_kind: str = "enricher") -> 
 
 
 def execute_tool(job: dict):
+    if job["payload"].get("batch_version"):
+        from osii.domain.processing.scope_batches_local import execute
+        return execute(job)
     payload = job["payload"]
     root, run_id = Path(payload["osii_store"]), job["run_id"]
     run = get_run(run_id)

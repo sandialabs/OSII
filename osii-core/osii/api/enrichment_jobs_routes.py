@@ -27,3 +27,34 @@ def run_enrichment(request: Request, payload: ToolSubmission):
         return submit_tool(request.app.state.osii_root.resolve(), payload.model_dump())
     except (KeyError, ValueError, RuntimeError, OSError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/runs/{run_id}/batches")
+def batch_details(run_id: str, request: Request, cursor: int = 0, limit: int = 20):
+    from osii.domain.processing.scope_batches_local import details
+    from osii.domain.processing.jobs import get_run
+    run=get_run(run_id)
+    if not run or not run.get('batch_progress'):
+        raise HTTPException(404,'Batch run not found')
+    try:return details(request.app.state.osii_root.resolve(),run_id,cursor,limit)
+    except (ValueError,FileNotFoundError):raise HTTPException(404,'Batch details not found') from None
+
+
+@router.get("/runs/{run_id}/batches/{batch_id}")
+def one_batch(run_id: str, batch_id: str, request: Request):
+    from osii.domain.processing.scope_batches_local import batch_result
+    from osii.domain.processing.jobs import get_run
+    run=get_run(run_id)
+    if not run or not run.get('batch_progress'):raise HTTPException(404,'Batch run not found')
+    try:return batch_result(request.app.state.osii_root.resolve(),run_id,batch_id)
+    except (ValueError,FileNotFoundError):raise HTTPException(404,'Batch result not found') from None
+
+
+@router.get("/runs/{run_id}/sources")
+def run_sources(run_id: str, request: Request, cursor: int = 0, limit: int = 50, only_missing: bool = False):
+    from osii.domain.processing.scope_batches_local import source_details
+    from osii.domain.processing.jobs import get_run
+    run=get_run(run_id)
+    if not run or not run.get('batch_progress'):raise HTTPException(404,'Batch run not found')
+    try:return source_details(request.app.state.osii_root.resolve(),run_id,cursor,limit,only_missing)
+    except (ValueError,FileNotFoundError):raise HTTPException(404,'Source details not found') from None

@@ -240,7 +240,7 @@ export type EnrichmentListEntryFile = {
   name: string;
   kind: "file";
   relpath: string;
-  artifact_type?: "table" | "knowledge_graph" | "entity_list" | "wiki_markdown";
+  artifact_type?: "table" | "knowledge_graph" | "entity_list" | "wiki_markdown" | "scope_batch_run";
   title?: string;
 };
 
@@ -726,6 +726,7 @@ export type IntakeResolveResponse = {
 };
 
 export type ProcessingRun = {
+  batch_progress?: BatchProgress;
   id: string;
   status: "pending" | "queued" | "running" | "done" | "error" | string;
   control_state?: "running" | "pause_requested" | "paused" | "cancel_requested" | "cancelled" | string;
@@ -1110,4 +1111,11 @@ export type SearchScopedResponse = {
   scope: Record<string, unknown>;
   group_by: SearchGroupBy;
   results: SearchScopedResult[];
+};
+
+export type BatchProgress = {
+  documents: number; documents_with_text: number; documents_without_text: number;
+  text_characters: number; map_batches: number; completed_batches: number;
+  completed_documents: number; processed_characters: number; reduce_batches: number;
+  reduction: string; phase: string;
 };

@@ -721,3 +721,19 @@ def honor_run_control(run_id: str) -> bool:
         append_log(run_id, "Run cancelled after the current operation completed.")
         return True
     return False
+
+
+def queue_job_write(job_id: str, worker_id: str):
+    """Fence short batch-file publications against queue ownership recovery."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def owned():
+        with _connection() as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            row = connection.execute('SELECT worker_id,status FROM queue_jobs WHERE id=?', (job_id,)).fetchone()
+            if row is None or row['worker_id'] != worker_id or row['status'] not in {'running','pause_requested','cancel_requested'}:
+                raise ValueError('Worker no longer owns this scope-tool run')
+            yield
+            connection.commit()
+    return owned()

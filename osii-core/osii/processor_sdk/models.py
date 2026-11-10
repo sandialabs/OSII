@@ -20,6 +20,7 @@ class ProcessorKind(StrEnum):
 
 
 class Capability(BaseModel):
+    batch_reduction: Literal["partitioned", "wiki"] = "partitioned"
     media_types: list[str] = Field(default_factory=list)
     file_extensions: list[str] = Field(default_factory=list)
     scope_types: list[Literal["object", "folder", "collection", "root"]] = Field(default_factory=list)

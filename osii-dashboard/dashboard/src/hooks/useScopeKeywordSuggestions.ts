@@ -9,6 +9,7 @@ export const KEYWORD_SNAPSHOT_FILENAME = "keywords--noun_adjective_ngrams.json";
 export function extractKeywordSuggestions(value: unknown, limit = 6): string[] {
   if (!value || typeof value !== "object") return [];
   const artifact = value as Record<string, unknown>;
+  if (artifact.artifact_type === "scope_batch_run" && Array.isArray(artifact.keyword_samples)) return artifact.keyword_samples.filter((value): value is string => typeof value === "string").slice(0, limit);
   if (artifact.artifact_type !== "table" || !Array.isArray(artifact.rows)) return [];
   const seen = new Set<string>();
   const keywords: string[] = [];
@@ -70,6 +71,7 @@ export function useScopeKeywordSuggestions(scope: ScopeDescribeRequest, enabled 
     keywords,
     questions: buildQuestionSuggestions(keywords, scope),
     hasSnapshot: Boolean(entry),
+    fromBatches: Boolean(payload.data?.data && typeof payload.data.data === "object" && "artifact_type" in payload.data.data && payload.data.data.artifact_type === "scope_batch_run"),
     isLoading: enrichments.isLoading || payload.isLoading,
     isError: enrichments.isError || payload.isError,
     artifactCount: (enrichments.data?.enrichments ?? []).filter(
