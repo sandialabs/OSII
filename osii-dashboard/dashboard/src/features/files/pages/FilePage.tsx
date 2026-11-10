@@ -175,7 +175,7 @@ export function FilePage() {
 
       <FileDetailTabs value={tab} onChange={value => { setTab(value); const next = new URLSearchParams(searchParams); next.set("tab", value); setSearchParams(next, { replace: true }); }} />
 
-      {["text", "source", "split"].includes(tab) && versions.data?.variants.length ? <TextField select size="small" label="Text version" value={extractionId} onChange={event => {
+      {["text", "source", "split"].includes(tab) && versions.data?.variants.length ? <TextField select size="small" label="Text version" slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }} value={extractionId} onChange={event => {
         const next = new URLSearchParams(searchParams);
         if (event.target.value) next.set("extraction_id", event.target.value); else next.delete("extraction_id");
         for (const key of ["char_start", "char_end", "segment_id"]) next.delete(key);

@@ -97,7 +97,11 @@ class FallbackSynthesizer:
         failures: list[str] = []
         for name in self.names:
             try:
-                return _get_one_synthesizer(name).synthesize(**kwargs)
+                result = _get_one_synthesizer(name).synthesize(**kwargs)
+                if failures:
+                    result["fallback_failures"] = list(failures)
+                    result["actual_synthesizer"] = name
+                return result
             except Exception as exc:
                 failures.append(f"{name}: {exc}")
         raise RuntimeError("All synthesis providers failed: " + "; ".join(failures))
@@ -452,6 +456,8 @@ def run_worker(
                             expert_context=document_context,
                             synthesizer_config=synthesizer_config or {},
                         )
+                        if synthesis_result.get("fallback_failures"):
+                            append_log(run_id, f"Synthesis used fallback {synthesis_result['actual_synthesizer']}; earlier failures: {'; '.join(synthesis_result['fallback_failures'])}")
                         append_log(run_id, f"synthesis complete: {src.name}")
                     except Exception as exc:
                         synthesis_error = str(exc)

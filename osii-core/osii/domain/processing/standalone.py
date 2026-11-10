@@ -132,7 +132,7 @@ class SynthesisAction:
                     saved = result.get("synthesis_rel") or result.get("synth_rel")
                 if result.get("error"):
                     raise RuntimeError(result["error"])
-                return {"ok": True, "result": saved}
+                return {"ok": True, "result": saved, **({"fallback_failures": list(failures), "actual_synthesizer": name} if failures else {})}
             except Exception as exc:
                 failures.append(f"{name}: {exc}")
         raise RuntimeError("All synthesis providers failed: " + "; ".join(failures))

@@ -296,3 +296,22 @@ def test_native_synthesis_does_not_depend_on_unrelated_model_changes(
     save_models_config({"version": 1, "defaults": {}, "models": {}})
     execute_job(jobs.claim_next_queue_job())
     assert jobs.get_run(response.json()["run_id"])["status"] == "done"
+
+
+def test_synthesis_fallback_retains_failure_details_for_activity(temp_osii_root, monkeypatch):
+    from types import SimpleNamespace
+    from osii.api.runs_routes import FallbackSynthesizer
+    from osii.domain.processing.standalone import SynthesisAction
+    def fail(**kwargs):
+        raise ValueError("Invalid metadata JSON")
+    def resolve(name):
+        return SimpleNamespace(synthesize=fail if name == "primary" else lambda **kwargs: {"synthesis_rel":"objects/test/synth.txt"})
+    monkeypatch.setattr("osii.api.runs_routes._get_one_synthesizer", resolve)
+    result = FallbackSynthesizer(["primary", "preview"]).synthesize()
+    assert result["fallback_failures"] == ["primary: Invalid metadata JSON"]
+    assert result["actual_synthesizer"] == "preview"
+    monkeypatch.setenv("OSII_SYNTHESIZER_FALLBACKS", "preview")
+    monkeypatch.setattr("osii.domain.processing.standalone.resolve_synthesis_method", resolve)
+    result = SynthesisAction(temp_osii_root, "primary", {"scope_type":"object", "file_id":"test"}).enrich(osii_store=temp_osii_root, scope={"scope_type":"object", "file_id":"test"})
+    assert result["fallback_failures"] == ["primary: Invalid metadata JSON"]
+    assert result["actual_synthesizer"] == "preview"

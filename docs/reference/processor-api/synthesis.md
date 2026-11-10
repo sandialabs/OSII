@@ -354,6 +354,11 @@ accept null/blank values and qualitative qualifiers. Dates remain strings so
 approximate periods and ambiguous interpretations are not forced into fake ISO
 dates. Evidence is an optional exact quotation; Core removes a quotation that
 cannot be found in supplied text and marks it unverified in the qualifier.
+Ollama’s metadata call uses the shared JSON schema as its structured-output
+format; summary calls remain ordinary Markdown. Other compatible endpoints keep
+their existing request shape and all responses still pass the same validation.
+Configured synthesis fallbacks record the earlier failure and actual method in
+Activity logs, so an excerpt preview is not mistaken for completed AI metadata.
 This checks quotation presence, not whether the inference is true. Invalid JSON
 fails the metadata step rather than silently fabricating a completed record.
 

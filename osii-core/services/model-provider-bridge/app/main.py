@@ -265,16 +265,24 @@ class ProviderSynthesizer(Synthesizer):
         model = _model(self.provider, "synthesis", request.config)
         max_tokens = max(256, min(int(request.config.get("max_tokens", 1200)), 4000))
         temperature = max(0.0, min(float(request.config.get("temperature", 0.2)), 2.0))
-        def complete(messages):
+        def complete(messages, *, metadata=False):
             if self.provider == "ollama":
-                payload = CLIENTS[self.provider].request("POST", "/api/chat", payload={"model": model, "messages": messages, "stream": False, "options": {"num_predict": max_tokens, "temperature": temperature}}, timeout=180, capability="synthesis")
+                provider_payload = {"model": model, "messages": messages, "stream": False, "options": {"num_predict": max_tokens, "temperature": temperature}}
+                if metadata:
+                    from osii.processor_sdk import DocumentMetadata
+                    fields = ("descriptive_title", "title", "author", "date", "agency", "document_type")
+                    schema = DocumentMetadata.model_json_schema()
+                    schema["properties"] = {name: schema["properties"][name] for name in fields}
+                    schema["required"] = list(fields)
+                    provider_payload["format"] = schema
+                payload = CLIENTS[self.provider].request("POST", "/api/chat", payload=provider_payload, timeout=180, capability="synthesis")
                 markdown = payload.get("message", {}).get("content", "")
             else:
                 payload = CLIENTS[self.provider].request("POST", "/chat/completions", payload={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}, timeout=180, capability="synthesis")
                 choices = payload.get("choices") or []
                 markdown = choices[0].get("message", {}).get("content", "") if choices else ""
             return markdown, payload.get("usage", {})
-        response = synthesize_bounded(request, self.descriptor, model, complete)
+        response = synthesize_bounded(request, self.descriptor, model, complete, complete_metadata=lambda messages: complete(messages, metadata=True))
         response.metadata.update(provider=self.provider, endpoint_type="ollama-native" if self.provider == "ollama" else "openai-compatible")
         return response
 

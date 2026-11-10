@@ -72,3 +72,22 @@ def test_six_metadata_fields_keep_descriptive_and_source_titles_distinct():
     assert record["document_type"]["value"] == "Public information leaflet"
     source["document_type"]["evidence"] = "fabricated quotation"
     assert parse_document_metadata(json.dumps(source), text="Grow vegetables", model="test")["document_type"]["evidence"] is None
+
+
+def test_ollama_metadata_uses_schema_without_constraining_markdown(monkeypatch, tmp_path):
+    monkeypatch.setenv("OSII_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("OSII_ROOT", str(tmp_path / ".osii"))
+    from app.main import CLIENTS, ProviderSynthesizer
+    calls = []
+    def fake_request(method, path, **kwargs):
+        payload = kwargs["payload"]
+        calls.append(payload)
+        if "format" in payload:
+            return {"message":{"content":json.dumps({**suggested(), "descriptive_title":{"value":"Wartime garden advice"}, "agency":{}, "document_type":{}})}}
+        return {"message":{"content":"# Gardening\n\nGrounded synthesis."}}
+    monkeypatch.setattr(CLIENTS["ollama"], "request", fake_request)
+    request = SynthesisRequest(request_id="schema", scope={"scope_type":"object", "scope_id":"doc", "documents":[{"file_id":"doc", "filename":"opaque.pdf", "text":"Grow vegetables at home during wartime."}]})
+    response = ProviderSynthesizer("ollama").synthesize(request)
+    assert "format" not in calls[0]
+    assert set(calls[1]["format"]["required"]) == {"descriptive_title", "title", "author", "date", "agency", "document_type"}
+    assert response.metadata["document_metadata"]["descriptive_title"]["value"] == "Wartime garden advice"

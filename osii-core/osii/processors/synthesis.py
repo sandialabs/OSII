@@ -36,6 +36,7 @@ def synthesize_bounded(
     complete: Callable[[list[dict[str, str]]], tuple[str, dict]],
     *,
     checkpoint: Callable[..., Any] | None = None,
+    complete_metadata: Callable[[list[dict[str, str]]], tuple[str, dict]] | None = None,
 ) -> SynthesisResponse:
     """Complete explicit messages; checkpoints store successful calls, never inputs."""
     window_chars = int(request.config.get("window_chars", 100_000))
@@ -61,7 +62,7 @@ def synthesize_bounded(
         )
     logical_calls = 0
 
-    def call(messages, validate=None):
+    def call(messages, validate=None, completion=None):
         nonlocal logical_calls
         logical_calls += 1
         if logical_calls > max_windows * 2 + 8:
@@ -75,7 +76,7 @@ def synthesize_bounded(
         saved = checkpoint(key) if checkpoint else None
         if saved is not None:
             return saved["markdown"]
-        markdown, usage = complete(messages)
+        markdown, usage = (completion or complete)(messages)
         if (
             not isinstance(markdown, str)
             or not markdown.strip()
@@ -180,6 +181,7 @@ def synthesize_bounded(
         raw = call(
             [{"role": "user", "content": metadata_prompt(text, markdown)}],
             validate=validate_metadata,
+            completion=complete_metadata,
         )
         inferred = validate_metadata(raw)
     response = model_synthesis_response(

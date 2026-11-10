@@ -153,7 +153,7 @@ def synthesis_prompt(request: SynthesisRequest) -> str:
 def chat_synthesizer_descriptor(provider: str = "openai") -> ProcessorDescriptor:
     return ProcessorDescriptor(
         name=f"{provider}.synthesizer",
-        version="1.2.0",
+        version="1.2.1",
         display_name=f"{provider.title()} Synthesizer",
         description=f"Processor API adapter for an explicitly selected {provider} chat model.",
         kind=ProcessorKind.SYNTHESIZER,

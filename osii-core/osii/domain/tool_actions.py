@@ -330,6 +330,8 @@ def execute_tool(job: dict):
                 _BINDINGS.reset(token)
             if result.get("ok") is False:
                 raise RuntimeError(result.get("error") or "Tool did not save a result")
+            if result.get("fallback_failures"):
+                append_log(run_id, f"Synthesis used fallback {result['actual_synthesizer']}; earlier failures: {'; '.join(result['fallback_failures'])}")
             atomic_write_text(marker, json.dumps(result))
         # Respect controls received while a provider request was in flight. The
         # saved result is reused on resume; it is never generated again.
