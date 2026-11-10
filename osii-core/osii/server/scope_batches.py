@@ -355,6 +355,25 @@ class HostedBatchStorage:
             "input_summary": summary,
             "config": payload["config"],
         }
+        from osii.domain.storage.commits import ScopeInputRevision, InputRevision
+
+        with self.store.engine.connect() as connection:
+            frozen = connection.execute(
+                select(sources.c.file_id, sources.c.record)
+                .where(sources.c.job_id == self.job["id"])
+                .order_by(sources.c.file_id)
+            ).all()
+        revision = ScopeInputRevision(
+            tuple(row.file_id for row in frozen),
+            tuple(
+                InputRevision(
+                    row.file_id,
+                    row.record["extraction_id"],
+                    row.record["source_sha256"],
+                )
+                for row in frozen
+            ),
+        )
         ScopeProducts(self.store).generated(
             payload["scope"],
             payload["tool_id"],
@@ -362,6 +381,7 @@ class HostedBatchStorage:
             self.job,
             self.worker,
             provenance,
+            input_revision=revision,
         )
 
 

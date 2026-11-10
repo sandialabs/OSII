@@ -102,12 +102,18 @@ class ScopeProducts:
             "revisions": history,
         }
 
-    def generated(self, scope, method, outputs, job, worker, provenance):
+    def generated(self, scope, method, outputs, job, worker, provenance, *, input_revision=None):
         from sqlalchemy.dialects.postgresql import insert as upsert
 
         kind, identity = address(scope)
         parents = job["payload"].get("product_parents", {})
         with self.store.transaction() as c:
+            if input_revision is not None:
+                from sqlalchemy import text
+                from osii.domain.read.contracts import ReadScope
+                from osii.domain.storage.postgres_commits import PostgresProcessingCommitter
+                c.execute(text("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE"))
+                PostgresProcessingCommitter(self.store.engine, actor_id=job["payload"]["actor_id"]).verify_scope(c, ReadScope(kind, identity), input_revision)
             self.store.assert_job_owner(c, (job["id"], worker))
             for output in outputs:
                 name = filename(method, output["id"])

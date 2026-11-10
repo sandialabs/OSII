@@ -262,7 +262,7 @@ def run_tool(app, jid):
 
 @pytest.mark.parametrize("scope_kind", ["root", "folder", "collection"])
 def test_scope_commit_rejects_inputs_changed_during_processor_call(client, app, monkeypatch, scope_kind):
-    from osii.server import library_tools
+    from osii.server import library_tools, scope_batches
     from osii.domain.storage.commits import CommitConflict
     store = app.state.store
     doc = document(store, app.state.settings.source_root, name="reports/report.txt")
@@ -276,13 +276,13 @@ def test_scope_commit_rejects_inputs_changed_during_processor_call(client, app, 
     queued = client.post("/api/enrichment-jobs/run", json={"enricher_name": "local.stats-keywords", "scope": scope})
     assert queued.status_code == 200, queued.text
     job = store.claim("scope-worker")
-    invoke = library_tools.invoke
+    invoke = scope_batches.invoke
     def changed(*args, **kwargs):
         response = invoke(*args, **kwargs)
         with store.transaction() as conn:
             conn.execute(update(documents).where(documents.c.file_id == doc["file_id"]).values(text="Changed while processing"))
         return response
-    monkeypatch.setattr(library_tools, "invoke", changed)
+    monkeypatch.setattr(scope_batches, "invoke", changed)
     with pytest.raises(CommitConflict, match="input text changed"):
         execute(store, app.state.settings, Provider(), job, "scope-worker", threading.Event(), lambda _: None)
     assert client.post("/api/products/list", json=scope).json()["products"] == []

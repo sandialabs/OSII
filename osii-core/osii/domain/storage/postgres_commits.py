@@ -94,6 +94,10 @@ class PostgresProcessingCommitter:
                     id=checkpoint.job_id, body=json.dumps(job_payload))
         return receipt
 
+    def verify_scope(self, conn, scope, revision: ScopeInputRevision) -> None:
+        """Verify frozen full-text inputs inside the caller's publication transaction."""
+        revision.verify_current(self._scope_current(conn, scope, self.actor_id, len(revision.member_ids) + 1))
+
     def _scope_current(self, conn, scope, actor, limit):
         where, values = "d.active", {"identity": scope.identifier, "actor": actor, "limit": limit}
         if scope.kind == "object":
