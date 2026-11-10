@@ -117,12 +117,21 @@ Processor services should be treated as untrusted compute:
 
 ## Shared product direction: local and hosted
 
+The first shared persistence boundary is the
+[document and artifact read interface](../reference/library-reads.md), with
+sidecar and PostgreSQL adapters and one contract suite. Hosted preferred-text
+and artifact inspection use the PostgreSQL adapter behind the existing account
+checks. This does not enable local storage, change writes, or migrate data.
+
 OSII-local and OSII-server are compositions of the same product. Their storage,
 identity, and deployment adapters differ; intake, processor contracts, document
 inspection, topic exploration, and RAG strategies should converge on shared code.
-`main` keeps the standalone startup and sidecar store. `osii-server` keeps hosted
-accounts, PostgreSQL, and OpenShift delivery. `osii-large` has a separate canonical
-workstation volume store; neither server nor sidecar migrations apply to it.
+`main` keeps standalone startup and sidecar storage. `osii-server` keeps hosted
+accounts, PostgreSQL, and OpenShift delivery. File inventory is part of normal
+local operation; `osii.volume` owns its separate canonical SQLite database.
+Neither server migrations nor sidecar catalog rebuilds apply to that database.
+The [storage decision and staged plan](adr-storage-boundaries.md) separates this
+implemented read boundary from future write adapters and backend selection.
 
 Shared work belongs in the existing repository, not a new research server or an
 unrelated repository:

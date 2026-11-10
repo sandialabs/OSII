@@ -57,6 +57,8 @@ nav:
       - Retrieval chunking: concepts/retrieval-chunking.md
       - Store structure: reference/osii-store.md
       - Rebuildable catalog: reference/catalog.md
+      - Shared library reads: reference/library-reads.md
+      - Storage boundaries and implementation plan: concepts/adr-storage-boundaries.md
   - Extend OSII:
       - Choose an extension: extending/index.md
       - Hello table enricher: extending/hello-enricher.md

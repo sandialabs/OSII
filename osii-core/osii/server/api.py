@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from osii.domain.topic_cache import topic_cache_key, hydrate_topic_map, pack_topic_map
 from osii.domain.document_metadata import synthesis_labels
 from osii.domain.library import Library, scope_documents
+from osii.domain.read.postgres import PostgresLibraryReader
 from osii.domain.topics import topic_map, related_documents, TopicIndexUnavailable
 from osii.server.sources import browse, resolve_directory
 from osii.persistence.postgres import PostgresStore, identifier
@@ -151,6 +152,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
     from osii.rag.strategies.http_reranker import create_reranker
     app.state.rag_reranker = create_reranker(settings.endpoints()["rerank"])
     library = Library(store, provider)
+    reads = PostgresLibraryReader(store.engine)
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
@@ -284,8 +286,10 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
 
     @app.get("/api/objects/{file_id}/texts/preferred")
     def preferred(file_id: str, account=Depends(require())):
-        doc = document(file_id, account)
-        return {"text": doc["text"], "kind": "canonical_extracted_text", "representation": "primary extraction", "file_id": file_id}
+        representation = reads.get_representation(file_id)
+        if representation is None:
+            raise HTTPException(404, "Document not found")
+        return {"text": representation.text, "kind": representation.kind, "representation": "primary extraction", "file_id": file_id}
 
     @app.get("/api/objects/{file_id}/source")
     def source(file_id: str, account=Depends(require())):
@@ -306,7 +310,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
         document(file_id, account)
         records = store.extraction_records(file_id)
         primary_id = records[0]['id'] if records else None
-        rows = store.list_artifacts(file_id)
+        rows = reads.artifact_responses(file_id)
         for row in rows:
             if row['kind'] in {'synthesis', 'enrichment'}:
                 row['stale'] = row['payload'].get('input_extraction_id') != primary_id

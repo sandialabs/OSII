@@ -1194,6 +1194,10 @@ dev = [
 openai = [
     { name = "openai" },
 ]
+postgres = [
+    { name = "psycopg", extra = ["binary"] },
+    { name = "sqlalchemy" },
+]
 rag-haystack = [
     { name = "haystack-ai" },
 ]
@@ -1221,6 +1225,7 @@ requires-dist = [
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1,<3" },
     { name = "pdfminer-six", specifier = ">=20231228" },
     { name = "pillow", specifier = ">=10" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.2,<4" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'server'", specifier = ">=3.2,<4" },
     { name = "pydantic", specifier = ">=2.11,<3" },
     { name = "pymupdf", specifier = ">=1.24" },
@@ -1229,12 +1234,13 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6,<7" },
     { name = "requests", specifier = "==2.33.1" },
     { name = "setuptools", marker = "extra == 'server'", specifier = ">=77,<83" },
+    { name = "sqlalchemy", marker = "extra == 'postgres'", specifier = ">=2.0,<3" },
     { name = "sqlalchemy", marker = "extra == 'server'", specifier = ">=2.0,<3" },
     { name = "tomli-w", specifier = "==1.2.0" },
     { name = "tqdm", specifier = ">=4.66" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.35.0" },
 ]
-provides-extras = ["server", "openai", "rag-haystack", "dev"]
+provides-extras = ["postgres", "server", "openai", "rag-haystack", "dev"]
 
 [[package]]
 name = "osii-local-embedder"

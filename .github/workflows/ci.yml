@@ -25,6 +25,10 @@ jobs:
         env:
           TEST_DATABASE_URL: postgresql+psycopg://osii_test:osii-test-only@localhost:5432/osii_server_test
         run: uv run --frozen --python 3.12 --package osii --extra server --extra dev python -m pytest osii-core/server-tests osii-core/processor-sdk/tests -q
+      - name: Shared sidecar and PostgreSQL read contracts
+        env:
+          OSII_READ_TEST_DATABASE_URL: postgresql+psycopg://osii_test:osii-test-only@localhost:5432/osii_server_test
+        run: uv run --frozen --python 3.12 --package osii --extra postgres --extra dev python -m pytest --noconftest osii-core/tests/test_library_reads.py -q
       - name: Shared RAG strategies and hosted boundary
         env:
           TEST_DATABASE_URL: postgresql+psycopg://osii_test:osii-test-only@localhost:5432/osii_server_test
