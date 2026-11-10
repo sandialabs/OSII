@@ -248,7 +248,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
     @app.get("/api/capabilities")
     def capabilities(account=Depends(require())):
         return {"deployment": "server", "role": account["role"], "shared_dataset": True,
-            "workflows": ["browse", "search", "chat", "collections", "source-preview", "topics"],
+            "workflows": ["browse", "search", "chat", "collections", "source-preview", "topics", "scope-tools", "library-overview", *(["inventory"] if account["role"] == "admin" else [])],
             "private_saved_work": True, "uploads": False}
 
     @app.get("/api/catalog/files")
@@ -662,7 +662,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
         from datetime import datetime, timezone, timedelta
         last_seen = store.setting("worker_status", {}).get("last_seen")
         available = bool(last_seen and datetime.fromisoformat(last_seen) > datetime.now(timezone.utc) - timedelta(seconds=45))
-        return {"runs": [public_run(job) for job in store.job_records()], "worker": {"available": available}}
+        return {"runs": [public_run(job) for job in store.job_records() if job["kind"] != "inventory_scan"], "worker": {"available": available}}
 
     @app.get("/api/objects/{file_id}/extractions")
     def extraction_history(file_id: str, account=Depends(require())):
@@ -678,8 +678,9 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
         store.record("ingestion_requested", account["id"], jid)
         return {"id": jid, "status": "queued", **selection}
 
-    @app.get("/api/runs")
-    def runs(account=Depends(require("curator"))):
-        return {"runs": store.job_records(), "source_directory": store.setting("source", {"directory": "."})["directory"]}
+    from osii.server.inventory_routes import register_inventory_routes
+    from osii.server.tool_routes import register_tool_routes
+    register_inventory_routes(app, store, settings)
+    register_tool_routes(app, store, settings)
 
     return app

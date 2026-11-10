@@ -14,6 +14,10 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { DiscoveryIntakePanel } from "../queue/components/DiscoveryIntakePanel";
+import { DiscoveryActivity } from "../queue/components/DiscoveryActivity";
+import type { PickedFile } from "../../components/discovery/LocationBrowser";
+import { useQuery } from "@tanstack/react-query";
 import { FileSelectionList } from "../queue/components/FileSelectionList";
 import {
   IntakeSections,
@@ -38,20 +42,7 @@ type Processor = {
   available: boolean;
   detail: string;
   model_requirements: Record<string, string>;
-  descriptor: { config_schema?: ProcessorConfigSchema };
-};
-type SourceItem = {
-  name: string;
-  path: string;
-  kind: string;
-  size_bytes: number | null;
-  readable: boolean;
-};
-type Listing = {
-  path: string;
-  items: SourceItem[];
-  next_cursor: number | null;
-  truncated: boolean;
+  descriptor: { config_schema?: ProcessorConfigSchema; capabilities?: { scope_types: string[] } };
 };
 type Plan = {
   synthesis_calls_estimate?: number;
@@ -71,7 +62,12 @@ export function Intake({
   const [section, setSection] = useState<IntakeSection>(
     initialPaths.length || initialProcessor ? "process" : initialSection,
   );
-  const [listing, setListing] = useState<Listing | null>(null);
+  const [selectionId, setSelectionId] = useState<number | null>(() => {
+    const id = Number(new URLSearchParams(window.location.search).get("selection"));
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  });
+  const [directFiles, setDirectFiles] = useState<PickedFile[]>(initialPaths.map(path => ({ path, name: path.split("/").pop() ?? path, size_bytes: null })));
+  const capabilities = useQuery({ queryKey: ["discovery", "capabilities"], queryFn: () => api<{ mount_root: string }>("/api/volume/capabilities") });
   const [docs, setDocs] = useState<Doc[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [paths, setPaths] = useState<string[]>(initialPaths);
@@ -163,14 +159,6 @@ export function Intake({
     setWorkerAvailable(r.worker.available);
     setSelectedLogRunId((id) => id ?? r.runs[0]?.id ?? null);
   };
-  const browse = async (path: string, cursor = 0) => {
-    const r = await api<Listing>(
-      `/api/admin/source/browse?path=${encodeURIComponent(path)}&cursor=${cursor}`,
-    );
-    setListing((current) =>
-      cursor && current ? { ...r, items: [...current.items, ...r.items] } : r,
-    );
-  };
   const loadDocs = async (cursor?: string) => {
     const r = await api<{ items: Doc[]; next_cursor: string | null }>(
       `/api/catalog/files?limit=500${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
@@ -181,7 +169,6 @@ export function Intake({
   const fail = (e: unknown) => setError((e as Error).message);
   useEffect(() => {
     void refreshProcessors().catch(fail);
-    void browse(".").catch(fail);
     void loadDocs().catch(fail);
     void refresh().catch(fail);
     const timer = window.setInterval(() => void refresh().catch(fail), 2500);
@@ -236,8 +223,8 @@ export function Intake({
     setBusy(true);
     setError("");
     try {
-      const result = await api<Plan>("/api/admin/intake/preview", "POST", {
-        paths,
+      const result = await api<Plan>("/api/admin/inventory/intake/preview", "POST", {
+        ...(selectionId !== null && section === "add" ? { selection_id: selectionId } : { paths }),
         operation,
         embed,
         ...derivedSettings(),
@@ -255,10 +242,8 @@ export function Intake({
     setError("");
     try {
       // Freeze the exact previewed files, rather than silently including new files in a folder.
-      const run = await api<ProcessingRun>("/api/admin/intake/stage", "POST", {
-        paths: preview.items
-          .filter((item) => !excludedPaths.includes(item.path))
-          .map((item) => item.path),
+      const run = await api<ProcessingRun>("/api/admin/inventory/intake/stage", "POST", {
+        ...(selectionId !== null && section === "add" ? { selection_id: selectionId, excluded_paths: excludedPaths } : { paths: preview.items.filter((item) => !excludedPaths.includes(item.path)).map((item) => item.path) }),
         operation,
         embed,
         ...derivedSettings(),
@@ -339,6 +324,8 @@ export function Intake({
             setSection(value);
             if (value !== "activity") {
               setPaths([]);
+              setDirectFiles([]);
+              setSelectionId(null);
               invalidate();
             }
           }}
@@ -385,92 +372,17 @@ export function Intake({
                 {section === "add" ? "1. Choose files" : "2. Select documents"}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {paths.length} selected files or folders. Folder selections
-                include visible descendants. No uploads or source-file moves are
-                performed.
+                {selectionId !== null && section === "add" ? `Frozen inventory batch #${selectionId}. Preview it below before staging.` : `${paths.length} selected files. Preview and review the exact files before staging.`}
               </Typography>
               {section === "add" ? (
-                <>
-                  <Stack direction="row" spacing={1}>
-                    <Button
-                      color="secondary"
-                      onClick={() => void browse(".").catch(fail)}
-                    >
-                      Mount root
-                    </Button>
-                    <Button
-                      color="secondary"
-                      disabled={!listing || listing.path === "."}
-                      onClick={() =>
-                        void browse(
-                          listing!.path.split("/").slice(0, -1).join("/") ||
-                            ".",
-                        ).catch(fail)
-                      }
-                    >
-                      Up
-                    </Button>
-                    <Button
-                      color="secondary"
-                      disabled={!listing}
-                      onClick={() => listing && toggle(listing.path)}
-                    >
-                      {listing && paths.includes(listing.path)
-                        ? "Unselect this folder"
-                        : "Select this folder"}
-                    </Button>
-                  </Stack>
-                  <Typography component="code">
-                    {listing?.path ?? "Loading source…"}
-                  </Typography>
-                  {listing?.truncated && (
-                    <Alert severity="warning">
-                      This directory exceeds the browsing limit. Choose a
-                      smaller subfolder.
-                    </Alert>
-                  )}
-                  <Box sx={{ maxHeight: 360, overflow: "auto" }}>
-                    {listing?.items.map((item) => (
-                      <Stack
-                        key={item.path}
-                        direction="row"
-                        spacing={1}
-                        alignItems="center"
-                      >
-                        <Checkbox
-                          inputProps={{ "aria-label": `Select ${item.name}` }}
-                          checked={paths.includes(item.path)}
-                          disabled={!item.readable}
-                          onChange={() => toggle(item.path)}
-                        />
-                        {item.kind === "directory" ? (
-                          <Button
-                            color="secondary"
-                            onClick={() => void browse(item.path).catch(fail)}
-                          >
-                            Folder: {item.name}
-                          </Button>
-                        ) : (
-                          <Typography sx={{ overflowWrap: "anywhere" }}>
-                            {item.name}
-                          </Typography>
-                        )}
-                      </Stack>
-                    ))}
-                  </Box>
-                  {listing?.next_cursor != null && (
-                    <Button
-                      color="secondary"
-                      onClick={() =>
-                        void browse(listing.path, listing.next_cursor!).catch(
-                          fail,
-                        )
-                      }
-                    >
-                      Load more source files
-                    </Button>
-                  )}
-                </>
+                <DiscoveryIntakePanel
+                  selectedId={selectionId}
+                  onSelect={(id) => { invalidate(); setSelectionId(id); }}
+                  directFiles={directFiles}
+                  onFiles={(files) => { invalidate(); setDirectFiles(files); setPaths(files.map(file => file.path)); }}
+                  allowUploads={false}
+                  boundaryPath={capabilities.data?.mount_root}
+                />
               ) : (
                 <>
                   <Button
@@ -509,7 +421,7 @@ export function Intake({
               )}
               <Button
                 color="secondary"
-                disabled={!paths.length}
+                disabled={!paths.length && selectionId === null}
                 onClick={() => {
                   invalidate();
                   setPaths([]);
@@ -699,7 +611,7 @@ export function Intake({
                         setSynthConfig({});
                       }}
                       options={processors.filter(
-                        (p) => p.kind === "synthesizer",
+                        (p) => p.kind === "synthesizer" && p.descriptor.capabilities?.scope_types.includes("object"),
                       )}
                       helperText={
                         synthesizer === "local.extractive-preview"
@@ -724,7 +636,7 @@ export function Intake({
                         setEnricher(value);
                         setEnrichConfig({});
                       }}
-                      options={processors.filter((p) => p.kind === "enricher")}
+                      options={processors.filter((p) => p.kind === "enricher" && p.descriptor.capabilities?.scope_types.includes("object"))}
                       helperText="The built-in statistics/keywords method is deterministic and needs no model. Toolbox methods remain optional."
                     >
                       {configFields(enricher, enrichConfig, setEnrichConfig)}
@@ -796,7 +708,7 @@ export function Intake({
                 variant="outlined"
                 disabled={
                   busy ||
-                  !paths.length ||
+                  (!paths.length && !(selectionId !== null && section === "add")) ||
                   (operation === "process" && !synthesize && !enrich && !embed)
                 }
                 onClick={() => void inspect()}
@@ -867,7 +779,7 @@ export function Intake({
         </>
       )}
       {section === "activity" && (
-        <ProcessingActivity
+        <Stack spacing={2}><DiscoveryActivity /><ProcessingActivity
           recentRuns={runs}
           workerAvailable={workerAvailable}
           selectedLogRunId={selectedLogRunId}
@@ -894,7 +806,7 @@ export function Intake({
               "Failed files selected. Review the extractor, methods and settings, then preview and stage a new plan.",
             );
           }}
-        />
+        /></Stack>
       )}
     </Stack>
   );

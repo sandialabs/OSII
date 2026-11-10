@@ -90,7 +90,7 @@ class PostgresStore:
 
     def ready(self) -> None:
         with self.engine.connect() as c:
-            if c.execute(text("SELECT version_num FROM alembic_version")).scalar() != "0003_session_policy":
+            if c.execute(text("SELECT version_num FROM alembic_version")).scalar() != "0004_inventory_tools":
                 raise RuntimeError("Run the explicit database migration before starting OSII-server")
 
     def record(self, event: str, actor: str | None = None, resource: str | None = None) -> None:
@@ -169,7 +169,7 @@ class PostgresStore:
                 "chat_model": "", "embedding_model": ""}
 
     def assert_models_idle(self, connection: Connection) -> None:
-        if connection.execute(select(jobs.c.id).where(jobs.c.status.in_(["queued", "running", "pausing", "cancelling"])).limit(1)).first():
+        if connection.execute(select(jobs.c.id).where(jobs.c.kind != "inventory_scan", jobs.c.status.in_(["queued", "running", "pausing", "cancelling"])).limit(1)).first():
             raise ValueError("Wait for processing jobs to finish before changing models or endpoints")
 
     def save_configuration(self, value: dict) -> None:
@@ -373,12 +373,12 @@ class PostgresStore:
                 jobs.c.status.in_(["running", "pausing", "cancelling"])).values(logs=jobs.c.logs + [entry]))
             return result.rowcount == 1
 
-    def finish(self, jid: str, worker: str, logs: list[str], failed: bool = False) -> None:
+    def finish(self, jid: str, worker: str, logs: list[str], failed: bool = False, *, reschedule: bool = False) -> None:
         with self.transaction() as c:
             c.execute(update(jobs).where(jobs.c.id == jid, jobs.c.worker_id == worker,
                 jobs.c.status.in_(["running", "pausing", "cancelling"])).values(
                     status=case((jobs.c.status == "pausing", "paused"), (jobs.c.status == "cancelling", "cancelled"),
-                                else_="error" if failed else "done"),
+                                else_="error" if failed else "queued" if reschedule else "done"),
                     logs=logs[-2000:], worker_id=None, lease_until=None))
 
 

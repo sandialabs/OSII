@@ -83,3 +83,21 @@ Folder Browse, search results, Topic Explorer, document panes and processing
 activity continue to use their respective shared widgets. A transport-specific
 feature needs a Core adapter; copying a local filesystem call into hosted UI is
 not a supported extension method.
+
+Hosted inventory uses the same `domain/processing/directory_scan.py` enumerator
+and `directory_browse.py` cursor reader as local. Only their Core storage and
+queue coordinators differ: local `volume/scanner.py` persists the separate SQLite
+inventory; hosted `persistence/inventory.py` and `server/inventory.py` persist
+PostgreSQL observations and use leased worker jobs. Never import the local
+SQLite coordinator or filesystem sidecar store into a hosted adapter.
+
+The shared `DiscoveryIntakePanel`, `DiscoveryActivity`, `LocationBrowser`,
+`ToolsPage`, `ToolActionPanel`, `ScopePicker`, product editors and
+`ScopeOverviewPanel` consume Core contracts. Hosted adapters enforce mount
+containment, sessions, CSRF, roles and private collection visibility. Optional
+capability fields disable unavailable actions; local remains account-free.
+`configureApiClient` supplies hosted transport headers at composition time.
+New library-wide methods use the existing synthesizer/enricher SDK descriptors
+and standard artifacts; they do not require a new Toolbox component kind or a
+custom dashboard page. See the [server runbook](../operations/runbook-server.md)
+for snapshot limits and processing permissions.

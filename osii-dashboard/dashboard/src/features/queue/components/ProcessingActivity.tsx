@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip, LinearProgress, Paper, Stack, Typography } from "@mui/material";
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
 import PauseCircleOutlineOutlinedIcon from "@mui/icons-material/PauseCircleOutlineOutlined";
@@ -37,10 +37,11 @@ function completedFileDurations(run: ProcessingRun): number[] {
 
 export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRunId, setSelectedLogRunId, controllingRun, controlRun, displayedLogLines, refreshLogs, logError = false, onRestage }: {
   recentRuns: ProcessingRun[]; workerAvailable?: boolean; selectedLogRunId: string | null;
-  setSelectedLogRunId: (id: string) => void; controllingRun: string | null;
+  setSelectedLogRunId: (id: string | null) => void; controllingRun: string | null;
   controlRun: (run: ProcessingRun, action: ProcessingAction) => void | Promise<void>;
   displayedLogLines: string[]; refreshLogs: () => unknown; logError?: boolean; onRestage?: (run: ProcessingRun) => void;
 }) {
+  const [expandedHistory, setExpandedHistory] = useState<Set<string>>(new Set());
   const selectedLogRun = recentRuns.find(run => run.id === selectedLogRunId);
   const logPanelRef = useRef<HTMLPreElement | null>(null);
   useEffect(() => { if (logPanelRef.current) logPanelRef.current.scrollTop = logPanelRef.current.scrollHeight; }, [displayedLogLines.length, selectedLogRunId]);
@@ -56,7 +57,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
           </Stack>
           {recentRuns.some((run) => ["queued", "pending", "running", "pausing", "cancelling"].includes(run.status)) ? (
             <Alert severity="info">
-              Runs use one worker and process files sequentially. Pause a long run to let a newly queued priority run go next; pausing or cancelling takes effect safely after the current file finishes.
+              One worker processes queued work. Pause and cancel take effect after the current file or provider request finishes.
             </Alert>
           ) : null}
           {recentRuns.map((run) => {
@@ -71,9 +72,23 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
             const canPause = controllable && ["queued", "pending", "running"].includes(run.status);
             const canResume = controllable && run.status === "paused";
             const canCancel = controllable && ["staged", "queued", "pending", "running", "pausing", "paused"].includes(run.status);
-            const canRetry = controllable && run.status === "error";
+            const canRetry = controllable && (run.status === "error" || run.indexing_status === "error" || (run.status === "done" && itemErrors.length > 0 && ["intake", "library"].includes(run.workflow ?? "")));
+            const historical = ["done", "error", "cancelled", "paused", "staged"].includes(run.status);
             return (
-              <Paper key={run.id} variant="outlined" sx={{ p: 1.5 }}>
+              <Accordion key={run.id} expanded={!historical || expandedHistory.has(run.id)} onChange={(_, expanded) => setExpandedHistory(current => {
+                const next = new Set(current);
+                if (expanded) next.add(run.id); else { next.delete(run.id); if (selectedLogRunId === run.id) setSelectedLogRunId(null); }
+                return next;
+              })} disableGutters variant="outlined">
+              <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
+                  <Typography fontWeight={600}>{run.tool_label ?? (run.workflow === "library" ? "Library processing" : "File intake")} · {new Date(run.created_at).toLocaleString()}</Typography>
+                  <Chip size="small" color={run.status === "done" ? itemErrors.length || run.indexing_status === "error" ? "warning" : "success" : run.status === "error" ? "error" : "default"} label={run.status === "done" && (itemErrors.length || run.indexing_status === "error") ? "Completed with issues" : run.status} />
+                  <Typography variant="caption">{run.completed ?? 0}/{run.total ?? 0} finished{itemErrors.length ? ` · ${itemErrors.length} issues` : ""}</Typography>
+                </Stack>
+              </AccordionSummary>
+              <AccordionDetails>
+              <Paper variant="outlined" sx={{ p: 1.5 }}>
               <Stack
                 direction={{ xs: "column", sm: "row" }}
                 justifyContent="space-between"
@@ -81,12 +96,14 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
               >
                 <Stack>
                   <Typography fontWeight={600}>
-                    {run.workflow === "library" ? "Library processing" : "New file intake"} · {run.id.slice(0, 8)}
+                    {run.tool_label ?? (run.workflow === "tool" ? "Tool run" : run.workflow === "library" ? "Library processing" : "New file intake")} · {run.id.slice(0, 8)}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {run.completed ?? 0} / {run.total ?? 0} files · {run.created_at}
+                    {run.completed ?? 0} / {run.total ?? 0} {run.workflow === "tool" ? "operations" : "files"} · {new Date(run.created_at).toLocaleString()}
                   </Typography>
-                  {run.embedding_model && <Typography variant="caption" color="text.secondary">Embedding model: {run.embedding_model}</Typography>}
+                  {run.model_targets ? <Typography variant="caption" color="text.secondary">{Object.values(run.model_targets).map(target => `${target.model} · ${target.alias}`).join(" / ")}</Typography> : null}
+                  {run.input_summary ? <Typography variant="caption" color="text.secondary">{run.input_summary.member_ids.length} source documents · {run.input_summary.text_chars.toLocaleString()} text characters · {run.input_summary.truncated_documents} excerpts</Typography> : null}
+                  {(run.embedding_target?.model || run.embedding_model) && <Typography variant="caption" color="text.secondary">Embedding model: {run.embedding_target?.model || run.embedding_model}</Typography>}
                   {run.expert_context ? (
                     <Typography
                       variant="body2"
@@ -114,9 +131,9 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
                   <Button
                     size="small"
                     variant={selectedLogRunId === run.id ? "contained" : "text"}
-                    onClick={() => setSelectedLogRunId(run.id)}
+                    onClick={() => setSelectedLogRunId(selectedLogRunId === run.id ? null : run.id)}
                   >
-                    View log
+                    {selectedLogRunId === run.id ? "Hide log" : "View log"}
                   </Button>
                   {run.status === "staged" ? <Button color="secondary" variant="contained" disabled={controllingRun !== null} onClick={() => void controlRun(run, "start")}>Start processing</Button> : null}
                   {canPause ? (
@@ -153,7 +170,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
                       Cancel
                     </Button>
                   ) : null}
-                  {run.status === "error" && onRestage && <Button color="secondary" variant="outlined" onClick={() => onRestage(run)}>Restage failed files</Button>}
+                  {run.status === "error" && itemErrors.length > 0 && onRestage && <Button color="secondary" variant="outlined" onClick={() => onRestage(run)}>Restage failed files</Button>}
                   {canRetry ? (
                     <Button
                       size="small"
@@ -162,7 +179,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
                       disabled={controllingRun !== null || workerAvailable === false}
                       onClick={() => void controlRun(run, "retry")}
                     >
-                      Retry failed run
+                      {(run.error_phase === "embedding" || run.indexing_status === "error") ? "Retry embeddings" : "Retry failed files"}
                     </Button>
                   ) : null}
                   <Chip
@@ -182,8 +199,10 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
               <Stack spacing={0.5} sx={{ mt: 1.5 }}>
                 <Typography variant="caption">File processing: {run.completed ?? 0} of {run.total ?? 0} finished{itemErrors.length ? ` · ${itemErrors.length} with errors` : ""}</Typography>
                 <LinearProgress aria-label={`File progress for run ${run.id}`} variant="determinate" value={(run.total ?? 0) > 0 ? Math.min(100, (run.completed ?? 0) / (run.total ?? 1) * 100) : 0} color={itemErrors.length || run.status === "error" ? "error" : "secondary"} sx={{ height: 7, borderRadius: 1 }} />
-                {run.operations?.embed ? <Typography variant="caption" color={run.indexing_status === "error" ? "error.main" : "text.secondary"}>Semantic index: {run.indexing_status === "done" ? "saved — library checkpoints will refresh" : run.indexing_status === "running" ? "building; finished files do not mean the index is ready yet" : run.indexing_status === "error" ? "failed — retry before relying on semantic search" : "waiting for file processing"}</Typography> : null}
+                {run.operations?.embed ? <Typography variant="caption" color={run.indexing_status === "error" ? "error.main" : "text.secondary"}>Semantic index: {run.indexing_status === "done" ? "saved — library checkpoints will refresh" : run.indexing_status === "running" ? "building; finished files do not mean the index is ready yet" : run.indexing_status === "error" ? "incomplete — retry reuses saved chunks and completed documents" : "waiting or paused; saved chunks are retained"}</Typography> : null}
                 {run.indexing_status === "running" ? <LinearProgress aria-label="Building semantic index" /> : null}
+                {run.indexing_progress && <Typography variant="caption">Selected embeddings: {run.indexing_progress.completed_documents} of {run.indexing_progress.total_documents} documents complete · {run.indexing_progress.embedded_chunks} chunks saved this attempt · {run.indexing_progress.reused_chunks} reused from checkpoints or the index</Typography>}
+                {run.indexing_progress && Object.keys(run.indexing_progress.failures).length > 0 && <Alert severity="warning">{Object.keys(run.indexing_progress.failures).length} document(s) still need embeddings. Successful work is retained.<details><summary>Embedding failures</summary>{Object.entries(run.indexing_progress.failures).map(([id, error]) => <Typography key={id} variant="caption" component="div" sx={{ overflowWrap: "anywhere" }}>{run.items?.find(item => item.file_id === id)?.display || id}: {error}</Typography>)}</details></Alert>}
               </Stack>
               {run.started_at ? (
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
@@ -195,7 +214,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
               {run.status === "pausing" ? <Alert severity="info" sx={{ mt: 1 }}>Finishing the current file before pausing.</Alert> : null}
               {run.status === "cancelling" ? <Alert severity="info" sx={{ mt: 1 }}>Finishing the current file before cancelling.</Alert> : null}
               {run.error ? <Alert severity="error" sx={{ mt: 1 }}>{run.error}</Alert> : null}
-              {run.indexing_error ? <Alert severity="warning" sx={{ mt: 1 }}>{run.indexing_error}</Alert> : null}
+              {run.indexing_error && run.indexing_error !== run.error ? <Alert severity="error" sx={{ mt: 1 }}>{run.indexing_error}</Alert> : null}
               {itemErrors.length ? (
                 <Alert severity="error" sx={{ mt: 1 }}>
                   {itemErrors.slice(0, 3).map((item, index) => (
@@ -206,16 +225,6 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
                   {itemErrors.length > 3 ? `And ${itemErrors.length - 3} more file error(s).` : null}
                 </Alert>
               ) : null}
-              {(run.logs ?? []).slice(-2).map((line) => (
-                <Typography
-                  key={line}
-                  variant="caption"
-                  display="block"
-                  color="text.secondary"
-                >
-                  {line}
-                </Typography>
-              ))}
               {(run.items ?? []).length > 0 ? (
                 <Accordion variant="outlined" disableGutters sx={{ mt: 1 }}>
                   <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
@@ -248,6 +257,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
                 </Accordion>
               ) : null}
               </Paper>
+              </AccordionDetails></Accordion>
             );
           })}
           {selectedLogRunId ? (
@@ -268,10 +278,11 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
                 sx={{ px: 1.5, py: 1, borderBottom: "1px solid #344155" }}
               >
                 <Typography variant="body2" fontWeight={700} color="inherit">
-                  Live run log · {selectedLogRunId.slice(0, 8)}
+                  Run log · {selectedLogRunId.slice(0, 8)}
                   {selectedLogRun ? ` · ${selectedLogRun.status}` : ""}
                 </Typography>
                 <Stack direction="row" spacing={1}>
+                  <Button size="small" color="inherit" onClick={() => setSelectedLogRunId(null)}>Close log</Button>
                   <Button size="small" color="inherit" onClick={() => void refreshLogs()}>
                     Refresh
                   </Button>

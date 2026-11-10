@@ -230,6 +230,10 @@ def process_plan(store: PostgresStore, provider, extractor, settings: Settings,
             return False
         report("processing: " + item["path"])
         try:
+            inventory_member = next((m for m in payload.get('inventory_members', []) if m['source_relpath'] == item['path']), None)
+            if inventory_member:
+                from osii.persistence.inventory import PostgresInventory
+                PostgresInventory(store, settings.source_root).verify_member(inventory_member)
             planned_extractor = (SelectedExtractor(store, settings, provider, payload['extractor'], payload.get('extractor_config',{}), job['id'],worker)
                                  if payload.get('extractor') else extractor)
             path = source_file(settings.source_root, item["path"])
@@ -259,6 +263,15 @@ def process_plan(store: PostgresStore, provider, extractor, settings: Settings,
             else:
                 result = ingest_file(store, provider, planned_extractor, settings.source_root, path, ocr=ocr,
                     force=payload["operation"] in {"extract", "reprocess"}, embed=payload["embed"], job_owner=(job["id"], worker), save_variant=payload.get("extraction_policy")=="save_variant")
+            if inventory_member:
+                from sqlalchemy import select
+                from osii.persistence.postgres import documents
+                inventory = PostgresInventory(store, settings.source_root)
+                inventory.verify_member(inventory_member)
+                with store.engine.connect() as connection:
+                    linked = connection.execute(select(documents.c.file_id).where(documents.c.active, documents.c.source_relpath == item['path'])).scalar()
+                if linked:
+                    inventory.link(inventory_member, linked, job, worker)
             current.update(status="done", result=result)
             if result == "text_only":
                 current.update(status="error", error="Text saved, but embedding failed. Keyword search remains available; retry embeddings.")
@@ -308,13 +321,20 @@ def run(settings: Settings | None = None) -> None:
                         store.save_setting("worker_status", {"last_seen": now().isoformat()})
                 thread = threading.Thread(target=heartbeat, daemon=True)
                 thread.start()
-                logs, failed = list(job["logs"]), False
+                logs, failed, reschedule = list(job["logs"]), False, False
                 def report(entry: str) -> None:
                     if not store.progress(job["id"], worker, entry):
                         raise IngestionError("Worker no longer owns this job; processing stopped.")
                     logs.append(entry)
                 try:
-                    if job["kind"] == "plan":
+                    if job["kind"] == "inventory_scan":
+                        from osii.server.inventory import execute_scan
+                        failed, pending = execute_scan(store, settings, job, worker, stopping, report)
+                        reschedule = bool(pending and not failed)
+                    elif job["kind"] == "tool":
+                        from osii.server.library_tools import execute
+                        reschedule = execute(store, settings, provider, job, worker, stopping, report)
+                    elif job["kind"] == "plan":
                         failed = process_plan(store, provider, extractor, settings, job, worker, stopping, report=report, ocr=ocr)
                     else:
                         failed = ingest_batch(store, provider, extractor, settings.source_root,
@@ -326,7 +346,7 @@ def run(settings: Settings | None = None) -> None:
                 finally:
                     finished.set()
                     thread.join(timeout=2)
-                    store.finish(job["id"], worker, logs, failed)
+                    store.finish(job["id"], worker, logs, failed, reschedule=reschedule)
             finally:
                 lock.execute(text("SELECT pg_advisory_unlock(914035)"))
 

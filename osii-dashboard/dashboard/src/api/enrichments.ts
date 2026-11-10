@@ -35,6 +35,7 @@ export async function getScopeEnrichmentPayload(params: {
 }
 
 export async function deleteScopeEnrichment(params: {
+  expected_revision?: string;
   scope: ScopeDescribeRequest;
   filename: string;
 }): Promise<{ filename: string; deleted: boolean; metadata_deleted: boolean }> {

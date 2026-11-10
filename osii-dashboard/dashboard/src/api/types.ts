@@ -117,6 +117,7 @@ export type ScopeSummariesResponse = {
 };
 
 export type ScopeOverview = {
+  permissions?: { run: boolean };
   scope: ScopeDescribeRequest;
   file_count: number;
   size_known_count: number;
@@ -234,6 +235,8 @@ export type EnrichmentBundleFileEntry = {
 };
 
 export type EnrichmentListEntryFile = {
+  can_edit?: boolean;
+  current_revision?: string;
   name: string;
   kind: "file";
   relpath: string;
@@ -728,7 +731,12 @@ export type ProcessingRun = {
   finished_at?: string | null;
   completed?: number;
   total?: number;
-  workflow?: "intake" | "library";
+  workflow?: "intake" | "library" | "tool";
+  tool_id?: string;
+  tool_label?: string;
+  scope?: ScopeDescribeRequest;
+  model_targets?: Record<string, { alias: string; model: string; endpoint_type?: string }>;
+  input_summary?: { member_ids: string[]; text_chars: number; truncated_documents: number };
   expert_context?: string | null;
   operations?: {
     extract?: boolean;
@@ -746,7 +754,17 @@ export type ProcessingRun = {
   embedding_model?: string;
   indexing_status?: string;
   indexing_error?: string | null;
+  error_phase?: string | null;
+  embedding_target?: { provider: string; model: string };
+  indexing_progress?: {
+    total_documents: number;
+    completed_documents: number;
+    embedded_chunks: number;
+    reused_chunks: number;
+    failures: Record<string, string>;
+  };
   items?: Array<{
+    file_id?: string;
     display: string;
     status: string;
     error?: string | null;

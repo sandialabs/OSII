@@ -53,7 +53,7 @@ def catalog(store, settings) -> list[dict]:
         required = dict(descriptor.model_requirements)
         if name == MODEL_SYNTHESIS.name and not url:
             required = {'chat': 'required'}
-        available = descriptor.kind in {ProcessorKind.EXTRACTOR, ProcessorKind.EMBEDDER} or 'object' in descriptor.capabilities.scope_types
+        available = descriptor.kind in {ProcessorKind.EXTRACTOR, ProcessorKind.EMBEDDER} or bool(set(descriptor.capabilities.scope_types) & {'object', 'root', 'folder', 'collection'})
         detail = '' if available else 'This processor does not support individual documents'
         for capability, requirement in required.items():
             if requirement == 'required' and not store.configuration().get(capability + '_model'):
@@ -79,12 +79,14 @@ def catalog(store, settings) -> list[dict]:
     return rows
 
 
-def resolve(rows: list[dict], name: str | None, kind: str) -> dict | None:
+def resolve(rows: list[dict], name: str | None, kind: str, *, scope_type: str = "object") -> dict | None:
     if not name:
         return None
     matches = [row for row in rows if row.get('id') == name and row.get('kind') == kind]
     if len(matches) != 1 or not matches[0]['available']:
         raise ValueError(f'The selected {kind} is unavailable. Check processor connections and model selection.')
+    if kind in {'synthesizer', 'enricher'} and scope_type not in matches[0]['descriptor']['capabilities']['scope_types']:
+        raise ValueError('This method does not support the selected scope; use Tools for library-wide methods')
     return matches[0]
 
 

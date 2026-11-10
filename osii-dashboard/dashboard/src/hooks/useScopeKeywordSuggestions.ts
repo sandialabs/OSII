@@ -14,6 +14,15 @@ export function extractKeywordSuggestions(value: unknown, limit = 6): string[] {
   const keywords: string[] = [];
   for (const row of artifact.rows) {
     if (!row || typeof row !== "object") continue;
+    const values = (row as Record<string, unknown>).keywords;
+    if (Array.isArray(values)) {
+      for (const value of values) {
+        if (typeof value !== "string" || !value.trim() || seen.has(value.toLocaleLowerCase())) continue;
+        seen.add(value.toLocaleLowerCase()); keywords.push(value.trim());
+        if (keywords.length >= limit) return keywords;
+      }
+      continue;
+    }
     const keyword = String((row as Record<string, unknown>).keyword ?? "").trim();
     const key = keyword.toLocaleLowerCase();
     if (!keyword || seen.has(key)) continue;
@@ -52,7 +61,7 @@ export function buildQuestionSuggestions(keywords: string[], scope: ScopeDescrib
 export function useScopeKeywordSuggestions(scope: ScopeDescribeRequest, enabled = true) {
   const enrichments = useScopeEnrichments(scope, enabled);
   const entry = (enrichments.data?.enrichments ?? []).find(
-    (item): item is EnrichmentListEntryFile => item.kind === "file" && item.name === KEYWORD_SNAPSHOT_FILENAME,
+    (item): item is EnrichmentListEntryFile => item.kind === "file" && (item.name === KEYWORD_SNAPSHOT_FILENAME || Boolean(item.title?.toLowerCase().includes("keywords"))),
   );
   const payload = useScopeEnrichmentPayload(scope, entry?.name ?? "", enabled && Boolean(entry));
   const keywords = useMemo(() => extractKeywordSuggestions(payload.data?.data), [payload.data?.data]);

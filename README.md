@@ -14,7 +14,8 @@ model services help interpret the material without becoming the source of truth.
 
 ## What you can do
 
-- Ingest a shared source folder, with optional OCR for scanned documents.
+- Inventory mounted sources, review batches, and ingest documents with optional OCR.
+- Run scoped synthesis and enrichment tools, with saved products and revision history.
 - Browse sources, organize shared collections, and search by keywords or meaning.
 - Ask grounded questions using a configured model service.
 - Give administrators, curators, and readers appropriate access to the library.

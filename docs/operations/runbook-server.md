@@ -381,3 +381,51 @@ matching application images. Incompatible schema rollback requires a compatible
 database backup as well as the previous image; changing the image alone does not
 undo migrations. Trial expiry, model failure, or missing storage must never cause
 a fallback to an empty filesystem store.
+
+## Inventory and library-wide tools
+
+Administrators can open **File inventory**, or use the same location browser
+inside **Add files**. Register a directory beneath the configured source mount,
+start a metadata scan, and watch its directory checkpoints and issues. Scanning
+reads directory entries and stat metadata only: it does not hash sources, extract
+text, build embeddings, or call a model. Sources remain read-only. Pause, resume,
+cancel, and retry use the durable worker queue. A disconnected or incomplete
+folder never provides evidence that its unseen files were deleted. Rebinding a
+changed mount is explicit and invalidates old selections without deleting history.
+
+Filter the inventory or take a reproducible stratified sample, then freeze a
+batch. Coverage and source revisions are retained with that batch. Incomplete
+coverage requires explicit acceptance. **Review frozen batch in Intake** opens
+its exact members for preview, exclusion and staging; processing still requires
+**Start processing**. Plans accept at most 5,000 files. Source identity, metadata
+and inventory revisions are checked again at processing boundaries. Inventory
+observations are distinct from processed documents; scanning an existing corpus
+does not itself mark every document as newly processed or replace its evidence.
+
+**All tools** and **Library at a glance** reuse the local scope picker, action
+panel, product views and overview. Administrators run configured synthesizers or
+enrichers over a library, folder, collection or document. Built-in source-excerpt
+synthesis and statistics/keywords need no model service. Other tools advertise
+their scopes through their Processor SDK descriptor. Connect optional running
+services in **Setup → Processors**; the Core does not install or start Toolbox
+services. Per-document extraction and embedding stay in Intake.
+
+Hosted scope tools freeze up to 1,000 documents and 180,000 input characters,
+sharing the text budget across members. This is an explicit bounded prefix
+snapshot, not an exhaustive analysis of every page in a large corpus. Missing
+text and truncation are recorded with provenance. Choose a smaller folder or
+collection for larger libraries. Model-backed methods use the configured hosted
+writing model and may consume provider credit; no model runs when opening these
+pages or scanning metadata. Frozen inputs and job checkpoints stay in PostgreSQL.
+
+Readers can inspect visible products; curators and administrators can edit them.
+Private collection visibility is enforced on products, revision history and run
+inspection. Concurrent edits use expected revisions. A new generated result
+becomes a review candidate when a human edit is current. Activating a revision
+records an editorial event. Source text and original files are unchanged.
+
+This feature requires the explicit `0004_inventory_tools` PostgreSQL migration
+before starting matching API and worker images. Back up the database first and
+use the existing migrate CLI; startup does not run migrations. Inventory tables
+and scoped product histories are canonical records, not rebuildable caches. The
+downgrade refuses to discard them; restore a compatible backup for rollback.

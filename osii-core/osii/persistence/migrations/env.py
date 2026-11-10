@@ -1,6 +1,7 @@
 from alembic import context
 from sqlalchemy import create_engine
 from osii.persistence.postgres import metadata
+from osii.persistence import workspace_schema  # register hosted workspace tables
 
 engine = create_engine(context.config.attributes["database_url"])
 with engine.connect() as connection:

@@ -1,3 +1,9 @@
+import { useLocation, useNavigate } from "react-router-dom";
+import { ToolsPage } from "../files/pages/ToolsPage";
+import { LibraryOverviewPage } from "../library/pages/LibraryOverviewPage";
+import { DiscoveryIntakePanel } from "../queue/components/DiscoveryIntakePanel";
+import type { PickedFile } from "../../components/discovery/LocationBrowser";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import {
   Alert,
@@ -45,6 +51,20 @@ import {
   type SearchMode,
 } from "../search/components/SearchModeSelect";
 
+const pagePaths: Record<string, string> = { library: "/", browse: "/browse", search: "/search", chat: "/chat", topics: "/topics", collections: "/collections", tools: "/tools", overview: "/library-overview", inventory: "/inventory", processing: "/intake", setup: "/setup", users: "/users" };
+
+function InventoryPage() {
+  const navigate = useNavigate();
+  const [selection, setSelection] = useState<number | null>(null);
+  const [files, setFiles] = useState<PickedFile[]>([]);
+  const capabilities = useQuery({ queryKey: ["discovery", "capabilities"], queryFn: () => api<{ mount_root: string }>("/api/volume/capabilities") });
+  return <Stack spacing={2}><Typography variant="h4">File inventory</Typography>
+    <Typography color="text.secondary">Scan mounted locations without reading document contents. Freeze a batch, then review and stage processing in Add files.</Typography>
+    <DiscoveryIntakePanel selectedId={selection} onSelect={setSelection} directFiles={files} onFiles={setFiles} allowUploads={false} boundaryPath={capabilities.data?.mount_root} />
+    <Button variant="contained" disabled={selection === null} onClick={() => navigate(`/intake?selection=${selection}`)}>Review frozen batch in Intake</Button>
+  </Stack>;
+}
+
 const pages: readonly NavigationItem[] = [
   { id: "library", label: "Files", group: "documents", icon: HomeOutlined },
   { id: "browse", label: "Browse", group: "documents", icon: FolderOutlined },
@@ -56,6 +76,9 @@ const pages: readonly NavigationItem[] = [
     group: "documents",
     icon: CollectionsBookmarkOutlined,
   },
+  { id: "tools", label: "All tools", group: "tools", icon: SettingsOutlined },
+  { id: "overview", label: "Library at a glance", group: "tools", icon: Search },
+  { id: "inventory", label: "File inventory", group: "start", icon: FolderOutlined },
   { id: "topics", label: "Topic explorer", group: "tools", icon: HubOutlined },
   {
     id: "processing",
@@ -82,13 +105,15 @@ export function Workspace({
   onLogout: () => void;
   onPassword: () => void;
 }) {
+  const location = useLocation();
+  const route = useNavigate();
   const availablePages = pages.filter(
     (page) =>
-      !["processing", "setup", "users"].includes(page.id) ||
+      !["processing", "inventory", "setup", "users"].includes(page.id) ||
       user.role === "admin",
   );
   const pageFromHash = () => {
-    const id = window.location.hash.slice(1);
+    const id = window.location.hash.slice(1) || Object.keys(pagePaths).find(key => pagePaths[key] === location.pathname) || (location.pathname.startsWith("/admin/") ? "setup" : "library");
     if (setupAliases[id] && user.role === "admin") return "setup";
     return availablePages.some((page) => page.id === id) ? id : "library";
   };
@@ -136,7 +161,7 @@ export function Workspace({
         : `Folder: ${scope.folder_id}`;
   const fail = (e: unknown) => setError((e as Error).message);
   const navigate = (id: string) => {
-    window.location.hash = id;
+    route(pagePaths[id] ?? "/");
     setTab(id);
     setError("");
   };
@@ -149,6 +174,21 @@ export function Workspace({
     window.addEventListener("hashchange", change);
     return () => window.removeEventListener("hashchange", change);
   }, []);
+  useEffect(() => {
+    setTab(pageFromHash());
+    if (location.pathname.startsWith("/admin/")) setSetupSection("processors");
+    if (location.pathname === "/intake") setProcessingSection(new URLSearchParams(location.search).get("tab") === "activity" ? "activity" : "add");
+    if (location.pathname === "/search") {
+      const params = new URLSearchParams(location.search);
+      const term = params.get("q");
+      if (term) {
+        const selectedScope: Scope = params.get("scope_type") === "collection" ? { scope_type: "collection", collection_id: params.get("collection_id") ?? "" } : params.get("scope_type") === "folder" ? { scope_type: "folder", folder_id: params.get("folder_id") ?? "" } : params.get("scope_type") === "object" ? { scope_type: "object", file_id: params.get("file_id") ?? "" } : rootScope;
+        setQuery(term); setMode("lexical"); setScope(selectedScope); setBusy(true);
+        void api<{ results: Hit[]; channels_used: string[] }>("/api/search", "POST", { query: term, mode: "lexical", scope: selectedScope }).then(result => { setHits(result.results); setDetail(result.channels_used.join(" · ")); }).catch(fail).finally(() => setBusy(false));
+      }
+    }
+    if (location.pathname.startsWith("/files/")) void open(decodeURIComponent(location.pathname.slice(7)));
+  }, [location.pathname, location.search, location.hash]);
   const refreshCollections = async () => {
     const result = await api<{ items: Collection[] }>("/api/collections");
     setCollections(result.items);
@@ -494,8 +534,12 @@ export function Workspace({
             current={currentCollection}
           />
         )}
+        {tab === "tools" && <ToolsPage />}
+        {tab === "overview" && <LibraryOverviewPage />}
+        {tab === "inventory" && user.role === "admin" && <InventoryPage />}
         {tab === "processing" && user.role === "admin" && (
           <Intake
+            key={`${location.search}:${processingSection}:${processingPreset?.id ?? ""}:${processingPaths.join("|")}`}
             initialSection={processingSection}
             initialPaths={processingPaths}
             initialProcessor={processingPreset}
@@ -520,7 +564,7 @@ export function Workspace({
         <DocumentView
           key={selected.file_id}
           doc={selected}
-          close={() => setSelected(null)}
+          close={() => { setSelected(null); if (location.pathname.startsWith("/files/")) route("/"); }}
           onProcess={
             user.role === "admin"
               ? () => {

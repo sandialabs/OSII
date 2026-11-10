@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Alert, Button, Checkbox, FormControlLabel, Container, Paper, Stack, TextField, Typography } from "@mui/material";
 import { api, type User } from "./api";
+import { queryClient } from "../../app/providers/queryClient";
 import { Workspace } from "./Workspace";
 
 function SignIn({ onUser, changing = false }: { onUser: (user: User | null) => void; changing?: boolean }) {
@@ -32,16 +33,17 @@ function SignIn({ onUser, changing = false }: { onUser: (user: User | null) => v
 
 export function ServerApp() {
   const [user, setUser] = useState<User | null>(null);
+  const changeUser = (value: User | null) => { queryClient.clear(); setUser(value); };
   const [loaded, setLoaded] = useState(false);
   const [changing, setChanging] = useState(false);
   useEffect(() => {
     void api<{ user: User }>("/api/auth/me").then(r => setUser(r.user)).catch(() => setUser(null)).finally(() => setLoaded(true));
-    const expired = () => { setUser(null); setChanging(false); };
+    const expired = () => { changeUser(null); setChanging(false); };
     window.addEventListener("osii-session-expired", expired);
     return () => window.removeEventListener("osii-session-expired", expired);
   }, []);
   if (!loaded) return <Typography sx={{ p: 4 }}>Opening OSII…</Typography>;
-  if (!user) return <SignIn onUser={setUser} />;
-  if (user.must_change_password || changing) return <SignIn changing onUser={u => { setUser(u); setChanging(false); }} />;
-  return <Workspace key={user.id} user={user} onPassword={() => setChanging(true)} onLogout={() => void api("/api/auth/logout", "POST", {}).finally(() => setUser(null))} />;
+  if (!user) return <SignIn onUser={changeUser} />;
+  if (user.must_change_password || changing) return <SignIn changing onUser={u => { changeUser(u); setChanging(false); }} />;
+  return <Workspace key={user.id} user={user} onPassword={() => setChanging(true)} onLogout={() => void api("/api/auth/logout", "POST", {}).finally(() => changeUser(null))} />;
 }

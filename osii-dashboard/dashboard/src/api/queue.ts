@@ -194,3 +194,5 @@ export async function pullOllamaModel(id: string, model: string): Promise<ModelP
 export async function getOllamaPullStatus(id: string, jobId: string): Promise<ModelPullJob> {
   return apiJson<ModelPullJob>(`/api/admin/model-providers/${encodeURIComponent(id)}/models/pull/${encodeURIComponent(jobId)}`);
 }
+
+export const getProcessingRun = (id: string) => apiJson<import("./types").ProcessingRun>(`/api/runs/${encodeURIComponent(id)}`);

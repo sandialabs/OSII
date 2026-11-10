@@ -14,6 +14,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 
+import { getToolCatalog } from "../../api/tools";
 import { getScopeOverview } from "../../api/scopes";
 import { listProcessingRuns } from "../../api/queue";
 import type { ScopeDescribeRequest } from "../../api/types";
@@ -38,6 +39,9 @@ export function ScopeOverviewPanel({ scope }: { scope: ScopeDescribeRequest }) {
     staleTime: 5_000,
   });
   const topics = useScopeKeywordSuggestions(scope);
+  const tools = useQuery({ queryKey: ["tool-catalog"], queryFn: getToolCatalog, staleTime: 30_000 });
+  const keywordMethod = tools.data?.methods.find(method => method.id === "noun_adjective_ngrams" && method.scopes.includes(scope.scope_type) && !method.configuration_error)
+    ?? tools.data?.methods.find(method => method.id === "local.stats-keywords" && method.scopes.includes(scope.scope_type) && !method.configuration_error);
   const enrichment = useEnrichmentJob();
   const runs = useQuery({
     queryKey: ["processing-runs"],
@@ -301,19 +305,17 @@ export function ScopeOverviewPanel({ scope }: { scope: ScopeDescribeRequest }) {
                     Recurring topics · statistical clues
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Heuristically ranked English noun/adjective phrases from
-                    this scope, not verified themes or an AI assessment. Select
-                    a phrase to search its sources.
+                    {keywordMethod?.id === "noun_adjective_ngrams" ? "Heuristically ranked English noun/adjective phrases" : "Frequent keywords from saved text"} in this scope. These are statistical clues, not verified themes. Select a term to search its sources.
                   </Typography>
                 </Stack>
                 <Button
                   size="small"
                   variant="outlined"
-                  disabled={!data.processing.text_count || topicRunning}
+                  disabled={data.permissions?.run === false || tools.data?.permissions?.run === false || !keywordMethod || !data.processing.text_count || topicRunning}
                   onClick={() =>
                     enrichment.mutate(
                       {
-                        enricher_name: "noun_adjective_ngrams",
+                        enricher_name: keywordMethod!.id,
                         scope,
                         enricher_config: { top_k: 20 },
                       },
