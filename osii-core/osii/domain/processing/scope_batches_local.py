@@ -272,7 +272,24 @@ class LocalBatchStorage:
             "input_summary": progress,
             "tool": header["processor"],
         }
+        from osii.domain.artifacts.products import product_input_state
+        from osii.domain.storage.commits import CommitConflict
+
         with self.guard(), product_provenance(provenance):
+            if (
+                product_input_state(
+                    self.root,
+                    header["scope"],
+                    {
+                        "current": "frozen",
+                        "revisions": [{"id": "frozen", "provenance": provenance}],
+                    },
+                )
+                != "current"
+            ):
+                raise CommitConflict(
+                    "Scope input text or membership changed; stage a new processing step"
+                )
             for output in outputs:
                 name = (
                     f"{output['id']}--{header['processor']}.json"

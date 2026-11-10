@@ -165,3 +165,35 @@ def test_keyword_ranking_combines_complete_batch_counts(
         "data"
     ]
     assert result["rows"] == [{"term": "beta", "count": 13500}]
+
+
+def test_changed_inputs_retain_batch_results_without_publishing(
+    temp_osii_root, sample_osii_object, monkeypatch
+):
+    from osii.domain.artifacts.text_representations import (
+        get_preferred_text_representation,
+    )
+    from osii.domain.storage.commits import CommitConflict
+    from osii.domain.artifacts.products import product_path
+
+    root = temp_osii_root
+    fid = sample_osii_object["file_id"]
+    scope = {"scope_type": "object", "file_id": fid}
+    tool = StatsKeywordsEnricher()
+    original = tool.enrich
+
+    def changed(**arguments):
+        result = original(**arguments)
+        preferred = get_preferred_text_representation(root, fid)
+        (root / preferred["path"]).write_text("Changed during processing")
+        return result
+
+    monkeypatch.setattr(tool, "enrich", changed)
+    monkeypatch.setattr(tool_actions, "resolve_enricher", lambda _: tool)
+    run_id = submit(root, scope)
+    job = jobs.claim_next_queue_job("worker")
+    with pytest.raises(CommitConflict, match="input text or membership changed"):
+        execute_job(job)
+    assert LocalBatchStorage(root, run_id).summary()["completed_batches"] == 1
+    assert jobs.get_run(run_id)["status"] == "error"
+    assert not product_path(root, scope, "batch-results--stats_keywords.json").exists()
