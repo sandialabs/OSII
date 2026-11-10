@@ -13,7 +13,7 @@ import tomllib
 from typing import Any
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def utc_now() -> str:
@@ -55,7 +55,7 @@ def create_schema(conn: sqlite3.Connection) -> None:
         );
         CREATE TABLE IF NOT EXISTS documents (
             file_id TEXT PRIMARY KEY,
-            source_relpath TEXT NOT NULL UNIQUE,
+            source_relpath TEXT NOT NULL,
             filename TEXT NOT NULL,
             mime TEXT,
             suffix TEXT,

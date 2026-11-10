@@ -952,3 +952,60 @@ def test_browser_does_not_offer_symbolic_links_or_special_files(client, temp_dat
     assert response.status_code == 200, response.text
     types = {entry["name"]: entry["type"] for entry in response.json()["entries"]}
     assert types == {"source.txt": "file", "linked.txt": "link", "pipe": "unavailable"}
+
+
+@pytest.mark.parametrize("change", ["none", "source", "primary"])
+def test_summary_retry_keeps_successful_extraction_even_when_reprocessing(
+    client, temp_data_root, temp_osii_root, monkeypatch, change,
+):
+    from osii.api import runs_routes
+    from osii.domain.processing.jobs import configure_job_store, claim_next_queue_job, complete_queue_job, get_run
+    from osii.worker import execute_job
+    configure_job_store(temp_osii_root)
+    source = temp_data_root / "summary-retry.txt"
+    source.write_text("Keep this completed extraction when retrying a summary.")
+    original_extract = runs_routes.dispatch_extract
+    calls = []
+    fail = True
+    def extract(**kwargs):
+        calls.append("extract")
+        kwargs["extractor_name"] = "native_text"
+        return original_extract(**kwargs)
+    class Synthesizer:
+        def synthesize(self, **kwargs):
+            calls.append("synthesize")
+            if fail:
+                raise RuntimeError("Temporary synthesis failure")
+            from osii.synthesis.common import write_synth_text
+            path = write_synth_text(osii_store=kwargs["osii_store"], file_id=kwargs["file_id"], text="# Recovered summary", synthesizer_name="test", synthesizer_version="1")
+            return {"synthesis_rel": path.relative_to(kwargs["osii_store"]).as_posix(), "provenance_rel": f"objects/{kwargs['file_id']}/provenance.toml"}
+    monkeypatch.setattr(runs_routes, "dispatch_extract", extract)
+    monkeypatch.setattr(runs_routes, "get_synthesizer", lambda name: Synthesizer())
+    response = client.post("/api/runs", json={"queue_paths": [str(source)], "extract_mode": "reprocess", "synthesizer_name": "local.extractive-preview"})
+    assert response.status_code == 200, response.text
+    run_id = response.json()["id"]
+    job = claim_next_queue_job("initial")
+    execute_job(job)
+    complete_queue_job(job["id"])
+    first = get_run(run_id)
+    assert first["items"][0]["status"] == "partial"
+    variant = first["items"][0]["extraction_variant_id"]
+    if change == "source":
+        source.write_text("Changed original bytes require a fresh extraction.")
+    elif change == "primary":
+        runs_routes.extract_document_variant(extractor_name="native_text", source_path=source,
+            data_volume_root=temp_data_root.parent, osii_root=temp_osii_root, make_primary=True,
+            dispatcher=original_extract)
+    fail = False
+    assert client.post(f"/api/runs/{run_id}/retry").status_code == 200
+    job = claim_next_queue_job("retry")
+    execute_job(job)
+    complete_queue_job(job["id"])
+    retried = get_run(run_id)
+    assert retried["items"][0]["status"] == "done"
+    if change == "source":
+        assert retried["items"][0]["extraction_variant_id"] != variant
+        assert calls == ["extract", "synthesize", "extract", "synthesize"]
+    else:
+        assert retried["items"][0]["extraction_variant_id"] == variant
+        assert calls == ["extract", "synthesize", "synthesize"]

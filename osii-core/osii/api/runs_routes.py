@@ -13,7 +13,7 @@ from osii.api.intake_routes import resolve_requested_path
 from osii.domain.processing.capability_readiness import embedding_readiness
 from osii.domain.catalog_db import rebuild_catalog, upsert_document
 from osii.domain.scopes.collections import add_documents_to_collection, create_collection, get_collection
-from osii.domain.artifacts.extraction_variants import extract_document_variant
+from osii.domain.artifacts.extraction_variants import extract_document_variant, read_extraction_text
 from osii.domain.artifacts.text_representations import get_preferred_text_representation
 from osii.domain.processing.intake import (
     add_extractor_plan,
@@ -386,7 +386,18 @@ def run_worker(
                     osii_store, {"scope_type": "object", "file_id": file_id}, context
                 )
                 existing_text = get_preferred_text_representation(osii_store, file_id)
-                should_extract = run_extraction and (extract_mode == "reprocess" or existing_text is None)
+                item = run["items"][index]
+                kept_extraction = False
+                if existing_text and item.get("file_id") == file_id and item.get("retry_extraction_id"):
+                    try:
+                        # A successful secondary OCR is complete too: retrying a
+                        # summary must not rerun it or replace the current primary.
+                        read_extraction_text(osii_store, file_id, item["retry_extraction_id"])
+                    except (OSError, ValueError):
+                        pass
+                    else:
+                        kept_extraction = True
+                should_extract = run_extraction and not kept_extraction and (extract_mode == "reprocess" or existing_text is None)
                 extract_result = None
                 if should_extract:
                     extraction_failures: list[str] = []
@@ -425,6 +436,8 @@ def run_worker(
                         f"Extraction variant {extract_result['variant_id']} saved"
                         + (" and made primary." if extract_result["made_primary"] else "."),
                     )
+                elif kept_extraction:
+                    append_log(run_id, f"Retry: kept completed extraction for {src.name}.")
                 elif run_extraction:
                     append_log(run_id, f"Skipped extraction for {src.name}; a primary extraction already exists.")
                 elif existing_text is None:
@@ -435,7 +448,7 @@ def run_worker(
                     return
 
                 run["items"][index]["file_id"] = file_id
-                run["items"][index]["extraction_variant_id"] = extract_result.get("variant_id") if extract_result else None
+                run["items"][index]["extraction_variant_id"] = extract_result.get("variant_id") if extract_result else item.get("retry_extraction_id") if kept_extraction else None
                 run["items"][index]["extract_error"] = extract_result.get("error") if extract_result else None
                 save_run(run)
 
@@ -489,6 +502,7 @@ def run_worker(
                     VolumeStore(Path(staging["database"])).link_sidecar(staging["members"][index], file_id, run_id)
 
                 errors = [item for item in [extract_result.get("error") if extract_result else None, synthesis_error, enrichment_error] if item]
+                run["items"][index].pop("retry_extraction_id", None)
                 run["items"][index]["status"] = "partial" if errors else "done"
                 run["items"][index]["osii"] = extract_result["osii_rel"] if extract_result else f"objects/{file_id}"
                 run["items"][index]["synthesis"] = synthesis_result["synthesis_rel"] if synthesis_result else None

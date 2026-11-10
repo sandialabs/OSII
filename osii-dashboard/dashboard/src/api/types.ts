@@ -639,6 +639,7 @@ export type CapabilityReadiness = {
   descriptor?: {
     config_schema?: ProcessorConfigSchema;
     capabilities?: {
+      file_extensions?: string[];
       output_kinds?: string[];
       scope_types?: string[];
       [key: string]: unknown;

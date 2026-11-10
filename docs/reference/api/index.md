@@ -154,7 +154,10 @@ of rereading every original to repeat that plan. The worker owns content hashes
 and extraction; slow source-folder access during queueing does not block API
 health or Queue & activity requests. Completed Intake/library runs with failed
 or partially processed files also accept `retry`: successful files stay complete,
-failed files return to pending, and the same durable job is requeued. Retrying an
+failed files return to pending, and the same durable job is requeued. Successful
+extraction versions on partial files are retained when their content identity
+still matches. Recovered files are included when embedding membership is rebuilt;
+existing chunk/vector checkpoints are preserved. Retrying an
 embedding failure retains its existing embedding-only behavior. Fully successful
 and cancelled runs remain terminal.
 

@@ -528,6 +528,9 @@ def control_run(run_id: str, action: str) -> dict:
             ):
                 raise ValueError("only a failed run can be retried")
             if file_retry:
+                # Recovered files may acquire IDs that were absent from the first
+                # embedding pass. Recompute membership, retaining vector checkpoints.
+                run.pop("indexing_file_ids", None)
                 run["file_processing_status"] = "pending"
                 run["error_phase"] = None
                 if run.get("operations", {}).get("embed"):
@@ -553,6 +556,8 @@ def control_run(run_id: str, action: str) -> dict:
             run["finished_at"] = None
             for item in run.get("items", []):
                 if (item.get("status") == "error" or (file_retry and item.get("status") == "partial")) and run.get("error_phase") != "embedding":
+                    if file_retry and item.get("status") == "partial" and item.get("extraction_variant_id") and not item.get("extract_error"):
+                        item["retry_extraction_id"] = item["extraction_variant_id"]
                     item["status"] = "pending"
                     item["error"] = None
                     item["started_at"] = None

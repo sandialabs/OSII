@@ -140,6 +140,7 @@ export function QueuePage() {
     "embed" | "synthesize" | "reextract" | "enrich" | "custom"
   >("embed");
   const [runExtraction, setRunExtraction] = useState(requestedStep !== "index");
+  const [extractorOverrides, setExtractorOverrides] = useState<Record<string, string>>({});
   const [extractMode, setExtractMode] = useState<"missing" | "reprocess">(
     "missing",
   );
@@ -290,6 +291,7 @@ export function QueuePage() {
       section,
       runExtraction,
       extractMode,
+      extractorOverrides,
       synthesize,
       embed,
       enrich,
@@ -308,6 +310,7 @@ export function QueuePage() {
         workflow: section === "process" ? "library" : "intake",
         run_extraction: runExtraction,
         extract_mode: extractMode,
+        extractor_overrides: extractorOverrides,
         synthesizer_name: synthesize ? effectiveSynthesizer || null : null,
         build_embeddings: embed,
         chunking_method: chunkingMethod,
@@ -472,6 +475,7 @@ export function QueuePage() {
         workflow: section === "process" ? "library" : "intake",
         run_extraction: runExtraction,
         extract_mode: extractMode,
+        extractor_overrides: extractorOverrides,
         extraction_policy: extractionPolicy,
         synthesizer_name: synthesize ? effectiveSynthesizer || null : null,
         build_embeddings: embed,
@@ -1125,9 +1129,7 @@ export function QueuePage() {
                       <Typography fontWeight={700}>Processing steps</Typography>
                       {intakeDefaults.isError && <Alert severity="error">Could not load intake defaults: {intakeDefaults.error.message}</Alert>}
                     </Stack>
-                    {section === "process" &&
-                    (libraryGoal === "reextract" ||
-                      libraryGoal === "custom") ? (
+                    {section === "add" || libraryGoal === "reextract" || libraryGoal === "custom" ? (
                       <Stack spacing={1}>
                         <FormControlLabel
                           control={
@@ -1138,8 +1140,23 @@ export function QueuePage() {
                               }
                             />
                           }
-                          label="Run extraction"
+                          label="Read text"
                         />
+                        {runExtraction && <>
+                          {(preview.data?.preview.extractor_plan ?? []).map(plan => <TextField key={plan.extension} select size="small" label={`Reader (${plan.extension})`} slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
+                            value={extractorOverrides[plan.extension] ?? ""} onChange={event => {
+                              const method = event.target.value;
+                              setExtractorOverrides(current => { const next = { ...current }; if (method) next[plan.extension] = method; else delete next[plan.extension]; return next; });
+                              if (method) setExtractMode("reprocess");
+                            }}>
+                            <MenuItem value="">File-type defaults</MenuItem>
+                            {(readiness.data?.extractors ?? []).filter(method => method.available && method.descriptor?.capabilities?.file_extensions?.includes(plan.extension)).map(method => <MenuItem key={method.id} value={method.id}>{method.display_name}</MenuItem>)}
+                          </TextField>)}
+                          <TextField select size="small" label="Existing text" value={extractMode} onChange={event => setExtractMode(event.target.value as typeof extractMode)}>
+                            <MenuItem value="missing">Keep completed text</MenuItem>
+                            <MenuItem value="reprocess">Read selected files again</MenuItem>
+                          </TextField>
+                        </>}
                         {runExtraction ? (
                           <TextField
                             select

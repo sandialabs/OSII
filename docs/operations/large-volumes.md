@@ -86,17 +86,25 @@ choose **View log** to inspect historical evidence.
    browser reload. Changing filters does not change it. Switching locations asks
    before clearing the selection. Direct-picked file selections last for the
    current page session; queued jobs are durable.
-7. Choose a processing preset/options and **Queue N files**. Selected processing
-   verifies availability and identity, then reads and hashes those originals.
+7. Choose a processing preset/options and **Queue N files**. Under **Processing
+   options**, choose a **Reader** for each selected file type or keep **File-type
+   defaults**. Choosing a reader selects **Read selected files again** for this
+   run; it does not change global routing. **After the new extraction finishes**
+   controls whether to keep the current primary or promote the new version.
+   Selected processing verifies availability and identity, then reads and hashes those originals.
    Changed, missing, denied, and malformed files fail individually; healthy files
    continue. Successful documents appear in Files and can feed Search, Topics,
    and Chat. Discovery by itself does not establish content readability.
 8. In **Queue & activity**, inspect issues or retry failed work. Successful
    extraction and embedding checkpoints are retained. **Completed with issues**
    runs can retry failed or partially processed files while completed files stay
-   untouched. Partially processed files retry their requested workflow; provider
-   calls within those files are not an exactly-once guarantee. Repeating the same saved
-   selection and request returns its existing run, including after an interrupted
+   untouched. When a summary fails after successful extraction, retry keeps that
+   extraction if the original bytes still match and the saved version remains
+   readable, including a secondary OCR version. Changed bytes require a new
+   extraction. Embedding membership is recomputed after failed-file recovery so
+   newly recovered documents are included; saved vector checkpoints remain valid.
+   Provider calls lost before a durable commit are not an exactly-once guarantee.
+   Repeating the same saved selection and request returns its existing run, including after an interrupted
    handoff. Resume/retry that run or create a new selection for different work.
 
 Processing checks the one-hour default time budget between files, then pauses
@@ -330,3 +338,47 @@ permission boundaries, hidden-entry inspection limits, restart checkpoints,
 malformed PDFs, and retries that preserve completed files and embedding phases.
 Actual share disconnection, mixed corporate ACLs, multi-day traversal, and 35 TB
 capacity remain unvalidated by this smoke test.
+
+
+### OCR, synthesis, embeddings, and retry verification
+
+A three-file batch selected through Intake completed against the same SMB share
+on 10 November 2026. Run `4d80259408af7e40f211bcf0329b797b` used full-page
+Tesseract OCR, `ollama.synthesizer` with `llama3.2:1b`, and `all-minilm`
+384-dimensional embeddings. The new OCR versions were explicitly made primary;
+all earlier extraction-version files and the original PDF hashes were retained.
+
+| PDF | Pages | OCR regions with confidence | Embedding chunks |
+| --- | ---: | ---: | ---: |
+| `purcell.pdf` | 9 | 5,751 | 118 |
+| `RTPXLMUSUTMAO6D4NP6PXTDMTPMEAVC6.pdf` | 1 | 108 | 2 |
+| `UFEU6A6X2AEU2ACABZLV35NF45HHUKMB.pdf` | 5 | 427 | 18 |
+
+The latter two files are under `pdfs-environment/gardening-and-landscaping`.
+All three completed OCR, synthesis, and embedding with no remaining run errors.
+The index contained 138 new chunks plus six previously embedded control chunks;
+the control vectors matched their original float32 hashes exactly. Semantic and
+lexical search for “community school gardens” returned the school-gardens bill
+with page and character-span grounding. Browser checks confirmed the 108 OCR
+boxes overlay the one-page original, plaintext/Mathpix views work, and summaries
+are rendered with editing controls. Synthesis provenance references the new OCR
+versions and stores the descriptive-title/basic-metadata fields. This checks
+pipeline behavior and persistence, not the factual quality of the small model's
+suggestions; unverified metadata for the resource-list PDF remained blank with
+an evidence-validation qualifier.
+
+Controlled failures used an isolated runtime, an independent inventory backup,
+and the same three NAS originals and live processor/model endpoints. A synthesis
+failure was retried with only three total OCR calls, while completed summaries
+retained their timestamps and all 138 embeddings were reused. An embedding
+failure was then injected after eight chunks were committed. After interrupting
+and recovering the worker, retry reused those eight chunks, completed all three
+documents, and preserved original OCR/summary artifacts and six unrelated vectors.
+The failed pass left the previous published index intact. Fault injection did
+not alter the live library's model configuration, original PDFs, or paused bulk
+intake.
+
+Regression tests also cover recovered files joining the embedding set and
+changed source bytes producing a new content identity. Derived catalog schema 4
+allows multiple content-addressed revisions at one source path; upgrading that
+cache rebuilds it from sidecars without changing the canonical inventory.

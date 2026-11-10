@@ -510,3 +510,51 @@ def test_full_rebuild_can_replace_dimensions_and_pause_without_publication(libra
     client.calls.clear()
     embed(root, [item])  # Imports rebuilt vectors, with no stale dimension cache.
     assert client.calls == []
+
+
+def test_file_retry_adds_recovered_documents_to_embedding_membership(library, tmp_path, monkeypatch):
+    root, client = library
+    first = document(root, "first.txt", "Completed document")
+    second = document(root, "second.txt", "Recovered document")
+    embed(root, [first])
+    from osii.api import runs_routes
+    from osii.domain.processing.jobs import (
+        create_run_record, save_run, enqueue_run, claim_next_queue_job,
+        complete_queue_job, control_run, get_run,
+    )
+    from osii.worker import execute_job
+    originals = tmp_path / "originals"
+    originals.mkdir()
+    paths = [originals / "first.txt", originals / "second.txt"]
+    run = create_run_record(paths, originals, tmp_path / "uploads", osii_root=root)
+    payload = {
+        "osii_store": str(root), "resolved_files": [str(path) for path in paths],
+        "queue_items": [], "include_subfolders": False, "include_patterns": [],
+        "exclude_patterns": [], "context": "", "intake_name": "retry",
+        "data_volume_root": str(tmp_path), "shared_root": str(originals),
+        "upload_root": str(tmp_path / "uploads"), "parser_routes_path": str(tmp_path / "routes.yaml"),
+        "build_embeddings": True, "chunking_method": "paragraph",
+    }
+    enqueue_run(run["id"], payload)
+    job = claim_next_queue_job("initial-attempt")
+    run = get_run(run["id"])
+    run.update(status="done", workflow="intake", file_processing_status="done",
+               indexing_status="done", indexing_file_ids=[first], operations={"embed": True})
+    run["items"][0].update(status="done", file_id=first)
+    run["items"][1].update(status="error", error="Temporary OCR failure")
+    save_run(run)
+    complete_queue_job(job["id"])
+    def recover_file(**kwargs):
+        current = get_run(kwargs["run_id"])
+        assert current["items"][0]["status"] == "done"
+        current["items"][1].update(status="done", error=None, file_id=second)
+        current.update(status="done", completed=2)
+        save_run(current)
+    monkeypatch.setattr(runs_routes, "run_worker", recover_file)
+    control_run(run["id"], "retry")
+    client.calls.clear()
+    execute_job(claim_next_queue_job("retry-after-restart"))
+    restored = get_run(run["id"])
+    assert restored["indexing_progress"]["total_documents"] == 2
+    assert set(restored["indexing_file_ids"]) == {first, second}
+    assert client.calls == [["Recovered document"]]
