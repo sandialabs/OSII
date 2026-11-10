@@ -3,7 +3,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip,
   Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel,
-  LinearProgress, MenuItem, Paper, Snackbar, Stack, Switch, TextField, Typography,
+  LinearProgress, MenuItem, Paper, Snackbar, Stack, Switch, TextField, Tooltip, Typography,
 } from "@mui/material";
 import type { AlertColor } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -107,6 +107,20 @@ function ServiceRow({ service, busy, onAction, onLogs }: {
   </Stack>;
 }
 
+function ConnectionEndpointStatus({ provider, generation }: { provider: ModelProvider; generation?: number }) {
+  const health = useQuery({
+    queryKey: ["admin", "endpoint-health", provider.id, provider.type, provider.base_url, generation],
+    queryFn: ({ signal }) => apiJson<{ models: ModelOption[] }>("/api/admin/model-providers/discover", {
+      method: "POST", signal, json: { provider_id: provider.id, type: provider.type, base_url: provider.base_url },
+    }),
+    staleTime: 30_000, refetchInterval: 60_000, retry: false,
+  });
+  const label = health.isError ? "Endpoint unavailable" : health.data ? "Endpoint reachable" : "Checking endpoint…";
+  const detail = health.isError ? (health.error instanceof Error ? health.error.message : "Connection check failed")
+    : health.data ? `Model list checked ${new Date(health.dataUpdatedAt).toLocaleTimeString()}. Generation not tested.` : "Checking the endpoint’s model list.";
+  return <Tooltip title={detail}><Chip size="small" tabIndex={0} aria-label={`${provider.id}: ${label}`} variant="outlined" color={health.isError ? "error" : health.data ? "success" : "default"} label={label} /></Tooltip>;
+}
+
 export function ProcessorsPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -175,6 +189,7 @@ export function ProcessorsPage() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["admin", "setup"] }),
       queryClient.invalidateQueries({ queryKey: ["admin", "model-providers"] }),
+      queryClient.invalidateQueries({ queryKey: ["admin", "endpoint-health"] }),
       queryClient.invalidateQueries({ queryKey: ["intake", "readiness"] }),
     ]);
   };
@@ -602,49 +617,41 @@ export function ProcessorsPage() {
   );
 
   return <Stack spacing={3} sx={{ maxWidth: 1100, mx: "auto" }}>
-    <Stack spacing={0.5}>
-      <Typography variant="h5" fontWeight={750}>Setup</Typography>
-      <Typography color="text.secondary">Models, tools, and processing defaults.</Typography>
-    </Stack>
-
+    <Typography variant="h5" fontWeight={750}>Setup</Typography>
     <WorkflowProgress readiness={data?.readiness} checking={setup.isLoading} failed={setup.isError} onStep={followWorkflowStep} />
-
-    <Box sx={{ borderLeft: 3, borderColor: "secondary.main", pl: 2, py: 0.5 }}>
-      <Typography variant="body2" fontWeight={700}>Where each step belongs</Typography>
-      <Typography variant="body2" color="text.secondary">For packaged OSII, the launcher owns the source folder, images, optional services, and startup. Setup owns model connections and extraction rules. Intake chooses files and starts processing. Change a source or service in the launcher; local developers use their development configuration.</Typography>
-    </Box>
 
     {!connectionOpen && !serviceLogs ? renderNotice() : null}
     {setup.isError ? <Alert severity="error"><strong>OSII&apos;s backend is not responding.</strong> Check that the library is running, then refresh this page.</Alert> : null}
     {configurationErrors.map(([file, detail]) => <Alert key={file} severity="error"><strong>{file}.toml was not loaded.</strong> {detail} OSII is continuing with the last valid configuration.</Alert>)}
 
-    <Box sx={{ py: 0.5 }}>
-      <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1.5} alignItems={{ md: "center" }}>
-        <Stack spacing={0.25}>
-          <Typography variant="h6" fontWeight={750}>{!data ? "Checking OSII…" : !data.extraction_ready ? "Document reading needs attention" : data.ai_ready ? "Model connections ready" : "Basic reading ready · AI setup incomplete"}</Typography>
-          <Typography variant="body2" color="text.secondary">
-            {data?.extraction_ready === false ? "Check the extractor status below before starting a run." : data?.ai_ready ? "AI methods are available. You can review or change them below." : "AI is optional. You can add a model connection now or start with the bundled methods."}
-          </Typography>
-        </Stack>
-        <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
-          <Button variant="contained" color="secondary" onClick={() => navigate("/intake")} disabled={!data?.extraction_ready}>Go to Intake</Button>
-        </Stack>
+    <Stack spacing={1.25}>
+      <Stack id="setup-model-connections" direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+        <Typography variant="h6" fontWeight={700}>Model connections</Typography>
+        <Button variant="contained" color="secondary" disabled={!providerData.data} onClick={openNewConnection}>Add connection</Button>
       </Stack>
-    </Box>
+      <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}><Stack spacing={2} divider={<Divider flexItem />}>
+        {(data?.providers ?? []).filter((provider) => provider.enabled && !(provider.type === "ollama" && provider.implicit)).map((provider) => <Stack key={provider.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1} alignItems={{ sm: "center" }}>
+          <Stack spacing={0.75} minWidth={0}>
+            <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Typography variant="body2" fontWeight={700}>{provider.id}</Typography>
+              <ConnectionEndpointStatus provider={provider} generation={data?.configuration.generation} />
+              {provider.default_chat ? <Chip size="small" label="Default language" /> : null}
+              {provider.default_embedding ? <Chip size="small" label="Default embedding" /> : null}
+            </Stack>
+            <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>{provider.base_url}</Typography>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              {provider.chat_model || provider.synthesis_model ? <Typography variant="caption">Language · {provider.chat_model || provider.synthesis_model}</Typography> : null}
+              {provider.embedding_model ? <Typography variant="caption">Embedding · {provider.embedding_model}</Typography> : null}
+            </Stack>
+          </Stack>
+          <Stack direction="row" spacing={1} flexShrink={0}><Button size="small" onClick={() => openExistingConnection(provider)}>Configure</Button><Button size="small" onClick={() => void checkConnection(provider)}>Test models</Button></Stack>
+        </Stack>)}
+        {!data?.providers?.some((provider) => provider.enabled && !(provider.type === "ollama" && provider.implicit)) ? <Typography variant="body2" color="text.secondary">{setup.isError ? "Connections unavailable" : !data ? "Loading connections…" : "No enabled connections"}</Typography> : null}
+      </Stack></Paper>
+    </Stack>
 
     <Stack spacing={1.25}>
-      <Stack id="setup-model-connections" spacing={0.25}><Typography variant="overline" color="secondary.main" fontWeight={700}>Model setup</Typography><Typography variant="h6" fontWeight={700}>Model connections</Typography></Stack>
-    <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}><Stack spacing={1.25}>
-      <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1} alignItems={{ md: "center" }}>
-        <Stack spacing={0.2}><Typography fontWeight={700}>Add or test a connection</Typography><Typography variant="body2" color="text.secondary">Connect a language model for summaries and chat, or an embedding model for semantic search. Models are optional for your first Intake.</Typography></Stack>
-        <Button variant="contained" color="secondary" disabled={!providerData.data} onClick={openNewConnection} sx={{ flexShrink: 0 }}>Add LLM</Button>
-      </Stack>
-      {(data?.providers ?? []).filter((provider) => provider.enabled && !(provider.type === "ollama" && provider.implicit)).map((provider) => <Stack key={provider.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1} alignItems={{ sm: "center" }}><Stack><Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap><Typography variant="body2" fontWeight={700}>{provider.type === "ollama" ? "Ollama" : "OpenAI-compatible"} · {provider.id}</Typography>{provider.default_chat ? <Chip size="small" label="Default language" /> : null}{provider.default_embedding ? <Chip size="small" label="Default embedding" /> : null}</Stack><Typography variant="caption" color="text.secondary">{provider.embedding_model ? `Embedding: ${provider.embedding_model}` : "Embedding: not selected"} · {provider.synthesis_model ? `Synthesis: ${provider.synthesis_model}` : "Synthesis: not selected"}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => openExistingConnection(provider)}>Configure</Button><Button size="small" onClick={() => void checkConnection(provider)}>Test</Button></Stack></Stack>)}
-      {!data?.providers?.some((provider) => provider.enabled && !(provider.type === "ollama" && provider.implicit)) ? <Typography variant="body2" color="text.secondary">No enabled connections. OSII will use its no-AI methods.</Typography> : null}
-    </Stack></Paper></Stack>
-
-    <Stack spacing={1.25}>
-      <Stack spacing={0.25}><Typography variant="overline" color="secondary.main" fontWeight={700}>Processing preferences</Typography><Typography variant="h6" fontWeight={700}>How OSII works with files</Typography></Stack>
+      <Typography variant="h6" fontWeight={700}>Processing defaults</Typography>
       {renderCapabilityDrawer("extractor")}
       {renderCapabilityDrawer("synthesizer")}
       {renderCapabilityDrawer("embedder")}
@@ -653,7 +660,7 @@ export function ProcessorsPage() {
 
 
     <Accordion variant="outlined" disableGutters elevation={0} sx={{ borderRadius: "12px !important", overflow: "hidden" }}>
-      <AccordionSummary expandIcon={<ExpandMoreIcon />}><Stack><Typography fontWeight={700}>Advanced &amp; diagnostics</Typography><Typography variant="caption" color="text.secondary">Technical status, connection maintenance, custom Processor APIs, and logs.</Typography></Stack></AccordionSummary>
+      <AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>Advanced &amp; diagnostics</Typography></AccordionSummary>
       <AccordionDetails><Stack spacing={2}>
         {data?.configuration ? <Stack spacing={0.75}><Typography variant="body2" fontWeight={700}>Active configuration · {data.configuration.active_profile}</Typography><Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere" }}><code>{data.configuration.directory}</code></Typography><Typography variant="body2" color="text.secondary">Development defaults to the checkout&apos;s ignored osii-data/config/ directory. Installed launchers use a writable profile workspace. OSII_CONFIG_DIR overrides either location. Originals and portable .osii artifacts are separate.</Typography>{Object.entries(data.configuration.files).map(([name, path]) => <Stack key={name} direction="row" spacing={1} alignItems="center"><Typography variant="caption" sx={{ overflowWrap: "anywhere", flex: 1 }}><code>{path}</code></Typography><Button size="small" sx={{ flexShrink: 0 }} onClick={() => void copyConfigurationPath(path)}>Copy path</Button></Stack>)}</Stack> : null}
         <Accordion variant="outlined" disableGutters><AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>Service status</Typography></AccordionSummary><AccordionDetails><Stack divider={<Divider flexItem />}>
@@ -679,8 +686,12 @@ export function ProcessorsPage() {
       </Stack></AccordionDetails>
     </Accordion>
 
+    <Stack direction="row" justifyContent="flex-end" sx={{ borderTop: "1px solid", borderColor: "divider", pt: 2 }}>
+      <Button variant="contained" color="secondary" onClick={() => navigate("/intake")} disabled={!data?.extraction_ready}>Continue to Intake →</Button>
+    </Stack>
+
     <Dialog open={connectionOpen} onClose={() => setConnectionOpen(false)} fullWidth maxWidth="sm"><Box component="form" onSubmit={(event) => void saveConnection(event)}>
-      <DialogTitle>{editingProviderId ? "Configure LLM" : "Add LLM"}</DialogTitle><DialogContent>
+      <DialogTitle>{editingProviderId ? "Configure connection" : "Add connection"}</DialogTitle><DialogContent>
       {connectionOpen && !serviceLogs ? renderNotice() : null}
       <Stack spacing={1.5} sx={{ pt: 0.5 }}>
         <TextField select label="Connection" value={providerForm.type} disabled={Boolean(editingProviderId)} onChange={(event) => { setProviderForm(newConnectionProvider(event.target.value as ModelProvider["type"])); setApiKey(""); }} helperText="Use your endpoint's URL, model names, and API key. For a local model server, choose Ollama."><MenuItem value="openai">OpenAI-compatible endpoint</MenuItem><MenuItem value="ollama">Ollama (local model server)</MenuItem></TextField>
@@ -688,7 +699,7 @@ export function ProcessorsPage() {
         <EndpointFields required onDiscover={() => void findModels()} discovering={discoveringModels} baseUrl={providerForm.base_url} onBaseUrl={base_url => setProviderForm({ ...providerForm, base_url })}
           apiKey={apiKey} onApiKey={setApiKey} credentialPresent={providerForm.credential_present}
           credentialWritable={providerForm.credential_writable !== false} showCredential={providerForm.type !== "ollama"}
-          urlHelp={providerForm.type === "ollama" ? "Use an address reachable by the OSII backend. In containers, localhost means the container itself." : "Use the OpenAI-compatible API base address."}
+          urlHelp={providerForm.type === "ollama" ? "Ollama server address, such as http://localhost:11434." : "Use the OpenAI-compatible API base address."}
           credentialHelp={providerForm.credential_help ?? `Saved locally in ${data?.configuration.files.secrets ?? "secrets.env"}. Never sent to Toolbox processors.`} />
         {providerForm.type === "ollama" && <Alert severity="info" icon={false}>Install and start Ollama yourself. OSII can inspect installed models and download the approved starters.</Alert>}
         <ModelPicker label="Language model" value={providerForm.chat_model} options={discoveredModels.filter(model => !model.capabilities.length || model.capabilities.includes("chat"))}

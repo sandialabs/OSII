@@ -41,7 +41,6 @@ export function WorkflowProgress({
   });
   const steps = libraryWorkflowSteps(readiness, overview.data, sourceReady);
   const completed = steps.filter((step) => step.complete).length;
-  const next = steps.find((step) => !step.complete);
   const unverified = failed || overview.isError;
   const loading = (!readiness && !failed) || overview.isLoading || checking;
   return (
@@ -62,11 +61,7 @@ export function WorkflowProgress({
         >
           <Stack spacing={0.25}>
             <Typography variant="h6" fontWeight={700}>
-              Your path to search & AI chat
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Six checkpoints for the full experience. Progress reflects this
-              library, not just the files currently selected.
+              Library readiness
             </Typography>
           </Stack>
           <Chip
@@ -122,85 +117,21 @@ export function WorkflowProgress({
                 }}
                 aria-label={`${index + 1}. ${step.label}: ${step.complete ? "complete" : "needs attention"}`}
               >
-                {step.complete ? (
-                  <CheckCircleOutlineIcon fontSize="small" />
-                ) : (
-                  <Box
-                    component="span"
-                    sx={{
-                      display: "grid",
-                      placeItems: "center",
-                      width: 20,
-                      height: 20,
-                      border: "1px solid",
-                      borderColor: "divider",
-                      borderRadius: "50%",
-                      flexShrink: 0,
-                      fontSize: "0.75rem",
-                    }}
-                  >
-                    {index + 1}
-                  </Box>
-                )}
+                <Box component="span" sx={{ display: "grid", placeItems: "center", width: 22, height: 22, border: "1px solid", borderColor: step.complete ? "success.main" : "divider", borderRadius: "50%", flexShrink: 0, fontSize: "0.75rem", fontWeight: 700 }}>
+                  {index + 1}
+                </Box>
                 <Typography
                   variant="body2"
                   fontWeight={step.complete ? 500 : 700}
                 >
                   {step.label}
                 </Typography>
+                {step.complete ? <CheckCircleOutlineIcon aria-hidden fontSize="small" sx={{ ml: "auto", flexShrink: 0 }} /> : null}
               </Button>
             </Box>
           ))}
         </Box>
-        {failed || overview.isError ? (
-          <Alert severity="warning">
-            Progress could not be fully verified. Any completed checkpoints
-            shown are from the last successful check; refresh before relying on
-            them.
-          </Alert>
-        ) : null}
-        {!loading && !failed && !overview.isError && next ? (
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            spacing={1.5}
-            justifyContent="space-between"
-            sx={{ borderTop: "1px solid", borderColor: "divider", pt: 1.5 }}
-          >
-            <Stack spacing={0.25} sx={{ minWidth: 0 }}>
-              <Typography variant="body2" fontWeight={700}>
-                Next: {next.label}
-              </Typography>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ overflowWrap: "anywhere" }}
-              >
-                {next.detail}
-              </Typography>
-            </Stack>
-            <Button
-              variant="contained"
-              color="secondary"
-              sx={{ flexShrink: 0, alignSelf: "flex-start" }}
-              onClick={() => onStep(next.id)}
-            >
-              {next.action}
-            </Button>
-          </Stack>
-        ) : completed === steps.length &&
-          !loading &&
-          !failed &&
-          !overview.isError ? (
-          <Typography variant="body2" color="success.main">
-            All checkpoints complete. Semantic retrieval and the language
-            connection are ready; the first chat answer will test generation.
-          </Typography>
-        ) : null}
-        <Typography variant="caption" color="text.secondary">
-          Keyword search and source browsing work earlier. Summaries and
-          enrichments add optional knowledge products; lexical hashing is not a
-          semantic embedding model.
-        </Typography>
+        {failed || overview.isError ? <Alert severity="warning">{readiness || overview.data ? "Couldn’t refresh readiness. Showing the last check." : "Readiness unavailable. Try refreshing."}</Alert> : null}
       </Stack>
     </Paper>
   );

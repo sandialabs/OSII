@@ -40,6 +40,13 @@ For the shared model endpoint set `OPENAI_BASE_URL`, `OSII_CHAT_MODEL`, and
 Setup or inject `OPENAI_API_KEY`. Existing saved model settings are retained;
 change them in Setup rather than expecting new defaults to overwrite them.
 
+Setup keeps all six readiness steps numbered, including completed steps. Model
+connections show an endpoint status from automatic model-list checks, refreshed
+every minute while open. These do not run inference. Hover or focus the status
+for check details. **Test models** checks selected-model availability and makes
+an embedding request when configured. Review **Processing defaults** below the
+connections, then use **Continue to Intake** at the bottom of Setup.
+
 ## Work on local and server together
 
 OSII-local has no user accounts or login screen. Its normal `make dev` startup
