@@ -276,6 +276,7 @@ def publish_product(
     origin: str = "generated",
     expected: str | None = None,
     check_expected: bool = False,
+    generation_parents: dict[str, str | None] | None = None,
 ) -> dict:
     with _lock(root):
         manifest = _load(path)
@@ -320,12 +321,15 @@ def publish_product(
             "created_at": datetime.now(UTC).isoformat(),
             "data": data,
             "provenance": provenance,
-            "parent": manifest["current"],
+            "parent": manifest["current"] if generation_parents is None else generation_parents.get(path.name),
             "grounding_needs_review": origin == "human",
         }
         manifest["revisions"].append(revision)
         # Human edits stay visible. Regeneration creates a candidate for review.
-        if origin != "generated" or not current or current["origin"] != "human":
+        if origin != "generated" or not current or (
+            current["origin"] != "human" and
+            (generation_parents is None or generation_parents.get(path.name) == manifest["current"])
+        ):
             manifest["current"] = revision["id"]
         _commit(path, manifest)
         return revision

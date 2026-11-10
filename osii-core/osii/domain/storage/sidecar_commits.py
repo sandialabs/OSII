@@ -15,7 +15,8 @@ import tomli_w
 
 from osii.domain.read.sidecar import SidecarLibraryReader
 from osii.domain.storage.atomic import atomic_write_text
-from osii.domain.storage.commits import CommitConflict, CommitReceipt, JobCheckpoint, ProcessingCommit, embedding_identity
+from osii.domain.storage.commits import (CommitConflict, CommitReceipt, JobCheckpoint,
+    ProcessingCommit, ScopeProcessingCommit, embedding_identity)
 from osii.processor_sdk import EmbeddingResponse, EnrichmentResponse, ExtractionResponse, SynthesisResponse
 
 
@@ -58,7 +59,7 @@ class SidecarProcessingCommitter:
         self.root = Path(root).resolve()
         self.reader = SidecarLibraryReader(self.root)
 
-    def commit(self, command: ProcessingCommit, *, checkpoint: JobCheckpoint | None = None) -> CommitReceipt:
+    def commit(self, command: ProcessingCommit | ScopeProcessingCommit, *, checkpoint: JobCheckpoint | None = None) -> CommitReceipt:
         command.validate()
         if checkpoint is not None:
             raise ValueError("Local queue checkpoints remain owned by the local job store")
@@ -70,6 +71,15 @@ class SidecarProcessingCommitter:
                 if saved["fingerprint"] != fingerprint:
                     raise CommitConflict("Operation ID was already used for a different result")
                 return replace(CommitReceipt(**saved["receipt"]), replayed=True)
+            if isinstance(command, ScopeProcessingCommit):
+                from osii.domain.scopes.membership import list_scope_file_ids
+                command.input_revision.verify(self.reader, list_scope_file_ids(self.root, self._scope(command), canonical=True))
+                result = self._scope_product(command)
+                receipt = CommitReceipt(command.commit_id, None, command.kind, result,
+                    scope_type=command.scope.kind, scope_id=command.scope.identifier)
+                atomic_write_text(receipt_path, json.dumps({"fingerprint": fingerprint,
+                    "receipt": asdict(receipt)}, ensure_ascii=False))
+                return receipt
             if command.input_revision:
                 command.input_revision.verify(self.reader)
             if isinstance(command.response, ExtractionResponse):
@@ -85,6 +95,54 @@ class SidecarProcessingCommitter:
             atomic_write_text(receipt_path, json.dumps({"fingerprint": fingerprint,
                 "receipt": asdict(receipt)}, ensure_ascii=False))
             return receipt
+
+    @staticmethod
+    def _scope(command: ScopeProcessingCommit) -> dict:
+        from osii.domain.artifacts.products import validate_scope
+        key = {"object": "file_id", "folder": "folder_id", "collection": "collection_id"}.get(command.scope.kind)
+        return validate_scope({"scope_type": command.scope.kind,
+                               **({key: command.scope.identifier} if key else {})})
+
+    def _scope_product(self, command: ScopeProcessingCommit) -> dict:
+        from collections import Counter
+        from osii.domain.artifacts.products import product_path, product_provenance, publish_product
+        response, scope = command.response, self._scope(command)
+        provenance = {**command.provenance, "commit_id": command.commit_id,
+            "commit_fingerprint": command.fingerprint(), "processing_input": asdict(command.input_revision),
+            "processor": response.processor.model_dump(mode="json"), "config": command.request.config,
+            "expert_context": command.request.expert_context}
+        metadata = {**response.metadata, "processor": response.processor.name,
+            "version": response.processor.version, **command.provenance,
+            "expert_context_supplied": bool(command.request.expert_context),
+            "expert_context": command.request.expert_context, "provenance": provenance,
+            "warnings": response.warnings}
+        with product_provenance(provenance):
+            if isinstance(response, SynthesisResponse):
+                path = product_path(self.root, scope, response.processor.name + ".txt", "synthesis")
+                publish_product(self.root, path, {"artifact_type": "text", "title": "Summary", "text": response.markdown},
+                                generation_parents=command.product_parents)
+                meta_path = path.with_suffix(".json")
+                metadata["citations"] = [row.model_dump(mode="json") for row in response.citations]
+                atomic_write_text(meta_path, json.dumps(metadata, ensure_ascii=False))
+                return {**scope, **({"scope_id": "root"} if command.scope.kind == "root" else {}),
+                    "method": response.processor.name, "text_path": path.relative_to(self.root).as_posix(),
+                    "metadata_path": meta_path.relative_to(self.root).as_posix()}
+            counts = Counter(item.kind for item in response.artifacts)
+            results = []
+            for artifact in response.artifacts:
+                method = response.processor.name if counts[artifact.kind] == 1 else f"{response.processor.name}.{artifact.id}"
+                name = f"{artifact.kind.replace(' ', '_')}--{method}.json"
+                path = product_path(self.root, scope, name)
+                publish_product(self.root, path, artifact.standard_data.model_dump(mode="json"),
+                                generation_parents=command.product_parents)
+                meta_path = path.with_suffix(".meta.json")
+                atomic_write_text(meta_path, json.dumps({**metadata, **artifact.metadata,
+                    "artifact_id": artifact.id, "method": response.processor.name,
+                    "provenance": provenance}, ensure_ascii=False))
+                results.append({**scope, **({"scope_id": "root"} if command.scope.kind == "root" else {}),
+                    "kind": artifact.kind, "method": method, "data_path": path.relative_to(self.root).as_posix(),
+                    "metadata_path": meta_path.relative_to(self.root).as_posix()})
+            return {"artifacts": results}
 
     def _extract(self, command: ProcessingCommit) -> dict:
         from osii.domain.artifacts.extraction_variants import (_archive_legacy_primary,

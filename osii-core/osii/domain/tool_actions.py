@@ -300,6 +300,7 @@ def execute_tool(job: dict):
                 "scope": payload["scope"],
                 "models": payload.get("model_targets", payload["bindings"]),
                 "member_ids": snapshot["member_ids"],
+                **({"processing_revision": snapshot["processing_revision"]} if "processing_revision" in snapshot else {}),
                 "inputs": [
                     {k: v for k, v in doc.items() if k not in {"text", "native_text"}}
                     for doc in snapshot["documents"]

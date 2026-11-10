@@ -32,14 +32,13 @@ from osii.processor_sdk import (
     SynthesisRequest,
 )
 
-from osii.domain.artifacts.enrichment_artifacts import (
-    write_scope_enrichment_variant,
-)
 from osii.enrichment.common import collect_scope_texts
 from osii.domain.artifacts.text_representations import get_preferred_text_representation
 from osii.domain.read.docs import get_doc_meta
 from osii.domain.read.sidecar import SidecarLibraryReader
-from osii.domain.storage.commits import InputRevision, ProcessingCommit
+from osii.domain.storage.commits import (InputRevision, ProcessingCommit, ScopeInputRevision,
+    ScopeProcessingCommit, CommitConflict, text_digest)
+from osii.domain.read.contracts import ReadScope
 from osii.domain.storage.sidecar_commits import SidecarProcessingCommitter
 from osii.extraction.base import ExtractionArtifact, ExtractionSegment, ExtractionState
 from osii.extraction.common import (
@@ -51,12 +50,6 @@ from osii.extraction.common import (
     update_provenance,
 )
 from osii.processor_sdk.document_metadata import DocumentMetadata
-from osii.synthesis.common import write_synth_text
-from osii.domain.artifacts.synth_artifacts import (
-    write_collection_synthesis_variant,
-    write_folder_synthesis_variant,
-    write_root_synthesis_variant,
-)
 
 
 def _commit_input(root: Path, file_id: str) -> InputRevision:
@@ -67,6 +60,27 @@ def _commit_input(root: Path, file_id: str) -> InputRevision:
             "edited" if frozen.get("representation") == "edited" else frozen.get("extraction_id") or "canonical",
             frozen["source_sha256"])
     return InputRevision.capture(SidecarLibraryReader(root), file_id)
+
+
+def _commit_scope_input(root: Path, scope: dict, texts: list[dict]) -> ScopeInputRevision:
+    from osii.domain.artifacts.products import current_product_provenance
+    from osii.domain.scopes.membership import list_scope_file_ids
+    context = current_product_provenance()
+    if "processing_revision" in context:
+        revision = ScopeInputRevision.from_dict(context["processing_revision"])
+    elif "member_ids" in context and context.get("inputs"):
+        # Compatibility for already queued, bounded input snapshots.
+        revision = ScopeInputRevision(tuple(sorted(context["member_ids"])), tuple(sorted((
+            InputRevision(row["file_id"], "edited" if row.get("representation") == "edited" else row.get("extraction_id") or "canonical",
+                row["source_sha256"]) for row in context["inputs"]), key=lambda row: row.file_id)))
+    else:
+        revision = ScopeInputRevision.capture(SidecarLibraryReader(root), list_scope_file_ids(root, scope))
+    inputs = {row.file_id: row for row in revision.inputs}
+    for document in texts:
+        expected = inputs.get(document["file_id"])
+        if expected is None or expected.text_sha256 != (document.get("source_sha256") or text_digest(document["text"])):
+            raise CommitConflict("Scope input text changed while staging the request")
+    return revision
 
 
 def _commit_context(request_id: str, file_id: str, kind: str) -> tuple[str, dict]:
@@ -449,6 +463,7 @@ class RemoteSynthesizer:
             raise ValueError("Aggregate synthesis scope must be folder, collection, or root.")
         texts, _ = collect_scope_texts(osii_store, scope)
         scope_id = str(scope.get("folder_id") or scope.get("collection_id") or "root")
+        input_revision = _commit_scope_input(osii_store, scope, texts)
         request_id = str(uuid.uuid4())
         model_context = _model_context(
             processor_name=self.name,
@@ -457,7 +472,7 @@ class RemoteSynthesizer:
             osii_root=osii_store,
         )
         try:
-            response = self._client.synthesize(SynthesisRequest(
+            request = SynthesisRequest(
                 request_id=request_id,
                 scope=ScopeInput(
                     scope_type=scope_type,
@@ -473,27 +488,17 @@ class RemoteSynthesizer:
                 expert_context=expert_context,
                 config=synthesizer_config or {},
                 model_context=model_context,
-            ))
+            )
+            response = self._client.synthesize(request)
         finally:
             _revoke_model_context(model_context)
         if response.request_id != request_id:
             raise RuntimeError("Synthesizer returned a mismatched request_id.")
-        metadata = {
-            "processor": self.name,
-            "version": self.version,
-            "processor_url": self.base_url,
-            "citations": [item.model_dump(mode="json") for item in response.citations],
-            **response.metadata,
-            "expert_context_supplied": bool(expert_context),
-            "expert_context": expert_context,
-        }
-        if scope_type == "folder":
-            result = write_folder_synthesis_variant(osii_store, scope_id, method=self.name, text=response.markdown, metadata=metadata)
-        elif scope_type == "collection":
-            result = write_collection_synthesis_variant(osii_store, scope_id, method=self.name, text=response.markdown, metadata=metadata)
-        else:
-            result = write_root_synthesis_variant(osii_store, method=self.name, text=response.markdown, metadata=metadata)
-        return {"ok": True, "result": result, "error": None}
+        operation, provenance = _commit_context(request_id, f"{scope_type}:{scope_id}", "synthesis")
+        saved = SidecarProcessingCommitter(osii_store).commit(ScopeProcessingCommit(operation,
+            ReadScope(scope_type, scope_id), request, response, _commit_descriptor(self._descriptor), input_revision,
+            provenance={**provenance, "processor_url": self.base_url}))
+        return {"ok": True, "result": saved.result, "error": None}
 
 
 class ProcessorEmbeddingClient:
@@ -601,6 +606,7 @@ class RemoteEnricher:
 
         request_id = str(uuid.uuid4())
         input_revision = _commit_input(osii_store, str(scope_id)) if scope_type == "object" else None
+        scope_revision = _commit_scope_input(osii_store, scope, texts) if scope_type != "object" else None
         model_context = _model_context(
             processor_name=self.name,
             descriptor=self._descriptor,
@@ -637,48 +643,14 @@ class RemoteEnricher:
                 provenance={**provenance, "processor_url": self.base_url}))
             results = saved.result["artifacts"]
             return {"ok": True, "result": results[0], "artifacts": results, "error": None}
-        response = validated.model_dump(mode="json")
-        artifacts = response.get("artifacts") or []
-        if not artifacts:
-            raise RuntimeError(f"Remote enricher '{self.name}' returned no artifacts")
-
-        results = []
-        kind_counts: dict[str, int] = {}
-        for artifact in artifacts:
-            artifact_kind = str(artifact.get("kind") or "enrichment")
-            kind_counts[artifact_kind] = kind_counts.get(artifact_kind, 0) + 1
-        for artifact in artifacts:
-            payload = artifact.get("standard_data")
-            if payload is None:
-                payload = artifact.get("json_data")
-            if payload is None:
-                payload = {"text": artifact.get("text")}
-            kind = artifact.get("kind") or "enrichment"
-            metadata = {
-                **(response.get("metadata") or {}),
-                **(artifact.get("metadata") or {}),
-                "artifact_id": artifact.get("id"),
-                "expert_context_supplied": bool(expert_context),
-                "expert_context": expert_context,
-                "method": self.name,
-                "version": self.version,
-                "processor_url": self.base_url,
-            }
-            results.append(
-                write_scope_enrichment_variant(
-                    osii_store,
-                    scope,
-                    kind=kind,
-                    method=(
-                        self.name
-                        if kind_counts[str(kind)] == 1
-                        else f"{self.name}.{artifact.get('id') or len(results) + 1}"
-                    ),
-                    payload=payload,
-                    metadata=metadata,
-                )
-            )
-
+        from osii.processor_sdk import EnrichmentRequest
+        request = EnrichmentRequest(request_id=request_id, scope=ScopeInput.model_validate(processor_input["scope"]),
+            expert_context=expert_context, config=enricher_config or {})
+        operation, provenance = _commit_context(request_id, f"{scope_type}:{scope_id}", "enrichment")
+        saved = SidecarProcessingCommitter(osii_store).commit(ScopeProcessingCommit(operation,
+            ReadScope(scope_type, str(scope_id)), request, validated, _commit_descriptor(self._descriptor), scope_revision,
+            provenance={**provenance, "processor_url": self.base_url}))
+        results = saved.result["artifacts"]
         return {
             "ok": True,
             "result": results[0],

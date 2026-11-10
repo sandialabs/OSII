@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from osii.domain.scopes.collections import list_collection_documents
-from osii.domain.read.catalog import load_files_catalog, load_folders_catalog
+from osii.domain.read.catalog import (load_files_catalog, load_folders_catalog,
+    scan_files_catalog, scan_folders_catalog)
 from osii.domain.read.folders import get_folder_manifest
 from osii.domain.read.root import get_root_descriptor
 from osii.domain.scopes.scopes import (
@@ -39,20 +40,22 @@ def _folder_scope_match(source_relpath: str, folder_relpath: str, source_namespa
     return False
 
 
-def _resolve_folder_relpath(osii_root: Path, folder_id: str) -> str | None:
-    for entry in load_folders_catalog(osii_root):
+def _resolve_folder_relpath(osii_root: Path, folder_id: str, *, canonical: bool = False) -> str | None:
+    for entry in (scan_folders_catalog if canonical else load_folders_catalog)(osii_root):
         if entry.get("folder_id") == folder_id:
             return _normalize_relpath(entry.get("path"))
     return None
 
 
-def list_scope_file_ids(osii_root: Path, scope: dict) -> list[str]:
+def list_scope_file_ids(osii_root: Path, scope: dict, *, canonical: bool = False) -> list[str]:
+    """Resolve membership; commit verification bypasses rebuildable catalogs."""
     scope_type = normalize_scope_type(scope.get("scope_type") or scope.get("type"))
+    files = scan_files_catalog if canonical else load_files_catalog
 
     if scope_type == SCOPE_ROOT:
         return [
             entry["file_id"]
-            for entry in load_files_catalog(osii_root)
+            for entry in files(osii_root)
             if entry.get("file_id")
         ]
 
@@ -64,6 +67,9 @@ def list_scope_file_ids(osii_root: Path, scope: dict) -> list[str]:
         collection_id = (scope.get("collection_id") or "").strip()
         if not collection_id:
             return []
+        if canonical:
+            from osii.domain.scopes.collections import _read_members
+            return [str(row["file_id"]) for row in _read_members(osii_root, collection_id)]
         return list_collection_documents(osii_root, collection_id)
 
     if scope_type == SCOPE_FOLDER:
@@ -71,7 +77,7 @@ def list_scope_file_ids(osii_root: Path, scope: dict) -> list[str]:
         if not folder_id:
             return []
 
-        folder_relpath = _resolve_folder_relpath(osii_root, folder_id)
+        folder_relpath = _resolve_folder_relpath(osii_root, folder_id, canonical=canonical)
         if folder_relpath is None:
             return []
 
@@ -79,7 +85,7 @@ def list_scope_file_ids(osii_root: Path, scope: dict) -> list[str]:
         source_path = str(descriptor.get("data_root", {}).get("container_path") or "")
         source_namespace = Path(source_path.replace("\\", "/")).name
         results = []
-        for entry in load_files_catalog(osii_root):
+        for entry in files(osii_root):
             file_id = entry.get("file_id")
             source_relpath = entry.get("source_relpath", "")
             if not file_id:

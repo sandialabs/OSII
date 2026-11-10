@@ -62,11 +62,17 @@ def snapshot_scope(osii_root: Path, scope: dict, *, max_documents: int = 1000, m
         raise ValueError(f"Choose a scope with at most {max_documents} documents for this tool.")
     allowance = max_chars // len(file_ids)
     documents = []
+    revisions = []
     for file_id in file_ids:
         preferred = get_preferred_text_representation(osii_root, file_id)
-        if preferred is None or not (preferred.get("text") or "").strip():
+        if preferred is None:
             continue
         text = preferred["text"]
+        revisions.append({"file_id": file_id,
+            "representation_id": "edited" if preferred.get("name") == "edited" else preferred.get("extraction_id") or "canonical",
+            "text_sha256": hashlib.sha256(text.encode()).hexdigest()})
+        if not text.strip():
+            continue
         path = osii_root / preferred["path"]
         info = path.stat()
         count = min(len(text), allowance)
@@ -81,6 +87,7 @@ def snapshot_scope(osii_root: Path, scope: dict, *, max_documents: int = 1000, m
     if not documents:
         raise ValueError("Read document text before running this tool.")
     return {"documents": documents, "member_ids": file_ids,
+            "processing_revision": {"member_ids": file_ids, "inputs": revisions},
             "text_chars": sum(len(d["text"]) for d in documents),
             "truncated_documents": sum(d["truncated"] for d in documents)}
 

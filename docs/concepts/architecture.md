@@ -131,7 +131,9 @@ The [processing commit boundary](../reference/processing-commits.md) now accepts
 validated SDK responses with stable operation IDs and explicit input revisions.
 Sidecars preserve extraction versions and per-product history; PostgreSQL commits
 results, receipts, and optional leased job checkpoints transactionally. Existing
-aggregate workflows and vector-index publication retain their current adapters.
+folder/collection/root synthesis and enrichment use shared scope commits with
+frozen membership and input revisions. Vector-index publication retains its
+current adapters.
 
 OSII-local and OSII-server are compositions of the same product. Their storage,
 identity, and deployment adapters differ; intake, processor contracts, document
