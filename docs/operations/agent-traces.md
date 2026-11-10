@@ -186,6 +186,17 @@ corpus; its representative questions and supporting spans still need labeling.
 Before changing defaults, add a held-out set from those documents and compare
 source coverage, grounded claims, appropriate abstention, latency, and cost.
 
+A subsequent deployment smoke test on November 10 used the existing hosted
+corpus snapshot: 245 documents and 18,256 passages, revision 490. The question
+“What does Lindgren put in an empty cat food can to trap slugs?” correctly
+returned **stale beer**, citing the inspected government-document passage.
+The coarse/iterative run produced 13 trace stages without retrieval warnings.
+In a fresh release container with the API's 1 GiB memory limit, peak process
+resident memory was about 461 MiB and elapsed time including corpus loading
+was 42.6 seconds. This one cold-run check establishes deployment feasibility
+and a grounded demonstration question; it is not a latency benchmark or a
+representative government-document evaluation. No documents were reprocessed.
+
 ## Code boundaries
 
 - `osii.rag.strategies.tracing`: shared execution record and bounded capture.
