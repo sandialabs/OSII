@@ -34,7 +34,7 @@ make dev
 ```
 
 Open [the dashboard](http://localhost:5174), sign in, configure models in
-**Administration**, and process the shared dataset. After initial preparation,
+**Setup**, and process the shared dataset. After initial preparation,
 start with `make dev` (Windows: `.\scripts\osii.ps1 dev`). **Ctrl+C** stops the
 application; PostgreSQL stays running. Keep credentials outside Git.
 

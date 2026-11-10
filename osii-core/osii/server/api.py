@@ -266,7 +266,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
         if start < 0:
             raise ValueError("Cursor must be nonnegative")
         page = documents[start:start + min(max(limit, 1), 500)]
-        return {"items": [{k: d[k] for k in ("file_id", "filename", "source_relpath", "media_type", "size_bytes")} for d in page],
+        return {"items": [{k: d[k] for k in ("file_id", "filename", "source_relpath", "media_type", "size_bytes", "updated_at", "modified_at", "has_text", "has_synthesis", "has_enrichments")} for d in page],
             "total": len(documents), "next_cursor": str(start + len(page)) if start + len(page) < len(documents) else None}
 
     @app.get("/api/catalog/folders")

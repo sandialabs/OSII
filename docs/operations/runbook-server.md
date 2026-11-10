@@ -224,18 +224,34 @@ and administrators manage published shared collections. No private uploads, publ
 
 ## Hosted library administration and collections
 
-The left sidebar exposes Library, Collections, Topic explorer, Search, and Chat.
-Curators also see Processing; administrators see Source & status, Models, and
-Users. These are authenticated Core clients, not separate filesystem/database
+Local and hosted products use the same workbench header, responsive sidebar,
+spacing and file-card grid. The Library group exposes Files (the default flat
+view), Browse (folders), Search, Chat and Collections. Topic explorer is under
+Tools. Administrators additionally see Add files, Setup and Users. Readers and
+curators do not receive shared-dataset processing or configuration controls. These are authenticated Core clients, not separate filesystem/database
 interfaces. All corpus operations remain available through the Core API.
 
-**Source & status** shows the deployment's `OSII_SOURCE_DIR`, selected relative
+**Setup → Source folder** shows the deployment's `OSII_SOURCE_DIR`, selected relative
 folder, availability/readability, indexed document/chunk/embedding counts, and
 model/extractor configuration. Its source browser lists originals before they
 have been processed. It hides dotfiles and symbolic links, returns 200 entries
 per page, and caps directory browsing at 20,000 entries. Files are never uploaded,
 modified, or deleted by this browser. Reading file names does not mean they have
 been extracted or embedded.
+
+**Setup** groups model connections, source selection and processing methods.
+Its numbered readiness panel distinguishes saved model selections from service
+verification: model sample tests run only on demand. Text and semantic coverage
+come from PostgreSQL counts; semantic coverage requires every chunk of a document
+to have a nonempty vector for the selected model. Opening Setup never calls a model.
+Old `#source`, `#models` and `#processors` bookmarks still open the corresponding
+Setup section, with the same account checks.
+
+**Add files** opens Intake. Add files chooses mounted sources; Process library
+starts with the work to perform (embeddings, summaries, extraction, enrichment
+or custom), then document selection and processing options. Preview freezes the
+batch before staging; staging never starts work. Activity retains the explicit
+start, pause, resume, cancel and retry controls. Source files remain read-only.
 
 Administrators can select a subfolder inside the mounted root using
 `PUT /api/admin/source` with `{"directory":"relative/subfolder"}`. The selection

@@ -6,7 +6,7 @@ import { api } from "./api";
 
 type Kind = "chat" | "embedding" | "rerank";
 type Endpoint = { base_url: string; model: string; model_name?: string; configured: boolean; credential_present: boolean; managed_by?: string };
-type Configuration = { endpoints: Record<Kind, Endpoint> };
+export type Configuration = { endpoints: Record<Kind, Endpoint> };
 const labels: Record<Kind, string> = { chat: "Language model", embedding: "Embedding model", rerank: "Reranker" };
 const purposes: Record<Kind, string> = { chat: "Chat and grounded answers", embedding: "Semantic and hybrid search", rerank: "Optional ranking in RAG strategies" };
 const kinds: Kind[] = ["chat", "embedding", "rerank"];
@@ -67,7 +67,7 @@ function ConnectionDialog({ kind, endpoint, close, saved }: { kind: Kind; endpoi
   </Dialog>;
 }
 
-export function ModelAdmin() {
+export function ModelAdmin({embedded=false,onChanged}: {embedded?:boolean;onChanged?:()=>void} = {}) {
   const [config, setConfig] = useState<Configuration | null>(null);
   const [editing, setEditing] = useState<Kind | null>(null);
   const [error, setError] = useState("");
@@ -85,12 +85,12 @@ export function ModelAdmin() {
   };
   const disable = async (kind: Kind) => {
     setBusy(kind); setError("");
-    try { await api(`/api/admin/models/endpoints/${kind}`, "PUT", { base_url: kind === "rerank" ? "" : config?.endpoints[kind].base_url || "", model: "", clear_api_key: kind === "rerank" }); await refresh(); }
+    try { await api(`/api/admin/models/endpoints/${kind}`, "PUT", { base_url: kind === "rerank" ? "" : config?.endpoints[kind].base_url || "", model: "", clear_api_key: kind === "rerank" }); await refresh(); onChanged?.(); }
     catch (e) { setError((e as Error).message); } finally { setBusy(null); }
   };
   const configured = config ? kinds.filter(kind => config.endpoints[kind]?.configured && config.endpoints[kind]?.model) : [];
   return <Stack spacing={3}>
-    <Box><Typography variant="h5">Model connections</Typography><Typography color="text.secondary">Choose the services OSII uses. Models are optional for browsing and keyword search.</Typography></Box>
+    <Box><Typography variant={embedded ? "h6" : "h5"} fontWeight={700}>Model connections</Typography><Typography color="text.secondary">Choose the services OSII uses. Models are optional for browsing and keyword search.</Typography></Box>
     {error && <Alert severity="error" onClose={() => setError("")}>{error}</Alert>}{notice && <Alert severity="success" onClose={() => setNotice("")}>{notice}</Alert>}
     <Paper sx={{ p: 3 }}><Stack spacing={2}><Typography variant="h6">Configured models</Typography>
       {!config ? <Typography>Loading connections…</Typography> : !configured.length ? <Typography color="text.secondary">No models have been selected. You can use keyword search now, or add a connection below.</Typography> : configured.map(kind => {
@@ -108,6 +108,6 @@ export function ModelAdmin() {
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>{kinds.filter(kind => !configured.includes(kind)).map(kind => <Button color="secondary" key={kind} variant="outlined" disabled={!config} onClick={() => setEditing(kind)}>Add {labels[kind].toLowerCase()}</Button>)}
       {configured.length === kinds.length && <Typography color="text.secondary">Each purpose has a connection. Use Change connection above to select a different service or model.</Typography>}</Stack>
     </Stack></Paper>
-    {editing && config && <ConnectionDialog key={editing} kind={editing} endpoint={config.endpoints[editing]} close={() => setEditing(null)} saved={async () => { await refresh(); setNotice(`${labels[editing]} connection saved.`); }} />}
+    {editing && config && <ConnectionDialog key={editing} kind={editing} endpoint={config.endpoints[editing]} close={() => setEditing(null)} saved={async () => { await refresh(); onChanged?.(); setNotice(`${labels[editing]} connection saved.`); }} />}
   </Stack>;
 }

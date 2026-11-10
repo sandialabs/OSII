@@ -1,5 +1,5 @@
 export type User = { id: string; username: string; role: "reader" | "curator" | "admin"; active: boolean; must_change_password: boolean };
-export type Doc = { file_id: string; filename: string; source_relpath: string; text?: string; media_type?: string; size_bytes?: number; updated_at?: string };
+export type Doc = { file_id: string; filename: string; source_relpath: string; text?: string; media_type?: string; size_bytes?: number; updated_at?: string; modified_at?: string | null; has_text?: boolean; has_synthesis?: boolean; has_enrichments?: boolean };
 export type Hit = Doc & { chunk_id: string; snippet: string; char_start: number; char_end: number; source_origin: unknown; score?: number };
 export type Model = { id: string; name: string; capabilities: string[] };
 

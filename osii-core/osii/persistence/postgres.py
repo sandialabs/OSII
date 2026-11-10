@@ -278,8 +278,14 @@ class PostgresStore:
             c.execute(statement.on_conflict_do_update(index_elements=[settings.c.id], set_={"value": value}))
 
     def statistics(self) -> dict:
+        model = self.configuration().get("embedding_model", "")
+        nonempty = case((func.jsonb_typeof(chunks.c.embedding) == "array", func.jsonb_array_length(chunks.c.embedding) > 0), else_=False)
+        compatible = func.coalesce((chunks.c.embedding_model == model) & nonempty, False)
+        coverage = select(chunks.c.file_id).group_by(chunks.c.file_id).having(func.bool_and(compatible)).subquery()
         with self.engine.connect() as c:
             return {"documents": c.execute(select(func.count()).select_from(documents).where(documents.c.active)).scalar(),
+                "text_documents": c.execute(select(func.count()).select_from(documents).where(documents.c.active, func.length(func.trim(documents.c.text)) > 0)).scalar(),
+                "indexed_documents": c.execute(select(func.count()).select_from(documents.join(coverage, documents.c.file_id == coverage.c.file_id)).where(documents.c.active)).scalar() if model else 0,
                 "chunks": c.execute(select(func.count()).select_from(chunks.join(documents)).where(documents.c.active)).scalar(),
                 "embedded_chunks": c.execute(select(func.count()).select_from(chunks.join(documents)).where(documents.c.active, func.jsonb_typeof(chunks.c.embedding) == "array")).scalar()}
 
@@ -544,9 +550,19 @@ class PostgresStore:
 
 
     def catalog_documents(self) -> list[dict]:
+        # Aggregate product presence once. Never load text, artifact payloads or
+        # chunk vectors just to draw file cards.
+        products = select(artifacts.c.file_id,
+            func.bool_or(artifacts.c.kind == "synthesis").label("has_synthesis"),
+            func.bool_or(artifacts.c.kind == "enrichment").label("has_enrichments")).group_by(artifacts.c.file_id).subquery()
         with self.engine.connect() as c:
-            return [dict(row) for row in c.execute(select(documents.c.file_id, documents.c.filename, documents.c.source_relpath,
-                documents.c.media_type, documents.c.size_bytes, documents.c.updated_at).where(documents.c.active)).mappings()]
+            query = select(documents.c.file_id, documents.c.filename, documents.c.source_relpath,
+                documents.c.media_type, documents.c.size_bytes, documents.c.updated_at,
+                documents.c.metadata["source_modified_at"].astext.label("modified_at"),
+                (func.length(func.trim(documents.c.text)) > 0).label("has_text"),
+                func.coalesce(products.c.has_synthesis, False).label("has_synthesis"),
+                func.coalesce(products.c.has_enrichments, False).label("has_enrichments"))
+            return [dict(row) for row in c.execute(query.outerjoin(products, documents.c.file_id == products.c.file_id).where(documents.c.active)).mappings()]
 
 
     def cached_topic_map(self, key: str) -> dict | None:

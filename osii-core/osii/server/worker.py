@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+from datetime import datetime, timezone
 import hashlib
 import mimetypes
 import os
@@ -58,7 +59,8 @@ def ingest_file(store: PostgresStore, provider: ModelProvider, extractor: Proces
     target = path.resolve()
     if not target.is_relative_to(root.resolve()) or path.is_symlink():
         raise IngestionError("Source escapes the configured dataset or is a symbolic link")
-    if target.stat().st_size > max_bytes:
+    source_stat = target.stat()
+    if source_stat.st_size > max_bytes:
         raise IngestionError("Source exceeds the 50 MiB processing limit")
     original = target.read_bytes()
     relative = target.relative_to(root.resolve()).as_posix()
@@ -112,7 +114,7 @@ def ingest_file(store: PostgresStore, provider: ModelProvider, extractor: Proces
                 row.update(embedding=None, embedding_model=None)
     doc = {"file_id": fid, "source_relpath": relative, "sha256": sha, "filename": path.name,
         "media_type": media, "size_bytes": len(original), "text": content,
-        "metadata": {"segments": spans, "extractor": response.processor.model_dump(mode="json"), "embedding_model": model}}
+        "metadata": {"source_modified_at": datetime.fromtimestamp(source_stat.st_mtime, timezone.utc).isoformat(), "segments": spans, "extractor": response.processor.model_dump(mode="json"), "embedding_model": model}}
     if embedding_error:
         doc["metadata"].update(embedding_model="", embedding_warning=embedding_error)
     if nul_replacements:

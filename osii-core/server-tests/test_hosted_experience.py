@@ -1,3 +1,4 @@
+import pytest
 from datetime import timedelta
 from sqlalchemy import update
 from conftest import document, login, Provider
@@ -173,3 +174,58 @@ def test_sample_test_invokes_only_the_chosen_connection(client, app, monkeypatch
     login(client)
     result = client.post("/api/admin/models/test?only=chat")
     assert result.status_code == 200 and result.json() == {"chat": {"configured": True, "ok": True}}
+
+
+def test_file_cards_report_saved_products_without_loading_corpus_payloads(client, app, monkeypatch):
+    from conftest import document, login
+    from sqlalchemy import insert, update
+    from osii.persistence.postgres import artifacts, documents
+    store = app.state.store
+    doc = document(store, app.state.settings.source_root)
+    with store.transaction() as c:
+        c.execute(insert(artifacts), [
+            dict(id='card-synthesis',file_id=doc['file_id'],kind='synthesis',payload={'not':'read by catalog'}),
+            dict(id='card-enrichment',file_id=doc['file_id'],kind='enrichment',payload={'not':'read by catalog'}),
+        ])
+    monkeypatch.setattr(store, 'snapshot', lambda: pytest.fail('File cards must not load chunk vectors'))
+    login(client, 'reader')
+    response = client.get('/api/catalog/files')
+    assert response.status_code == 200
+    item = response.json()['items'][0]
+    assert item['has_text'] and item['has_synthesis'] and item['has_enrichments']
+    assert item['updated_at']
+    from datetime import datetime, timezone
+    expected=datetime.fromtimestamp((app.state.settings.source_root/'report.txt').stat().st_mtime,timezone.utc).isoformat()
+    assert item['modified_at']==expected
+    assert not {'text','embedding','metadata','payload'} & item.keys()
+    with store.transaction() as c:
+        c.execute(update(documents).where(documents.c.file_id==doc['file_id']).values(text='   '))
+    assert not client.get('/api/catalog/files').json()['items'][0]['has_text']
+
+
+def test_setup_statistics_check_current_model_coverage_and_remain_admin_only(client, app, monkeypatch):
+    from conftest import document, login, Provider
+    from sqlalchemy import update, insert
+    from osii.persistence.postgres import chunks
+    store = app.state.store
+    store.save_configuration({'embedding_model':'test-embeddings'})
+    first = document(store, app.state.settings.source_root, name='first.txt')
+    second = document(store, app.state.settings.source_root, name='second.txt',content='A different source document.')
+    monkeypatch.setattr(Provider,'embed',lambda *_: pytest.fail('Readiness must not invoke models'))
+    monkeypatch.setattr(Provider,'chat',lambda *_: pytest.fail('Readiness must not invoke models'))
+    assert client.get('/api/admin/source').status_code == 401
+    for user in ('reader','curator'):
+        login(client,user)
+        assert client.get('/api/admin/source').status_code == 403
+    login(client,'admin')
+    stats=client.get('/api/admin/source').json()['statistics']
+    assert stats['documents']==stats['text_documents']==stats['indexed_documents']==2
+    with store.transaction() as c:
+        c.execute(insert(chunks).values(chunk_id='stale-extra',file_id=first['file_id'],text='old',char_start=0,char_end=3,source_origin={},embedding=[1,0],embedding_model='old-model'))
+        c.execute(update(chunks).where(chunks.c.file_id==second['file_id']).values(embedding=[]))
+    assert client.get('/api/admin/source').json()['statistics']['indexed_documents']==0
+    with store.transaction() as c:
+        c.execute(update(chunks).where(chunks.c.file_id==second['file_id']).values(embedding=None))
+    assert store.statistics()['indexed_documents']==0
+    store.save_configuration({'embedding_model':''})
+    assert store.statistics()['indexed_documents']==0

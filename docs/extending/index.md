@@ -63,3 +63,23 @@ for integrating a domain service with the dashboard.
 Core has commit adapters for all four Processor API kinds. External processors
 remain bounded services: they receive explicit data, return a typed response,
 and never mount or write the OSII store.
+
+
+## Shared workbench layout
+
+Local and hosted products use `src/app/layout/WorkbenchLayout.tsx`,
+`WorkbenchNavigation`, and `HeaderBar` for the responsive shell. Supply navigation
+items, the selected item and a navigation callback; product routing and role
+filtering stay in their adapters. Optional actions/footer hold hosted account
+controls. Shared layout components never call Core, inspect accounts or access a
+filesystem. Local keeps its `app/tools.tsx` route registry; hosted Setup and its
+legacy bookmarks are handled in `features/server/Workspace.tsx`.
+
+`features/files/components/FileGrid.tsx` is the common flat document view, with
+bounded card rendering, thumbnails, filename/path filtering and sorting. Hosted
+adapters supply file-card models plus optional `selectedIds`/`onToggle` controls;
+shared file widgets never infer processing success from the deployment mode.
+Folder Browse, search results, Topic Explorer, document panes and processing
+activity continue to use their respective shared widgets. A transport-specific
+feature needs a Core adapter; copying a local filesystem call into hosted UI is
+not a supported extension method.

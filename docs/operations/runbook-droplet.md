@@ -146,7 +146,7 @@ username alone is not an account-linking policy.
 
 ## Staged Intake and document inspection
 
-As an administrator, open **Intake & processing**. Under **Add files**, browse
+As an administrator, open **Add files** (Intake). Under **Add files**, browse
 mounted folders and select files or folders. **Process library** selects already
 indexed documents. Choose text intake/refresh, re-extraction, or embedding-only
 processing. Text-only is the default; embeddings require an explicitly selected
@@ -184,7 +184,8 @@ provenance and stale-input warnings.
 
 ## Synthesis and enrichment
 
-Choose **Process existing text without extraction** under **Intake & processing**
+Under **Add files** (Intake) → **Process library**, choose summaries, enrichment,
+or a custom workflow using existing text
 to derive new outputs without re-reading the source. Enable **Generate document
 summaries** and/or **Run enrichment**, select methods, adjust their displayed
 settings, and optionally supply expert context. You can also combine these steps
@@ -195,7 +196,7 @@ synthesis/enrichment steps survive a later failure and are skipped on retry.
 
 The cited source-excerpt preview and statistics/keyword enrichment are model-free
 and work immediately. **Openai Synthesizer** uses the language model selected in
-Models and may incur provider charges. Selecting or previewing a method never
+Setup → Model connections and may incur provider charges. Selecting or previewing a method never
 invokes it. Outputs appear in the document's Syntheses/Enrichments panes; Wiki
 shows wiki-markdown enrichment products. **Stage processing for this document**
 opens Intake with that file preselected. Outputs do not replace extracted text
@@ -236,7 +237,7 @@ upgrade; existing documents, outputs and jobs are retained.
 
 ## Optional native OCR and Toolbox health
 
-Administrators can open **Processors & Toolbox** for descriptors, readiness,
+Administrators can open **Setup → Processing methods** for descriptors, readiness,
 and **Queue extraction/synthesis/enrichment** actions. Adding a URL registers
 an already running Processor API service; it does not install software.
 Ordinary users cannot change connections or queue shared processing.
@@ -252,7 +253,7 @@ NFS, PostgreSQL, or deployment secrets. Keep these ports private.
 
 Set `OSII_OCR_URL=http://10.89.0.1:8193` in the private deployment environment
 and restart Core/worker to enable automatic fallback when native extraction
-finds no text. Register `http://10.89.0.1:8194` in **Processors & Toolbox** for
+finds no text. Register `http://10.89.0.1:8194` in **Setup → Processing methods** for
 explicit region extraction. Preserve existing custom endpoints when updating.
 
 ```bash

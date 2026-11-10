@@ -2,18 +2,18 @@ import { useEffect, useState } from "react";
 import { Alert, Box, Button, Chip, Paper, Stack, Typography } from "@mui/material";
 import { api } from "./api";
 
-type Status = { mount_root: string; directory: string; available: boolean; readable: boolean;
-  statistics: { documents: number; chunks: number; embedded_chunks: number };
+export type SourceStatus = { mount_root: string; directory: string; available: boolean; readable: boolean;
+  statistics: { documents: number; chunks: number; embedded_chunks: number; text_documents: number; indexed_documents: number };
   models: { chat_model?: string; embedding_model?: string }; extractor_url: string; ocr_configured: boolean };
 type Listing = { path: string; items: { name: string; path: string; kind: string; size_bytes: number | null; readable: boolean }[]; next_cursor: number | null; truncated: boolean };
 
-export function SourceAdmin() {
-  const [status, setStatus] = useState<Status | null>(null);
+export function SourceAdmin({embedded=false,onChanged}: {embedded?:boolean;onChanged?:()=>void} = {}) {
+  const [status, setStatus] = useState<SourceStatus | null>(null);
   const [listing, setListing] = useState<Listing | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const refresh = async () => setStatus(await api<Status>("/api/admin/source"));
+  const refresh = async () => setStatus(await api<SourceStatus>("/api/admin/source"));
   const browse = async (path: string, cursor = 0) => {
     setBusy(true); setError("");
     try {
@@ -26,12 +26,13 @@ export function SourceAdmin() {
     if (!listing) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      setStatus(await api<Status>("/api/admin/source", "PUT", { directory: listing.path }));
+      setStatus(await api<SourceStatus>("/api/admin/source", "PUT", { directory: listing.path }));
+      onChanged?.();
       setNotice("Source selection saved for future processing jobs. Existing documents and queued jobs are retained.");
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
   return <Stack spacing={3}>
-    <Typography variant="h5">Source & status</Typography>
+    <Typography variant={embedded ? "h6" : "h5"} fontWeight={700}>Source folder</Typography>
     {error && <Alert severity="error">{error}</Alert>}{notice && <Alert severity="success">{notice}</Alert>}
     {status && <Paper sx={{ p: 3 }}><Stack spacing={2} sx={{ overflowWrap: "anywhere" }}>
       <Stack direction="row" spacing={1} flexWrap="wrap"><Chip label={status.available && status.readable ? "Source available" : "Source unavailable or unreadable"} color={status.available && status.readable ? "success" : "error"} /><Chip label="PostgreSQL connected" /></Stack>
