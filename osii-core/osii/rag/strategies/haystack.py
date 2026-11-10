@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from itertools import islice
+from contextlib import nullcontext
 import os
 import time
 
@@ -16,6 +17,7 @@ from haystack.core.errors import PipelineRuntimeError
 from haystack.components.joiners import BranchJoiner
 
 from .contracts import Context, Decider, Decision, Evidence, Limits, Question, Result, Retriever, Step, StrategyError
+from .tracing import AgentTrace
 
 
 @dataclass
@@ -39,8 +41,9 @@ class _State:
 
 @component
 class _Retrieve:
-    def __init__(self, retrieve: Retriever):
+    def __init__(self, retrieve: Retriever, trace: AgentTrace | None = None):
         self.retrieve = retrieve
+        self.trace = trace
 
     @component.output_types(state=_State)
     def run(self, state: _State) -> dict:
@@ -58,7 +61,10 @@ class _Retrieve:
         state.queries.append(query)
         added = []
         remaining = state.limits.max_context_chars - sum(len(e.text) for e in state.evidence.values())
-        for evidence in islice(self.retrieve(query, top_k=state.limits.top_k), state.limits.top_k):
+        retrieved = list(islice(self.retrieve(query, top_k=state.limits.top_k), state.limits.top_k))
+        merge_started = time.perf_counter()
+        excluded = []
+        for evidence in retrieved:
             if not isinstance(evidence, Evidence):
                 raise StrategyError("Retriever must return Evidence records")
             if evidence.corpus_revision is not None:
@@ -69,12 +75,24 @@ class _Retrieve:
             if previous is not None:
                 if previous != evidence:
                     raise StrategyError("An evidence ID changed within this experiment")
+                excluded.append({"id": evidence.id, "reason": "already in context"})
                 continue
             if len(state.evidence) >= state.limits.max_evidence or len(evidence.text) > remaining:
+                excluded.append({"id": evidence.id, "reason": "context count or character budget"})
                 continue  # Keep original text and offsets intact; never silently truncate evidence.
             state.evidence[evidence.id] = evidence
             remaining -= len(evidence.text)
             added.append(evidence.id)
+        with (self.trace.span("context_selection", "Assemble accumulated context", query=query,
+                input_count=len(retrieved), character_limit=state.limits.max_context_chars) if self.trace else nullcontext()) as stage:
+            if stage:
+                from dataclasses import asdict
+                stage.items = [asdict(item) for item in state.evidence.values()]
+                stage.excluded = excluded
+                stage.outputs.update(output_count=len(state.evidence), characters=sum(len(item.text) for item in state.evidence.values()), added_ids=added)
+        if stage:
+            stage.duration_seconds = time.perf_counter() - merge_started
+            stage.started_seconds = merge_started - self.trace.started
         state.steps.append(Step(query, tuple(added), "retrieved"))
         return {"state": state}
 
@@ -135,7 +153,7 @@ class _Route:
 
 
 def run(question: Question, *, retrieve: Retriever, decide: Decider,
-        strategy: str = "iterative", limits: Limits | None = None) -> Result:
+        strategy: str = "iterative", limits: Limits | None = None, trace: AgentTrace | None = None) -> Result:
     """Run single-pass or bounded iterative RAG using a fresh Haystack graph.
 
     The retriever must already enforce the caller's scope and permissions.
@@ -149,7 +167,7 @@ def run(question: Question, *, retrieve: Retriever, decide: Decider,
         limits = replace(limits, max_retrievals=1, max_model_calls=1)
     pipeline = Pipeline(max_runs_per_component=max(limits.max_retrievals, limits.max_model_calls) + 2)
     pipeline.add_component("state", BranchJoiner(type_=_State))
-    pipeline.add_component("retrieve", _Retrieve(retrieve))
+    pipeline.add_component("retrieve", _Retrieve(retrieve, trace))
     pipeline.add_component("decide", _Decide(decide))
     pipeline.add_component("route", _Route())
     pipeline.connect("state.value", "retrieve.state")
