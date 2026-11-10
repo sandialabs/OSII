@@ -14,7 +14,7 @@ type Batch = { id: string; ordinal: number; status: string; source_ranges: Range
 type Result = { markdown?: string; citations?: unknown[]; artifacts: { id: string; data: unknown }[]; warnings?: string[] };
 
 function ResultBody({ runId, batch }: { runId: string; batch: Batch }) {
-  const query = useQuery({ queryKey: ["scope-batch-result", runId, batch.id], queryFn: () => apiJson<{ result: Result | null }>(`/api/enrichment-jobs/runs/${encodeURIComponent(runId)}/batches/${encodeURIComponent(batch.id)}`) });
+  const query = useQuery({ queryKey: ["scope-batch-result", runId, batch.id, batch.status], queryFn: () => apiJson<{ result: Result | null }>(`/api/enrichment-jobs/runs/${encodeURIComponent(runId)}/batches/${encodeURIComponent(batch.id)}`) });
   return <Stack spacing={1.5}>
     <Typography fontWeight={650}>Documents and text processed</Typography>
     {batch.source_ranges.map((range, index) => <Typography key={index} variant="body2">
