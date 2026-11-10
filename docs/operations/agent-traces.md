@@ -196,6 +196,9 @@ resident memory was about 461 MiB and elapsed time including corpus loading
 was 42.6 seconds. This one cold-run check establishes deployment feasibility
 and a grounded demonstration question; it is not a latency benchmark or a
 representative government-document evaluation. No documents were reprocessed.
+The ordinary hybrid baseline also returned that supported answer without
+warnings: 12 trace stages, about 473 MiB peak resident memory, and 39.0 seconds
+including loading the same corpus in another fresh container.
 
 ## Code boundaries
 
