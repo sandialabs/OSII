@@ -504,7 +504,11 @@ def control_run(run_id: str, action: str) -> dict:
     embedding_retry = action == "retry" and run.get("indexing_status") == "error" and (
         run.get("file_processing_status") == "done" or run.get("status") == "done"
     )
-    if run.get("status") == "cancelled" or (run.get("status") == "done" and not embedding_retry):
+    file_retry = not embedding_retry and action == "retry" and run.get("workflow") in {"intake", "library"} and any(
+        item.get("path") and item.get("status") in {"error", "partial"}
+        for item in run.get("items", [])
+    )
+    if run.get("status") == "cancelled" or (run.get("status") == "done" and not (embedding_retry or file_retry)):
         raise ValueError(f"cannot {action} a {run.get('status')} run")
     if run.get("status") == "error" and action != "retry":
         raise ValueError("a failed run can be retried; it does not need cancellation")
@@ -519,10 +523,16 @@ def control_run(run_id: str, action: str) -> dict:
 
         queue_status = str(row["status"])
         if action == "retry":
-            if not (embedding_retry and queue_status in {"done", "error"}) and (
+            if not ((embedding_retry or file_retry) and queue_status in {"done", "error"}) and (
                 queue_status != "error" or run.get("status") != "error"
             ):
                 raise ValueError("only a failed run can be retried")
+            if file_retry:
+                run["file_processing_status"] = "pending"
+                run["error_phase"] = None
+                if run.get("operations", {}).get("embed"):
+                    run["indexing_status"] = "pending"
+                    run["indexing_error"] = None
             if embedding_retry:
                 # Older workers left failed embedding phases marked done. Their
                 # original-file results are still complete and must be retained.
@@ -542,7 +552,7 @@ def control_run(run_id: str, action: str) -> dict:
             run["error"] = None
             run["finished_at"] = None
             for item in run.get("items", []):
-                if item.get("status") == "error" and run.get("error_phase") != "embedding":
+                if (item.get("status") == "error" or (file_retry and item.get("status") == "partial")) and run.get("error_phase") != "embedding":
                     item["status"] = "pending"
                     item["error"] = None
                     item["started_at"] = None

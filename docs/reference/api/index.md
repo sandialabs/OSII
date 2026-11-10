@@ -130,6 +130,10 @@ in the JSON response.
 
 - `GET /api/intake/readiness`
 - `GET /api/browse`
+- `GET /api/browse/roots` (navigation shortcuts without directory enumeration)
+- `GET /api/browse/page?path=...&limit=100` (isolated, nonrecursive directory page)
+- `GET /api/browse/page?cursor=...&limit=100` (continue the same directory iterator)
+- `DELETE /api/browse/page/{cursor}` (release a browser cursor)
 - `POST /api/resolve`
 - `GET /api/extractors`
 - `GET /api/synthesizers`
@@ -148,7 +152,44 @@ in the JSON response.
 `POST /api/runs` queues the selected paths with a lightweight preview instead
 of rereading every original to repeat that plan. The worker owns content hashes
 and extraction; slow source-folder access during queueing does not block API
-health or Activity requests.
+health or Queue & activity requests. Completed Intake/library runs with failed
+or partially processed files also accept `retry`: successful files stay complete,
+failed files return to pending, and the same durable job is requeued. Retrying an
+embedding failure retains its existing embedding-only behavior. Fully successful
+and cancelled runs remain terminal.
+
+### Bounded file discovery and selection
+
+The new directory browser leaves legacy `GET /api/browse` behavior unchanged.
+Pages return `current_path`, `parent_path`, `entries`, `has_more`, and an opaque
+`cursor` (null when exhausted). Entries have `name`, `path`, `type`,
+`size_bytes`, and an optional access `error`; unavailable entries and symbolic
+links are not selectable. `limit` is 1–200 inspected entries, including hidden
+entries, so an empty page may still have a continuation cursor. Pages use native
+directory order, not a global sort. No catalog scan, recursion, or content read
+occurs. Cursors are ephemeral, expire after 45 seconds idle, and are not stable
+snapshots of a changing directory. `410` requests reopening an expired cursor;
+`503` reports a timeout/cancelled read. Disconnecting an in-flight request or
+explicitly deleting its cursor stops its isolated reader. Eight browsers may be
+open at once; a new request is rejected rather than evicting another user's cursor.
+A kernel-blocked filesystem call can still need OS/mount recovery.
+
+`POST /api/volume/selections` retains filter-based selection and adds optional
+`entry_ids` (1–10,000 IDs). Explicit selection requires `filters.source_id`, cannot
+use sampling, and must fit the requested file/byte limits. Every distinct ID must
+be eligible and observed in the latest scan of that source; otherwise the request
+fails atomically with `422`. Unknown IDs, wrong-source IDs, and unavailable files
+are not silently dropped. Unfinished discovery requires `allow_partial: true`.
+Successful selections remain immutable as discovery continues.
+
+`GET /api/volume/runs` retains its default ascending cursor contract. Optional
+`recent=true` returns descending IDs, `before=<id>` loads older history, and
+`active_only=true` restricts results to queued/running/paused work. `kind=scan`
+(or a processing stage) filters jobs before pagination. Scan IDs belong
+to the inventory API; they are not interchangeable with Core processing run IDs.
+Scan responses include `issue_code: "identity_changed"` when a failed directory
+identified a different registered root, allowing contextual recovery without a
+filesystem probe during status polling.
 
 ### Setup and local administration
 
@@ -935,6 +976,10 @@ These include:
 
 - `GET /api/intake/readiness`
 - `GET /api/browse`
+- `GET /api/browse/roots` (navigation shortcuts without directory enumeration)
+- `GET /api/browse/page?path=...&limit=100` (isolated, nonrecursive directory page)
+- `GET /api/browse/page?cursor=...&limit=100` (continue the same directory iterator)
+- `DELETE /api/browse/page/{cursor}` (release a browser cursor)
 - `POST /api/resolve`
 - `GET /api/extractors`
 - `GET /api/synthesizers`

@@ -643,3 +643,99 @@ def test_cli_selection_export_and_backup(library, tmp_path, capsys):
     assert json.loads(output.read_text())["path"] == "a.txt"
     assert main([*prefix, "export", str(output)]) == 1
     assert main([*prefix, "backup", str(tmp_path / "backup.sqlite3")]) == 0
+
+
+def test_explicit_selection_is_exact_and_does_not_grow(library):
+    store, root, source_id = library
+    for name in ("one.txt", "two.txt", "three.txt"):
+        (root / name).write_text(name)
+    scan(store, source_id)
+    rows = store.entries(Filters(source_id=source_id))["items"]
+    ids = [rows[0]["id"], rows[2]["id"]]
+    selection = store.select(
+        SelectionRequest(filters=Filters(source_id=source_id), entry_ids=ids)
+    )
+    assert selection["count"] == 2
+    (root / "later.txt").write_text("later")
+    scan(store, source_id)
+    assert {
+        item["id"] for item in store.selection_entries(selection["id"])["items"]
+    } == set(ids)
+    assert store.selection(selection["id"])["count"] == 2
+
+
+def test_explicit_selection_rejects_missing_cross_source_and_over_budget(
+    library, tmp_path
+):
+    store, root, source_id = library
+    (root / "one.txt").write_text("one")
+    scan(store, source_id)
+    entry = store.entries(Filters(source_id=source_id))["items"][0]
+    before = len(store.selections())
+    for ids, budget in [([entry["id"], 999999], 1024), ([entry["id"]], 1)]:
+        with pytest.raises(ValueError, match="Some selected files"):
+            store.select(
+                SelectionRequest(
+                    filters=Filters(source_id=source_id),
+                    entry_ids=ids,
+                    max_bytes=budget,
+                )
+            )
+    assert len(store.selections()) == before  # Invalid selection creation rolls back.
+    other = tmp_path / "other"
+    other.mkdir()
+    other_id = store.register_source(other)["id"]
+    with pytest.raises(ValueError, match="Some selected files"):
+        store.select(
+            SelectionRequest(
+                filters=Filters(source_id=other_id), entry_ids=[entry["id"]]
+            )
+        )
+
+
+def test_explicit_selection_during_scan_requires_acknowledgement(library):
+    store, root, source_id = library
+    (root / "one.txt").write_text("one")
+    scan(store, source_id)
+    entry = store.entries(Filters(source_id=source_id))["items"][0]
+    run_id = store.new_scan(source_id, ScanOptions(isolate=False))
+    with store.connect() as conn:
+        conn.execute(
+            "UPDATE entries SET scan_run_id=? WHERE id=?", (run_id, entry["id"])
+        )
+    request = SelectionRequest(
+        filters=Filters(source_id=source_id), entry_ids=[entry["id"]]
+    )
+    with pytest.raises(ValueError, match="incomplete"):
+        store.select(request)
+    request.allow_partial = True
+    selection = store.select(request)
+    assert selection["count"] == 1
+    reloaded = VolumeStore(store.path)
+    assert reloaded.selection(selection["id"])["count"] == 1
+    reloaded.control(run_id, "pause")
+    reloaded.control(run_id, "resume")
+    assert reloaded.run(run_id)["status"] == "queued"
+
+
+def test_recent_run_listing_preserves_legacy_order(library):
+    store, root, source_id = library
+    for _ in range(3):
+        run_id = store.new_scan(source_id)
+        store.control(run_id, "cancel")
+    legacy = store.runs()
+    assert [r["id"] for r in legacy] == sorted(r["id"] for r in legacy)
+    assert [r["id"] for r in store.runs(recent=True)] == [
+        r["id"] for r in reversed(legacy)
+    ]
+    assert len(store.runs(recent=True, before=legacy[-1]["id"])) == 2
+
+
+def test_changed_mount_is_reported_for_contextual_recovery(library):
+    store, root, source_id = library
+    with store.connect() as conn:
+        conn.execute("UPDATE sources SET inode='changed' WHERE id=?", (source_id,))
+    result = scan(store, source_id)
+    assert result["status"] == "error"
+    assert result["issue_code"] == "identity_changed"
+    assert store.runs(recent=True)[0]["issue_code"] == "identity_changed"

@@ -16,8 +16,8 @@ an AI model.
 
 ## What you can do
 
-- Discover shared-drive metadata with resumable scans, then filter or sample
-  a bounded batch for Intake.
+- Choose files directly or discover shared-drive metadata with resumable scans,
+  then select a bounded set to process.
 - Extract text, add OCR alongside it, and inspect text or mathematical Markdown
   with source locations.
 - Browse files and collections, search by keywords or document meaning, and ask
@@ -51,7 +51,7 @@ OSII. For sample files, use
 configure optional model connections in **Setup**. The
 [Banyan Toolbox extractor](osii-toolbox/banyan-nemotron-parse/README.md) uses its
 own local Nemotron endpoint configuration. Keep credentials outside Git.
-Choose an Intake preset for each batch; the startup guide covers provider
+Choose an Intake preset for selected files; the startup guide covers provider
 profiles and configurable processing defaults.
 
 See the [startup guide](docs/operations/runbook-development.md) for setup and

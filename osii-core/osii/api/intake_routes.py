@@ -107,6 +107,75 @@ def rescan_sources(request: Request, payload: dict):
     return result
 
 
+@router.get("/browse/roots")
+def browse_roots(request: Request):
+    """Navigation shortcuts only; never enumerate a mount or directory."""
+    if getattr(request.app.state, "filesystem_mode", "local") == "mounted":
+        return {
+            "items": [
+                str(request.app.state.shared_volume_root),
+                str(request.app.state.upload_originals_root),
+            ]
+        }
+    roots = [str(Path.home()), str(request.app.state.shared_volume_root)]
+    if os.name == "nt":
+        import ctypes
+
+        mask = ctypes.windll.kernel32.GetLogicalDrives()
+        roots.extend(f"{chr(65 + i)}:/" for i in range(26) if mask & (1 << i))
+    else:
+        import sys
+
+        roots.extend(["/", "/Volumes" if sys.platform == "darwin" else "/mnt"])
+    return {"items": list(dict.fromkeys(roots))}
+
+
+def _browsers(request):
+    from osii.domain.processing.directory_browse import DirectoryBrowsers
+
+    if not hasattr(request.app.state, "directory_browsers"):
+        request.app.state.directory_browsers = DirectoryBrowsers()
+        request.app.add_event_handler(
+            "shutdown", request.app.state.directory_browsers.close_all
+        )
+    return request.app.state.directory_browsers
+
+
+@router.get("/browse/page")
+async def browse_page(
+    request: Request,
+    path: str | None = None,
+    cursor: str | None = None,
+    limit: int = Query(100, ge=1, le=200),
+    show_hidden: bool = False,
+):
+    browsers = _browsers(request)
+    try:
+        token = cursor or browsers.open(
+            path,
+            request.app.state.shared_volume_root,
+            request.app.state.upload_originals_root,
+            getattr(request.app.state, "filesystem_mode", "local"),
+            getattr(request.app.state, "shared_volume_host_path", ""),
+            show_hidden,
+        )
+        result = await browsers.page(token, limit, request.is_disconnected)
+    except KeyError as exc:
+        raise HTTPException(410, str(exc.args[0])) from exc
+    except (TimeoutError, InterruptedError) as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except (ValueError, OSError, EOFError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if "error" in result:
+        raise HTTPException(result["status"], result["error"])
+    return result
+
+
+@router.delete("/browse/page/{cursor}")
+async def close_browse(request: Request, cursor: str):
+    _browsers(request).close(cursor)
+    return {"closed": True}
+
 @router.get("/browse")
 def browse(
     request: Request,

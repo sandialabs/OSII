@@ -316,7 +316,7 @@ class VolumeStore:
             return [
                 dict(row)
                 for row in conn.execute(
-                    "SELECT * FROM runs WHERE source_id=? AND kind='scan' ORDER BY id DESC LIMIT 20",
+                    "SELECT r.*, CASE WHEN EXISTS(SELECT 1 FROM directories d WHERE d.run_id=r.id AND d.status='error' AND d.error LIKE '%identity changed%') THEN 'identity_changed' END AS issue_code FROM runs r WHERE source_id=? AND kind='scan' ORDER BY id DESC LIMIT 20",
                     (source_id,),
                 )
             ]
@@ -443,6 +443,12 @@ class VolumeStore:
 
     def select(self, request: SelectionRequest) -> dict:
         where, values = predicate(request.filters)
+        if request.entry_ids is not None:
+            if request.filters.source_id is None or request.sample:
+                raise ValueError("Explicit files require one source and cannot be sampled")
+            ids = list(dict.fromkeys(request.entry_ids))
+            where += " AND e.id IN (SELECT value FROM json_each(?))"
+            values.append(encode(ids))
         where += " AND e.metadata_state='known' AND e.kind='file' AND e.size_bytes<=?"
         where += " AND e.scan_run_id=(SELECT max(r.id) FROM runs r WHERE r.kind='scan' AND r.source_id=e.source_id)"
         values.append(request.max_bytes)
@@ -522,6 +528,10 @@ class VolumeStore:
                     else [],
                 )
             ]
+            if request.entry_ids is not None:
+                count = conn.execute("SELECT count FROM selections WHERE id=?", (sid,)).fetchone()[0]
+                if count != len(set(request.entry_ids)):
+                    raise ValueError("Some selected files changed, are unavailable, or exceed the selection limits. Review your selection.")
             conn.execute(
                 "UPDATE selections SET coverage=? WHERE id=?", (encode(coverage), sid)
             )
@@ -658,6 +668,10 @@ class VolumeStore:
                 raise KeyError("Run not found")
             result = dict(row)
             if result["kind"] == "scan":
+                result["issue_code"] = "identity_changed" if conn.execute(
+                    "SELECT 1 FROM directories WHERE run_id=? AND status='error' AND error LIKE '%identity changed%' LIMIT 1",
+                    (run_id,),
+                ).fetchone() else None
                 result["directories"] = {
                     r["status"]: r["count"]
                     for r in conn.execute(
@@ -681,12 +695,32 @@ class VolumeStore:
             ]
             return result
 
-    def runs(self, after: int = 0, limit: int = 50) -> list[dict]:
+    def runs(
+        self,
+        after: int = 0,
+        limit: int = 50,
+        *,
+        recent: bool = False,
+        before: int | None = None,
+        active_only: bool = False,
+        kind: str | None = None,
+    ) -> list[dict]:
+        where = "id>?"
+        values: list[int | str] = [after]
+        if before is not None:
+            where += " AND id<?"
+            values.append(before)
+        if kind is not None:
+            where += " AND kind=?"
+            values.append(kind)
+        if active_only:
+            where += " AND status IN ('queued','running','paused')"
         with self.connect() as conn:
             return [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM runs WHERE id>? ORDER BY id LIMIT ?", (after, limit)
+                    f"SELECT r.*, CASE WHEN r.kind='scan' AND EXISTS(SELECT 1 FROM directories d WHERE d.run_id=r.id AND d.status='error' AND d.error LIKE '%identity changed%') THEN 'identity_changed' END AS issue_code FROM runs r WHERE {where} ORDER BY id {'DESC' if recent else 'ASC'} LIMIT ?",
+                    [*values, limit],
                 )
             ]
 

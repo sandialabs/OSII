@@ -1,7 +1,8 @@
+import { DiscoveryActivity, useDiscoveryRuns } from "../components/DiscoveryActivity";
+import type { PickedFile } from "../../../components/discovery/LocationBrowser";
 import { DiscoveryIntakePanel } from "../components/DiscoveryIntakePanel";
 import { ProcessorStepControl } from "../components/ProcessorStepControl";
 import {
-  ChangeEvent,
   useDeferredValue,
   useEffect,
   useMemo,
@@ -38,7 +39,6 @@ import FolderOutlinedIcon from "@mui/icons-material/FolderOutlined";
 import PlayArrowOutlinedIcon from "@mui/icons-material/PlayArrowOutlined";
 import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
-import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiJson } from "../../../api/client";
@@ -58,7 +58,6 @@ import {
   recoverProcessingQueue,
   rescanSourcePaths,
   resolveIntake,
-  uploadQueueFiles,
 } from "../../../api/queue";
 import type {
   QueueBrowseResponse,
@@ -107,8 +106,15 @@ export function QueuePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const requestedStep = searchParams.get("step");
-  const [sourceMode, setSourceMode] = useState<"quick" | "discovery">("discovery");
-  const [frozenSelection, setFrozenSelection] = useState<number | null>(null);
+  const [directFiles, setDirectFiles] = useState<PickedFile[]>([]);
+  const [frozenSelection, setFrozenSelection] = useState<number | null>(() => {
+    const id = Number(localStorage.getItem("osii:last-intake-selection"));
+    return Number.isInteger(id) && id > 0 ? id : null;
+  });
+  useEffect(() => {
+    if (frozenSelection) localStorage.setItem("osii:last-intake-selection", String(frozenSelection));
+    else localStorage.removeItem("osii:last-intake-selection");
+  }, [frozenSelection]);
   const [path, setPath] = useState("");
   const [selectedFolder, setSelectedFolder] =
     useState<QueueBrowseResponse | null>(null);
@@ -128,7 +134,8 @@ export function QueuePage() {
   const [includeSubfolders, setIncludeSubfolders] = useState(true);
   const [showHidden, setShowHidden] = useState(false);
   const [section, setSection] = useState<"add" | "process" | "activity">(searchParams.get("tab") === "activity" ? "activity" : requestedStep === "index" ? "process" : "add");
-  const useDiscovery = sourceMode === "discovery" && section !== "process";
+  const useDiscovery = section === "add" && directFiles.length === 0;
+  const discoveryRuns = useDiscoveryRuns();
   const [libraryGoal, setLibraryGoal] = useState<
     "embed" | "synthesize" | "reextract" | "enrich" | "custom"
   >("embed");
@@ -182,7 +189,6 @@ export function QueuePage() {
     setChunkSize(defaults.chunk_size); setChunkOverlap(defaults.chunk_overlap);
     setSelectedSynthesizer(defaults.synthesizer); setSelectedEnricher(defaults.enricher);
   }, [intakeDefaults.data]);
-  const [uploading, setUploading] = useState(false);
   const [starting, setStarting] = useState(false);
   const [rescanning, setRescanning] = useState(false);
   const [rescanResult, setRescanResult] = useState<SourceRescanResponse | null>(
@@ -210,7 +216,7 @@ export function QueuePage() {
   const rootBrowse = useQuery({
     queryKey: ["intake", "browse", "shared-root"],
     queryFn: () => browseIntake(),
-    enabled: !useDiscovery,
+    enabled: section === "process",
   });
   const browse = useQuery({
     queryKey: ["intake", "folders", browsePath],
@@ -218,11 +224,11 @@ export function QueuePage() {
     enabled: browseOpen,
   });
   useEffect(() => {
-    if (rootBrowse.data && !selectedFolder) {
+    if (section === "process" && rootBrowse.data && !selectedFolder) {
       setSelectedFolder(rootBrowse.data);
       setPath((draft) => draft.trim() ? draft : (rootBrowse.data.host_path ?? rootBrowse.data.current_path));
     }
-  }, [rootBrowse.data, selectedFolder]);
+  }, [rootBrowse.data, selectedFolder, section]);
   useEffect(() => {
     if (browse.data)
       setBrowseAddress(browse.data.host_path ?? browse.data.current_path);
@@ -259,12 +265,13 @@ export function QueuePage() {
     "";
 
   const queuePaths = useMemo(() => {
+    if (section === "add") return directFiles.map(file => file.path);
     return [
       ...(selectedFolder ? [selectedFolder.current_path] : []),
       ...uploadedItems.map((item) => item.path),
     ];
-  }, [selectedFolder, uploadedItems]);
-  const folderChanged = !useDiscovery &&
+  }, [selectedFolder, uploadedItems, directFiles, section]);
+  const folderChanged = section === "process" &&
     path.trim() !==
     (selectedFolder?.host_path ?? selectedFolder?.current_path ?? "");
 
@@ -293,10 +300,10 @@ export function QueuePage() {
       resolveIntake({
         inventory_selection_id: useDiscovery ? frozenSelection : undefined,
         queue_paths: useDiscovery ? [] : queuePaths,
-        excluded_paths: excludedPaths,
-        include_subfolders: includeSubfolders,
-        include_patterns: deferredIncludePatterns,
-        exclude_patterns: deferredExcludePatterns,
+        excluded_paths: section === "add" ? [] : excludedPaths,
+        include_subfolders: section === "add" ? false : includeSubfolders,
+        include_patterns: section === "add" ? "" : deferredIncludePatterns,
+        exclude_patterns: section === "add" ? "" : deferredExcludePatterns,
         show_hidden: showHidden,
         workflow: section === "process" ? "library" : "intake",
         run_extraction: runExtraction,
@@ -319,7 +326,7 @@ export function QueuePage() {
   });
 
   const recentRuns = useMemo(
-    () => runs.data?.runs.slice(0, 10) ?? [],
+    () => runs.data?.runs ?? [],
     [runs.data],
   );
   const selectedLogRun = recentRuns.find((run) => run.id === selectedLogRunId);
@@ -334,15 +341,15 @@ export function QueuePage() {
   });
   const displayedLogLines = runLogs.data?.logs ?? selectedLogRun?.logs ?? [];
 
+  const previousLogRun = useRef<{ id: string; status: string } | null>(null);
   useEffect(() => {
-    if (section !== "activity" || selectedLogRunId || !recentRuns.length) return;
-    const visibleRun = recentRuns.find((run) => (
-      ["queued", "pending", "running", "pausing", "cancelling", "error"].includes(run.status)
-    )) ?? recentRuns[0];
-    setSelectedLogRunId(visibleRun.id);
-  }, [recentRuns, section, selectedLogRunId]);
-
-
+    const previous = previousLogRun.current;
+    const active = ["queued", "pending", "running", "pausing", "cancelling"];
+    if (selectedLogRun && previous?.id === selectedLogRun.id && active.includes(previous.status) && !active.includes(selectedLogRun.status)) {
+      setSelectedLogRunId(null);
+    }
+    previousLogRun.current = selectedLogRun ? { id: selectedLogRun.id, status: selectedLogRun.status } : null;
+  }, [selectedLogRun?.status, selectedLogRunId]);
 
   const controlRun = async (run: ProcessingRun, action: "pause" | "resume" | "cancel" | "retry") => {
     setControllingRun(`${run.id}:${action}`);
@@ -415,34 +422,6 @@ export function QueuePage() {
     }
   };
 
-  const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
-    if (!files.length) return;
-    setUploading(true);
-    setNotice(null);
-    try {
-      const result = await uploadQueueFiles(files);
-      setUploadedItems((items) => [
-        ...items,
-        ...result.uploads.filter(
-          (upload) => !items.some((item) => item.path === upload.path),
-        ),
-      ]);
-      setNotice({
-        severity: "success",
-        text: `${result.uploads.length} uploaded file(s) added to this run. Your folder selection is still included.`,
-      });
-    } catch (error) {
-      setNotice({
-        severity: "error",
-        text: error instanceof Error ? error.message : "Upload failed.",
-      });
-    } finally {
-      setUploading(false);
-      event.target.value = "";
-    }
-  };
-
   const rescanSources = async (apply: boolean) => {
     setRescanning(true);
     setNotice(null);
@@ -485,10 +464,10 @@ export function QueuePage() {
       const run = await createProcessingRun({
         inventory_selection_id: useDiscovery ? frozenSelection : undefined,
         queue_paths: useDiscovery ? [] : queuePaths,
-        excluded_paths: excludedPaths,
-        include_subfolders: includeSubfolders,
-        include_patterns: includePatterns,
-        exclude_patterns: excludePatterns,
+        excluded_paths: section === "add" ? [] : excludedPaths,
+        include_subfolders: section === "add" ? false : includeSubfolders,
+        include_patterns: section === "add" ? "" : includePatterns,
+        exclude_patterns: section === "add" ? "" : excludePatterns,
         show_hidden: showHidden,
         workflow: section === "process" ? "library" : "intake",
         run_extraction: runExtraction,
@@ -633,19 +612,13 @@ export function QueuePage() {
     setNotice({ severity: "info", text: "Text-only preset selected." });
   };
 
-  useEffect(() => {
-    if (section !== "add" || !useDiscovery || frozenSelection === null) return;
-    const heading = document.getElementById("intake-processing");
-    heading?.focus({ preventScroll: true });
-    heading?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [frozenSelection, useDiscovery, section]);
-
   return (
     <Stack spacing={2.5} sx={{ maxWidth: 1100, mx: "auto" }}>
       <Typography variant="h5" fontWeight={700}>Intake</Typography>
 
+      <WorkflowProgress readiness={readiness.data} checking={readiness.isLoading} failed={readiness.isError} onStep={followWorkflowStep} />
       <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
-        <IntakeSections value={section} onChange={changeSection} />
+        <IntakeSections value={section} onChange={changeSection} activeCount={(runs.data?.runs.filter(run => ["queued", "pending", "running", "pausing", "cancelling"].includes(run.status)).length ?? 0) + (discoveryRuns.data?.filter(run => ["queued", "running"].includes(run.status)).length ?? 0)} />
       </Box>
 
 
@@ -719,11 +692,7 @@ export function QueuePage() {
             </Paper>
           ) : null}
 
-          {section === "add" && <TextField select size="small" label="Find files" value={sourceMode} onChange={e => setSourceMode(e.target.value as "quick" | "discovery")}>
-            <MenuItem value="discovery">Scan a folder or share</MenuItem>
-            <MenuItem value="quick">Choose a small folder / upload files</MenuItem>
-          </TextField>}
-          {useDiscovery ? <DiscoveryIntakePanel selectedId={frozenSelection} onSelect={setFrozenSelection} /> : <>
+          {section === "add" ? <DiscoveryIntakePanel selectedId={frozenSelection} onSelect={setFrozenSelection} directFiles={directFiles} onFiles={setDirectFiles} /> : <>
           <Paper
             variant="outlined"
             sx={{
@@ -808,8 +777,8 @@ export function QueuePage() {
               ) : null}
 
               <Stack spacing={1}>
-                <Typography variant={section === "add" ? "h6" : "body2"} component={section === "add" ? "h2" : "p"} fontWeight={750}>
-                  {section === "add" ? "2. Select a batch" : "File filters"}
+                <Typography variant="body2" component="p" fontWeight={750}>
+                  File filters
                 </Typography>
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                   <TextField
@@ -917,7 +886,7 @@ export function QueuePage() {
                     : "Could not list files for this folder."}
                 </Alert>
               ) : null}
-              {section === "add" ? <Button sx={{ alignSelf: "flex-start" }} onClick={() => setSourceMode("discovery")}>Use resumable scan instead</Button> : null}
+
               <FileSelectionList files={availableFiles.slice(0, visibleFileCount).map(file => ({ path: file.path, display: documentLabel(file.path, file.display), size_bytes: "size_bytes" in file && typeof file.size_bytes === "number" ? file.size_bytes : null }))} excludedPaths={excludedPaths}
                 onToggle={path => setExcludedPaths(paths => paths.includes(path) ? paths.filter(item => item !== path) : [...paths, path])} />
               {availableFiles.length > visibleFileCount ? (
@@ -945,22 +914,7 @@ export function QueuePage() {
                     ? `${preview.data.preview.unprocessed_count} new · ${preview.data.preview.processed_count} already read · ${preview.data.preview.total_size_human}`
                     : ""}
                 </Typography>
-                {section === "add" ? (
-                  <Button
-                    component="label"
-                    variant="text"
-                    startIcon={<UploadFileOutlinedIcon />}
-                    disabled={uploading}
-                  >
-                    {uploading ? "Uploading…" : "Upload files"}
-                    <input
-                      hidden
-                      type="file"
-                      multiple
-                      onChange={handleUpload}
-                    />
-                  </Button>
-                ) : null}
+
               </Stack>
               {uploadedItems.length ? (
                 <Typography variant="caption" color="text.secondary">
@@ -1092,12 +1046,8 @@ export function QueuePage() {
             </DialogActions>
           </Dialog>
 
-          <Typography id="intake-processing" variant="h6" component="h2" tabIndex={-1} fontWeight={750} sx={{ scrollMarginTop: 96 }}>3. Process batch</Typography>
-          {useDiscovery && frozenSelection !== null ? <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-            <Typography variant="body2">Batch #{frozenSelection}{preview.data ? ` · ${matchedCount} files · ${preview.data.preview.total_size_human}` : ""}</Typography>
-            <Button size="small" onClick={() => { const files = document.getElementById("intake-selected-files") as HTMLDetailsElement | null; if (files) { files.open = true; files.querySelector("summary")?.focus(); files.scrollIntoView({ behavior: "smooth", block: "start" }); } }}>Review files</Button>
-          </Stack> : null}
-          {useDiscovery && frozenSelection === null ? <Typography color="text.secondary">Choose a batch above to continue.</Typography> : <>
+          <Typography id="intake-processing" variant="h6" component="h2" tabIndex={-1} fontWeight={750} sx={{ scrollMarginTop: 96 }}>3. Process</Typography>
+          {useDiscovery && frozenSelection === null ? <Typography color="text.secondary">Select files above to continue.</Typography> : <>
                       {section === "add" && <TextField select size="small" label="Processing preset" value={intakePreset} disabled={!intakeDefaults.data} onChange={e => applyIntakePreset(e.target.value)}>
                         {(intakeDefaults.data?.presets ?? [{ id: "summary-search", label: "Loading intake defaults…" }]).map(preset => <MenuItem key={preset.id} value={preset.id}>{preset.label}</MenuItem>)}
                       </TextField>}
@@ -1451,9 +1401,9 @@ export function QueuePage() {
                 </Stack>
               ) : null}
 
-              {(useDiscovery ? !frozenSelection : !selectedFolder && !uploadedItems.length) ? (
+              {(useDiscovery ? !frozenSelection : queuePaths.length === 0) ? (
                 <Alert severity="info">
-                  {useDiscovery ? "Freeze a discovery selection above to review this batch." : "Choose a document folder or add files from elsewhere."}
+                  {useDiscovery ? "Select files above to continue." : "Choose a document folder or add files from elsewhere."}
                 </Alert>
               ) : null}
               {readiness.isError ? (
@@ -1524,7 +1474,7 @@ export function QueuePage() {
               >
                 {starting
                   ? "Queueing work…"
-                  : `${section === "process" ? "Queue processing" : "Process batch"}${queuedDocumentCount ? ` (${queuedDocumentCount} document${queuedDocumentCount === 1 ? "" : "s"})` : ""}`}
+                  : `${section === "process" ? "Queue processing" : `Queue ${queuedDocumentCount} ${queuedDocumentCount === 1 ? "file" : "files"}`}${section === "process" && queuedDocumentCount ? ` (${queuedDocumentCount} documents)` : ""}`}
               </Button>
             </Stack>
           </Box>
@@ -1532,8 +1482,7 @@ export function QueuePage() {
         </>
       ) : null}
 
-      {section !== "activity" ? <Accordion disableGutters elevation={0}><AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}><Typography variant="body2">Library readiness</Typography></AccordionSummary><AccordionDetails><WorkflowProgress readiness={readiness.data} checking={readiness.isLoading} failed={readiness.isError} sourceReady={useDiscovery ? undefined : Boolean((selectedFolder || uploadedItems.length) && !folderChanged && !selectingFolder && !folderError && sourceStatus?.osii_writable !== false)} onStep={followWorkflowStep} /></AccordionDetails></Accordion> : null}
-
+      {section === "activity" && <DiscoveryActivity />}
       {section === "activity" && <ProcessingActivity recentRuns={recentRuns} workerAvailable={runs.data?.worker?.available}
         selectedLogRunId={selectedLogRunId} setSelectedLogRunId={setSelectedLogRunId} controllingRun={controllingRun}
         controlRun={(run, action) => action === "start" ? undefined : controlRun(run, action)} displayedLogLines={displayedLogLines}

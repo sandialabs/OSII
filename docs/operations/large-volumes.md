@@ -24,7 +24,7 @@ OSII_START_TOOLBOX=false
 ```
 
 Run `make dev`, or `.\scripts\osii.ps1 dev` on Windows, and open **Intake →
-Add files → Scan a folder or share** in the normal dashboard. The regular API, sidecar intake worker, metadata inventory
+Add files** in the normal dashboard. The regular API, sidecar intake worker, metadata inventory
 worker, MCP, and other tools run together. No branch or storage-mode switch is
 needed. `OSII_START_TOOLBOX=false` is an optional startup setting, not an
 inventory requirement.
@@ -42,56 +42,69 @@ hashes, OCR, or model endpoints.
 
 ## Discovery and staged Intake
 
-Intake follows three numbered stages: **1. Discover files**, **2. Select a batch**,
-and **3. Process batch**. Scan options and extra filters are collapsed by default.
-Selecting **Use this batch** moves to the processing preset and preview; **Review
-files** returns to the saved membership. **Update batch** creates a new selection
-from the current filters and limits; changing filters alone does not change a
-saved batch. Saved batch IDs can be reloaded under **Limits & saved batches**.
-Pause/resume controls, incomplete coverage, and scan failures remain visible.
+Intake has three numbered steps: **1. Choose location**, **2. Select files**,
+and **3. Process**. Library Readiness stays above them. **Queue & activity**
+shows discovery and processing work, even after closing and reopening the browser.
+Completed processing runs and their logs are collapsed by default; open a run and
+choose **View log** to inspect historical evidence.
 
-1. Select a registered source, or register an existing share/folder path. Sources
-   must not overlap. Use **Choose a small folder / upload files** for a one-off folder;
-   discovery does not run a recursive HTTP preview.
-2. Set scan include/exclude patterns, hidden-path policy, maximum depth, and
-   whether to cross filesystem boundaries. Depth 0 reads root entries only.
-   Symlinks are never followed. Rules are saved with the scan and cannot change
-   on resume. Start with the default two readers (maximum eight).
-3. Start discovery. The API returns a run ID without walking the share. Progress
-   shows observed entries, known logical bytes, directory tasks, current branches,
-   metadata failures, and last activity. It does not estimate an unknown total.
-   Results and filters query local SQL, with pages of 100 names.
-4. Pause, close the browser, or restart OSII. **Resume scan / retry failures**
-   continues unfinished directories after reconnecting or fixing permissions.
-   A new scan supersedes older scans; obsolete scans cannot overwrite newer
-   observations. Partial enumeration never establishes deletion. An unfinished
-   flat directory replays from its beginning with a fresh observation token.
-5. Filter by path, name, extension, date, size, metadata availability, and whether
-   this inventory revision was processed through staged Intake. Older cached
-   observations are labeled as such; new selections include only files observed
-   in the latest scan. Content-read permission is checked later in the worker.
-6. Choose file/byte budgets and optionally a reproducible stratified sample.
-   **Use this batch** saves source/path, revision, source generation,
-   file identity, size/times, request rules, and discovery coverage. Incomplete
-   coverage requires explicit acknowledgement. Unknown-size entries are excluded.
-   Defaults are 100 files and 1 GiB; Intake accepts up to 10,000 files per batch
-   and 50 MiB per file. The frozen selection never grows with later discoveries.
-7. Review the frozen names and use the existing Intake preset and processing
-   options below. **Process batch** enqueues the normal sidecar worker. Changed,
-   missing, denied, and malformed files fail individually; healthy files continue.
-   Successful documents appear in Files and can feed Search, Topics, and Chat.
-   No contents are read, hashed, or sent to models during freezing or enqueueing.
-8. Use **Activity** for processing pause/resume/retry and file-level errors. Restore
-   a saved selection by its ID after reloading. Repeating the same selection and
-   request returns its existing run, including after an interrupted handoff. Use
-   Activity to retry that run, or freeze a new selection for a new batch.
+1. Choose a saved location, or use **Add location** to browse the computer and
+   mounted drives or paste a path. Locations display their full path once.
+   Registering or selecting a location does not enumerate its contents or start
+   discovery. Overlapping locations direct you to the existing registered root.
+2. For a small folder, choose **Browse files**. Navigate one directory at a time
+   and check individual files; nothing is preselected. Directory pages inspect at
+   most 100 entries without sorting the whole directory, following symbolic
+   links, reading contents, or consulting the sidecar catalog. **Next page**
+   continues the same short-lived cursor. Cancel loading or change folders to
+   release it; an idle cursor expires after 45 seconds. A stalled reader times
+   out after 15 seconds. Use **Upload files** to copy one-off files instead.
+   Direct selections stay within one registered location; uploads form a separate
+   selection. Direct selection accepts up to 10,000 files and 1 GiB total, with
+   the existing 50 MiB per-file processing limit.
+3. For a large share, explicitly choose **Start background scan**. Scan options
+   include patterns, hidden paths, depth (0 means root only), cross-filesystem
+   policy, and readers (default two, maximum eight). These rules are frozen for
+   that scan. Discovery reads directory entries and metadata only. It does not
+   read file contents, hash files, invoke OCR, or call models.
+4. Progress shows observed entries, last activity, elapsed time, and issues;
+   it does not estimate an unknown total. Pause/resume/retry/cancel controls are
+   available beside the scan and in **Queue & activity**. Closing the browser or
+   restarting OSII does not discard scan checkpoints. An unfinished flat
+   directory replays from its beginning; partial discovery never proves deletion.
+5. Choose **View discovered files** to query paginated local inventory results.
+   Filter by name, extension, path, size, date, metadata availability, or prior
+   staged processing. Check individual files and choose **Use N files**, or use
+   **Select matching files…** to preview matches and approve file/byte limits
+   (default 100 files and 1 GiB). Earlier-scan and unavailable entries cannot be
+   selected. Selecting during unfinished discovery requires acknowledging
+   **Use files found so far**. Later discoveries never join an existing selection.
+6. **Review selection** shows the saved membership. A discovered-file selection
+   records source generation, inventory revision, path, file identity, size,
+   timestamps, and discovery coverage without reading content. **Saved selections**
+   restores earlier selections; the last applied inventory selection also survives
+   browser reload. Changing filters does not change it. Switching locations asks
+   before clearing the selection. Direct-picked file selections last for the
+   current page session; queued jobs are durable.
+7. Choose a processing preset/options and **Queue N files**. Selected processing
+   verifies availability and identity, then reads and hashes those originals.
+   Changed, missing, denied, and malformed files fail individually; healthy files
+   continue. Successful documents appear in Files and can feed Search, Topics,
+   and Chat. Discovery by itself does not establish content readability.
+8. In **Queue & activity**, inspect issues or retry failed work. Successful
+   extraction and embedding checkpoints are retained. **Completed with issues**
+   runs can retry failed or partially processed files while completed files stay
+   untouched. Partially processed files retry their requested workflow; provider
+   calls within those files are not an exactly-once guarantee. Repeating the same saved
+   selection and request returns its existing run, including after an interrupted
+   handoff. Resume/retry that run or create a new selection for different work.
 
 Processing checks the one-hour default time budget between files, then pauses
 for explicit resume; the API accepts `max_processing_seconds` from 1 to 86,400
 for a staged run. A filesystem call already blocked in the OS can exceed this
 budget. The optional embedding step embeds only the selected documents, reuses
 completed chunk checkpoints, and preserves vectors for the rest of the library.
-On an embedding failure, use **Activity → Retry embeddings** to continue without
+On an embedding failure, use **Queue & activity → Retry embeddings** to continue without
 repeating completed extraction, summaries, enrichment, or embedding requests.
 Source reads, extraction, summaries, and enrichment use only the frozen members.
 The [incremental embeddings decision](../concepts/adr-incremental-embeddings.md)
@@ -101,11 +114,14 @@ it avoids legacy whole-folder rehashing and does not claim that this batch is a
 complete folder manifest. The manifest records selection metadata, while document
 sidecars retain actual content hashes and provenance.
 
-If a remount changes the registered root's identity, first verify the dataset and
-cancel active scans. Under **Changed mount identity**, enter the exact registered
-path, acknowledge that verification, and rebind. This increments the source
-generation, invalidates previous selections, preserves historical evidence, and
-requires a fresh scan. Never use rebind to silently replace a dataset.
+If a scan detects a changed root identity, Intake shows **This location appears
+different from the folder previously scanned**. Verify that the original dataset
+is mounted, cancel active scans, and wait for their leases to release. The recovery
+form requires the exact registered path and explicit verification. Confirmation
+increments the source generation, invalidates earlier selections, preserves
+historical evidence, and requires a fresh scan. This control is shown only after
+an identity issue, never as a routine scan option. It must not silently replace a
+dataset. Ordinary disconnects instead report access errors and can be retried.
 
 Each metadata reader runs in a separate process with a bounded two-batch channel;
 one leased coordinator writes SQLite in batches of at most 500 observations.
@@ -199,7 +215,7 @@ timeouts; native filesystem calls may block longer on a failed share. Pausing
 or cancelling takes effect at the next safe boundary and retains committed work.
 For independent inventory processing, create another bounded run after a time
 budget is exhausted. Staged Intake instead pauses and resumes the same frozen
-batch in Activity. Use the relevant prior-processing filter to omit successes.
+selection in Queue & activity. Use the relevant prior-processing filter to omit successes.
 
 Reports show usable text yield, empty/OCR candidates, failures, reused results,
 elapsed processing time, and format/size groups. Estimated time for matching
@@ -293,3 +309,24 @@ The updated synthetic million-row benchmark completed with a 0.9 ms late page,
 the database was about 328 MiB. This checks SQL paging/filtering/staging memory,
 not mixed ACLs or filesystem traversal throughput. Validate representative NFS
 branches and compare reader counts before a 35 TB rollout.
+
+
+## Intake flow verification on 10 November 2026
+
+The revised UI was checked against `/Volumes/home/hk`, mounted from
+`192.168.1.150` using SMB (`smbfs`). Opening Intake issued no directory-browse,
+inventory-entry, or aggregate-summary requests. Explicit directory browsing
+returned the root's three visible entries. A new metadata scan was paused and
+resumed through Intake and finished with 2,142 observed entries, zero failed
+directories, and zero metadata errors. A directly selected PDF completed a
+text-only processing run without requesting model calls.
+
+Browser checks covered stable selection after filtering, selection restoration
+and checked membership, historical logs collapsed by default and opened on
+demand, desktop/mobile layout, and conditional mount recovery. Mocked scan status
+verified the incomplete-scan acknowledgement without rebinding the real NAS.
+Automated tests cover cursor paging, cancellation/disconnect/timeout cleanup,
+permission boundaries, hidden-entry inspection limits, restart checkpoints,
+malformed PDFs, and retries that preserve completed files and embedding phases.
+Actual share disconnection, mixed corporate ACLs, multi-day traversal, and 35 TB
+capacity remain unvalidated by this smoke test.

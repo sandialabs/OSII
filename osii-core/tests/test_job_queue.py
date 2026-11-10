@@ -200,3 +200,24 @@ def test_failed_run_can_be_retried_without_repeating_completed_files(tmp_path: P
     assert restored["items"][0]["status"] == "done"
     assert restored["items"][1]["status"] == "pending"
     assert restored["completed"] == 1
+
+
+def test_embedding_retry_does_not_repeat_partial_file_processing(tmp_path: Path):
+    from osii.domain.processing.jobs import enqueue_run
+    root = tmp_path / "source"
+    root.mkdir()
+    source = root / "partial.txt"
+    source.write_text("Source text")
+    configure_job_store(tmp_path / ".osii")
+    run = create_run_record([source], root, tmp_path / "uploads", osii_root=tmp_path / ".osii")
+    run.update(workflow="intake", file_processing_status="done", indexing_status="error", error_phase="embedding")
+    run["items"][0].update(status="partial", error="Summary unavailable")
+    save_run(run)
+    enqueue_run(run["id"], {"resolved_files": [str(source)]})
+    job = claim_next_queue_job("embedding-retry")
+    complete_queue_job(job["id"], error="Embedding provider unavailable")
+    control_run(run["id"], "retry")
+    retried = get_run(run["id"])
+    assert retried["file_processing_status"] == "done"
+    assert retried["error_phase"] == "embedding"
+    assert retried["items"][0]["status"] == "partial"

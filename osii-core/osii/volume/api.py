@@ -224,8 +224,24 @@ def create_app(path: Path | None = None, *, api_prefix: str = "/api/volume") -> 
         return store.run(store.new_processing(payload))
 
     @app.get(api_prefix + "/runs")
-    def runs(cursor: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100)):
-        return {"items": store.runs(cursor, limit)}
+    def runs(
+        cursor: int = Query(0, ge=0),
+        limit: int = Query(50, ge=1, le=100),
+        recent: bool = False,
+        before: int | None = Query(None, ge=1),
+        active_only: bool = False,
+        kind: Literal["scan", "extract", "ocr", "synthesize", "enrich"] | None = None,
+    ):
+        return {
+            "items": store.runs(
+                cursor,
+                limit,
+                recent=recent,
+                before=before,
+                active_only=active_only,
+                kind=kind,
+            )
+        }
 
     @app.get(api_prefix + "/runs/{run_id}")
     def run(run_id: int):

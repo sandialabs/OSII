@@ -30,6 +30,7 @@ class Filters(BaseModel):
 
 
 class SelectionRequest(BaseModel):
+    entry_ids: list[int] | None = Field(None, min_length=1, max_length=10000)
     filters: Filters = Field(default_factory=Filters)
     sample: bool = False
     seed: str = "osii"

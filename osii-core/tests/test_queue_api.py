@@ -714,3 +714,241 @@ def test_preview_directory_failure_is_actionable(client, temp_data_root, monkeyp
     assert 'File inventory' in response.json()['detail']
     assert 'PermissionError' in response.json()['detail']
     assert 'private platform details' not in response.text
+
+
+def test_paged_browse_is_nonrecursive_and_cancelable(client, temp_data_root):
+    for i in range(225):
+        (temp_data_root / f"paper-{i}.pdf").write_bytes(b"not read by browsing")
+    nested = temp_data_root / "nested"
+    nested.mkdir()
+    (nested / "private-child.txt").write_text("not enumerated")
+    first = client.get(
+        "/api/browse/page", params={"path": str(temp_data_root), "limit": 40}
+    )
+    assert first.status_code == 200, first.text
+    page = first.json()
+    assert len(page["entries"]) <= 40
+    assert page["cursor"]
+    assert not any(item["name"] == "private-child.txt" for item in page["entries"])
+    seen = {item["path"] for item in page["entries"]}
+    cursor = page["cursor"]
+    while cursor:
+        response = client.get(
+            "/api/browse/page", params={"cursor": cursor, "limit": 40}
+        )
+        assert response.status_code == 200, response.text
+        page = response.json()
+        paths = {item["path"] for item in page["entries"]}
+        assert not seen & paths
+        seen |= paths
+        cursor = page["cursor"]
+    assert len(seen) == 226
+    assert (
+        client.get("/api/browse/page", params={"cursor": "expired"}).status_code == 410
+    )
+    first = client.get(
+        "/api/browse/page", params={"path": str(temp_data_root), "limit": 1}
+    ).json()
+    assert client.delete(f"/api/browse/page/{first['cursor']}").status_code == 200
+    assert (
+        client.get("/api/browse/page", params={"cursor": first["cursor"]}).status_code
+        == 410
+    )
+
+
+def test_paged_browse_unavailable_paths_and_mounted_boundary(
+    client, test_app, tmp_path, monkeypatch
+):
+    assert (
+        client.get(
+            "/api/browse/page", params={"path": str(tmp_path / "missing")}
+        ).status_code
+        == 404
+    )
+    monkeypatch.setattr(test_app.state, "filesystem_mode", "mounted")
+    assert (
+        client.get("/api/browse/page", params={"path": str(tmp_path)}).status_code
+        == 403
+    )
+
+
+@pytest.mark.parametrize("reason", ["timeout", "disconnect"])
+def test_browser_timeout_releases_process(reason):
+    import asyncio
+    import time
+    from osii.domain.processing.directory_browse import DirectoryBrowsers
+
+    class Process:
+        terminated = False
+
+        def is_alive(self):
+            return True
+
+        def terminate(self):
+            self.terminated = True
+
+        def join(self, timeout):
+            pass
+
+    class Connection:
+        closed = False
+
+        def send(self, value):
+            pass
+
+        def poll(self):
+            return False
+
+        def close(self):
+            self.closed = True
+
+    async def check():
+        browsers = DirectoryBrowsers()
+        process, connection = Process(), Connection()
+        browsers.sessions["test"] = (
+            process,
+            connection,
+            time.monotonic(),
+            asyncio.Lock(),
+        )
+
+        async def connected():
+            return reason == "disconnect"
+
+        with pytest.raises(
+            InterruptedError if reason == "disconnect" else TimeoutError
+        ):
+            await browsers.page("test", 10, connected, timeout=0.01)
+        assert process.terminated and connection.closed
+        assert not browsers.sessions
+
+    asyncio.run(check())
+
+
+def test_browse_roots_does_not_enumerate_directories(client, monkeypatch):
+    import os
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Navigation shortcuts must not enumerate directories")
+
+    monkeypatch.setattr(os, "scandir", forbidden)
+    response = client.get("/api/browse/roots")
+    assert response.status_code == 200
+    assert response.json()["items"]
+
+
+def test_browser_page_limits_inspection_even_with_only_hidden_entries(
+    tmp_path, monkeypatch
+):
+    from osii.domain.processing import directory_browse
+
+    inspected = []
+
+    class Directory:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def __next__(self):
+            inspected.append(1)
+            assert len(inspected) <= 5, (
+                "Must not enumerate the directory to fill a filtered page"
+            )
+            return type("Entry", (), {"name": ".hidden"})()
+
+    class Connection:
+        responses = []
+        polls = 0
+
+        def poll(self, timeout):
+            self.polls += 1
+            return self.polls == 1
+
+        def recv(self):
+            return 5
+
+        def send(self, value):
+            self.responses.append(value)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        directory_browse, "resolve_intake_path", lambda *args, **kwargs: tmp_path
+    )
+    monkeypatch.setattr(directory_browse.os, "scandir", lambda *args: Directory())
+    connection = Connection()
+    directory_browse._reader(
+        connection, None, str(tmp_path), str(tmp_path), "local", "", False
+    )
+    assert len(inspected) == 5
+    assert connection.responses[0]["entries"] == []
+    assert connection.responses[0]["has_more"]
+
+
+
+@pytest.mark.parametrize("failed_status", ["error", "partial"])
+def test_completed_run_retries_failed_files_without_reprocessing_successes(
+    client, temp_data_root, temp_osii_root, monkeypatch, failed_status,
+):
+    from osii.api import runs_routes
+    from osii.domain.processing.jobs import configure_job_store, claim_next_queue_job, complete_queue_job, get_run, save_run
+    from osii.worker import execute_job
+    configure_job_store(temp_osii_root)
+    files = [temp_data_root / name for name in ("first.txt", "retry.txt", "last.txt")]
+    for source in files:
+        source.write_text(f"Source text for {source.name}.")
+    original = runs_routes.dispatch_extract
+    attempts = []
+    fail = True
+    def dispatch(**kwargs):
+        source = kwargs["source_path"]
+        attempts.append(source.name)
+        if source.name == "retry.txt" and fail:
+            raise RuntimeError("Temporary reader failure")
+        kwargs["extractor_name"] = "native_text"
+        return original(**kwargs)
+    monkeypatch.setattr(runs_routes, "dispatch_extract", dispatch)
+    queued = client.post("/api/runs", json={"queue_paths": [str(source) for source in files], "workflow": "intake"})
+    assert queued.status_code == 200, queued.text
+    run_id = queued.json()["id"]
+    job = claim_next_queue_job("test-retry")
+    execute_job(job)
+    complete_queue_job(job["id"])
+    run = get_run(run_id)
+    assert run["status"] == "done"
+    assert [item["status"] for item in run["items"]] == ["done", "error", "done"]
+    completed_ids = [item.get("file_id") for item in run["items"] if item["status"] == "done"]
+    run["items"][1]["status"] = failed_status
+    save_run(run)
+    initial_attempts = len(attempts)
+    fail = False
+    response = client.post(f"/api/runs/{run_id}/retry")
+    assert response.status_code == 200, response.text
+    job = claim_next_queue_job("test-retry-after-restart")
+    execute_job(job)
+    complete_queue_job(job["id"])
+    retried = get_run(run_id)
+    assert retried["status"] == "done"
+    assert all(item["status"] == "done" for item in retried["items"])
+    assert attempts[initial_attempts:] == ["retry.txt"]
+    assert attempts.count("first.txt") == attempts.count("last.txt") == 1
+    assert [retried["items"][i]["file_id"] for i in (0, 2)] == completed_ids
+    # A fully successful run remains terminal.
+    assert client.post(f"/api/runs/{run_id}/retry").status_code == 409
+
+
+def test_browser_does_not_offer_symbolic_links_or_special_files(client, temp_data_root):
+    import os
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("POSIX special-file check")
+    source = temp_data_root / "source.txt"
+    source.write_text("An ordinary file")
+    (temp_data_root / "linked.txt").symlink_to(source)
+    os.mkfifo(temp_data_root / "pipe")
+    response = client.get("/api/browse/page", params={"path": str(temp_data_root)})
+    assert response.status_code == 200, response.text
+    types = {entry["name"]: entry["type"] for entry in response.json()["entries"]}
+    assert types == {"source.txt": "file", "linked.txt": "link", "pipe": "unavailable"}

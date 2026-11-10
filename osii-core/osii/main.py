@@ -51,7 +51,12 @@ async def lifespan(application):
     inventory_app.state.volume_store.path = database_path(application.state.osii_root)
     inventory_app.state.source_root = application.state.shared_volume_root
     async with inventory_app.router.lifespan_context(inventory_app):
-        yield
+        try:
+            yield
+        finally:
+            browsers = getattr(application.state, "directory_browsers", None)
+            if browsers is not None:
+                browsers.close_all()
 
 app = FastAPI(
     title="OSII Backend",

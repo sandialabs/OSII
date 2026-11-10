@@ -120,13 +120,13 @@ export function WorkflowProgress({
                 <Box component="span" sx={{ display: "grid", placeItems: "center", width: 22, height: 22, border: "1px solid", borderColor: step.complete ? "success.main" : "divider", borderRadius: "50%", flexShrink: 0, fontSize: "0.75rem", fontWeight: 700 }}>
                   {index + 1}
                 </Box>
+                {step.complete ? <CheckCircleOutlineIcon aria-hidden fontSize="small" sx={{ flexShrink: 0, ml: -0.5 }} /> : null}
                 <Typography
                   variant="body2"
                   fontWeight={step.complete ? 500 : 700}
                 >
                   {step.label}
                 </Typography>
-                {step.complete ? <CheckCircleOutlineIcon aria-hidden fontSize="small" sx={{ ml: "auto", flexShrink: 0 }} /> : null}
               </Button>
             </Box>
           ))}
