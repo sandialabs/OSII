@@ -440,6 +440,10 @@ def test_scope_checkpoint_failure_rolls_back_all_products(scoped_backend):
     assert len(scope_history(scoped_backend, command)) == 2
     with reader.engine.connect() as conn:
         assert conn.execute(text("SELECT payload FROM jobs WHERE id='scope-job'")).scalar()["items"][0]["status"] == "done"
+    # Distinct steps in one leased job may return identically named outputs.
+    writer.commit(replace(command, operation_id="second-scope-step"),
+                  checkpoint=JobCheckpoint("scope-job", "worker", 0, {"status": "done"}))
+    assert all(len(history["revisions"]) == 2 for history in scope_history(scoped_backend, command))
 
 
 def test_scope_regeneration_keeps_human_revision_current(scoped_backend):
