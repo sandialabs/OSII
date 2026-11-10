@@ -90,6 +90,9 @@ The hosted branch separately enforces its persistence and account permissions.
 
 ## Topic Explorer as a reference
 
+For the shared view registry, circle selection, collection review and advanced
+metadata contract, see [Topic Explorer extensions](topic-explorer.md).
+
 `/topics` uses typed adapters and query hooks over Core's
 `domain/services/topics.py`, through `api/topics_routes.py`:
 

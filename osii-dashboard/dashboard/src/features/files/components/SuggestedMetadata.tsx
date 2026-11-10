@@ -18,16 +18,29 @@ type RecordResponse = {
   document_metadata?: DocumentMetadata | null;
 };
 
-export function SuggestedMetadata(props: { metadata?: DocumentMetadata | null; fileId?: string }) {
+type MetadataRequest = typeof apiJson;
+export function SuggestedMetadata(props: {
+  metadata?: DocumentMetadata | null;
+  fileId?: string;
+  canEdit?: boolean;
+  request?: MetadataRequest;
+  onSaved?: () => void;
+}) {
   return <MetadataEditor key={props.fileId ?? "preview"} {...props} />;
 }
 
 function MetadataEditor({
   metadata,
   fileId,
+  canEdit = true,
+  request = apiJson,
+  onSaved,
 }: {
   metadata?: DocumentMetadata | null;
   fileId?: string;
+  canEdit?: boolean;
+  request?: MetadataRequest;
+  onSaved?: () => void;
 }) {
   const client = useQueryClient();
   const [draft, setDraft] = useState<Record<string, string> | null>(null);
@@ -36,19 +49,20 @@ function MetadataEditor({
     queryKey: ["objects", fileId, "metadata"],
     enabled: Boolean(fileId),
     queryFn: () =>
-      apiJson<RecordResponse>(
+      request<RecordResponse>(
         `/api/objects/${encodeURIComponent(fileId!)}/metadata`,
       ),
   });
   const current = record.data?.document_metadata ?? metadata;
   const save = useMutation({
     mutationFn: () =>
-      apiJson<RecordResponse>(
+      request<RecordResponse>(
         `/api/objects/${encodeURIComponent(fileId!)}/metadata`,
         { method: "PUT", json: { values: draft, expected_revision: base } },
       ),
     onSuccess: async () => {
       setDraft(null);
+      onSaved?.();
       await Promise.all(
         ["objects", "scopes", "topics", "products", "enrichments"].map((key) =>
           client.invalidateQueries({ queryKey: [key] }),
@@ -65,7 +79,7 @@ function MetadataEditor({
             ? "Document metadata"
             : "Suggested metadata"}
         </Typography>
-        {fileId && !draft ? (
+        {fileId && canEdit && !draft ? (
           <Button
             size="small"
             disabled={!record.data}
