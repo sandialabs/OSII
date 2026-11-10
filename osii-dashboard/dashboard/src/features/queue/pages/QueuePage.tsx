@@ -137,8 +137,8 @@ export function QueuePage() {
     "missing",
   );
   const [extractionPolicy, setExtractionPolicy] = useState<
-    "make_primary" | "save_variant"
-  >("make_primary");
+    "auto" | "make_primary" | "save_variant"
+  >("auto");
   const [synthesize, setSynthesize] = useState(requestedStep !== "index");
   const [embed, setEmbed] = useState(true);
   const [chunkingMethod, setChunkingMethod] =
@@ -168,7 +168,7 @@ export function QueuePage() {
     const preset = intakeDefaults.data?.presets.find(item => item.id === id);
     if (!preset) return;
     setIntakePreset(id);
-    setRunExtraction(true); setExtractMode("missing"); setExtractionPolicy("make_primary");
+    setRunExtraction(true); setExtractMode("missing"); setExtractionPolicy("auto");
     setSynthesize(preset.synthesize); setEmbed(preset.build_embeddings); setEnrich(preset.enrich);
   };
   useEffect(() => {
@@ -1217,6 +1217,7 @@ export function QueuePage() {
                               )
                             }
                           >
+                            <MenuItem value="auto">Keep primary when adding a different method</MenuItem>
                             <MenuItem value="make_primary">
                               Make it primary and preserve the previous version
                             </MenuItem>

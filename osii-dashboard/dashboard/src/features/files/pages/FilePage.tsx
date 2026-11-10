@@ -1,8 +1,12 @@
+import { useQuery } from "@tanstack/react-query";
+import { getObjectExtractions, getExtractionText } from "../../../api/objects";
 // src/features/files/pages/FilePage.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useParams } from "react-router-dom";
 import {
   Alert,
+  MenuItem,
+  TextField,
   CircularProgress,
   Stack,
 } from "@mui/material";
@@ -49,6 +53,21 @@ export function FilePage() {
   const objectQuery = useObject(fileId ?? "", Boolean(fileId));
   const textsQuery = useObjectTexts(fileId ?? "", Boolean(fileId));
   const preferredTextQuery = useObjectPreferredText(fileId ?? "", Boolean(fileId));
+  const extractionId = searchParams.get("extraction_id") ?? "";
+  const versions = useQuery({ queryKey: ["objects", fileId, "extractions"], queryFn: () => getObjectExtractions(fileId!), enabled: Boolean(fileId) });
+  const versionText = useQuery({ queryKey: ["objects", fileId, "extractions", extractionId, "texts"], queryFn: () => getExtractionText(fileId!, extractionId), enabled: Boolean(fileId && extractionId) });
+  const visibleSegments = extractionId ? versionText.data?.segments ?? [] : textsQuery.data?.segments ?? [];
+  const visibleText = extractionId ? versionText.data?.text ?? "" : preferredTextQuery.data?.text ?? "";
+  useEffect(() => {
+    const value = searchParams.get("tab");
+    if (["text", "source", "split", "extractions", "syntheses", "wiki", "enrichments"].includes(value ?? "")) setTab(value as FileTab);
+  }, [searchParams]);
+  const inspectExtraction = (id: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("extraction_id", id); next.set("tab", "split");
+    for (const key of ["char_start", "char_end", "segment_id", "page"]) next.delete(key);
+    setActivePage(1); setActiveSegmentId(null); setSearchParams(next); setTab("split");
+  };
 
   const detail = useMemo(
     () => (objectQuery.data ? toFileDetailModel(objectQuery.data) : null),
@@ -57,11 +76,11 @@ export function FilePage() {
 
   const bestMatchSegment = useMemo(() => {
     return findBestMatchingSegment({
-      segments: textsQuery.data?.segments ?? [],
+      segments: visibleSegments,
       charStart: Number.isFinite(charStart) ? charStart : null,
       charEnd: Number.isFinite(charEnd) ? charEnd : null,
     });
-  }, [textsQuery.data?.segments, charStart, charEnd]);
+  }, [visibleSegments, charStart, charEnd]);
 
   useEffect(() => {
     const nextPage = pageValue != null ? Number(pageValue) : 1;
@@ -156,10 +175,20 @@ export function FilePage() {
 
       <FileDetailTabs value={tab} onChange={value => { setTab(value); const next = new URLSearchParams(searchParams); next.set("tab", value); setSearchParams(next, { replace: true }); }} />
 
+      {["text", "source", "split"].includes(tab) && versions.data?.variants.length ? <TextField select size="small" label="Text version" value={extractionId} onChange={event => {
+        const next = new URLSearchParams(searchParams);
+        if (event.target.value) next.set("extraction_id", event.target.value); else next.delete("extraction_id");
+        for (const key of ["char_start", "char_end", "segment_id"]) next.delete(key);
+        setActiveSegmentId(null); setSearchParams(next);
+      }} sx={{ maxWidth: 620 }}>
+        <MenuItem value="">Primary text / corrections</MenuItem>
+        {versions.data.variants.map(item => <MenuItem key={item.id} value={item.id}>{item.extractor.name} · {new Date(item.created_utc).toLocaleString()}{item.primary ? " · Primary" : ""}</MenuItem>)}
+      </TextField> : null}
+      {extractionId && versionText.isError ? <Alert severity="error">This text version could not be loaded.</Alert> : null}
       {tab === "text" && (
         <FileTextPanel
           fileId={fileId}
-          supportsMarkdownRender={detail.supportsMarkdownRender}
+          textOverride={extractionId ? visibleText : undefined}
           charStart={Number.isFinite(charStart) ? charStart : null}
           charEnd={Number.isFinite(charEnd) ? charEnd : null}
         />
@@ -171,27 +200,29 @@ export function FilePage() {
           mime={detail.mime}
           page={activePage}
           onPageChange={handlePageChange}
-          segments={textsQuery.data?.segments ?? []}
+          segments={visibleSegments}
         />
       )}
 
       {tab === "split" && (
-        textsQuery.isLoading || preferredTextQuery.isLoading ? (
+        (extractionId ? versionText.isLoading : textsQuery.isLoading || preferredTextQuery.isLoading) ? (
           <CircularProgress size={24} />
-        ) : textsQuery.isError ? (
+        ) : (extractionId ? versionText.isError : textsQuery.isError) ? (
           <Alert severity="error">
             Failed to load grounded text segments.
           </Alert>
-        ) : preferredTextQuery.isError ? (
+        ) : !extractionId && preferredTextQuery.isError ? (
           <Alert severity="error">
             Failed to load preferred text.
           </Alert>
         ) : (
           <SplitFileView
+            key={`${fileId}:${extractionId || "primary"}`}
             fileId={fileId}
             mime={detail.mime}
-            canonicalText={preferredTextQuery.data?.text ?? ""}
-            segments={textsQuery.data?.segments ?? []}
+            readOnly={Boolean(extractionId)}
+            canonicalText={visibleText}
+            segments={visibleSegments}
             activeSegmentId={activeSegmentId}
             page={activePage}
             onPageChange={handlePageChange}
@@ -202,7 +233,7 @@ export function FilePage() {
 
       {tab === "syntheses" && <FileSynthesesPanel fileId={fileId} />}
 
-      {tab === "extractions" && <FileExtractionsPanel fileId={fileId} />}
+      {tab === "extractions" && <FileExtractionsPanel fileId={fileId} onInspect={inspectExtraction} />}
 
       {tab === "wiki" && (
         <ScopeWikiPanel

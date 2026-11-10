@@ -25,3 +25,6 @@ class DocumentMetadata(BaseModel):
     title: MetadataSuggestion
     author: MetadataSuggestion
     date: MetadataSuggestion
+    descriptive_title: MetadataSuggestion = Field(default_factory=MetadataSuggestion)
+    agency: MetadataSuggestion = Field(default_factory=MetadataSuggestion)
+    document_type: MetadataSuggestion = Field(default_factory=MetadataSuggestion)

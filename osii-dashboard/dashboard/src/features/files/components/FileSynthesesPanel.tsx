@@ -1,9 +1,10 @@
 import { SuggestedMetadata } from "./SuggestedMetadata";
-import { ProcessingOutputCard } from "../components/ProcessingOutputCard";
+import { DerivedProductEditor } from "./DerivedProductEditor";
 // src/features/files/components/FileSynthesesPanel.tsx
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Accordion, AccordionSummary, AccordionDetails,
   Alert,
   Button,
   Card,
@@ -15,6 +16,8 @@ import {
 } from "@mui/material";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 
+import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
+import { apiJson } from "../../../api/client";
 import { getIntakeReadiness } from "../../../api/queue";
 import { useObjectSyntheses } from "../../../hooks/useObjectSyntheses";
 import { useObjectSynthesisJob } from "../../../hooks/useObjectSynthesisJob";
@@ -25,6 +28,7 @@ type FileSynthesesPanelProps = {
 
 export function FileSynthesesPanel({ fileId }: FileSynthesesPanelProps) {
   const synthesis = useObjectSyntheses(fileId);
+  const variants = useQuery({ queryKey: ["products", "list", fileId], queryFn: () => apiJson<{ products: { family: string; filename: string; title: string }[] }>("/api/products/list", { method: "POST", json: { scope_type: "object", file_id: fileId } }) });
   const synthesisJob = useObjectSynthesisJob(fileId);
   const readiness = useQuery({ queryKey: ["intake", "readiness"], queryFn: getIntakeReadiness });
   const [synthesizerName, setSynthesizerName] = useState("");
@@ -93,30 +97,11 @@ export function FileSynthesesPanel({ fileId }: FileSynthesesPanelProps) {
       {!synthesis.isLoading && !synthesis.isError && !synthesis.data ? <Alert severity="info">No synthesis data available.</Alert> : null}
       {synthesis.data ? (
         <>
-          <SuggestedMetadata metadata={synthesis.data.document_metadata} />
-          <ProcessingOutputCard title="Current Synthesis" text={synthesis.data.current_text ?? "No current synthesis text is available."} />
+          <SuggestedMetadata metadata={synthesis.data.document_metadata} fileId={fileId} />
+          {synthesis.data.current_text != null ? <DerivedProductEditor scope={{ scope_type: "object", file_id: fileId }} filename="current" family="synthesis" /> : <Typography>No summary yet.</Typography>}
 
-          <Card>
-            <CardContent>
-              <Stack spacing={1}>
-                <Typography variant="subtitle1" fontWeight={600}>
-                  Synthesis Listing
-                </Typography>
+          {variants.data?.products.filter(item => item.family === "synthesis" && item.filename !== "current").map(item => <Accordion key={item.filename} variant="outlined" disableGutters><AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}><Typography fontWeight={650}>{item.title}</Typography></AccordionSummary><AccordionDetails><DerivedProductEditor scope={{ scope_type: "object", file_id: fileId }} filename={item.filename} family="synthesis" /></AccordionDetails></Accordion>)}
 
-                {synthesis.data.syntheses.length > 0 ? (
-                  synthesis.data.syntheses.map((item) => (
-                    <Typography key={`${item.name}-${item.scope}`} variant="body2" color="text.secondary">
-                      {item.name} · {item.scope}
-                    </Typography>
-                  ))
-                ) : (
-                  <Typography variant="body2" color="text.secondary">
-                    No synthesis artifacts listed.
-                  </Typography>
-                )}
-              </Stack>
-            </CardContent>
-          </Card>
         </>
       ) : null}
     </Stack>

@@ -127,3 +127,7 @@ export async function getObjectTextSpanContext(params: {
     `/api/text/objects/${encodeURIComponent(params.fileId)}/span/context?${search.toString()}`,
   );
 }
+
+export async function getExtractionText(fileId: string, variantId: string) {
+  return apiJson<{ file_id: string; extraction_id: string; text: string; segments: import("./types").ManifestRecord[] }>(`/api/objects/${encodeURIComponent(fileId)}/extractions/${encodeURIComponent(variantId)}/texts`);
+}

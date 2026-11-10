@@ -7,6 +7,7 @@ import { getObjectExtractionArtifacts, getObjectExtractions, makeObjectExtractio
 import { getIntakeReadiness, listProcessingRuns } from "../../../api/queue";
 import { useObjectExtractionJob } from "../../../hooks/useObjectExtractionJob";
 import { ExtractionVersions } from "./ExtractionVersions";
+import { ExtractionCopyEditor } from "./ExtractionCopyEditor";
 import { EnrichmentArtifactView } from "./EnrichmentArtifactView";
 
 
@@ -29,7 +30,7 @@ function ExtractionArtifacts({ fileId, variantId }: { fileId: string; variantId:
                 {artifact.kind} · {artifact.media_type} · {artifact.filename}
               </Typography>
               {artifact.data != null ? (
-                <EnrichmentArtifactView data={artifact.data} />
+                <><EnrichmentArtifactView data={artifact.data} /><ExtractionCopyEditor fileId={fileId} variantId={variantId} artifactId={artifact.id} /></>
               ) : (
                 <Alert severity="info">This extraction artifact has no inline preview.</Alert>
               )}
@@ -42,7 +43,7 @@ function ExtractionArtifacts({ fileId, variantId }: { fileId: string; variantId:
 }
 
 
-export function FileExtractionsPanel({ fileId }: { fileId: string }) {
+export function FileExtractionsPanel({ fileId, onInspect }: { fileId: string; onInspect?: (id: string) => void }) {
   const queryClient = useQueryClient();
   const extractionJob = useObjectExtractionJob(fileId);
   const readiness = useQuery({ queryKey: ["intake", "readiness"], queryFn: getIntakeReadiness });
@@ -54,7 +55,7 @@ export function FileExtractionsPanel({ fileId }: { fileId: string }) {
     ) ? 1_200 : 10_000,
   });
   const [extractorName, setExtractorName] = useState("");
-  const [extractionPolicy, setExtractionPolicy] = useState<"make_primary" | "save_variant">("make_primary");
+  const [extractionPolicy, setExtractionPolicy] = useState<"make_primary" | "save_variant">("save_variant");
   const extractions = useQuery({
     queryKey: ["objects", fileId, "extractions"],
     queryFn: () => getObjectExtractions(fileId),
@@ -159,8 +160,8 @@ export function FileExtractionsPanel({ fileId }: { fileId: string }) {
 
       {extractions.isLoading ? <LinearProgress /> : null}
       {extractions.isError ? <Alert severity="error">Could not load extraction versions.</Alert> : null}
-      <ExtractionVersions variants={extractions.data?.variants ?? []} onPromote={id => promote.mutate(id)} promoting={promote.isPending}>
-        {variant => <ExtractionArtifacts fileId={fileId} variantId={variant.id} />}
+      <ExtractionVersions variants={extractions.data?.variants ?? []} onPromote={id => promote.mutate(id)} promoting={promote.isPending} onInspect={onInspect}>
+        {variant => <Stack spacing={1}><ExtractionCopyEditor fileId={fileId} variantId={variant.id} /><ExtractionArtifacts fileId={fileId} variantId={variant.id} /></Stack>}
       </ExtractionVersions>
       {!extractions.isLoading && !extractions.isError && !extractions.data?.variants.length ? <Typography color="text.secondary">No extraction is available.</Typography> : null}
       {promote.isError ? <Alert severity="error">Could not change the primary extraction.</Alert> : null}

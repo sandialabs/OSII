@@ -279,9 +279,9 @@ versioning and persistence when you run extraction through its workflows.
 
 ## OCR confidence and geometry
 
-**Do we support confidence? Yes, for the experimental
-`toolbox.tesseract-opencv` extractor—not as a universal typed v1 field.**
-It returns one segment per accepted region. Here is an illustrative segment,
+Both `local.tesseract-page-ocr` and the experimental
+`toolbox.tesseract-opencv` provide confidence and geometry in extensible provenance,
+rather than universal typed v1 fields. The OpenCV method returns one segment per accepted region. Here is an illustrative segment,
 not the output of the UTF-8 example above:
 
 ```json
@@ -314,8 +314,8 @@ not the output of the UTF-8 example above:
 
 The score is an arithmetic mean of usable Tesseract word confidences divided
 by 100, clamped to 0–1. It is not a calibrated probability that the text is
-correct, nor a score comparable across all engines. No word-level scores are
-returned by the Processor API adapter. Nonempty text with no usable word
+correct, nor a score comparable across all engines. The OpenCV adapter reports region scores; the baseline method retains individual
+word scores in nested regions. Nonempty text with no usable word
 scores currently falls back to **1.0**; that is an implementation limitation,
 not evidence of certainty. Missing/unknown should be represented explicitly
 in any future quality convention.
@@ -326,17 +326,16 @@ threshold can retain more uncertain text, but cannot recover regions the
 detector missed. Top/left sorting is a heuristic, not guaranteed reading order
 for multi-column, rotated, or right-to-left layouts.
 
-The baseline `local.tesseract-page-ocr` extractor returns page text and page
-grounding, **without confidence, boxes, or polygons**. Generic `TextSegment`
+The baseline `local.tesseract-page-ocr` returns page segments with nested word
+regions, optional scores, and page-text character spans. Generic `TextSegment`
 has no typed `confidence`, `bbox`, or `polygon` property. Its free
 `source_origin` accepts these keys but does not validate them. Other
 extractors may omit them or use different coordinate conventions.
 
-Core's remote extraction path preserves this metadata when storing segments.
-That does not guarantee a confidence display: the dashboard PDF overlay
-currently reads nested `regions` arrays, whereas this adapter returns a box
-directly in each segment's `source_origin`. End-to-end UI alignment remains
-a follow-up, not a capability promised by this spec.
+Core preserves this metadata. The shared PDF/image viewer accepts either nested
+regions or a box directly on a segment’s `source_origin`; select the saved OCR
+version to see its boxes. Grounding is limited by the extractor’s page rendering
+and reading order. See the optional provenance conventions below.
 
 The actual implementation and separate tool-native routes are documented in
 `osii-toolbox/osii-tesseract/README.md`,
@@ -374,3 +373,52 @@ It also has its own OCR endpoints and tuning UI, separate from
 
 Next: [synthesis](synthesis.md) for explaining the extracted text, or
 [enrichment](enrichment.md) for adding a standard knowledge artifact.
+
+
+## Optional source provenance and OCR regions
+
+`TextSegment.source_origin` is an extensible object. A method may provide a page,
+geometry, confidence, source character/byte spans, combinations of them, or none.
+Consumers must not fabricate a location or interpret missing confidence as zero.
+Core preserves these fields across remote transport, immutable extraction
+versions, and primary promotion. The baseline Tesseract extractor now emits
+word-level TSV regions; the OpenCV Toolbox method emits detected text regions.
+
+For the shared source viewer, use one-based `page` and top-left-origin normalized
+`bbox: [x1,y1,x2,y2]` with `coordinate_space: "normalized-page"`. Values lie in
+0–1. A segment can have a box directly or nested `regions`, for example:
+
+```json
+{
+  "page": 1,
+  "coordinate_space": "normalized-page",
+  "regions": [{
+    "text": "Calibration",
+    "bbox": [0.10, 0.20, 0.35, 0.24],
+    "coordinate_space": "normalized-page",
+    "confidence": 0.96,
+    "char_start": 0,
+    "char_end": 11,
+    "offset_space": "segment-text"
+  }]
+}
+```
+
+The viewer also accepts explicit `coordinate_space: "page-pixels"` with positive
+`page_width` and `page_height`; unlabelled pixel/PDF-point geometry is not guessed.
+Confidence is optional, normalized to 0–1, method-specific, and uncalibrated.
+Tesseract converts its 0–100 word scores and omits unavailable scores.
+
+**Offsets name their representation.** Manifest `span.char_start/end` are
+half-open Python character offsets in saved extracted `text.txt`. Nested
+Tesseract region spans are half-open offsets in the containing page segment.
+Neither denotes PDF file bytes or an original-file character stream. A parser
+that actually knows source character/byte ranges can add separately named fields
+and an explicit offset space in `source_origin`; a PDF/OCR method must not invent
+such ranges. Corrections and Markdown rendering retain original provenance but
+do not silently rebase geometry or assert that edited spans remain grounded.
+
+All extracted text uses the common Mathpix Markdown viewer with a Plain text
+fallback. This is presentation, not an OCR conversion or a modification of the
+original extraction. See [extraction versions](../extraction-versions.md) for
+additive extraction defaults and explicit promotion.

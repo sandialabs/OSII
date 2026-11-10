@@ -73,7 +73,7 @@ def execute_job(job: dict) -> None:
             workflow=payload.get("workflow") or "intake",
             run_extraction=bool(payload.get("run_extraction", True)),
             extract_mode=payload.get("extract_mode") or "always",
-            extraction_policy=payload.get("extraction_policy") or "make_primary",
+            extraction_policy=payload.get("extraction_policy") or "auto",
             enricher_name=payload.get("enricher_name") or None,
             enricher_config=payload.get("enricher_config") or {},
             collection_id=payload.get("collection_id") or None,

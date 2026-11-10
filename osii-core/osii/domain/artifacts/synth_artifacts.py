@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+from osii.domain.artifacts.products import write_text_product
 
 from osii.domain.storage.store import (
     collection_syntheses_dir,
@@ -32,7 +33,7 @@ def write_object_synthesis_variant(
     text_path = out_dir / f"{base}.txt"
     meta_path = out_dir / f"{base}.json"
 
-    text_path.write_text(text, encoding="utf-8")
+    write_text_product(osii_root, text_path, text)
     meta_path.write_text(
         json.dumps(metadata or {}, indent=2),
         encoding="utf-8",
@@ -62,7 +63,7 @@ def write_image_synthesis_variant(
     text_path = out_dir / f"{base}_{image.split('.')[0]}.txt"
     meta_path = out_dir / f"{base}_{image.split('.')[0]}.json"
 
-    text_path.write_text(text, encoding="utf-8")
+    write_text_product(osii_root, text_path, text)
     meta_path.write_text(
         json.dumps(metadata or {}, indent=2),
         encoding="utf-8",
@@ -91,7 +92,7 @@ def write_folder_synthesis_variant(
     text_path = out_dir / f"{base}.txt"
     meta_path = out_dir / f"{base}.json"
 
-    text_path.write_text(text, encoding="utf-8")
+    write_text_product(osii_root, text_path, text)
     meta_path.write_text(
         json.dumps(metadata or {}, indent=2),
         encoding="utf-8",
@@ -120,7 +121,7 @@ def write_collection_synthesis_variant(
     text_path = out_dir / f"{base}.txt"
     meta_path = out_dir / f"{base}.json"
 
-    text_path.write_text(text, encoding="utf-8")
+    write_text_product(osii_root, text_path, text)
     meta_path.write_text(
         json.dumps(metadata or {}, indent=2),
         encoding="utf-8",
@@ -148,7 +149,7 @@ def write_root_synthesis_variant(
     text_path = out_dir / f"{base}.txt"
     meta_path = out_dir / f"{base}.json"
 
-    text_path.write_text(text, encoding="utf-8")
+    write_text_product(osii_root, text_path, text)
     meta_path.write_text(
         json.dumps(metadata or {}, indent=2),
         encoding="utf-8",

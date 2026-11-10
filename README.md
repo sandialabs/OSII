@@ -18,10 +18,12 @@ an AI model.
 
 - Discover shared-drive metadata with resumable scans, then filter or sample
   a bounded batch for Intake.
-- Extract text, with optional OCR for scanned documents, and inspect the sources.
+- Extract text, add OCR alongside it, and inspect text or mathematical Markdown
+  with source locations.
 - Browse files and collections, search by keywords or document meaning, and ask
   grounded questions with an optional model connection.
-- Create and edit wikis with revision history; run replaceable analysis tools.
+- Edit summaries, metadata, wikis, and other derived products with revision
+  history; run replaceable analysis tools.
 - Explore related documents with the experimental Topic Explorer.
 - Compare experimental RAG strategies and inspect their evidence in Chat.
 - Extend processing and frontend tools through documented interfaces.

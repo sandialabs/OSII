@@ -305,7 +305,7 @@ class DocumentMetadataEnricher(Enricher):
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
         metadata = parse_document_metadata(content, text=text, model=context.bindings["chat"])
-        rows = [{"field": field, **metadata[field]} for field in ("title", "author", "date")]
+        rows = [{"field": field, **metadata[field]} for field in ("descriptive_title", "title", "author", "date", "agency", "document_type")]
         table = TableArtifactData(title="Metadata suggestions", columns=[TableColumn(key=key, label=label)
             for key, label in [("field", "Field"), ("value", "Suggestion"), ("qualifier", "Context"), ("evidence", "Evidence")]],
             rows=rows, row_provenance=[[ProvenanceRef(file_id=document.file_id)] for _ in rows])

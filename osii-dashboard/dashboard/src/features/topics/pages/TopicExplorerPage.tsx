@@ -79,7 +79,7 @@ export function TopicExplorerPage() {
           {selected && <Box><Typography fontWeight={700} sx={{ overflowWrap: "anywhere" }}>{selected.document_title || selected.filename}</Typography>
             <Typography variant="caption" color="text.secondary">{selected.chunk_count} indexed chunk{selected.chunk_count === 1 ? "" : "s"} · {selected.source_relpath}</Typography>
             <Box sx={{ mt: 1 }}><Button component={Link} to={buildFileRoute({ fileId: selected.file_id })} size="small">Open document</Button></Box></Box>}
-          <SuggestedMetadata metadata={selected?.document_metadata} />
+          <SuggestedMetadata metadata={selected?.document_metadata} fileId={selected?.file_id} />
           {related.isFetching && <LinearProgress aria-label="Finding related documents" />}
           {related.isError && <Alert severity="warning">{related.error.message}</Alert>}
           {related.data && !related.isError && <>

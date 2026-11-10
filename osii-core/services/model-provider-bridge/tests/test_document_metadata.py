@@ -61,3 +61,14 @@ def test_metadata_prompt_has_bounded_source_context_and_no_full_corpus_access():
     prompt=metadata_prompt('START '+ 'x'*200000 + ' END','Summary')
     assert 'START' in prompt and ' END' in prompt
     assert len(prompt)<26000
+
+
+def test_six_metadata_fields_keep_descriptive_and_source_titles_distinct():
+    source = suggested()
+    source.update(descriptive_title={"value":"Gardening during shortages"}, agency={"value":"Ministry of Food", "evidence":"Ministry of Food"}, document_type={"value":"Public information leaflet"})
+    record = parse_document_metadata(json.dumps(source), text="Grow vegetables at home during wartime. Ministry of Food", model="test")
+    assert record["descriptive_title"]["value"] != record["title"]["value"]
+    assert record["agency"]["evidence"] == "Ministry of Food"
+    assert record["document_type"]["value"] == "Public information leaflet"
+    source["document_type"]["evidence"] = "fabricated quotation"
+    assert parse_document_metadata(json.dumps(source), text="Grow vegetables", model="test")["document_type"]["evidence"] is None

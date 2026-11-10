@@ -59,7 +59,8 @@ def write_synth_text(
 ) -> Path:
     ensure_object_synth_dir(osii_store, file_id)
     path = object_synth_text_path(osii_store, file_id)
-    path.write_text(text, encoding="utf-8")
+    from osii.domain.artifacts.products import write_text_product
+    write_text_product(osii_store, path, text)
     clear_artifacts_stale(osii_store, file_id, "syntheses")
 
     if synthesizer_name and synthesizer_version:

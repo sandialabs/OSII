@@ -212,6 +212,19 @@ def primary_extraction_dir(osii_root: Path, file_id: str) -> Path | None:
     return path if path.is_dir() else None
 
 
+def read_extraction_text(osii_root: Path, file_id: str, variant_id: str) -> dict:
+    state = list_extraction_variants(osii_root, file_id)
+    if not state or not any(item["id"] == variant_id for item in state["variants"]):
+        raise FileNotFoundError("Extraction version not found")
+    bundle = (extractions_dir(osii_root, file_id) / variant_id).resolve()
+    if not bundle.is_relative_to(extractions_dir(osii_root, file_id).resolve()):
+        raise FileNotFoundError("Extraction version not found")
+    text = (bundle / "text.txt").read_text(encoding="utf-8")
+    segments = [json.loads(line) for line in (bundle / "manifest.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    return {"file_id": file_id, "extraction_id": variant_id, "text": text,
+            "segments": [item for item in segments if item.get("kind") == "text"]}
+
+
 def promote_extraction_variant(osii_root: Path, file_id: str, variant_id: str) -> dict:
     _archive_legacy_primary(osii_root, file_id)
     index = _load_index(osii_root, file_id)
@@ -260,7 +273,7 @@ def extract_document_variant(
     osii_root: Path,
     expert_context: str | None = None,
     extractor_config: dict | None = None,
-    make_primary: bool = True,
+    make_primary: bool | None = None,
     dispatcher=None,
 ) -> dict:
     """Run an extractor in isolation, then atomically register its output."""
@@ -303,11 +316,14 @@ def extract_document_variant(
     record = _variant_record(destination, variant_id)
     index["variants"].append(record)
     _write_index(osii_root, file_id, index)
-    if make_primary or not index.get("primary_id"):
+    previous = next((item for item in index["variants"] if item["id"] == index.get("primary_id")), None)
+    same_method = previous and previous.get("extractor", {}).get("name") == extractor_actual
+    promote = bool(make_primary) or not index.get("primary_id") or (make_primary is None and bool(same_method))
+    if promote:
         promote_extraction_variant(osii_root, file_id, variant_id)
     return {
         **result,
         "variant_id": variant_id,
-        "made_primary": bool(make_primary or not index.get("primary_id")),
+        "made_primary": bool(promote),
         "extraction": record,
     }

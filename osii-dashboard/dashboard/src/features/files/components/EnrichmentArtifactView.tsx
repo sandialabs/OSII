@@ -1,3 +1,4 @@
+import { MathpixText } from "../../../components/text/MathpixText";
 import {
   Alert,
   Box,
@@ -20,10 +21,6 @@ import {
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import ViewColumnOutlinedIcon from "@mui/icons-material/ViewColumnOutlined";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
 
 import type {
   StandardEnrichmentArtifact,
@@ -302,9 +299,7 @@ function KnowledgeGraphView({ artifact }: { artifact: StandardKnowledgeGraphArti
 function WikiView({ artifact }: { artifact: StandardWikiMarkdownArtifact }) {
   return (
     <Box className="markdown-body" sx={{ maxHeight: 640, overflowY: "auto", pr: 1, "& table": { borderCollapse: "collapse" }, "& td, & th": { border: "1px solid", borderColor: "divider", p: 1 } }}>
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-        {artifact.markdown}
-      </ReactMarkdown>
+      <MathpixText text={artifact.markdown} />
     </Box>
   );
 }

@@ -1,3 +1,4 @@
+from osii.domain.artifacts.products import write_text_product
 from pathlib import Path
 import tomli_w
 
@@ -46,7 +47,7 @@ def write_object_synth(
         }
 
     toml_path.write_text(tomli_w.dumps(payload), encoding="utf-8")
-    txt_path.write_text(description or synthesis, encoding="utf-8")
+    write_text_product(osii_root, txt_path, description or synthesis)
     return toml_path, txt_path
 
 
@@ -81,7 +82,7 @@ def write_image_synth(
         }
 
     toml_path.write_text(tomli_w.dumps(payload), encoding="utf-8")
-    txt_path.write_text(description or synthesis, encoding="utf-8")
+    write_text_product(osii_root, txt_path, description or synthesis)
     return toml_path, txt_path
 
 
@@ -117,7 +118,7 @@ def write_folder_synth(
         }
 
     toml_path.write_text(tomli_w.dumps(payload), encoding="utf-8")
-    txt_path.write_text(description or synthesis, encoding="utf-8")
+    write_text_product(osii_root, txt_path, description or synthesis)
     return toml_path, txt_path
 
 
@@ -152,7 +153,7 @@ def write_root_synth(
         }
 
     toml_path.write_text(tomli_w.dumps(payload), encoding="utf-8")
-    txt_path.write_text(description or synthesis, encoding="utf-8")
+    write_text_product(osii_root, txt_path, description or synthesis)
     return toml_path, txt_path
 
 def write_folder_synth_text(
@@ -181,5 +182,5 @@ def write_folder_synth_text(
             f"{subfolder_count} direct {subfolder_word}."
         )
     path = folder_synth_path(osii_store, folder_id)
-    path.write_text(text, encoding="utf-8")
+    write_text_product(osii_store, path, text)
     return path

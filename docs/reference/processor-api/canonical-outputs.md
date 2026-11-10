@@ -5,7 +5,7 @@ OSII has four processor kinds. Their outputs are deliberately different:
 | Processor kind | Canonical output |
 |---|---|
 | Extractor | Ordered, grounded `TextSegment` records plus optional source-derived artifacts |
-| Synthesizer | Grounded Markdown plus citations |
+| Synthesizer | Grounded Mathpix Markdown plus citations and optional structured document metadata |
 | Embedder | Ordered numeric vectors with model and dimension identity |
 | Enricher | One or more standard artifacts: `table`, `knowledge_graph`, `entity_list`, or `wiki_markdown` |
 

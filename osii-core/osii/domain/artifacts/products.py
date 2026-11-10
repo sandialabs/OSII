@@ -88,21 +88,55 @@ def validate_scope(scope: dict) -> dict:
     return {"scope_type": kind, **({key: scope[key]} if key else {})}
 
 
-def product_path(root: Path, scope: dict, filename: str) -> Path:
+def product_path(
+    root: Path, scope: dict, filename: str, family: str = "enrichment"
+) -> Path:
     from .enrichment_artifacts import _scope_enrichment_dir
 
     scope = validate_scope(scope)
+    if family == "synthesis":
+        from osii.domain.storage import store
+
+        kind = scope["scope_type"]
+        identity = (
+            scope.get("file_id") or scope.get("folder_id") or scope.get("collection_id")
+        )
+        if filename == "current" and kind != "collection":
+            function = getattr(store, f"{kind}_synth_text_path")
+            path = function(root) if kind == "root" else function(root, identity)
+        else:
+            if (
+                not filename.endswith(".txt")
+                or Path(filename).name != filename
+                or "\\" in filename
+            ):
+                raise ValueError("Choose one synthesis text product")
+            function = getattr(store, f"{kind}_syntheses_dir")
+            directory = function(root) if kind == "root" else function(root, identity)
+            path = directory / filename
+        if not path.resolve().is_relative_to(root.resolve()) or path.is_symlink():
+            raise ValueError("Product must remain inside the local store")
+        return path
+    if family != "enrichment":
+        raise ValueError("Unknown product family")
+    relative = Path(filename)
     if (
         not filename
-        or Path(filename).name != filename
+        or relative.is_absolute()
         or "\\" in filename
-        or not filename.endswith(".json")
+        or any(part.startswith(".") for part in relative.parts)
+        or relative.suffix not in {".json", ".txt", ".md"}
         or filename.endswith(".meta.json")
     ):
-        raise ValueError("Choose one JSON product.")
-    path = _scope_enrichment_dir(root, scope)[1] / filename
-    if not path.resolve().is_relative_to(root.resolve()) or path.is_symlink():
-        raise ValueError("Product must remain inside the local store")
+        raise ValueError("Choose one JSON, text, or Markdown product inside this scope")
+    base = _scope_enrichment_dir(root, scope)[1]
+    path = base / relative
+    if (
+        not path.resolve().is_relative_to(base.resolve())
+        or not path.resolve().is_relative_to(root.resolve())
+        or path.is_symlink()
+    ):
+        raise ValueError("Product must remain inside this scope's local store")
     return path
 
 
@@ -111,7 +145,22 @@ def _directory(path: Path) -> Path:
 
 
 def _read(path: Path):
-    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+    if not path.is_file():
+        return None
+    if path.suffix == ".txt":
+        return {
+            "artifact_type": "text",
+            "title": "Summary",
+            "text": path.read_text(encoding="utf-8"),
+        }
+    if path.suffix == ".md":
+        return {
+            "artifact_type": "wiki_markdown",
+            "title": path.stem,
+            "markdown": path.read_text(encoding="utf-8"),
+            "citations": [],
+        }
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _legacy(path: Path) -> dict:
@@ -148,7 +197,16 @@ def _load(path: Path) -> dict:
     if (
         raw is not None
         and manifest["current"]
-        and not any(r["data"] == raw for r in manifest["revisions"])
+        and not any(
+            (
+                r["data"].get("text") == raw.get("text")
+                if path.suffix == ".txt"
+                else r["data"].get("markdown") == raw.get("markdown")
+                if path.suffix == ".md"
+                else r["data"] == raw
+            )
+            for r in manifest["revisions"]
+        )
     ):
         identity = (
             "external-"
@@ -192,9 +250,15 @@ def _commit(path: Path, manifest: dict):
         (r for r in manifest["revisions"] if r["id"] == manifest["current"]), None
     )
     if current:
-        atomic_write_text(
-            path, json.dumps(current["data"], indent=2, ensure_ascii=False)
+        data = current["data"]
+        content = (
+            data["text"]
+            if path.suffix == ".txt"
+            else data["markdown"]
+            if path.suffix == ".md"
+            else json.dumps(data, indent=2, ensure_ascii=False)
         )
+        atomic_write_text(path, content)
     else:
         path.unlink(missing_ok=True)
 
@@ -215,7 +279,7 @@ def publish_product(
         )
         if check_expected and manifest["current"] != expected:
             raise FileExistsError(
-                "This wiki changed. Your draft is preserved; compare the latest revision before saving."
+                "This product changed. Your draft is preserved; compare the latest revision before saving."
             )
         provenance = (
             current.get("provenance", {})
@@ -255,10 +319,7 @@ def publish_product(
 
 
 def write_artifact(root: Path, path: Path, data):
-    if isinstance(data, dict) and data.get("artifact_type") == "wiki_markdown":
-        publish_product(root, path, data)
-    else:
-        atomic_write_text(path, json.dumps(data, indent=2, ensure_ascii=False))
+    publish_product(root, path, data)
 
 
 def edit_product(
@@ -280,14 +341,19 @@ def edit_product(
 
 
 def activate_product(
-    root: Path, scope: dict, filename: str, revision: str, expected: str
+    root: Path,
+    scope: dict,
+    filename: str,
+    revision: str,
+    expected: str,
+    family: str = "enrichment",
 ) -> dict:
-    path = product_path(root, scope, filename)
+    path = product_path(root, scope, filename, family)
     with _lock(root):
         manifest = _load(path)
         if manifest["current"] != expected:
             raise FileExistsError(
-                "This wiki changed. Reload its history before restoring a revision."
+                "This product changed. Reload its history before restoring a revision."
             )
         if not any(r["id"] == revision for r in manifest["revisions"]):
             raise ValueError("Revision not found")
@@ -343,3 +409,151 @@ def product_input_state(root: Path, scope: dict, history: dict) -> str:
     except OSError:
         return "unavailable"
     return "current"
+
+
+def write_text_product(root: Path, path: Path, text: str):
+    publish_product(
+        root, path, {"artifact_type": "text", "title": "Summary", "text": text}
+    )
+
+
+def edit_product_data(
+    root: Path,
+    scope: dict,
+    filename: str,
+    data,
+    expected: str,
+    family: str = "enrichment",
+) -> dict:
+    from pydantic import TypeAdapter
+    from osii.processor_sdk.models import StandardArtifactData
+
+    path = product_path(root, scope, filename, family)
+    history = read_product(path)
+    if history["data"] is None:
+        raise ValueError("Product not found")
+    serialized = json.dumps(data, allow_nan=False)
+    if len(serialized) > 5_000_000:
+        raise ValueError("An edited product must contain at most 5,000,000 characters")
+    if (
+        isinstance(history["data"], dict)
+        and history["data"].get("artifact_type") == "document_metadata"
+    ):
+        from osii.processor_sdk.document_metadata import DocumentMetadata
+
+        if (
+            not isinstance(data, dict)
+            or data.get("artifact_type") != "document_metadata"
+        ):
+            raise ValueError("Preserve the document metadata format")
+        record = DocumentMetadata.model_validate(data.get("document_metadata"))
+        data = {
+            **data,
+            "document_metadata": record.model_copy(
+                update={"method": "human", "model": None}
+            ).model_dump(mode="json"),
+        }
+    if path.suffix == ".txt":
+        if not isinstance(data, dict) or not isinstance(data.get("text"), str):
+            raise ValueError("A summary requires text")
+        data = {**history["data"], "text": data["text"]}
+    elif isinstance(history["data"], dict) and history["data"].get("artifact_type") in {
+        "wiki_markdown",
+        "table",
+        "entity_list",
+        "knowledge_graph",
+    }:
+        if (
+            not isinstance(data, dict)
+            or data.get("artifact_type") != history["data"]["artifact_type"]
+        ):
+            raise ValueError("Preserve the product format when editing")
+        data = (
+            TypeAdapter(StandardArtifactData)
+            .validate_python(data)
+            .model_dump(mode="json")
+        )
+    publish_product(
+        root, path, data, origin="human", expected=expected, check_expected=True
+    )
+    return read_product(path)
+
+
+def list_editable_products(root: Path, scope: dict) -> list[dict]:
+    from osii.domain.storage import store
+
+    scope = validate_scope(scope)
+    products = []
+    from .read_enrichments import list_scope_enrichments
+
+    names = []
+    for item in list_scope_enrichments(root, scope):
+        if item["kind"] == "file":
+            names.append(item["name"])
+        elif item["kind"] == "bundle":
+            names.extend(
+                f"{item['name']}/{entry['name']}"
+                for entry in item["files"]
+                if not entry["is_dir"]
+            )
+    for name in names:
+        if (
+            Path(name).suffix not in {".json", ".txt", ".md"}
+            or name.endswith(".meta.json")
+            or any(part.startswith(".") for part in Path(name).parts)
+        ):
+            continue
+        path = product_path(root, scope, name)
+        data = read_product(path)["data"]
+        if data is not None:
+            products.append(
+                {
+                    "family": "enrichment",
+                    "filename": name,
+                    "title": data.get("title", name)
+                    if isinstance(data, dict)
+                    else name,
+                    "artifact_type": data.get("artifact_type")
+                    if isinstance(data, dict)
+                    else None,
+                }
+            )
+    kind = scope["scope_type"]
+    identity = (
+        scope.get("file_id") or scope.get("folder_id") or scope.get("collection_id")
+    )
+    directory_fn = getattr(store, f"{kind}_syntheses_dir")
+    directory = directory_fn(root) if kind == "root" else directory_fn(root, identity)
+    names = {path.name for path in directory.glob("*.txt")}
+    for manifest_path in (directory / ".history").glob("*/manifest.json"):
+        manifest = _read(manifest_path)
+        name = manifest.get("filename") if isinstance(manifest, dict) else None
+        if (
+            isinstance(name, str)
+            and name.endswith(".txt")
+            and Path(name).name == name
+            and manifest.get("current")
+        ):
+            names.add(name)
+    names = sorted(
+        name
+        for name in names
+        if read_product(product_path(root, scope, name, "synthesis"))["data"]
+        is not None
+    )
+    if kind != "collection":
+        path = product_path(root, scope, "current", "synthesis")
+        if read_product(path)["data"] is not None:
+            names.insert(0, "current")
+    products.extend(
+        {
+            "family": "synthesis",
+            "filename": name,
+            "title": "Current summary"
+            if name == "current"
+            else name.removesuffix(".txt"),
+            "artifact_type": "text",
+        }
+        for name in names
+    )
+    return products

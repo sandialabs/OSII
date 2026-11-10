@@ -1,3 +1,4 @@
+from osii.domain.artifacts.products import write_text_product
 import argparse
 from datetime import datetime, UTC
 from pathlib import Path
@@ -239,7 +240,7 @@ def main():
     # Root synthesis: copy root folder synthesis into root.synth.txt if present
     root_text = get_folder_synthesis_text(osii_root, root_folder_id)
     if root_text:
-        root_synth_path(osii_root).write_text(root_text, encoding="utf-8")
+        write_text_product(osii_root, root_synth_path(osii_root), root_text)
         synthesized_root = 1
 
     run_meta = write_run_metadata(

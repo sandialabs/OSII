@@ -58,6 +58,10 @@ registration. Keep sorting/export/navigation local to the viewer. Preserve
 provenance and provide an inspectable fallback for unfamiliar JSON.
 
 All standard wikis use `WikiProductEditor`: Read, Edit, History, and comparison.
+Other saved JSON products, summary text, and legacy bundle text/Markdown use `DerivedProductEditor` with the
+same revision contract. Structured products edit validated JSON; metadata has a
+field form in `SuggestedMetadata`. Extraction products offer an editable copy
+while retaining immutable original evidence.
 The revisions adapter lives in `src/api/tools.ts`; Core owns conflict detection
 and generated candidates. Do not overwrite an artifact directly from a custom
 editor or claim that edited passages retain validated citation spans.
@@ -114,3 +118,28 @@ returning an established format should work without feature-specific UI edits.
 
 `make dev` (Windows: `.\scripts\osii.ps1 dev`) reloads Core and Vite; refresh
 after route registry changes. Production assets require a dashboard rebuild.
+
+
+## Text presentation and editing
+
+Use `components/text/MathpixText` for extracted or derived Markdown. It renders
+Mathpix Markdown locally, including LaTeX mathematics and tables, and always
+provides a Plain text mode. The raw string remains the stored value. Do not add
+a renderer per extractor or send documents to a rendering service. Untrusted
+markup runs in a reusable Web Worker with cancellation and a 12-second timeout;
+source HTML is disabled and final HTML/SVG is sanitized before insertion.
+Text views page at 40,000 characters; the grounded editor mounts at most 20
+segments. A markup block split at a section boundary may need Plain text.
+
+Use `/api/products/revisions` to save human products with `expected_revision`.
+Conflict responses preserve browser drafts; generation after an edit adds a
+candidate. Keep metadata overlays distinct from filesystem facts and extracted
+text. Original-source offsets always name their representation; a rendered DOM
+position is never an original-file character span.
+
+The pinned Mathpix browser bundle contains older transitive parsers with upstream
+npm audit advisories. Disabling source HTML, linkification, and typography avoids
+the affected optional parsing paths; bounded worker execution and final DOMPurify
+sanitization remain required. These controls are not a claim that upstream
+advisories are resolved. Do not move parsing back onto the UI thread or enable
+source HTML in a custom view without reviewing that boundary.

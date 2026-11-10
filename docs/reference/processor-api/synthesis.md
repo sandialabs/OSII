@@ -325,7 +325,7 @@ Next: [enrichment](enrichment.md) for structured knowledge, or
 
 ## Suggested document metadata and long inputs
 
-AI synthesis includes a separate bounded **Suggest title, author and date** step
+AI synthesis includes a separate bounded **Suggest document metadata** step
 (`extract_metadata`, default true). Disable it in processor settings for summary-only
 runs. It adds one model call per document, included in the hosted preview estimate.
 The model reads the first 16,000 and last 8,000 characters plus up to 24,000 characters
@@ -340,13 +340,16 @@ The response carries it in `metadata.document_metadata`:
   "schema_version": 1,
   "method": "text_llm",
   "model": "selected-chat-model",
-  "title": {"value": "Kitchen Garden Guide", "qualifier": "Inferred from subject matter", "evidence": "Grow vegetables at home"},
+  "descriptive_title": {"value": "Wartime Kitchen Gardening", "qualifier": "Content label", "evidence": "Grow vegetables at home"},
+  "title": {"value": "Kitchen Garden Guide", "qualifier": null, "evidence": "Kitchen Garden Guide"},
   "author": {"value": null, "qualifier": "No author identified", "evidence": null},
-  "date": {"value": "circa 1940s", "qualifier": "Approximate period; publication date unknown", "evidence": "wartime"}
+  "date": {"value": "circa 1940s", "qualifier": "Approximate period; publication date unknown", "evidence": "wartime"},
+  "agency": {"value": null},
+  "document_type": {"value": "Public information leaflet"}
 }
 ```
 
-Values are suggestions, not authoritative bibliographic facts. All three fields
+Values are suggestions, not authoritative bibliographic facts. All six fields
 accept null/blank values and qualitative qualifiers. Dates remain strings so
 approximate periods and ambiguous interpretations are not forced into fake ISO
 dates. Evidence is an optional exact quotation; Core removes a quotation that
@@ -364,8 +367,20 @@ in local). Local TOML omits null keys; the read adapter restores them as unknown
 A changed primary extraction makes suggestions stale. Originals and search text
 are never renamed or rewritten by inferred metadata.
 
-Topic Explorer prefers the suggested title, falls back to the filename when blank,
-and displays author/date qualifiers on hover and in the selected-document panel.
+The descriptive title is a short content label (normally 3–8 words). The title
+is the source document’s actual title when known; they may be equal or different.
+Agency identifies an issuing organization; document type describes the genre.
+Never invent a source title, author, date, or agency to fill a blank. New fields
+are optional additions to schema version 1; old title/author/date records remain
+readable and absent fields become unknown. Each suggestion value is limited to
+240 characters.
+
+The dashboard renders synthesis text with the shared local Mathpix Markdown
+renderer and offers a Plain text toggle. Prompts request Markdown/LaTeX math,
+not HTML; malformed markup never changes the stored text.
+
+Topic Explorer prefers the descriptive title, then the source title, falls back to the filename when blank,
+and displays metadata qualifiers on hover and in the selected-document panel.
 Legacy synthesis headings and the model-free first-line heuristic remain supported
 and are not presented as newly extracted AI metadata. Re-run AI synthesis to add
 structured metadata to existing documents; viewing the map makes no model call.
@@ -378,3 +393,20 @@ windows. Intermediate summaries can lose detail; inspect original evidence.
 Hosted runs checkpoint successful summary and validated metadata calls privately
 for retry. External processors retain their own limits; Core does not silently
 split arbitrary enrichment requests. Model-free synthesis makes no metadata call.
+
+
+## Editing derived content
+
+Summary text is a revisioned product, separate from extracted evidence. Document,
+folder, collection, and library summaries, JSON enrichment products, and legacy
+bundled text/Markdown products can be
+edited through the shared product editor. Regeneration after a human edit saves
+a candidate instead of replacing the human revision. History retains the
+original and permits explicit restoration. Edited citations require review;
+changing a summary does not change the source text or its embeddings.
+
+The document’s **Summaries → Edit metadata** form edits all six fields and accepts
+blanks. Human metadata is a separate curated product (`method: human`), preferred
+over synthesis suggestions for display. It does not modify file properties,
+rename originals, or discard the AI record. See the [Core product and metadata
+API](../api/resource-model.md#editable-products-and-revisions).

@@ -467,6 +467,6 @@ def test_independent_metadata_tool_uses_selected_gateway_and_returns_suggestions
     assert artifact["kind"] == "document_metadata"
     assert artifact["metadata"]["suggestions_only"] is True
     assert artifact["metadata"]["document_metadata"]["author"]["value"] is None
-    assert artifact["standard_data"]["rows"][0]["evidence"] == "Thermal calibration"
+    assert next(row for row in artifact["standard_data"]["rows"] if row["field"] == "title")["evidence"] == "Thermal calibration"
     assert calls[0][0] == "http://gateway.test/v1/chat/completions"
     assert calls[0][1]["json"]["model"] == "chosen"

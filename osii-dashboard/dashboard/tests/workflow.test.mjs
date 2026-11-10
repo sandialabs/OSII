@@ -77,3 +77,23 @@ test("all six checkpoints require reachable models, readable text and matching i
     false,
   );
 });
+
+// Source references may provide regions, only a page/text span, or no location.
+import { pageBoundingRegions } from "../src/domain/textGrounding.ts";
+
+test("source regions preserve optional geometry and confidence by page", () => {
+  const segments = [
+    { id: "words", source_origin: { page: 2, coordinate_space: "normalized-page", regions: [{ text: "Word", bbox: [0.1, 0.2, 0.4, 0.3], confidence: 0.91 }] } },
+    { id: "page-only", source_origin: { page: 2 } },
+    { id: "unlocated", source_origin: {} },
+  ];
+  assert.equal(pageBoundingRegions(segments, 1).length, 0);
+  assert.deepEqual(pageBoundingRegions(segments, 2), [{ text: "Word", bbox: [0.1, 0.2, 0.4, 0.3], confidence: 0.91 }]);
+});
+
+test("pixel source coordinates require dimensions and invalid boxes are ignored", () => {
+  const origin = { page: 1, coordinate_space: "page-pixels", page_width: 1000, page_height: 2000 };
+  assert.deepEqual(pageBoundingRegions([{ source_origin: { ...origin, bbox: [100, 200, 400, 600] } }], 1)[0].bbox, [0.1, 0.1, 0.4, 0.3]);
+  assert.equal(pageBoundingRegions([{ source_origin: { page: 1, bbox: [0.8, 0.2, 0.1, 0.3] } }], 1).length, 0);
+  assert.equal(pageBoundingRegions([{ source_origin: { page: 1, coordinate_space: "pdf-points", bbox: [1, 2, 4, 5] } }], 1).length, 0);
+});

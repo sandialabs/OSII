@@ -198,7 +198,7 @@ def synthesize_bounded(
     if inferred is not None:
         response.metadata.update(
             document_metadata=inferred,
-            document_title=inferred["title"]["value"],
+            document_title=(inferred.get("descriptive_title") or {}).get("value") or inferred["title"]["value"],
             title_method="text_llm",
         )
     return response

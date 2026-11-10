@@ -269,7 +269,7 @@ def run_worker(
     workflow: str = "intake",
     run_extraction: bool = True,
     extract_mode: str = "always",
-    extraction_policy: str = "make_primary",
+    extraction_policy: str = "auto",
     enricher_name: str | None = None,
     enricher_config: dict | None = None,
     collection_id: str | None = None,
@@ -403,7 +403,7 @@ def run_worker(
                                     extractor_name,
                                     {},
                                 ),
-                                make_primary=extraction_policy == "make_primary",
+                                make_primary=None if extraction_policy == "auto" else extraction_policy == "make_primary",
                                 dispatcher=dispatch_extract,
                             )
                             break
@@ -441,7 +441,7 @@ def run_worker(
                 enrichment_error = None
 
                 if synthesizer_name:
-                    if should_extract and extraction_policy != "make_primary":
+                    if should_extract and extraction_policy == "save_variant":
                         raise RuntimeError("Downstream processing requires the new extraction to be made primary.")
                     append_log(run_id, f"Running synthesizer '{synthesizer_name}' for {src.name}")
                     try:
@@ -458,7 +458,7 @@ def run_worker(
                         append_log(run_id, f"synthesis error: {src.name} -> {exc}")
 
                 if enricher_name:
-                    if should_extract and extraction_policy != "make_primary":
+                    if should_extract and extraction_policy == "save_variant":
                         raise RuntimeError("Downstream processing requires the new extraction to be made primary.")
                     append_log(run_id, f"Running enricher '{enricher_name}' for {src.name}")
                     try:
@@ -638,9 +638,9 @@ def _start_run(request: Request, payload: dict):
     extract_mode = str(payload.get("extract_mode") or ("missing" if workflow == "intake" else "reprocess")).strip().lower()
     if extract_mode not in {"missing", "reprocess"}:
         raise HTTPException(status_code=422, detail="extract_mode must be 'missing' or 'reprocess'")
-    extraction_policy = str(payload.get("extraction_policy") or "make_primary").strip().lower()
-    if extraction_policy not in {"make_primary", "save_variant"}:
-        raise HTTPException(status_code=422, detail="extraction_policy must be 'make_primary' or 'save_variant'")
+    extraction_policy = str(payload.get("extraction_policy") or "auto").strip().lower()
+    if extraction_policy not in {"auto", "make_primary", "save_variant"}:
+        raise HTTPException(status_code=422, detail="extraction_policy must be 'auto', 'make_primary', or 'save_variant'")
     synthesizer_name = payload.get("synthesizer_name") or None
     synthesizer_config = merged_processor_settings(
         osii_store,

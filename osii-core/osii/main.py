@@ -11,7 +11,7 @@ from osii.api.chat_routes import router as chat_router
 from osii.api.collections_routes import router as collections_router
 from osii.api.embedding_routes import router as embedding_router
 from osii.api.enrichment_jobs_routes import router as enrichment_jobs_router
-from osii.api.enrichments_routes import router as enrichments_router
+from osii.api.enrichments_routes import router as enrichments_router, products_router
 from osii.api.extractor_routes import router as extractor_router
 from osii.api.extraction_variants_routes import router as extraction_variants_router
 from osii.api.folder_synthesizer_routes import router as folder_synthesizer_router
@@ -103,6 +103,7 @@ app.include_router(collections_router)
 app.include_router(collection_synthesis_router)
 app.include_router(catalog_router)
 app.include_router(enrichments_router)
+app.include_router(products_router)
 app.include_router(text_router)
 app.include_router(synthesis_router)
 app.include_router(enrichment_jobs_router)
