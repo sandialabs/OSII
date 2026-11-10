@@ -90,7 +90,7 @@ class PostgresStore:
 
     def ready(self) -> None:
         with self.engine.connect() as c:
-            if c.execute(text("SELECT version_num FROM alembic_version")).scalar() != "0004_inventory_tools":
+            if c.execute(text("SELECT version_num FROM alembic_version")).scalar() != "0005_scope_batches":
                 raise RuntimeError("Run the explicit database migration before starting OSII-server")
 
     def record(self, event: str, actor: str | None = None, resource: str | None = None) -> None:

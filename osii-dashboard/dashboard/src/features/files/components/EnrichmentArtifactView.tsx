@@ -1,3 +1,4 @@
+import { ScopeBatchResults, type BatchProgress } from "./ScopeBatchResults";
 import {
   Alert,
   Box,
@@ -312,6 +313,9 @@ function WikiView({ artifact }: { artifact: StandardWikiMarkdownArtifact }) {
 }
 
 export function EnrichmentArtifactView({ data, showTitle = true }: { data: unknown; showTitle?: boolean }) {
+  if (data && typeof data === "object" && "artifact_type" in data && data.artifact_type === "scope_batch_run" && "run_id" in data && typeof data.run_id === "string") {
+    return <ScopeBatchResults runId={data.run_id} title={"title" in data && typeof data.title === "string" ? data.title : "Whole-scope results"} progress={data as unknown as BatchProgress} />;
+  }
   if (!isStandardArtifact(data)) {
     return (
       <Alert severity="info">

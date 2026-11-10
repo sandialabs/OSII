@@ -308,15 +308,13 @@ def test_shared_library_tool_revision_candidates_and_permissions(
     job = run_tool(app, jid)
     assert job["status"] == "done"
     assert job["payload"]["items"][0]["status"] == "done"
-    product = client.post("/api/products/list", json=body["scope"]).json()["products"][
-        0
-    ]
+    product = next(row for row in client.post("/api/products/list", json=body["scope"]).json()["products"] if row["artifact_type"] == "wiki_markdown")
     address = {"scope": body["scope"], "filename": product["filename"]}
     history = client.post("/api/products/revisions", json=address).json()
     assert (
         history["input_state"] == "current"
-        and history["revisions"][0]["provenance"]["inputs"][0]["file_id"]
-        == doc["file_id"]
+        and history["revisions"][0]["provenance"]["batch_run_id"]
+        == jid
     )
     edited = client.put(
         "/api/enrichments/revisions",
@@ -502,7 +500,7 @@ def test_tool_pause_commits_atomically_and_resume_reuses_saved_result(
     )
     assert (
         store.job(jid)["status"] == "paused"
-        and store.job(jid)["payload"]["items"][0]["status"] == "done"
+        and store.job(jid)["payload"]["batch_progress"]["completed_batches"] == 1
     )
     store.control_job(
         jid,
@@ -512,14 +510,7 @@ def test_tool_pause_commits_atomically_and_resume_reuses_saved_result(
         ).configuration_stamp(store, app.state.settings),
     )
     assert run_tool(app, jid)["status"] == "done" and len(calls) == 1
-    assert (
-        len(
-            client.post("/api/products/list", json={"scope_type": "root"}).json()[
-                "products"
-            ]
-        )
-        == 1
-    )
+    assert {row['artifact_type'] for row in client.post('/api/products/list',json={'scope_type':'root'}).json()['products']} == {'scope_batch_run','wiki_markdown'}
 
 
 def test_inventory_processed_handoff_links_current_revision(client, app):

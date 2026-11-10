@@ -85,7 +85,8 @@ def tool_catalog(store, settings, actor):
                 "configuration_error": row.get("detail")
                 if not row["available"]
                 else None,
-                "limits": {"documents": MAX_DOCUMENTS, "characters": MAX_CHARACTERS},
+                "limits": {"documents": 32, "characters": 100000},
+                "batching": {"whole_scope": True, "documents": 32, "characters": 100000, "reduction": capabilities.get("batch_reduction", "partitioned")},
                 "resume": "frozen-inputs" if scoped else "per-document",
             }
         )
@@ -179,6 +180,11 @@ def snapshot(store, scope, actor_id):
 
 
 def submit(store, settings, actor, payload):
+    from osii.server.scope_batches import submit as submit_batches
+    return submit_batches(store, settings, actor, payload)
+
+
+def submit_legacy(store, settings, actor, payload):
     scope = payload["scope"]
     kind, _ = address(scope)
     rows = catalog(store, settings)
@@ -234,6 +240,9 @@ def submit(store, settings, actor, payload):
 
 
 def input_state(store, scope, provenance, actor_id):
+    if provenance.get('batch_run_id'):
+        from osii.server.scope_batches import input_state as batch_input_state
+        return batch_input_state(store, scope, provenance['batch_run_id'], actor_id)
     try:
         current = scoped_headers(store, scope, actor_id)
         if sorted(row["file_id"] for row in current) != sorted(
@@ -264,6 +273,9 @@ def input_state(store, scope, provenance, actor_id):
 
 
 def execute(store, settings, provider, job, worker, stopping, report):
+    if job["payload"].get("batch_version"):
+        from osii.server.scope_batches import execute as execute_batches
+        return execute_batches(store, settings, provider, job, worker, stopping, report)
     payload = job["payload"]
     actor = store.account(user_id=payload["actor_id"])
     if not actor or not actor["active"] or actor["role"] != "admin":

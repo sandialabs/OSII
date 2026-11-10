@@ -8,6 +8,7 @@ export type ToolMethod = {
   config_schema: ProcessorConfigSchema;
   model_requirements: Record<string, "required" | "optional">;
   bindings: Record<string, string>; configuration_error: string | null;
+  batching?: { whole_scope: boolean; documents: number; characters: number; reduction: string };
   limits: { documents: number; characters: number }; resume: string;
 };
 export type ToolCatalog = {

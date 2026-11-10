@@ -372,3 +372,47 @@ data but do not create a stored enrichment.
 
 Next: [the four APIs](index.md) to compare boundaries, or
 [processor development](../../extending/processor-development.md) for deployment.
+
+
+## Whole-scope batches
+
+Core can freeze the whole selected scope and submit it as a sequence of bounded
+requests. This changes no processor kind: the operation remains synthesis or
+enrichment. `scope.metadata.scope_batch` supplies `phase` (`map` or `reduce`),
+a stable batch ID, and `inputs_are_derived`. Each document's metadata records its
+original `source_char_start`, `source_char_end`, full length and extraction ID.
+A document can occupy several calls; citation offsets in a response must be
+relative to the text supplied in that call. Core validates and translates them.
+
+The descriptor's optional `capabilities.batch_reduction` is `partitioned` by
+default: every batch result is retained under one paginated run report. A
+batch-local ranking is not a corpus-wide ranking. `wiki` opts a method into
+hierarchical combination of its Markdown summaries using the same operation.
+Reduce inputs are explicitly derived summaries, not original source passages;
+Core retains the intermediate results and their original text ranges. A custom
+method should opt in only if it can handle both phases correctly. Unknown table,
+graph and entity outputs are never combined through an invented global ranking.
+
+Input limits apply to each request, not to the corpus. Core observes configured
+`max_input_chars` and `window_chars` budgets when present. A batch-aware processor
+must consume all supplied input or reject the request; it must not prefix-sample
+it. Responses declaring `metadata.input_truncated: true` are rejected without
+marking that batch complete. The bundled wiki tools preserve unequal document
+lengths in a batch and reject oversized batches before making a model call.
+
+The storage-independent engine and `BatchStorage` protocol live in
+`osii.domain.processing.scope_batches`. The hosted adapter uses PostgreSQL
+rows; the local adapter uses operational files under `.osii/state/job-inputs`.
+Completed results are saved before checking pause/cancel. Retry skips completed
+batches, and the built-in hosted synthesizer also checkpoints its individual
+model calls. Empty or missing saved text is reported rather than silently counted
+as processed. Original sources are not read by processors or changed.
+
+Run details are available at `GET /api/enrichment-jobs/runs/{run_id}/batches`,
+with paginated metadata only; fetch one result through the same path followed
+by `/{batch_id}`. `/sources` lists frozen source metadata and accepts
+`only_missing=true`. Hosted routes enforce the run's current collection
+visibility and account permissions. Frozen full-text inputs are operational
+evidence and require storage/backup capacity; there is no automatic deletion
+or model invocation on upgrade. Older queued single-pass jobs retain their
+historical snapshots; submit a new run for whole-scope processing.

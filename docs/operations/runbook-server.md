@@ -410,13 +410,24 @@ their scopes through their Processor SDK descriptor. Connect optional running
 services in **Setup → Processors**; the Core does not install or start Toolbox
 services. Per-document extraction and embedding stay in Intake.
 
-Hosted scope tools freeze up to 1,000 documents and 180,000 input characters,
-sharing the text budget across members. This is an explicit bounded prefix
-snapshot, not an exhaustive analysis of every page in a large corpus. Missing
-text and truncation are recorded with provenance. Choose a smaller folder or
-collection for larger libraries. Model-backed methods use the configured hosted
-writing model and may consume provider credit; no model runs when opening these
-pages or scanning metadata. Frozen inputs and job checkpoints stay in PostgreSQL.
+Hosted scope tools freeze every selected document's full usable saved text into
+bounded PostgreSQL batch rows. There is no 1,000-document limit or per-document
+prefix sampling. Requests contain at most 32 text windows and 100,000 characters,
+with smaller configured tool/window budgets respected. Long documents span
+multiple requests. Pause, cancel and retry operate between calls; completed
+batches and built-in synthesizer model-call checkpoints survive restarts.
+
+The run report shows document, text-character and batch progress, including
+files without usable text. Its paginated details preserve original text ranges
+and every batch result. Model-backed wiki methods combine summaries
+hierarchically. Other tools retain partitioned results unless they explicitly
+opt into wiki reduction. Batch-local rankings are labelled accordingly. Local
+frequency keywords combine complete batch counts before global ranking; sampled
+phrase clues are examples from batches, not a global ranking.
+
+Model-backed methods can consume credit for each text and reduction batch.
+Nothing is automatically queued on upgrade. Frozen full-text inputs/results are
+retained operational evidence; allow database and backup capacity for them.
 
 Readers can inspect visible products; curators and administrators can edit them.
 Private collection visibility is enforced on products, revision history and run
@@ -424,7 +435,7 @@ inspection. Concurrent edits use expected revisions. A new generated result
 becomes a review candidate when a human edit is current. Activating a revision
 records an editorial event. Source text and original files are unchanged.
 
-This feature requires the explicit `0004_inventory_tools` PostgreSQL migration
+This feature requires the explicit `0005_scope_batches` PostgreSQL migration
 before starting matching API and worker images. Back up the database first and
 use the existing migrate CLI; startup does not run migrations. Inventory tables
 and scoped product histories are canonical records, not rebuildable caches. The

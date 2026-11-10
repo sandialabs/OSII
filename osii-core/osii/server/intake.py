@@ -118,7 +118,7 @@ def public_run(job: dict) -> dict:
     payload = job['payload']
     items = payload.get('items', [])
     completed = sum(item['status'] in {'done', 'error'} for item in items)
-    return {**{k: job[k] for k in ('id', 'status', 'created_at', 'logs')}, 'workflow': payload.get('workflow'),
+    return {**{k: job[k] for k in ('id', 'status', 'created_at', 'logs')}, 'workflow': payload.get('workflow'), 'batch_progress': payload.get('batch_progress'),
             'total': len(items), 'completed': completed, 'items': [{k:v for k,v in item.items() if k != 'synthesis_calls'} for item in items],
             'expert_context': payload.get('expert_context', ''),
             'operations': {'extraction_policy': payload.get('extraction_policy','make_primary'), 'extract': payload.get('operation') not in {'embed','process'}, 'embed': payload.get('embed', False),

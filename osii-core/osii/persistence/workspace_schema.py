@@ -140,3 +140,13 @@ scope_revisions = Table(
     Column("data", JSONB, nullable=False),
     Column("provenance", JSONB, nullable=False),
 )
+
+scope_tool_batches = Table('scope_tool_batches', metadata,
+    Column('job_id', String, ForeignKey('jobs.id'), primary_key=True),
+    Column('id', String, primary_key=True), Column('ordinal', Integer, nullable=False), Column('phase', String, nullable=False),
+    Column('level', Integer, nullable=False, server_default='0'),
+    Column('inputs', JSONB, nullable=False), Column('source_ranges', JSONB, nullable=False),
+    Column('result', JSONB), Column('calls', JSONB, nullable=False, server_default='{}'))
+scope_tool_sources = Table('scope_tool_sources', metadata,
+    Column('job_id', String, ForeignKey('jobs.id'), primary_key=True), Column('file_id', String, primary_key=True),
+    Column('record', JSONB, nullable=False))

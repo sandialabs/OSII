@@ -1,3 +1,4 @@
+import { ScopeBatchResults } from "../../files/components/ScopeBatchResults";
 import { useEffect, useRef, useState } from "react";
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip, LinearProgress, Paper, Stack, Typography } from "@mui/material";
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
@@ -198,6 +199,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
               </Stack>
               <Stack spacing={0.5} sx={{ mt: 1.5 }}>
                 <Typography variant="caption">File processing: {run.completed ?? 0} of {run.total ?? 0} finished{itemErrors.length ? ` · ${itemErrors.length} with errors` : ""}</Typography>
+                {run.batch_progress ? <ScopeBatchResults runId={run.id} progress={run.batch_progress} /> : null}
                 <LinearProgress aria-label={`File progress for run ${run.id}`} variant="determinate" value={(run.total ?? 0) > 0 ? Math.min(100, (run.completed ?? 0) / (run.total ?? 1) * 100) : 0} color={itemErrors.length || run.status === "error" ? "error" : "secondary"} sx={{ height: 7, borderRadius: 1 }} />
                 {run.operations?.embed ? <Typography variant="caption" color={run.indexing_status === "error" ? "error.main" : "text.secondary"}>Semantic index: {run.indexing_status === "done" ? "saved — library checkpoints will refresh" : run.indexing_status === "running" ? "building; finished files do not mean the index is ready yet" : run.indexing_status === "error" ? "incomplete — retry reuses saved chunks and completed documents" : "waiting or paused; saved chunks are retained"}</Typography> : null}
                 {run.indexing_status === "running" ? <LinearProgress aria-label="Building semantic index" /> : null}

@@ -94,10 +94,14 @@ def _document_text(document: DocumentInput) -> str:
     return document.text or "\n\n".join(segment.text for segment in document.segments)
 
 
-def _bounded_documents(documents: list[DocumentInput], max_input_chars: int) -> tuple[list[DocumentInput], bool]:
+def _bounded_documents(documents: list[DocumentInput], max_input_chars: int, *, allow_truncation: bool = True) -> tuple[list[DocumentInput], bool]:
     usable = [document for document in documents if _document_text(document).strip()]
     if not usable:
         raise ValueError("No extracted text is available in this scope.")
+    if not allow_truncation:
+        if sum(len(_document_text(document)) for document in usable) > max_input_chars:
+            raise ValueError("Scope batch exceeds this tool's input budget; reduce the Core batch size")
+        return [document.model_copy(update={"text": _document_text(document), "segments": []}) for document in usable], False
     per_document = max(1, max_input_chars // len(usable))
     remaining = max_input_chars
     bounded: list[DocumentInput] = []
@@ -247,7 +251,7 @@ class ReadableWikiEnricher(Enricher):
             "Uses the chat model connection assigned to this tool in OSII Setup."
         ),
         kind=ProcessorKind.ENRICHER,
-        capabilities=Capability(
+        capabilities=Capability(batch_reduction="wiki",
             scope_types=["object", "folder", "collection", "root"],
             output_kinds=["wiki_markdown"],
         ),
@@ -258,7 +262,7 @@ class ReadableWikiEnricher(Enricher):
     def enrich(self, request: EnrichmentRequest, *, client: OpenAI, model: str) -> EnrichmentResponse:
         config = request.config
         maximum = _bounded_int(config, "max_input_chars", 60000, 4000, 250000)
-        documents, truncated = _bounded_documents(request.scope.documents, maximum)
+        documents, truncated = _bounded_documents(request.scope.documents, maximum, allow_truncation=not bool(request.scope.metadata.get("scope_batch")))
         title = str(config.get("title") or f"{request.scope.scope_id} Wiki").strip()
         instructions = str(config.get("instructions") or READABLE_WIKI_PROMPT).strip()
         markdown, metadata, citations, actual_model = _call_model(
@@ -395,7 +399,7 @@ class ConceptEntityWikiEnricher(Enricher):
     def enrich(self, request: EnrichmentRequest, *, client: OpenAI, model: str) -> EnrichmentResponse:
         config = request.config
         maximum = _bounded_int(config, "max_input_chars", 60000, 4000, 250000)
-        documents, truncated = _bounded_documents(request.scope.documents, maximum)
+        documents, truncated = _bounded_documents(request.scope.documents, maximum, allow_truncation=not bool(request.scope.metadata.get("scope_batch")))
         instructions = str(config.get("instructions") or CONCEPT_ENTITY_PROMPT).strip()
         raw, metadata, citations, actual_model = _call_model(
             request,

@@ -101,3 +101,13 @@ New library-wide methods use the existing synthesizer/enricher SDK descriptors
 and standard artifacts; they do not require a new Toolbox component kind or a
 custom dashboard page. See the [server runbook](../operations/runbook-server.md)
 for snapshot limits and processing permissions.
+
+
+Whole-scope processing uses the shared `domain/processing/scope_batches.py`
+engine and `BatchStorage` protocol. The request boundary is bounded while the
+corpus has no fixed document or total-text cutoff. Follow the
+[batch contract](../reference/processor-api/enrichment.md#whole-scope-batches)
+when adding a tool: preserve every supplied text window, return relative
+citations, and declare whether derived wiki summaries can be combined. The
+shared `ScopeBatchResults` component loads result metadata by page and opens
+individual results on demand.

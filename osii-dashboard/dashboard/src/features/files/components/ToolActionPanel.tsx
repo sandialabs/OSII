@@ -1,3 +1,4 @@
+import { ScopeBatchResults } from "./ScopeBatchResults";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Button, Chip, CircularProgress, MenuItem, Stack, TextField, Typography } from "@mui/material";
@@ -72,7 +73,9 @@ export function ToolActionPanel({ scope, action, title }: { scope: ScopeDescribe
       <AccordionSummary expandIcon={<ExpandMoreOutlined />}><Typography variant="body2">Options</Typography></AccordionSummary>
       <AccordionDetails><Stack spacing={2}>{Object.entries(method.config_schema.properties ?? {}).filter(([name]) => name !== "title").map(([name, property]) => <ProcessorConfigInput key={name} name={name} property={property} value={config[name] ?? property.default} onChange={value => setConfig(old => ({ ...old, [name]: value }))} />)}</Stack></AccordionDetails>
     </Accordion> : null}
-    <Typography variant="caption" color="text.secondary">Up to {method.limits.documents.toLocaleString()} documents · {method.limits.characters.toLocaleString()} text characters. Source coverage is saved with the result.</Typography>
+    <Typography variant="caption" color="text.secondary">{method.batching?.whole_scope ? `New runs process every document and all usable saved text, in requests of up to ${method.batching.documents} text windows and ${method.batching.characters.toLocaleString()} characters. Completed batches are saved for pause and retry.` : `Up to ${method.limits.documents.toLocaleString()} documents · ${method.limits.characters.toLocaleString()} text characters.`}</Typography>
+    {method.batching?.whole_scope && method.model_requirements.chat ? <Typography variant="caption" color="text.secondary">Model-backed methods make calls for each batch and summary combination. Larger scopes can take longer and use more provider credit.</Typography> : null}
+    {runId && run.data?.batch_progress ? <ScopeBatchResults runId={runId} progress={run.data.batch_progress} /> : null}
     {runId ? <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
       <Chip size="small" icon={active ? <CircularProgress size={12} /> : undefined} label={run.data?.status === "done" ? "Saved" : run.data?.status ?? "Queued"} color={run.data?.status === "error" ? "error" : run.data?.status === "done" ? "success" : "default"} />
       <Button component={Link} to="/intake?tab=activity" size="small">Activity ↗</Button>

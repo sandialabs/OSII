@@ -305,7 +305,7 @@ export function ScopeOverviewPanel({ scope }: { scope: ScopeDescribeRequest }) {
                     Recurring topics · statistical clues
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {keywordMethod?.id === "noun_adjective_ngrams" ? "Heuristically ranked English noun/adjective phrases" : "Frequent keywords from saved text"} in this scope. These are statistical clues, not verified themes. Select a term to search its sources.
+                    {topics.fromBatches ? "Examples from saved text batches, not a global ranking. Open All tools to inspect the full results." : keywordMethod?.id === "noun_adjective_ngrams" ? "Heuristically ranked English noun/adjective phrases" : "Frequent keywords from saved text"} in this scope. These are statistical clues, not verified themes. Select a term to search its sources.
                   </Typography>
                 </Stack>
                 <Button

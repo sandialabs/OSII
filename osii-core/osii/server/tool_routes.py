@@ -274,6 +274,30 @@ def register_tool_routes(app, store, settings):
         )
         return {"runs": result, "worker": {"available": available}}
 
+    @router.get("/api/enrichment-jobs/runs/{jid}/batches")
+    @router.get("/api/scope-tool-runs/{jid}/batches")
+    def batch_details(jid: str, cursor: int = 0, limit: int = 20, actor=Depends(reader)):
+        from osii.server.scope_batches import details
+        job=visible_job(jid, actor)
+        if not job['payload'].get('batch_version'):
+            raise HTTPException(404, 'This run has no batch details')
+        if cursor < 0 or not 1 <= limit <= 50:
+            raise HTTPException(422, 'Invalid batch page')
+        return details(store,jid,cursor=cursor,limit=limit)
+
+    @router.get("/api/enrichment-jobs/runs/{jid}/batches/{batch_id}")
+    def one_batch(jid: str, batch_id: str, actor=Depends(reader)):
+        from osii.server.scope_batches import batch_result
+        visible_job(jid, actor)
+        return checked(batch_result,store,jid,batch_id)
+
+    @router.get("/api/enrichment-jobs/runs/{jid}/sources")
+    def run_sources(jid: str, cursor: int = 0, limit: int = 50, only_missing: bool = False, actor=Depends(reader)):
+        from osii.server.scope_batches import source_details
+        visible_job(jid, actor)
+        if cursor < 0 or not 1 <= limit <= 100:raise HTTPException(422, 'Invalid source page')
+        return source_details(store,jid,cursor=cursor,limit=limit,only_missing=only_missing)
+
     @router.get("/api/runs/{jid}")
     def run_get(jid: str, actor=Depends(reader)):
         return run_public(visible_job(jid, actor))

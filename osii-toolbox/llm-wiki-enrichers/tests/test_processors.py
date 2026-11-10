@@ -125,3 +125,19 @@ def test_each_processor_has_independent_live_api_docs() -> None:
         assert schema.status_code == 200
         assert "/v1/enrich" in schema.json()["paths"]
         assert client.post("/v1/enrich", json=request().model_dump(mode="json")).status_code == 422
+
+
+def test_core_scope_batch_preserves_unequal_document_lengths():
+    first="Complete source text " * 2000
+    batch=EnrichmentRequest(request_id="batch-test",scope=ScopeInput(scope_type="root",scope_id="root",documents=[
+        DocumentInput(file_id="long",filename="long.txt",text=first),
+        DocumentInput(file_id="short",filename="short.txt",text="Short text")],metadata={"scope_batch":{"phase":"map"}}))
+    client=FakeClient("# Combined wiki")
+    response=ReadableWikiEnricher().enrich(batch,client=client,model="test")
+    assert response.metadata["input_truncated"] is False
+    assert first in str(client.requests)
+    batch.config["max_input_chars"]=4000
+    import pytest
+    with pytest.raises(ValueError,match="Scope batch exceeds"):
+        ReadableWikiEnricher().enrich(batch,client=client,model="test")
+    assert len(client.requests)==1
