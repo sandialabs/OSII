@@ -12,7 +12,7 @@ import numpy as np
 
 from osii.domain.storage.store import provenance_path
 from osii.domain.storage.embedding_snapshot import active_snapshot
-from osii.domain.topic_projection import TopicIndexUnavailable, project_documents
+from osii.domain.topic_projection import MAX_DOCUMENT_VECTOR_BYTES, TopicIndexUnavailable, project_documents
 
 from osii.domain.artifacts.artifact_staleness import get_artifact_staleness
 from osii.domain.read.catalog import load_files_catalog
@@ -37,8 +37,6 @@ class DocumentSpace:
 def load_document_space(osii_root: Path, scope: dict) -> DocumentSpace:
     catalog = {row["file_id"]: row for row in load_files_catalog(osii_root)}
     members = set(list_scope_file_ids(osii_root, scope)) & catalog.keys()
-    if len(members) > 5000:
-        raise TopicIndexUnavailable("Choose a folder or collection with at most 5,000 documents.")
     provider, model = embedding_namespace()
     directory = osii_root / "embeddings" / "providers" / provider / model
     directory = active_snapshot(directory)
@@ -57,8 +55,6 @@ def load_document_space(osii_root: Path, scope: dict) -> DocumentSpace:
             raise TopicIndexUnavailable("The explorer requires a flat inner-product index with at most 1,000,000 chunks and 8,192 dimensions.")
         if index.d != meta["dimension"] or index.ntotal != meta["count"]:
             raise TopicIndexUnavailable("The embedding index and metadata disagree. Rebuild embeddings in Intake.")
-        if len(members) * index.d * 8 > 64 * 1024 * 1024:
-            raise TopicIndexUnavailable("This scope exceeds the 64 MiB document-vector limit. Choose a smaller folder or collection.")
         stale = {file_id for file_id in members if (get_artifact_staleness(osii_root, file_id) or {}).get("stale", {}).get("embeddings")}
         eligible = members - stale
         sums: dict[str, np.ndarray] = {}
@@ -73,11 +69,13 @@ def load_document_space(osii_root: Path, scope: dict) -> DocumentSpace:
                 file_id = row["file_id"]
                 if file_id not in eligible:
                     continue
-                vector = index.reconstruct(ordinal).astype(np.float64)
+                if (len(sums) + (file_id not in sums)) * index.d * 4 > MAX_DOCUMENT_VECTOR_BYTES:
+                    raise TopicIndexUnavailable("This scope exceeds the 64 MiB document-vector limit. Choose a smaller folder or collection.")
+                vector = index.reconstruct(ordinal)
                 norm = np.linalg.norm(vector)
                 if not np.isfinite(vector).all() or norm <= 1e-12:
                     raise TopicIndexUnavailable("The index contains invalid vectors. Rebuild embeddings in Intake.")
-                sums.setdefault(file_id, np.zeros(index.d, dtype=np.float64))[:] += vector / norm
+                sums.setdefault(file_id, np.zeros(index.d, dtype=np.float32))[:] += vector / norm
                 counts[file_id] = counts.get(file_id, 0) + 1
         if row_count != index.ntotal or signature() != before:
             raise TopicIndexUnavailable("The index changed or its mapping is incomplete. Wait for indexing to finish, then refresh.")
@@ -104,7 +102,7 @@ def load_document_space(osii_root: Path, scope: dict) -> DocumentSpace:
             vectors.append(sums[file_id] / norm)
         identity = hashlib.sha256(repr((provider, model, before)).encode()).hexdigest()[:20]
         return DocumentSpace(
-            documents, np.array(vectors).reshape(len(vectors), index.d),
+            documents, np.array(vectors, dtype=np.float32).reshape(len(vectors), index.d),
             {"id": identity, "provider": str(meta.get("provider_id") or meta.get("provider") or provider),
              "model": str(meta.get("model") or model), "dimensions": index.d,
              "semantic": meta.get("semantic") is True and provider != "local.hashing",
@@ -117,11 +115,11 @@ def load_document_space(osii_root: Path, scope: dict) -> DocumentSpace:
         raise TopicIndexUnavailable("No readable, complete index exists for the selected embedding model. Build embeddings in Intake, then refresh.") from exc
 
 
-def topic_map(osii_root: Path, scope: dict, limit: int = 500) -> dict:
+def topic_map(osii_root: Path, scope: dict, limit: int | None = None) -> dict:
     space = load_document_space(osii_root, scope)
-    # Stable, explicitly disclosed subset; related-document ranking uses all members.
+    # Fit the entire space even when an API client explicitly limits output.
     documents = space.documents[:limit]
-    coordinates, variance = project_documents(space.vectors[:limit])
+    coordinates, variance = project_documents(space.vectors)
     return {
         "index": space.index, "scope_count": space.scope_count,
         "indexed_count": len(space.documents), "stale_count": space.stale_count,

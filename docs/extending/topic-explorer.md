@@ -53,12 +53,31 @@ reset the selection; changing label or preview settings does not change geometry
 ## Core data and scope limits
 
 Both products expose `POST /api/topics/map` and `/api/topics/related`.
-The map currently shows at most 500 documents in stable ID order from a scope of
-up to 5,000 compatible documents. Coverage is disclosed; choose a smaller folder
-or collection to explore a different subset. Search and graphical selection apply
-to mapped documents; search returns at most 50 visible suggestions after two
-characters. Related ranking uses the full indexed scope. Neither route calls a
-model. Cached PCA coordinates are derived and rebuildable, not topic assignments.
+The default map includes **every document with current, compatible embeddings**
+in the authorized scope; there is no 500-point or 5,000-document scope cap.
+Search and graphical selection use that full set. The local API's optional
+`limit` restricts returned points only; fitting still uses the entire scope.
+Stale and unindexed files remain counted separately. Search shows at most 50
+suggestions after two characters; collection review initially mounts 24 cards.
+Related ranking uses the original document vectors, not the 2D projection.
+Neither route calls a model.
+
+Shared `topic_projection.py` uses exact PCA for small spaces and fixed-seed,
+oversampled approximate PCA for larger spaces. All documents participate in the
+fit, with linear workspace and a small subspace decomposition rather than a full
+corpus SVD. Cached geometry is derived and rebuildable, not topic assignments.
+The versioned cache invalidates old subset maps. Document vectors are float32
+with a 64 MiB matrix budget (about 10,922 documents at 1,536 dimensions or 43,690
+at 384 dimensions). This memory guard returns an actionable error rather than
+silently sampling. Local FAISS index/mapping size guards still apply.
+
+The shared renderer paints all points on a canvas and mounts only viewport,
+screen-density representatives for thumbnail/label detail. Zoom (up to 64x) and
+pan change the representatives; this is rendering detail, never dataset sampling.
+Hit testing, search and circles operate on every point, including overlapping
+points with no individual thumbnail. Circle/nearby review exposes individual
+files before saving a collection. Custom views must preserve this separation
+and avoid mounting a React component or thumbnail job per dataset entry.
 
 A new algorithm is a Core/processor capability change, not merely a different
 renderer. Preserve index identity, scope membership, model provenance and
@@ -69,9 +88,9 @@ navigation adapter; the local general specification is `frontend-tools.md`.
 
 ## Thumbnails and advanced metadata
 
-There is no first-40 preview cap. Visible PDF previews automatically use the
-existing cached browser renderer and its two-job concurrency queue. Off-screen
-previews are deferred; failures retain a file marker and an explanation. Review
+PDF preview detail is chosen by viewport and screen density, with no ID-order
+cutoff. Representatives automatically use the existing cached browser renderer
+and its two-job concurrency queue. Off-screen previews are deferred; failures retain a file marker and an explanation. Review
 cards paginate at 24 to avoid mounting thousands of preview renderers. Advanced
 map controls adjust thumbnail size, nearby radius, label visibility and the
 metadata field used as the label. These controls do not rewrite any document.

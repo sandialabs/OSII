@@ -132,7 +132,7 @@ def test_invalid_indexes_return_actionable_conflict(client, topic_index, monkeyp
     assert response.json()["detail"]
 
 
-@pytest.mark.parametrize("payload", [{"limit": 501}, {"scope": {"scope_type": "unknown"}}, {"scope": {"scope_type": "folder"}}, {"limit": 0}])
+@pytest.mark.parametrize("payload", [{"limit": -1}, {"scope": {"scope_type": "unknown"}}, {"scope": {"scope_type": "folder"}}, {"limit": 0}])
 def test_map_validates_requests(client, payload):
     assert client.post("/api/topics/map", json=payload).status_code == 422
 
@@ -196,3 +196,64 @@ def test_corrupt_cached_geometry_is_rebuilt_without_touching_sources(client, top
     cache.write_text('{"projection":"pca","points":[{"x":"not-a-number"}]}')
     assert client.post('/api/topics/map',json={}).status_code==200
     assert (topic_index/'objects/a/meta.toml').is_file()
+
+
+def test_large_projection_uses_bounded_subspace_and_preserves_dominant_structure(monkeypatch):
+    from osii.domain import topic_projection
+    rng = np.random.default_rng(13)
+    vectors = (rng.normal(size=(4096, 2)) @ rng.normal(size=(2, 128)) + rng.normal(scale=.002, size=(4096, 128))).astype(np.float32)
+    svd = np.linalg.svd
+    shapes = []
+    def bounded_svd(matrix, **kwargs):
+        shapes.append(matrix.shape)
+        assert min(matrix.shape) <= 12  # Never decompose the whole corpus.
+        return svd(matrix, **kwargs)
+    monkeypatch.setattr(topic_projection.np.linalg, "svd", bounded_svd)
+    coordinates, variance = topic_projection.project_documents(vectors)
+    again, _ = topic_projection.project_documents(vectors)
+    assert coordinates.shape == (4096, 2) and np.isfinite(coordinates).all()
+    assert np.array_equal(coordinates, again)
+    assert .999 < variance <= 1
+    centered = vectors - vectors.mean(axis=0)
+    expected = svd(centered, full_matrices=False)[1][:2]
+    assert np.allclose(np.linalg.svd(coordinates, compute_uv=False), expected, rtol=1e-4)
+    assert len(shapes) == 3
+
+
+def test_full_map_and_persisted_cache_cover_more_than_five_thousand_documents(client, topic_index, monkeypatch):
+    from osii.domain.services import topic_cache
+    count = 6001
+    documents = [{"file_id": f"large-{i:05}", "source_relpath": f"large/{i}.pdf"} for i in range(count)]
+    for module in (topics, topic_cache):
+        monkeypatch.setattr(module, "load_files_catalog", lambda _: documents)
+        monkeypatch.setattr(module, "list_scope_file_ids", lambda *_: [doc["file_id"] for doc in documents])
+        monkeypatch.setattr(module, "get_artifact_staleness", lambda *_: {})
+    monkeypatch.setattr(topic_cache, "get_suggested_metadata", lambda *_: {})
+    vectors = np.random.default_rng(2).normal(size=(count, 64)).astype(np.float32)
+    faiss.normalize_L2(vectors)
+    index = faiss.IndexFlatIP(64); index.add(vectors)
+    faiss.write_index(index, str(embeddings_index_path(topic_index)))
+    embeddings_mapping_path(topic_index).write_text("".join(json.dumps({"faiss_id": i, "file_id": doc["file_id"]}) + "\n" for i, doc in enumerate(documents)))
+    embeddings_meta_path(topic_index).write_text(tomli_w.dumps({"embeddings": {"count": count, "dimension": 64, "model": "osii-local-hashing-v1", "provider": "local.hashing", "semantic": False}}))
+    response = client.post("/api/topics/map", json={})
+    assert response.status_code == 200, response.text
+    full = response.json()
+    assert full["shown_count"] == full["indexed_count"] == count
+    assert {point["file_id"] for point in full["points"]} == {doc["file_id"] for doc in documents}
+    limited = client.post("/api/topics/map", json={"limit": 501}).json()
+    assert limited["shown_count"] == 501
+    assert limited["points"] == full["points"][:501]  # Limit affects output, never the fit.
+    monkeypatch.setattr(topics.faiss, "read_index", lambda _: pytest.fail("Full cached map must skip vector loading"))
+    assert client.post("/api/topics/map", json={}).json() == full
+
+
+def test_large_identical_vectors_have_no_artificial_structure():
+    coordinates, variance = topics.project_documents(np.full((6001, 64), .1, dtype=np.float32))
+    assert not coordinates.any() and variance == 0
+
+
+def test_vector_budget_returns_conflict_instead_of_a_partial_map(client, topic_index, monkeypatch):
+    monkeypatch.setattr(topics, "MAX_DOCUMENT_VECTOR_BYTES", 1)
+    response = client.post("/api/topics/map", json={})
+    assert response.status_code == 409
+    assert "document-vector limit" in response.json()["detail"]

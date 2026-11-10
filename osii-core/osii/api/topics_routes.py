@@ -28,7 +28,7 @@ class TopicScope(BaseModel):
 class MapRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scope: TopicScope = Field(default_factory=TopicScope)
-    limit: int = Field(default=500, ge=1, le=500)
+    limit: int | None = Field(default=None, ge=1)
 
 
 class RelatedRequest(BaseModel):

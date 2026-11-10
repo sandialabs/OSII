@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -22,6 +22,8 @@ import {
 } from "./presentation";
 import {
   circleMembers,
+  detailPointIds,
+  nearestPoint,
   mapPositions,
   type Position,
   type SelectionMode,
@@ -58,7 +60,50 @@ export function EmbeddingMap({
   const [showLabels, setShowLabels] = useState(points.length <= 100);
   const [labelField, setLabelField] = useState<LabelField>("auto");
   const drag = useRef<Drag | null>(null);
-  const positions = mapPositions(points, view);
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const positions = useMemo(() => mapPositions(points, view), [points, view]);
+  const details = useMemo(() => {
+    const ids = detailPointIds(
+      positions,
+      display === "thumbnails" ? thumbnailSize * 1.4 : 65,
+    );
+    if (selectedId) ids.add(selectedId);
+    if (hovered) ids.add(hovered);
+    return points.filter((point) => ids.has(point.file_id));
+  }, [points, positions, display, thumbnailSize, selectedId, hovered]);
+  useEffect(() => {
+    const node = canvas.current;
+    if (!node) return;
+    const paint = () => {
+      const ratio = window.devicePixelRatio || 1;
+      node.width = 800 * ratio;
+      node.height = 480 * ratio;
+      const context = node.getContext("2d");
+      if (!context) return;
+      context.scale(ratio, ratio);
+      for (const point of points) {
+        const p = positions.get(point.file_id)!;
+        if (p.x < -10 || p.x > 810 || p.y < -10 || p.y > 490) continue;
+        context.beginPath();
+        context.arc(
+          p.x,
+          p.y,
+          selectedIds.has(point.file_id) ? 4 : 2.8,
+          0,
+          Math.PI * 2,
+        );
+        context.fillStyle = selectedIds.has(point.file_id)
+          ? "#d97228"
+          : preview.has(point.file_id) || relatedIds.has(point.file_id)
+            ? "#00899e"
+            : "#629caf";
+        context.fill();
+      }
+    };
+    const frame = requestAnimationFrame(paint);
+    return () => cancelAnimationFrame(frame);
+  }, [points, positions, selectedIds, relatedIds, preview]);
   useEffect(() => {
     setCircle(null);
     setPreview(new Set());
@@ -73,7 +118,7 @@ export function EmbeddingMap({
     resetPreview();
     setView((v) => ({
       ...v,
-      zoom: Math.min(12, Math.max(0.5, v.zoom * factor)),
+      zoom: Math.min(64, Math.max(0.5, v.zoom * factor)),
     }));
   };
   const pointer = (event: React.PointerEvent<SVGSVGElement>): Position => {
@@ -162,130 +207,189 @@ export function EmbeddingMap({
       </ToggleButtonGroup>
       {display === "thumbnails" && (
         <Typography variant="caption">
-          All visible previews load automatically, two at a time, and are cached
-          in this browser. Pending and unavailable previews remain visible as
-          file markers.
+          Every mapped document appears as a dot. Representative thumbnails load
+          two at a time and are cached. Zoom and pan to reveal more previews, or
+          circle a group to review its individual files below.
         </Typography>
       )}
       <Box
-        component="svg"
-        viewBox="0 0 800 480"
-        role="group"
-        aria-label="Document embedding map"
-        tabIndex={0}
         sx={{
-          width: "100%",
+          position: "relative",
           background: "linear-gradient(145deg,#eff9fa,#f8fafc)",
           borderRadius: 2,
-          border: "1px solid",
-          borderColor: "divider",
-          touchAction: "none",
-          cursor: tool === "circle" ? "crosshair" : "default",
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            drag.current = null;
-            resetPreview();
-          }
-        }}
-        onPointerDown={(event) => {
-          if (
-            event.button !== 0 ||
-            tool === "nearby" ||
-            (tool === "pan" &&
-              (event.target as Element).closest('[role="button"]'))
-          )
-            return;
-          event.preventDefault();
-          event.currentTarget.setPointerCapture(event.pointerId);
-          const start = pointer(event);
-          drag.current = {
-            start,
-            origin: { x: view.x, y: view.y },
-            mode: event.altKey ? "remove" : event.shiftKey ? "add" : "replace",
-          };
-          if (tool === "circle") draw(start, 0);
-          else resetPreview();
-        }}
-        onPointerMove={(event) => {
-          const active = drag.current;
-          if (!active) return;
-          const end = pointer(event);
-          if (tool === "circle")
-            draw(
-              active.start,
-              Math.hypot(end.x - active.start.x, end.y - active.start.y),
-            );
-          else
-            setView((v) => ({
-              ...v,
-              x: active.origin.x + end.x - active.start.x,
-              y: active.origin.y + end.y - active.start.y,
-            }));
-        }}
-        onPointerUp={(event) => {
-          const active = drag.current;
-          if (!active) return;
-          drag.current = null;
-          if (tool === "circle") {
-            const end = pointer(event);
-            const ids = draw(
-              active.start,
-              Math.hypot(end.x - active.start.x, end.y - active.start.y),
-            );
-            onSelection?.(ids, active.mode);
-          }
-          if (event.currentTarget.hasPointerCapture(event.pointerId))
-            event.currentTarget.releasePointerCapture(event.pointerId);
-        }}
-        onPointerCancel={() => {
-          drag.current = null;
-          resetPreview();
         }}
       >
-        <text x="18" y="24" fill="#64748b" fontSize="12">
-          Document content · 2D overview
-        </text>
-        {circle && (
-          <circle
-            data-testid="selection-circle"
-            cx={circle.x}
-            cy={circle.y}
-            r={circle.radius}
-            fill="#e47b3720"
-            stroke="#c86520"
-            strokeWidth="1.5"
-            strokeDasharray="5 3"
-            pointerEvents="none"
-          />
-        )}
-        {points.map((point) => {
-          const position = positions.get(point.file_id)!;
-          return (
-            <PointMark
-              key={point.file_id}
-              point={point}
-              position={position}
-              focused={point.file_id === selectedId}
-              selected={selectedIds.has(point.file_id)}
-              preview={preview.has(point.file_id)}
-              related={relatedIds.has(point.file_id)}
-              display={display}
-              labelField={labelField}
-              size={thumbnailSize}
-              showLabel={showLabels}
-              choose={(add) => {
-                if (add) {
-                  onSelection?.([point.file_id], "add");
-                  return;
-                }
-                if (tool === "nearby") draw(position, radius);
-                else if (tool === "pan") onSelect(point.file_id);
-              }}
+        <canvas
+          ref={canvas}
+          aria-hidden="true"
+          data-testid="topic-canvas"
+          data-point-count={points.length}
+          style={{
+            position: "absolute",
+            width: "100%",
+            height: "100%",
+            pointerEvents: "none",
+          }}
+        />
+        <Box
+          component="svg"
+          viewBox="0 0 800 480"
+          role="group"
+          aria-label="Document embedding map"
+          tabIndex={0}
+          sx={{
+            width: "100%",
+            display: "block",
+            position: "relative",
+            borderRadius: 2,
+            border: "1px solid",
+            borderColor: "divider",
+            touchAction: "none",
+            cursor: tool === "circle" ? "crosshair" : "default",
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              drag.current = null;
+              resetPreview();
+            }
+          }}
+          onPointerDown={(event) => {
+            if (
+              event.button !== 0 ||
+              tool === "nearby" ||
+              (tool === "pan" &&
+                (event.target as Element).closest('[role="button"]'))
+            )
+              return;
+            event.preventDefault();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            const start = pointer(event);
+            drag.current = {
+              start,
+              origin: { x: view.x, y: view.y },
+              mode: event.altKey
+                ? "remove"
+                : event.shiftKey
+                  ? "add"
+                  : "replace",
+            };
+            if (tool === "circle") draw(start, 0);
+            else resetPreview();
+          }}
+          onPointerMove={(event) => {
+            const active = drag.current;
+            if (!active) {
+              setHovered(nearestPoint(positions, pointer(event)));
+              return;
+            }
+            const end = pointer(event);
+            if (tool === "circle")
+              draw(
+                active.start,
+                Math.hypot(end.x - active.start.x, end.y - active.start.y),
+              );
+            else
+              setView((v) => ({
+                ...v,
+                x: active.origin.x + end.x - active.start.x,
+                y: active.origin.y + end.y - active.start.y,
+              }));
+          }}
+          onPointerUp={(event) => {
+            const active = drag.current;
+            if (!active) return;
+            drag.current = null;
+            if (
+              tool === "pan" &&
+              Math.hypot(
+                pointer(event).x - active.start.x,
+                pointer(event).y - active.start.y,
+              ) < 4
+            ) {
+              const id = nearestPoint(positions, pointer(event));
+              if (id)
+                event.shiftKey ? onSelection?.([id], "add") : onSelect(id);
+            }
+            if (tool === "circle") {
+              const end = pointer(event);
+              const ids = draw(
+                active.start,
+                Math.hypot(end.x - active.start.x, end.y - active.start.y),
+              );
+              onSelection?.(ids, active.mode);
+            }
+            if (event.currentTarget.hasPointerCapture(event.pointerId))
+              event.currentTarget.releasePointerCapture(event.pointerId);
+          }}
+          onClick={(event) => {
+            if (
+              tool !== "nearby" ||
+              (event.target as Element).closest('[role="button"]')
+            )
+              return;
+            const transform = event.currentTarget.getScreenCTM();
+            if (!transform) return;
+            const value = new DOMPoint(
+              event.clientX,
+              event.clientY,
+            ).matrixTransform(transform.inverse());
+            const id = nearestPoint(positions, value);
+            if (id) draw(positions.get(id)!, radius);
+          }}
+          onPointerLeave={() => setHovered(null)}
+          onPointerCancel={() => {
+            drag.current = null;
+            resetPreview();
+          }}
+        >
+          <text x="18" y="24" fill="#64748b" fontSize="12">
+            Document content · 2D overview
+          </text>
+          {circle && (
+            <circle
+              data-testid="selection-circle"
+              cx={circle.x}
+              cy={circle.y}
+              r={circle.radius}
+              fill="#e47b3720"
+              stroke="#c86520"
+              strokeWidth="1.5"
+              strokeDasharray="5 3"
+              pointerEvents="none"
             />
-          );
-        })}
+          )}
+          {details.map((point) => {
+            const position = positions.get(point.file_id)!;
+            return (
+              <PointMark
+                key={point.file_id}
+                point={point}
+                position={position}
+                focused={point.file_id === selectedId}
+                selected={selectedIds.has(point.file_id)}
+                preview={preview.has(point.file_id)}
+                related={relatedIds.has(point.file_id)}
+                display={display}
+                labelField={labelField}
+                size={thumbnailSize}
+                showLabel={showLabels}
+                choose={(add) => {
+                  if (add) {
+                    onSelection?.([point.file_id], "add");
+                    return;
+                  }
+                  if (tool === "nearby") draw(position, radius);
+                  else if (tool === "pan") onSelect(point.file_id);
+                }}
+              />
+            );
+          })}
+        </Box>
       </Box>
+      <Typography variant="caption">
+        {points.length.toLocaleString()} documents mapped · zoom for detail.
+        Search and circle selection include every mapped document.
+      </Typography>
       <Box component="details">
         <Typography component="summary" sx={{ cursor: "pointer" }}>
           Advanced map options
@@ -354,8 +458,8 @@ export function EmbeddingMap({
           <Typography variant="caption">
             Orange: collection selection. Teal: related or previewed documents.
             A nearby group is a visual aid, not an inferred topic. Positions and
-            cached PCA geometry do not change when you change labels or
-            thumbnails. Selection covers only the mapped documents.
+            cached approximate PCA geometry do not change when you change labels
+            or thumbnails. Selection covers only the mapped documents.
           </Typography>
         </Stack>
       </Box>

@@ -28,13 +28,9 @@ def labels(osii_root: Path, document: dict) -> dict:
     return result
 
 
-def context(osii_root: Path, scope: dict, limit: int) -> tuple[str, list[dict]]:
+def context(osii_root: Path, scope: dict, limit: int | None) -> tuple[str, list[dict]]:
     catalog = {doc["file_id"]: doc for doc in load_files_catalog(osii_root)}
     members = set(list_scope_file_ids(osii_root, scope)) & catalog.keys()
-    if len(members) > 5000:
-        raise topics.TopicIndexUnavailable(
-            "Choose a folder or collection with at most 5,000 documents."
-        )
     documents = [labels(osii_root, catalog[fid]) for fid in sorted(members)]
     try:
         paths = [
@@ -73,14 +69,14 @@ def context(osii_root: Path, scope: dict, limit: int) -> tuple[str, list[dict]]:
     return key, documents
 
 
-def topic_map(osii_root: Path, scope: dict, limit: int = 500) -> dict:
+def topic_map(osii_root: Path, scope: dict, limit: int | None = None) -> dict:
     key, documents = context(osii_root, scope, limit)
     directory = osii_root / "cache" / "topics"
     path = directory / (key + ".json")
     try:
         cached = (
             json.loads(path.read_text(encoding="utf-8"))
-            if path.stat().st_size < 2_000_000
+            if path.stat().st_size < 32_000_000
             else None
         )
     except (OSError, ValueError):

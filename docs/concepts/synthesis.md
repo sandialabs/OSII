@@ -113,7 +113,7 @@ the existing thumbnail cache, load only in thumbnail mode using the bounded prev
 and show a file marker when unavailable. Changing display mode does not call a
 model or recompute coordinates.
 
-The current projection is PCA, not UMAP. Geometry is cached persistently: under
+The current projection is PCA (approximate for large datasets), not UMAP. Geometry is cached persistently: under
 `.osii/cache/topics` in local and in bounded derived PostgreSQL settings in server.
 Only IDs, coordinates, counts and index information are cached, not suggested
 labels or source text. Each cache retains at most 16 maps. Namespace/index
@@ -131,10 +131,11 @@ Use **Circle select** to draw a group, or **Preview nearby** to inspect a docume
 map neighborhood. Review thumbnails and checkboxes before creating a collection
 or adding the group to an existing one. Hosted collections start private. Search
 looks through mapped titles, filenames, paths and metadata; it shows at most 50
-suggestions rather than a menu of every file. The displayed 500-document subset
-remains explicit for larger scopes.
+suggestions rather than a menu of every file. The map includes all currently
+embedded documents in the scope; stale and unindexed files are counted separately.
 
-Visible thumbnails load automatically without a first-40 limit. **Advanced map
+All points appear on a canvas. Representative thumbnails load automatically;
+zoom and pan to reveal more detail, or review a circle selection file by file. **Advanced map
 options** changes preview size, neighborhood radius and label field. **Advanced
 document metadata** inspects and corrects descriptive/printed title, author, date,
 agency and type. Corrections are separate human products; original files and AI
