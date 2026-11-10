@@ -312,6 +312,23 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
                 row['stale'] = row['payload'].get('input_extraction_id') != primary_id
         return {"items": sorted(rows, key=lambda row: row['payload'].get('created_at', ''), reverse=True)}
 
+    @app.get("/api/objects/{file_id}/metadata")
+    def document_metadata(file_id: str, account=Depends(require())):
+        try: return store.document_metadata(file_id)
+        except LookupError as exc: raise HTTPException(404,str(exc)) from exc
+
+    @app.put("/api/objects/{file_id}/metadata")
+    def edit_document_metadata(file_id: str, payload: dict, account=Depends(require("curator"))):
+        if 'expected_revision' not in payload or (payload['expected_revision'] is not None and not isinstance(payload['expected_revision'],str)):
+            raise HTTPException(422,'expected_revision is required (null for the first edit)')
+        try:
+            result=store.save_document_metadata(file_id,payload.get('values'),payload['expected_revision'],account['id'])
+        except LookupError as exc: raise HTTPException(404,str(exc)) from exc
+        except FileExistsError as exc: raise HTTPException(409,str(exc)) from exc
+        except ValueError: raise HTTPException(422,'Provide supported metadata fields with at most 240 characters each') from None
+        store.record('document_metadata_edited',account['id'],file_id)
+        return result
+
     @app.post("/api/search")
     def search(payload: Search, account=Depends(require())):
         if payload.mode != "lexical" and store.configuration().get("embedding_model"):

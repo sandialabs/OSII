@@ -283,3 +283,45 @@ def test_topic_cache_is_bounded_and_model_changes_invalidate(client, app):
     assert store.document(doc['file_id'])
     store.save_configuration({'embedding_model':'different-space'})
     assert client.post('/api/topics/map',json={}).json()['indexed_count']==0
+
+
+
+def test_human_metadata_permissions_conflicts_and_map_overlay(client,app):
+    store=app.state.store;store.save_configuration({'embedding_model':'test-embeddings'})
+    doc=document(store,app.state.settings.source_root)
+    url=f"/api/objects/{doc['file_id']}/metadata"
+    login(client,'reader')
+    assert client.get(url).json()['revision'] is None
+    assert client.put(url,json={'expected_revision':None,'values':{'title':'Reader change'}}).status_code==403
+    login(client,'curator')
+    saved=client.put(url,json={'expected_revision':None,'values':{'descriptive_title':'Corrected short label','title':'Printed title','author':'A researcher','date':'circa 1940s','agency':'Example agency','document_type':'Report'}})
+    assert saved.status_code==200,saved.text
+    revision=saved.json()['revision']
+    assert client.put(url,json={'expected_revision':None,'values':{'title':'Lost edit'}}).status_code==409
+    assert client.get(url).json()['document_metadata']['title']['value']=='Printed title'
+    assert client.put(url,json={'expected_revision':revision,'values':{'filename':'rename.pdf'}}).status_code==422
+    mapped=client.post('/api/topics/map',json={}).json()['points'][0]
+    assert mapped['document_title']=='Corrected short label'
+    assert mapped['document_metadata']['method']=='human'
+    from test_derived_processing import create_plan,start
+    from test_intake_plans import execute
+    generated=create_plan(app,[doc['source_relpath']],synthesizer_name='local.extractive-preview')
+    start(app,generated)
+    assert execute(app,generated)['status']=='done'
+    assert client.get(url).json()['document_metadata']['descriptive_title']['value']=='Corrected short label'
+    assert store.document(doc['file_id'])['filename']=='report.txt'
+    next_saved=client.put(url,json={'expected_revision':revision,'values':{'descriptive_title':'Revised label'}})
+    assert next_saved.status_code==200
+    history=[item for item in store.list_artifacts(doc['file_id']) if item['kind']=='manual_metadata_history']
+    assert len(history)==1 and history[0]['payload']['revision']==revision
+    # Re-extraction replaces canonical text, but cannot erase explicit human bibliographic edits.
+    from osii.server.worker import ingest_file
+    from conftest import Provider
+    from osii.processor_sdk import ExtractionResponse,ProcessorDescriptor,ProcessorKind,TextSegment
+    class Extractor:
+        def extract(self,request):
+            return ExtractionResponse(request_id=request.request_id,processor=ProcessorDescriptor(name='test.new',version='1',display_name='New',description='Test',kind=ProcessorKind.EXTRACTOR),segments=[TextSegment(id='p1',text='New canonical neutron source text')])
+    ingest_file(store,Provider(),Extractor(),app.state.settings.source_root,app.state.settings.source_root/doc['source_relpath'],force=True)
+    assert client.get(url).json()['document_metadata']['descriptive_title']['value']=='Revised label'
+    assert client.post('/api/topics/map',json={}).json()['points'][0]['document_title']=='Revised label'
+    assert client.get('/api/objects/missing/metadata').status_code==404

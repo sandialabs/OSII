@@ -30,7 +30,7 @@ def synthesis_labels(metadata: dict) -> dict:
             record = DocumentMetadata.model_validate(metadata["document_metadata"])
             labels.update(
                 document_metadata=record.model_dump(mode="json"),
-                document_title=record.title.value,
+                document_title=record.descriptive_title.value or record.title.value,
                 title_method=record.method,
             )
         except ValueError:

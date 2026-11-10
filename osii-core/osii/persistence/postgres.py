@@ -242,7 +242,7 @@ class PostgresStore:
                 c.execute(insert(chunks), chunk_rows)
             c.execute(insert(extractions).values(id=extraction_id, file_id=document["file_id"],
                 sha256=document["sha256"], response=extraction, created_at=now()))
-            c.execute(delete(artifacts).where(artifacts.c.file_id == document["file_id"], or_(artifacts.c.kind.not_in(["synthesis", "enrichment"]), artifacts.c.payload["input_extraction_id"].astext.is_(None))))
+            c.execute(delete(artifacts).where(artifacts.c.file_id == document["file_id"], artifacts.c.kind.not_in(["manual_metadata", "manual_metadata_history"]), or_(artifacts.c.kind.not_in(["synthesis", "enrichment"]), artifacts.c.payload["input_extraction_id"].astext.is_(None))))
             if artifact_rows:
                 c.execute(insert(artifacts), artifact_rows)
             c.execute(update(datasets).where(datasets.c.id == "shared").values(revision=datasets.c.revision + 1))
@@ -509,8 +509,12 @@ class PostgresStore:
                     artifacts.c.payload['input_extraction_id'].astext == func.coalesce(documents.c.metadata['primary_extraction_id'].astext,latest.c.id), or_(title.is_not(None), metadata.is_not(None))).order_by(
                     artifacts.c.payload['created_at'].astext.desc(), artifacts.c.id)).mappings():
                     titles.setdefault(row['file_id'], dict(row))
+                from osii.domain.document_metadata import synthesis_labels
+                corrections = {row['file_id']: synthesis_labels({'document_metadata':row['payload']['document_metadata']})
+                    for row in c.execute(select(artifacts.c.file_id, artifacts.c.payload).where(artifacts.c.kind=='manual_metadata')).mappings()}
                 for doc in docs:
                     doc.update(titles.get(doc['file_id'], {}))
+                    doc.update(corrections.get(doc['file_id'], {}))
                 def rows(allowed):
                     statement = select(chunks.c.file_id, chunks.c.embedding, chunks.c.embedding_model).where(
                         chunks.c.file_id.in_(allowed))
@@ -557,3 +561,35 @@ class PostgresStore:
             c.execute(stmt.on_conflict_do_update(index_elements=[settings.c.id], set_={"value": stmt.excluded.value}))
             old = select(settings.c.id).where(settings.c.id.like("topic_map_cache:%")).order_by(settings.c.value['created_at'].astext.desc(), settings.c.id).offset(16)
             c.execute(delete(settings).where(settings.c.id.in_(old)))
+
+
+    @staticmethod
+    def _metadata_id(file_id: str) -> str:
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, 'osii:manual-metadata:'+file_id))
+
+    def document_metadata(self, file_id: str) -> dict:
+        with self.engine.connect() as c:
+            doc=c.execute(select(documents.c.metadata).where(documents.c.file_id==file_id,documents.c.active)).scalar()
+            if doc is None: raise LookupError('Unknown file_id')
+            manual=c.execute(select(artifacts.c.payload).where(artifacts.c.id==self._metadata_id(file_id))).scalar()
+            primary=doc.get('primary_extraction_id') or c.execute(select(extractions.c.id).where(extractions.c.file_id==file_id).order_by(extractions.c.created_at.desc(),extractions.c.id).limit(1)).scalar()
+            generated=c.execute(select(artifacts.c.payload['response']['metadata']['document_metadata']).where(artifacts.c.file_id==file_id,
+                artifacts.c.kind=='synthesis',artifacts.c.payload['input_extraction_id'].astext==primary).order_by(artifacts.c.payload['created_at'].astext.desc(),artifacts.c.id).limit(1)).scalar()
+            return {'file_id':file_id,'revision':manual['revision'] if manual else None,
+                'document_metadata':manual['document_metadata'] if manual else generated,'generated_metadata':generated}
+
+    def save_document_metadata(self, file_id: str, values: dict, expected: str | None, actor: str) -> dict:
+        from osii.processor_sdk import DocumentMetadata
+        from sqlalchemy.dialects.postgresql import insert as upsert
+        fields=('descriptive_title','title','author','date','agency','document_type')
+        if not isinstance(values,dict) or set(values)-set(fields): raise ValueError('Provide document metadata fields only')
+        record=DocumentMetadata.model_validate({'method':'human',**{field:{'value':values.get(field)} for field in fields}}).model_dump(mode='json')
+        with self.transaction() as c:
+            if c.execute(select(documents.c.file_id).where(documents.c.file_id==file_id,documents.c.active).with_for_update()).scalar() is None: raise LookupError('Unknown file_id')
+            current=c.execute(select(artifacts.c.payload).where(artifacts.c.id==self._metadata_id(file_id)).with_for_update()).scalar()
+            if (current['revision'] if current else None)!=expected: raise FileExistsError('Metadata changed; reload the latest revision and review your draft')
+            if current: c.execute(insert(artifacts).values(id=identifier(),file_id=file_id,kind='manual_metadata_history',payload=current))
+            payload={'revision':identifier(),'document_metadata':record,'created_at':now().isoformat(),'actor':actor}
+            stmt=upsert(artifacts).values(id=self._metadata_id(file_id),file_id=file_id,kind='manual_metadata',payload=payload)
+            c.execute(stmt.on_conflict_do_update(index_elements=[artifacts.c.id],set_={'payload':payload}))
+        return self.document_metadata(file_id)

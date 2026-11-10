@@ -109,7 +109,7 @@ stay visible. The model-free excerpt method does not infer authors or dates.
 
 Both local and server use the same map and **Filenames / Suggested titles /
 Thumbnails** controls. The preference persists in that browser. PDF previews use
-the existing thumbnail cache, load only in thumbnail mode and in batches of 40,
+the existing thumbnail cache, load only in thumbnail mode using the bounded preview queue,
 and show a file marker when unavailable. Changing display mode does not call a
 model or recompute coordinates.
 
@@ -123,3 +123,21 @@ cache lookup. A damaged cache is rebuildable; originals and canonical embeddings
 are never removed by cache cleanup. Refresh reloads labels and uses valid cached
 geometry; embedding changes trigger recomputation. The first uncached load still
 has to read embeddings and calculate the projection.
+
+
+## Grouping documents in Topic Explorer
+
+Use **Circle select** to draw a group, or **Preview nearby** to inspect a document's
+map neighborhood. Review thumbnails and checkboxes before creating a collection
+or adding the group to an existing one. Hosted collections start private. Search
+looks through mapped titles, filenames, paths and metadata; it shows at most 50
+suggestions rather than a menu of every file. The displayed 500-document subset
+remains explicit for larger scopes.
+
+Visible thumbnails load automatically without a first-40 limit. **Advanced map
+options** changes preview size, neighborhood radius and label field. **Advanced
+document metadata** inspects and corrects descriptive/printed title, author, date,
+agency and type. Corrections are separate human products; original files and AI
+outputs remain available. Hosted editing requires a curator or administrator.
+The [view extension contract](../extending/topic-explorer.md) describes how to add
+a reviewed visualization without changing persistence or product pages.

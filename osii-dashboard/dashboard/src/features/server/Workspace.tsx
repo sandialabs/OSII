@@ -93,8 +93,8 @@ export function Workspace({ user, onLogout, onPassword }: { user: User; onLogout
         sourceRelpath: hit.source_relpath, snippet: hit.snippet, score: hit.score ?? 0, mode: tab === "search" ? mode : null,
         chunkMethod: null, page: null, segmentId: null, overlapWithPrevious: 0, charStart: hit.char_start, charEnd: hit.char_end, collections: [] }}
         onOpen={() => void open(hit.file_id)} /><Button size="small" sx={{ alignSelf: "start" }} onClick={() => toggle(hit.file_id)}>{selectedIds.has(hit.file_id) ? "Deselect" : "Select for collection"}</Button></Stack>)}</>}
-      {tab === "topics" && <TopicExplorer scope={scope} open={id => void open(id)} onSelect={id => setSelectedIds(current => new Set([...current, id]))} />}
-      {corpusPage && selectedIds.size > 0 && <CollectionSelection collections={collections} refresh={refresh} fail={fail} selected={selectedIds} clear={() => setSelectedIds(new Set())} current={currentCollection} />}
+      {tab === "topics" && <TopicExplorer scope={scope} open={id => void open(id)} collections={collections} refreshCollections={refresh} canEdit={user.role !== "reader"} />}
+      {corpusPage && tab !== "topics" && selectedIds.size > 0 && <CollectionSelection collections={collections} refresh={refresh} fail={fail} selected={selectedIds} clear={() => setSelectedIds(new Set())} current={currentCollection} />}
       {tab === "processing" && curator && <Intake initialPaths={processingPaths} initialProcessor={processingPreset} />}{tab === "source" && user.role === "admin" && <SourceAdmin />}{tab === "processors" && user.role === "admin" && <ProcessorAdmin queue={processor=>{setProcessingPreset(processor);setProcessingPaths([]);navigate("processing");}} />}{tab === "models" && user.role === "admin" && <ModelAdmin />}{tab === "users" && user.role === "admin" && <UserAdmin />}
     </Stack></Container></Box>
     {selected && <DocumentView key={selected.file_id} doc={selected} close={() => setSelected(null)} onProcess={user.role === "admin" ? () => { setProcessingPreset(null); setProcessingPaths([selected.source_relpath]); setSelected(null); navigate("processing"); } : undefined} />}

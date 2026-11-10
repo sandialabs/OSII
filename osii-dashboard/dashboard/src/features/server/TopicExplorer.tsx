@@ -1,45 +1,173 @@
-import { SuggestedMetadata } from "../files/components/SuggestedMetadata";
 import { useEffect, useState } from "react";
-import { Alert, Button, Chip, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
-import { api, type Scope } from "./api";
-import { EmbeddingMap } from "../topics/components/DocumentEmbeddingMap";
-import type { RelatedDocuments, TopicMap } from "../topics/types";
-
-export function TopicExplorer({ scope, open, onSelect }: { scope: Scope; open: (id: string) => void; onSelect: (id: string) => void }) {
+import {
+  Alert,
+  Button,
+  Chip,
+  LinearProgress,
+  Stack,
+  Typography,
+} from "@mui/material";
+import { SuggestedMetadata } from "../files/components/SuggestedMetadata";
+import { TopicExplorerPanel } from "../topics/components/TopicExplorerPanel";
+import { api, type Scope, type Collection } from "./api";
+import type { apiJson } from "../../api/client";
+import type { TopicMap, RelatedDocuments } from "../topics/types";
+const metadataRequest: typeof apiJson = (path, init) =>
+  api(path, init?.method, init?.json);
+export function TopicExplorer({
+  scope,
+  open,
+  collections,
+  refreshCollections,
+  canEdit,
+}: {
+  scope: Scope;
+  open: (id: string) => void;
+  collections: Collection[];
+  refreshCollections: () => Promise<void>;
+  canEdit: boolean;
+}) {
   const [map, setMap] = useState<TopicMap | null>(null);
   const [related, setRelated] = useState<RelatedDocuments | null>(null);
   const [selected, setSelected] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [revision, setRevision] = useState(0);
+  const [version, setVersion] = useState(0);
   useEffect(() => {
-    let current = true;
-    setBusy(true); setError(""); setMap(null); setRelated(null); setSelected("");
-    void api<TopicMap>("/api/topics/map", "POST", { scope }).then(value => { if (current) setMap(value); }).catch(e => { if (current) setError(e.message); }).finally(() => { if (current) setBusy(false); });
-    return () => { current = false; };
-  }, [scope, revision]);
+    setSelected("");
+    setRelated(null);
+    setMap(null);
+  }, [scope]);
   useEffect(() => {
-    if (!selected) return;
-    let current = true;
-    setRelated(null); setError("");
-    void api<RelatedDocuments>("/api/topics/related", "POST", { scope, file_id: selected }).then(value => { if (current) setRelated(value); }).catch(e => { if (current) setError(e.message); });
-    return () => { current = false; };
-  }, [scope, selected]);
-  return <Stack spacing={2}>
-    <Typography variant="h5">Topic explorer</Typography>
-    <Typography color="text.secondary">Explore documents by their existing embeddings. This experimental map uses a 2D PCA projection; related documents are ranked using full document vectors. It makes no model calls. Labels use suggested synthesis titles when available; original filenames are retained.</Typography>
-    <Button sx={{ alignSelf: "start" }} disabled={busy} onClick={() => setRevision(value => value + 1)}>Refresh map</Button>
-    {busy && <Typography>Projecting documents…</Typography>}{error && <Alert severity="info">{error}</Alert>}
-    {map && <><Stack direction="row" spacing={1} flexWrap="wrap"><Chip label={`${map.indexed_count} / ${map.scope_count} indexed`} /><Chip label={`${map.stale_count} stale · ${map.unindexed_count} without compatible embeddings`} /><Chip label={`${map.index.model} · ${map.index.dimensions} dimensions`} /></Stack>
-      {map.shown_count < map.indexed_count && <Alert severity="info">Showing the first {map.shown_count} documents in stable ID order. Choose a smaller scope to see more detail. Related-document ranking uses all indexed documents in this scope.</Alert>}
-      {!map.points.length ? <Alert severity="info">No compatible embeddings in this scope. Ask a curator to process these documents after an administrator selects an embedding model.</Alert> : <><Typography variant="caption">Projection retains {(map.explained_variance * 100).toFixed(1)}% of the variance in the shown vectors. Proximity is approximate and does not establish a factual relationship.</Typography><EmbeddingMap key={`${map.index.id}:${revision}`} points={map.points} selectedId={selected} relatedIds={new Set(related?.results.map(d => d.file_id) ?? [])} onSelect={setSelected} />
-        <TextDocumentList points={map.points} selected={selected} choose={setSelected} />
-      </>}
-    </>}
-    {related && <Paper sx={{ p: 2 }}><Stack spacing={2}><Typography variant="h6">Related to {related.document.document_title || related.document.filename}</Typography><SuggestedMetadata metadata={related.document.document_metadata}/><Stack direction="row" spacing={1}><Button onClick={() => open(related.document.file_id)}>Open document</Button><Button onClick={() => onSelect(related.document.file_id)}>Select for collection</Button></Stack>{!related.results.length && <Typography>No other indexed documents in this scope.</Typography>}{related.results.map(doc => <Stack key={doc.file_id} direction="row" spacing={1} alignItems="center"><Button onClick={() => setSelected(doc.file_id)}>{doc.document_title || doc.filename}</Button><Typography variant="caption">Cosine similarity: {doc.similarity.toFixed(3)}</Typography><Button onClick={() => open(doc.file_id)}>Open</Button><Button onClick={() => onSelect(doc.file_id)}>Select for collection</Button></Stack>)}</Stack></Paper>}
-  </Stack>;
-}
-
-function TextDocumentList({ points, selected, choose }: { points: TopicMap["points"]; selected: string; choose: (id: string) => void }) {
-  return <TextField select label="Explore a document" value={points.some(p => p.file_id === selected) ? selected : ""} onChange={e => choose(e.target.value)}><MenuItem value="">Select a document</MenuItem>{points.map(doc => <MenuItem key={doc.file_id} value={doc.file_id}>{doc.document_title ? `${doc.document_title} — ${doc.source_relpath}` : doc.source_relpath}</MenuItem>)}</TextField>;
+    let active = true;
+    setBusy(true);
+    setError("");
+    void api<TopicMap>("/api/topics/map", "POST", { scope })
+      .then((value) => {
+        if (active) setMap(value);
+      })
+      .catch((e) => {
+        if (active) setError(e.message);
+      })
+      .finally(() => {
+        if (active) setBusy(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [scope, version]);
+  useEffect(() => {
+    let active = true;
+    setRelated(null);
+    if (selected)
+      void api<RelatedDocuments>("/api/topics/related", "POST", {
+        scope,
+        file_id: selected,
+      })
+        .then((value) => {
+          if (active) setRelated(value);
+        })
+        .catch((e) => {
+          if (active) setError(e.message);
+        });
+    return () => {
+      active = false;
+    };
+  }, [scope, selected, version]);
+  return (
+    <Stack spacing={2}>
+      <Stack direction="row" justifyContent="space-between">
+        <Stack>
+          <Typography variant="h5">Topic explorer</Typography>
+          <Typography color="text.secondary">
+            Find groups of documents, inspect their content, and save private
+            collections.
+          </Typography>
+        </Stack>
+        <Button disabled={busy} onClick={() => setVersion((v) => v + 1)}>
+          Refresh map
+        </Button>
+      </Stack>
+      {busy && <LinearProgress aria-label="Loading embedding map" />}
+      {error && <Alert severity="warning">{error}</Alert>}
+      {map && (
+        <>
+          <Stack direction="row" spacing={1} flexWrap="wrap">
+            <Chip
+              label={`${map.shown_count} of ${map.indexed_count} indexed documents mapped`}
+            />
+            <Chip
+              label={`${map.unindexed_count} unindexed · ${map.stale_count} stale`}
+            />
+          </Stack>
+          {map.shown_count < map.indexed_count && (
+            <Alert severity="info">
+              The map displays a stable subset of {map.shown_count} documents.
+              Choose a smaller folder or collection to explore the rest.
+              Graphical selection and search operate on this displayed subset.
+            </Alert>
+          )}
+          {map.points.length ? (
+            <TopicExplorerPanel
+              key={`${JSON.stringify(scope)}:${map.index.id}`}
+              map={map}
+              related={related}
+              focusedId={selected}
+              onFocus={setSelected}
+              onOpen={open}
+              renderMetadata={(document) => (
+                <SuggestedMetadata
+                  metadata={document.document_metadata}
+                  fileId={document.file_id}
+                  canEdit={canEdit}
+                  request={metadataRequest}
+                  onSaved={() => setVersion((v) => v + 1)}
+                />
+              )}
+              collections={{
+                privateByDefault: true,
+                collections: collections
+                  .filter((c) => c.can_manage)
+                  .map((c) => ({ id: c.id, name: c.name })),
+                create: async (name, ids) => {
+                  await api("/api/collections", "POST", {
+                    name,
+                    members: ids,
+                    visibility: "private",
+                  });
+                  await refreshCollections();
+                },
+                add: async (id, ids) => {
+                  const fresh = (
+                    await api<{ items: Collection[] }>("/api/collections")
+                  ).items.find((c) => c.id === id);
+                  if (!fresh || !fresh.can_manage)
+                    throw Error("Collection is unavailable or read-only");
+                  await api(`/api/collections/${id}`, "PUT", {
+                    ...fresh,
+                    members: [...new Set([...fresh.members, ...ids])],
+                  });
+                  await refreshCollections();
+                },
+              }}
+            />
+          ) : (
+            <Alert severity="info">
+              No compatible embeddings in this scope. Choose a different scope
+              or process documents in Intake.
+            </Alert>
+          )}
+          <details>
+            <summary>Index and projection details</summary>
+            <Typography variant="caption">
+              {map.index.model} · {map.index.dimensions} dimensions · PCA
+              retains {(map.explained_variance * 100).toFixed(1)}% of variance.
+              Related ranking uses full document vectors; visual neighborhoods
+              are approximate. Viewing and selection do not make model calls.
+            </Typography>
+          </details>
+        </>
+      )}
+    </Stack>
+  );
 }
