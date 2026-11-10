@@ -198,6 +198,11 @@ def process_derived_file(store, provider, extractor, settings, job, worker, inde
         raise IngestionError("Source no longer matches its indexed document. Extract it before processing.")
     derived_outputs(store, settings, provider, job, worker, index, current, doc, report=report)
     if payload["embed"] and steps.get("embedding") != "done":
+        from osii.domain.read.postgres import PostgresLibraryReader
+        from osii.domain.storage.commits import text_digest
+        input_revision = InputRevision.capture(PostgresLibraryReader(store.engine), fid)
+        if input_revision.text_sha256 != text_digest(doc["text"]):
+            raise IngestionError("Primary text changed; stage a new plan before embedding")
         current["current_step"] = "embedding"
         store.update_processing_item(job["id"], worker, index, current)
         rows = store.document_chunks(fid)
@@ -212,7 +217,6 @@ def process_derived_file(store, provider, extractor, settings, job, worker, inde
                 row["embedding"] = vector
         from osii.processor_sdk import (Capability, ProcessorDescriptor, ProcessorKind,
             EmbeddingRequest, EmbeddingInput, EmbeddingResponse, EmbeddingVector)
-        from osii.domain.storage.commits import text_digest
         producer = ProcessorDescriptor(name="core.openai-compatible-embedder", version="1",
             display_name="Configured embedding endpoint", description="Core model-provider adapter",
             kind=ProcessorKind.EMBEDDER, capabilities=Capability(scope_types=["object"]))
@@ -225,7 +229,7 @@ def process_derived_file(store, provider, extractor, settings, job, worker, inde
         steps["embedding"] = "done"
         PostgresProcessingCommitter(store.engine).commit(ProcessingCommit(
             f"{job['id']}:{index}:embedding", fid, request, response, producer,
-            input_revision=InputRevision(fid, doc["metadata"]["primary_extraction_id"], text_digest(doc["text"])),
+            input_revision=input_revision,
             chunks=tuple(rows), provenance={"run_id": job["id"]}),
             checkpoint=JobCheckpoint(job["id"], worker, index, current))
     current["current_step"] = "finished"

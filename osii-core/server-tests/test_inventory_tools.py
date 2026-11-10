@@ -568,3 +568,76 @@ def test_overview_and_tool_request_validation(client, app):
     assert not client.post(
         "/api/scopes/overview", json={"scope": {"scope_type": "root"}}
     ).json()["permissions"]["run"]
+
+
+def test_legacy_documents_keep_preferred_identity_for_tools_and_combined_embedding(
+    client, app
+):
+    """Older hosted documents have extraction rows but no primary ID marker."""
+    from test_intake_plans import execute as process
+    from osii.server.intake import configuration_stamp
+
+    store = app.state.store
+    doc = document(store, app.state.settings.source_root)
+    preferred = store.extraction_records(doc["file_id"])[0]["id"]
+    legacy = {
+        key: value
+        for key, value in store.document(doc["file_id"])["metadata"].items()
+        if key != "primary_extraction_id"
+    }
+    with store.transaction() as connection:
+        connection.execute(
+            update(documents)
+            .where(documents.c.file_id == doc["file_id"])
+            .values(metadata=legacy)
+        )
+    actor = login(client)
+    frozen = snapshot(store, {"scope_type": "root"}, actor["id"])
+    assert frozen["documents"][0]["extraction_id"] == preferred
+    tool = client.post(
+        "/api/enrichment-jobs/run",
+        json={
+            "enricher_name": "local.extractive-preview",
+            "scope": {"scope_type": "root"},
+        },
+    )
+    assert tool.status_code == 200, tool.text
+    run_tool(app, tool.json()["run_id"])
+    product = client.post("/api/products/list", json={"scope_type": "root"}).json()[
+        "products"
+    ][0]
+    assert (
+        client.post(
+            "/api/products/revisions",
+            json={"scope": {"scope_type": "root"}, "filename": product["filename"]},
+        ).json()["input_state"]
+        == "current"
+    )
+    store.save_configuration({"embedding_model": "synthetic-test-embedding"})
+    staged = client.post(
+        "/api/admin/intake/stage",
+        json={
+            "paths": [doc["source_relpath"]],
+            "operation": "process",
+            "embed": True,
+            "enricher_name": "local.stats-keywords",
+        },
+    )
+    assert staged.status_code == 200, staged.text
+    jid = staged.json()["id"]
+    store.control_job(jid, "start", configuration_stamp(store, app.state.settings))
+    result = process(app, jid)
+    assert result["status"] == "done", result["logs"]
+    assert result["payload"]["items"][0]["steps"] == {
+        "enrichment": "done",
+        "embedding": "done",
+    }
+    assert (
+        store.document(doc["file_id"])["metadata"]["embedding_provenance"][
+            "input_revision"
+        ]["representation_id"]
+        == preferred
+    )
+
+    assert store.document(doc["file_id"])["text"] == doc["text"]
+    assert [row["id"] for row in store.extraction_records(doc["file_id"])] == [preferred]

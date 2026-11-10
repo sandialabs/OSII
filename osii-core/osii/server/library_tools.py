@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 import hashlib
-from sqlalchemy import select, func
-from osii.persistence.postgres import documents, identifier, now
+from sqlalchemy import select, func, literal
+from osii.persistence.postgres import documents, extractions, identifier, now
 from osii.persistence.scope_products import ScopeProducts, address
 from osii.domain.library import scope_documents
 from osii.server.intake import configuration_stamp
@@ -18,6 +18,23 @@ from osii.processor_sdk import (
 
 MAX_DOCUMENTS = 1000
 MAX_CHARACTERS = 180000
+
+
+def extraction_identity():
+    """Match the read adapter's preferred-text identity for pre-marker records."""
+    legacy = (
+        select(extractions.c.id)
+        .where(extractions.c.file_id == documents.c.file_id)
+        .order_by(extractions.c.created_at.desc(), extractions.c.id)
+        .limit(1)
+        .correlate(documents)
+        .scalar_subquery()
+    )
+    return func.coalesce(
+        documents.c.metadata["primary_extraction_id"].astext,
+        legacy,
+        literal("canonical"),
+    )
 
 
 def scoped_headers(store, scope, actor_id):
@@ -122,9 +139,7 @@ def snapshot(store, scope, actor_id):
                     documents.c.filename,
                     documents.c.media_type,
                     documents.c.source_relpath,
-                    documents.c.metadata["primary_extraction_id"].astext.label(
-                        "extraction_id"
-                    ),
+                    extraction_identity().label("extraction_id"),
                     func.length(documents.c.text).label("full_chars"),
                     func.md5(documents.c.text).label("text_fingerprint"),
                     func.substr(documents.c.text, 1, allowance).label("text"),
@@ -224,9 +239,7 @@ def input_state(store, scope, provenance, actor_id):
                 for row in c.execute(
                     select(
                         documents.c.file_id,
-                        documents.c.metadata["primary_extraction_id"].astext.label(
-                            "extraction_id"
-                        ),
+                        extraction_identity().label("extraction_id"),
                         func.md5(documents.c.text).label("fingerprint"),
                     ).where(documents.c.file_id.in_(ids), documents.c.active)
                 )
