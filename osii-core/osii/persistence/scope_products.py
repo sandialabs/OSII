@@ -194,87 +194,17 @@ class ScopeProducts:
             )
 
     def edit(self, scope, name, expected, actor, *, data=None, revision=None):
-        kind, identity = address(scope)
-        with self.store.transaction() as c:
-            product = (
-                c.execute(
-                    select(products)
-                    .where(
-                        products.c.scope_type == kind,
-                        products.c.scope_id == identity,
-                        products.c.filename == name,
-                    )
-                    .with_for_update()
-                )
-                .mappings()
-                .first()
-            )
-            if product is None:
-                raise KeyError("Product not found")
-            if product["current_revision"] != expected:
-                raise FileExistsError(
-                    "This product changed; reload the latest revision before saving"
-                )
-            current = (
-                c.execute(
-                    select(revisions).where(
-                        revisions.c.id == expected,
-                        revisions.c.product_id == product["id"],
-                    )
-                )
-                .mappings()
-                .one()
-            )
-            if revision:
-                chosen = (
-                    c.execute(
-                        select(revisions).where(
-                            revisions.c.id == revision,
-                            revisions.c.product_id == product["id"],
-                        )
-                    )
-                    .mappings()
-                    .first()
-                )
-                if chosen is None:
-                    raise KeyError("Product revision not found")
-                # Activation remains a durable editorial event, preserving provenance.
-                data, provenance = (
-                    chosen["data"],
-                    {**chosen["provenance"], "activated_revision": revision},
-                )
-            else:
-                provenance = current["provenance"]
-            if (
-                not isinstance(data, dict)
-                or len(json.dumps(data, allow_nan=False)) > 4_000_000
-            ):
-                raise ValueError("Product JSON must be an object with at most 4 MiB")
-            rid = identifier()
-            c.execute(
-                insert(revisions).values(
-                    id=rid,
-                    product_id=product["id"],
-                    parent=expected,
-                    origin="human",
-                    created_at=now().isoformat(),
-                    actor_id=actor,
-                    data=data,
-                    provenance=provenance,
-                )
-            )
-            c.execute(
-                update(products)
-                .where(products.c.id == product["id"])
-                .values(
-                    current_revision=rid,
-                    title=str(data.get("title") or product["title"]),
-                    artifact_type=str(
-                        data.get("artifact_type") or product["artifact_type"]
-                    ),
-                )
-            )
-            return self.history(scope, name, c)
+        from osii.domain.storage.authoring import ProductRef
+        from osii.domain.storage.postgres_authoring import PostgresProductAuthoring
+
+        current = self.history(scope, name)
+        ref = ProductRef.from_scope(scope, name, current["family"])
+        authoring = PostgresProductAuthoring(self.store.engine, actor_id=actor)
+        if revision is not None:
+            authoring.activate(ref, revision, expected_revision=expected, actor_id=actor)
+        else:
+            authoring.save(ref, data, expected_revision=expected, activate=True, actor_id=actor)
+        return self.history(scope, name)
 
     def delete(self, scope, name, expected):
         kind, identity = address(scope)

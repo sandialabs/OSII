@@ -3,7 +3,7 @@
 Date: 10 November 2026
 
 Status: Accepted direction. Shared reads, document commits, and aggregate product
-commits are implemented; broader adoption, backend selection, and
+commits and initial product-authoring/collection interfaces are implemented; broader adoption, backend selection, and
 migrations remain staged work.
 
 ## Context and current behavior
@@ -157,9 +157,12 @@ content. Search indexes can be rebuilt for the destination.
    adapt legacy store-aware implementations at the Core boundary. Define one
    commit operation for each completed processing result and verify crash/retry
    behavior before transferring additional workflows.
-3. **Authoring and collections.** Add revisioned save/activate operations, edit
-   conflicts, lineage/staleness, and shared collection commands. Preserve legacy
-   edits and extraction versions through explicit compatibility handling.
+3. **Authoring and collections: initial product/collection slice implemented.**
+   [Shared authoring contracts](../reference/library-authoring.md) provide draft
+   save/activation, conflicts, and collection metadata/membership commands over
+   existing storage. Product editors retain immediate activation for compatibility.
+   Legacy document-text overrides and extraction versions remain unchanged;
+   their shared authoring/migration work is still explicit future work.
 4. **Retrieval and jobs.** Supply bounded retrieval to shared RAG workflows and
    converge job controls/checkpoints. Preserve hosted authorization before
    evidence selection or processor dispatch. Keep current search backends until
