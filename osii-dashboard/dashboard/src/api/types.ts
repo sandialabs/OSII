@@ -1047,6 +1047,7 @@ export type ChatRequest = {
   query: string;
   scope: ScopeDescribeRequest;
   history: ChatMessage[];
+  profile_id?: string;
 };
 
 export type ChatResponse = {
@@ -1055,6 +1056,11 @@ export type ChatResponse = {
   provider: string;
   fallback_used: boolean;
   retrieval_mode: string;
+  model?: string | null;
+  profile_id?: string;
+  status?: string;
+  error?: string | null;
+  agent_trace?: import("../features/chat/traceTypes").AgentTrace;
 };
 
 export type SearchGroupBy = "file";

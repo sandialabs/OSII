@@ -23,8 +23,8 @@ demo-data:
 	@echo "Server datasets are provisioned by administrators; no files imported."
 
 test:
-	$(UV) sync --frozen --python $(OSII_PYTHON_VERSION) --package osii --extra server --extra dev
-	$(UV) run --frozen --package osii --extra server --extra dev python -m pytest osii-core/server-tests osii-core/processor-sdk/tests -q
+	$(UV) sync --frozen --python $(OSII_PYTHON_VERSION) --package osii --extra server --extra rag-haystack --extra dev
+	$(UV) run --frozen --package osii --extra server --extra rag-haystack --extra dev python -m pytest osii-core/server-tests osii-core/processor-sdk/tests osii-core/rag-tests -q
 	cd osii-dashboard/dashboard && npm test --if-present && npm run build
 
 docs:

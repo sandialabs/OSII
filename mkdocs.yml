@@ -41,6 +41,7 @@ nav:
       - What are you trying to do?: operations/runbooks.md
       - Start from source: operations/runbook-development.md
       - Model endpoints: operations/model-endpoints.md
+      - Agent traces and advanced RAG: operations/agent-traces.md
       - Python walkthrough: tutorials/python-demonstrations.md
       - Single-file walkthrough: tutorials/single-file.md
       - Generate an LLM wiki: tutorials/llm-wiki.md
@@ -55,6 +56,7 @@ nav:
       - Extraction versions: reference/extraction-versions.md
       - Synthesis: concepts/synthesis.md
       - Retrieval chunking: concepts/retrieval-chunking.md
+      - Agent traces research: concepts/agent-traces-research.md
       - Store structure: reference/osii-store.md
       - Rebuildable catalog: reference/catalog.md
       - Shared library reads: reference/library-reads.md

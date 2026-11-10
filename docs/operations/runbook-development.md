@@ -95,11 +95,14 @@ are preserved on `archive/workstation-deployment-2026-11-03`.
 
 ## Standalone shared RAG experiments
 
+For the hosted Chat controls, agent trace viewer, and measured public pilot, see
+[Demonstrate advanced RAG and inspect an agent trace](agent-traces.md).
+
 For extension contracts and custom reranking, see the
 [RAG strategy authoring guide](../extending/rag-strategies.md).
 
-Install the optional Haystack extra from the repository root. It is not needed
-by normal startup and is not part of the baseline server image. The synthetic
+Normal server startup and the server image now include the pinned Haystack extra
+for advanced Chat. Standalone Python users can still install it optionally. The synthetic
 demo uses two small in-memory excerpts and deterministic decisions; it makes no
 network/model calls and is not evidence of real-corpus answer quality.
 

@@ -10,7 +10,6 @@ import {
   Alert,
   Button,
   MenuItem,
-  Paper,
   Stack,
   TextField,
   Typography,
@@ -45,6 +44,8 @@ import { TopicExplorer } from "./TopicExplorer";
 import { Collections, CollectionSelection } from "./Collections";
 
 import { DocumentView } from "./DocumentView";
+import { AdvancedChat } from "../chat/components/AdvancedChat";
+import type { ChatRequest } from "../../api/types";
 import { LibraryBrowser } from "./LibraryBrowser";
 import { SearchResultCard } from "../search/components/SearchResultCard";
 import {
@@ -142,10 +143,6 @@ export function Workspace({
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<SearchMode>("lexical");
   const [hits, setHits] = useState<Hit[]>([]);
-  const [answer, setAnswer] = useState("");
-  const [history, setHistory] = useState<{ role: string; content: string }[]>(
-    [],
-  );
   const [selected, setSelected] = useState<Doc | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -204,9 +201,7 @@ export function Workspace({
   }, [libraryRevision]);
   const changeScope = (value: Scope) => {
     setScope(value);
-    setHistory([]);
     setHits([]);
-    setAnswer("");
     setDetail("");
     setSelectedIds(new Set());
     setError("");
@@ -269,42 +264,11 @@ export function Workspace({
     event.preventDefault();
     setBusy(true);
     setError("");
-    setAnswer("");
     setHits([]);
     try {
-      if (tab === "chat") {
-        const result = await api<{
-          answer: string;
-          citations: Hit[];
-          provider: string;
-          fallback_used: boolean;
-          retrieval_mode: string;
-        }>("/api/chat", "POST", { query, history, scope });
-        setAnswer(result.answer);
-        setHits(result.citations);
-        setDetail(
-          `${result.provider} · ${result.retrieval_mode}${result.fallback_used ? " · extractive fallback" : ""}`,
-        );
-        setHistory((current) =>
-          [
-            ...current,
-            { role: "user", content: query },
-            { role: "assistant", content: result.answer },
-          ].slice(-12),
-        );
-      } else {
-        const result = await api<{
-          results: Hit[];
-          channels_used: string[];
-          warning?: string;
-        }>("/api/search", "POST", { query, mode, scope });
-        setHits(result.results);
-        setDetail(
-          result.warning ||
-            result.channels_used.join(" · ") ||
-            "No matching evidence",
-        );
-      }
+      const result = await api<{ results: Hit[]; channels_used: string[]; warning?: string }>("/api/search", "POST", { query, mode, scope });
+      setHits(result.results);
+      setDetail(result.warning || result.channels_used.join(" · ") || "No matching evidence");
     } catch (e) {
       fail(e);
     } finally {
@@ -448,26 +412,15 @@ export function Workspace({
             }}
           />
         )}
-        {(tab === "search" || tab === "chat") && (
+        {tab === "chat" && <AdvancedChat key={user.id} scope={scope as ChatRequest["scope"]} onOpenEvidence={item => { if (item.file_id) void open(item.file_id); }} />}
+        {tab === "search" && (
           <>
             <Stack component="form" spacing={2} onSubmit={search}>
               <Typography variant="h5">
-                {tab === "chat" ? "Ask the library" : "Search the library"}
+                Search the library
               </Typography>
-              {tab === "chat" && (
-                <Button
-                  sx={{ alignSelf: "start" }}
-                  onClick={() => {
-                    setHistory([]);
-                    setAnswer("");
-                    setHits([]);
-                  }}
-                >
-                  New conversation
-                </Button>
-              )}
               <TextField
-                label={tab === "chat" ? "Question" : "Search terms or question"}
+                label="Search terms or question"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 required
@@ -477,13 +430,10 @@ export function Workspace({
                 <SearchModeSelect value={mode} onChange={setMode} />
               )}
               <Button type="submit" variant="contained" disabled={busy}>
-                {busy ? "Working…" : tab === "chat" ? "Ask" : "Search"}
+                {busy ? "Working…" : "Search"}
               </Button>
             </Stack>
             {detail && <Typography color="text.secondary">{detail}</Typography>}
-            {answer && (
-              <Paper sx={{ p: 3, whiteSpace: "pre-wrap" }}>{answer}</Paper>
-            )}
             {hits.map((hit, i) => (
               <Stack key={hit.chunk_id ?? i} spacing={0.5}>
                 <SearchResultCard

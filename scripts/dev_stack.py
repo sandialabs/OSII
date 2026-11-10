@@ -143,7 +143,7 @@ def main() -> int:
             print(name + ": " + shlex.join(command))
         return 0
     if not args.skip_setup:
-        subprocess.run([uv, "sync", "--frozen", "--python", "3.12", "--package", "osii", "--extra", "server"], cwd=ROOT, env=env, check=True)
+        subprocess.run([uv, "sync", "--frozen", "--python", "3.12", "--package", "osii", "--extra", "server", "--extra", "rag-haystack"], cwd=ROOT, env=env, check=True)
         if not args.core_only and not (ROOT / "osii-dashboard/dashboard/node_modules").is_dir():
             subprocess.run([npm, "ci"], cwd=ROOT / "osii-dashboard/dashboard", env=env, check=True)
     processes = []

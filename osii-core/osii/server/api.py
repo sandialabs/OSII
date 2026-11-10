@@ -1,7 +1,8 @@
 """Authenticated HTTP adapters over Core library and persistence operations."""
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
+from threading import BoundedSemaphore
 import secrets
 import hashlib
 import os
@@ -13,7 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.concurrency import run_in_threadpool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 
 from osii.domain.topic_cache import topic_cache_key, hydrate_topic_map, pack_topic_map
@@ -78,6 +79,20 @@ class Chat(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
     scope: dict = Field(default_factory=lambda: {"scope_type": "root"})
     history: list[dict] = Field(default_factory=list, max_length=12)
+    profile_id: str = Field(default="default", max_length=100)
+
+    @field_validator("history")
+    @classmethod
+    def valid_history(cls, turns):
+        if any(turn.get("role") not in ("user", "assistant") or not isinstance(turn.get("content"), str) for turn in turns):
+            raise ValueError("History needs user/assistant roles and text content")
+        if sum(len(turn["content"]) for turn in turns) > 12000:
+            raise ValueError("Conversation history is too large")
+        return turns
+
+
+class ChatComparison(Chat):
+    profile_ids: list[str] = Field(min_length=2, max_length=3)
 
 
 class Collection(BaseModel):
@@ -153,6 +168,19 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
     from osii.rag.strategies.http_reranker import create_reranker
     app.state.rag_reranker = create_reranker(settings.endpoints()["rerank"])
     library = Library(store, provider)
+    from osii.server.rag import RagSession, CorpusChanged, profiles as rag_profiles
+    rag_admission = BoundedSemaphore(1)
+
+    @contextmanager
+    def advanced_run():
+        # One materialized corpus per process, including a whole comparison.
+        # Keep the 1 GiB example API from loading several vector snapshots at once.
+        if not rag_admission.acquire(blocking=False):
+            raise HTTPException(429, "An advanced RAG run is already in progress; retry when it finishes")
+        try:
+            yield
+        finally:
+            rag_admission.release()
     reads = PostgresLibraryReader(store.engine)
 
     @app.middleware("http")
@@ -174,6 +202,10 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
     @app.exception_handler(ValueError)
     async def invalid(request, exc):
         return JSONResponse({"detail": str(exc)}, status_code=422)
+
+    @app.exception_handler(CorpusChanged)
+    async def corpus_changed(request, exc):
+        return JSONResponse({"detail": str(exc)}, status_code=409)
 
     @app.exception_handler(RequestValidationError)
     async def invalid_fields(request, exc):
@@ -353,11 +385,30 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
     def chat(payload: Chat, account=Depends(require())):
         if sum(len(str(turn.get("content", ""))) for turn in payload.history) > 12000:
             raise HTTPException(422, "Conversation history is too large")
+        if payload.profile_id != "default":
+            with advanced_run():
+                return RagSession(store, provider, connections, account, payload.query, payload.scope, payload.history).run(payload.profile_id)
         # Shared database-backed budget guard; paid generation is never anonymous.
         budget = "chat:" + account["id"]
         if not store.login_allowed(budget, failed=True) or not store.login_allowed("chat:global", failed=True, maximum=100):
             raise HTTPException(429, "Chat limit reached; try again in 15 minutes")
         return library.chat(payload.query, payload.scope, payload.history, account["id"])
+
+    @app.get("/api/chat/profiles")
+    def chat_profiles(account=Depends(require())):
+        return rag_profiles(store, connections, account)
+
+    @app.post("/api/chat/compare")
+    def chat_compare(payload: ChatComparison, account=Depends(require())):
+        if len(set(payload.profile_ids)) != len(payload.profile_ids):
+            raise ValueError("Choose distinct RAG profiles")
+        with advanced_run():
+            session = RagSession(store, provider, connections, account, payload.query, payload.scope, payload.history)
+            session.validate(payload.profile_ids)
+            runs = [{"profile_id": identifier, "response": session.run(identifier)} for identifier in payload.profile_ids]
+            session.guard()
+        return {"query": payload.query, "scope": payload.scope, "corpus_revision": session.revision,
+                "model": session.model or "extractive", "runs": runs}
 
     @app.post("/api/research/report", response_model=ReportResponse)
     def research_report(payload: ReportRequest, account=Depends(require())):

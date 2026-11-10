@@ -5,6 +5,7 @@ from collections import OrderedDict
 from difflib import SequenceMatcher
 import re
 import threading
+import time
 import unicodedata
 
 import bm25s
@@ -38,7 +39,7 @@ class RetrievalEngine:
     def search(self, rows: list[dict], query: str, *, revision: int,
                mode: str = "hybrid", top_k: int = 10,
                query_vector: list[float] | None = None,
-               embedding_model: str = "") -> tuple[list[dict], list[str]]:
+               embedding_model: str = "", observer=None) -> tuple[list[dict], list[str]]:
         if mode not in {"lexical", "semantic", "hybrid"}:
             raise ValueError("Unsupported retrieval mode")
         if not rows or not tokens(query):
@@ -60,12 +61,20 @@ class RetrievalEngine:
         channels: list[str] = []
         limit = min(len(rows), max(top_k * 5, 50))
 
+        def observe(kind, values, started, *, excluded=None, input_count=None, **details):
+            if observer:
+                observer(kind, items=[{**row, "rank": i} for i, row in enumerate(values, 1)],
+                         input_count=len(rows) if input_count is None else input_count, duration_seconds=time.perf_counter() - started,
+                         excluded=excluded, **details)
+
         def result(index: int, score: float, channel: str) -> dict:
             row = rows[index]
             return {**row, "score": float(score), "match_type": channel,
                     "snippet": row["text"][:700]}
 
         if mode != "semantic":
+            started = time.perf_counter()
+            lexical = []
             known = [word for word in tokens(query) if word in vocabulary]
             if known:
                 ids, scores = bm.retrieve([known], k=limit, show_progress=False)
@@ -74,8 +83,13 @@ class RetrievalEngine:
                 if lexical:
                     lists.append(lexical)
                     channels.append("bm25")
+            capped = len(lexical) == limit and len(rows) > limit
+            observe("bm25", lexical, started, query=query, result_limit=limit, limit_reached=capped,
+                    match_count=None if capped else len(lexical), exact_count=not capped,
+                    score_kind="BM25; higher is better")
             # Bounded vocabulary expansion handles OCR damage without changing
             # source text or inventing numeric identifiers. Exact terms dominate.
+            started = time.perf_counter()
             query_words = tokens(query)
             alternatives = {}
             for word in query_words:
@@ -103,7 +117,10 @@ class RetrievalEngine:
             if fuzzy:
                 lists.append(fuzzy[:limit])
                 channels.append("character")
+            observe("ocr_tolerant_search", fuzzy[:limit], started, query=query, match_count=len(fuzzy),
+                    limit_reached=len(fuzzy) > limit, alternatives=alternatives, score_kind="weighted term coverage")
         if mode != "lexical" and query_vector:
+            started = time.perf_counter()
             q = np.asarray(query_vector, dtype=np.float32)
             qnorm = float(np.linalg.norm(q))
             semantic = []
@@ -120,11 +137,18 @@ class RetrievalEngine:
             if semantic:
                 lists.append(semantic[:limit])
                 channels.append("semantic")
+            observe("semantic_search", semantic[:limit], started, query=query, match_count=len(semantic),
+                    limit_reached=len(semantic) > limit, score_kind="cosine similarity", embedding_model=embedding_model)
         if not lists:
             return [], channels
+        started = time.perf_counter()
         fused = reciprocal_rank_fusion(lists) if len(lists) > 1 else lists[0]
+        observe("rank_fusion", fused, started, channels=channels,
+                input_count=sum(len(items) for items in lists),
+                score_kind="reciprocal rank fusion" if len(lists) > 1 else "single channel score")
         # Remove largely overlapping windows without losing the original spans.
-        selected = []
+        started = time.perf_counter()
+        selected, excluded = [], []
         for row in fused:
             duplicate = any(row["file_id"] == old["file_id"] and
                             max(0, min(row["char_end"], old["char_end"]) - max(row["char_start"], old["char_start"])) /
@@ -132,6 +156,11 @@ class RetrievalEngine:
                             for old in selected)
             if not duplicate:
                 selected.append(row)
+            else:
+                excluded.append({**row, "reason": "overlapping passage"})
             if len(selected) == top_k:
                 break
+        processed = len(selected) + len(excluded)
+        excluded.extend({**row, "reason": "candidate count limit"} for row in fused[processed:])
+        observe("passage_selection", selected, started, input_count=len(fused), excluded=excluded, top_k=top_k)
         return selected, channels

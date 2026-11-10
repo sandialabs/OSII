@@ -38,7 +38,7 @@ class Provider:
     def catalog(self):
         return [{"id": "vendor/model-id", "name": "Friendly name", "capabilities": ["chat"]}]
 
-    def chat(self, model, messages, max_tokens=900):
+    def chat(self, model, messages, max_tokens=900, **kwargs):
         self.calls += 1
         return "The detector uses neutrons.", {"completion_tokens": 7}
 

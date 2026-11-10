@@ -18,6 +18,7 @@ model services help interpret the material without becoming the source of truth.
 - Run scoped synthesis and enrichment tools, with saved products and revision history.
 - Browse sources, organize shared collections, and search by keywords or meaning.
 - Ask grounded questions using a configured model service.
+- Compare advanced RAG strategies and inspect their agent traces in Chat.
 - Give administrators, curators, and readers appropriate access to the library.
 - Write editable research reports with passage references, bibliography drafts,
   reviewable revisions, and Markdown or Mathpix exports.
