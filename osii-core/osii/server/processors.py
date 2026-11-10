@@ -8,6 +8,8 @@ from osii.processor_sdk import (ProcessorClient, ProcessorDescriptor, ProcessorK
     EnrichmentRequest, SynthesisResponse, EnrichmentResponse)
 from osii.processors.text import (LocalExtractivePreviewSynthesizer, LocalStatsKeywordsEnricher,
     chat_synthesizer_descriptor, synthesis_prompt, model_synthesis_response)
+from osii.domain.storage.commits import ProcessingCommit, InputRevision, JobCheckpoint
+from osii.domain.storage.postgres_commits import PostgresProcessingCommitter
 
 BUILTINS = {p.descriptor.name: p for p in (LocalExtractivePreviewSynthesizer(), LocalStatsKeywordsEnricher())}
 MODEL_SYNTHESIS = chat_synthesizer_descriptor()
@@ -228,11 +230,13 @@ def derived_outputs(store, settings, provider, job: dict, worker: str, index: in
         # PostgreSQL JSONB cannot represent NUL; derived output is not canonical evidence.
         data = json.loads(response.model_dump_json().replace('\\u0000', '\\ufffd'))
         item.setdefault('steps', {})[kind] = 'done'
-        store.commit_processing_output(document['file_id'], kind, {
-            'response': data, 'processor_kind': selection['kind'], 'created_at': now().isoformat(),
-            'input_extraction_id': fingerprint['extraction_id'], 'input_text_sha256': fingerprint['text_sha256'],
-            'run_id': job['id'], 'config': request.config, 'expert_context': request.expert_context,
-        }, jid=job['id'], worker=worker, index=index, item=item)
+        normalized = type(response).model_validate(data)
+        PostgresProcessingCommitter(store.engine).commit(ProcessingCommit(
+            f"{job['id']}:{index}:{kind}", document['file_id'], request, normalized,
+            ProcessorDescriptor.model_validate(selection['descriptor']),
+            input_revision=InputRevision(document['file_id'], fingerprint['extraction_id'], fingerprint['text_sha256']),
+            provenance={'run_id': job['id']}),
+            checkpoint=JobCheckpoint(job['id'], worker, index, item))
         report(f'{kind} saved: {item["path"]}')
 
 

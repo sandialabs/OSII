@@ -19,6 +19,8 @@ from osii.indexing.chunking import _structured_window_spans
 from sqlalchemy import text
 
 from osii.persistence.postgres import PostgresStore, identifier, now
+from osii.domain.storage.commits import ProcessingCommit, SourceRecord, JobCheckpoint, InputRevision
+from osii.domain.storage.postgres_commits import PostgresProcessingCommitter
 from osii.processor_sdk.client import ProcessorClient, ProcessorClientError
 from osii.processor_sdk.models import DocumentInput, ExtractionRequest, ExtractionResponse
 from osii.server.config import Settings
@@ -67,22 +69,21 @@ def ingest_file(store: PostgresStore, provider: ModelProvider, extractor: Proces
     sha = hashlib.sha256(original).hexdigest()
     fid = "sha256-" + sha
     configuration = store.configuration()
-    model = configuration.get("embedding_model", "") if embed else ""
+    model = configuration.get("embedding_model", "") if embed and not save_variant else ""
     previous = store.document(fid)
     if not force and previous and previous["active"] and previous["source_relpath"] == relative and previous["sha256"] == sha and (not embed or previous["metadata"].get("embedding_model", "") == model):
         return "unchanged"
     media = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-    response = extractor.extract(ExtractionRequest(request_id=identifier(), document=DocumentInput(
-        file_id=fid, filename=path.name, media_type=media, content_base64=base64.b64encode(original).decode())))
+    request = ExtractionRequest(request_id=identifier(), document=DocumentInput(
+        file_id=fid, filename=path.name, media_type=media, content_base64=base64.b64encode(original).decode()))
+    response = extractor.extract(request)
     if not any(segment.text.strip() for segment in response.segments) and ocr:
-        response = ocr.extract(ExtractionRequest(request_id=identifier(), document=DocumentInput(
-            file_id=fid, filename=path.name, media_type=media, content_base64=base64.b64encode(original).decode())))
+        request = ExtractionRequest(request_id=identifier(), document=DocumentInput(
+            file_id=fid, filename=path.name, media_type=media, content_base64=base64.b64encode(original).decode()))
+        response = ocr.extract(request)
     if not any(segment.text.strip() for segment in response.segments):
         raise IngestionError("No usable text extracted. Check OCR health in Intake, then choose an OCR extractor and re-extract this file.")
     response, nul_replacements = _normalize_extraction(response)
-    if save_variant:
-        store.save_extraction_variant(fid, sha, response.model_dump(mode='json'), job_owner=job_owner)
-        return 'variant_saved'
     pieces, spans, position = [], [], 0
     for segment in response.segments:
         if pieces:
@@ -119,9 +120,13 @@ def ingest_file(store: PostgresStore, provider: ModelProvider, extractor: Proces
         doc["metadata"].update(embedding_model="", embedding_warning=embedding_error)
     if nul_replacements:
         doc["metadata"]["normalization"] = {"nul_replacements": nul_replacements, "replacement": "U+FFFD"}
-    artifact_rows = [{"id": identifier(), "file_id": fid, "kind": artifact.kind,
-        "payload": artifact.model_dump(mode="json")} for artifact in response.artifacts]
-    store.commit_document(doc, rows, response.model_dump(mode="json"), artifact_rows, job_owner=job_owner)
+    operation = f"{job_owner[0]}:{relative}:extraction" if job_owner else request.request_id
+    source = SourceRecord(fid, relative, path.name, media, sha, len(original), doc["metadata"])
+    PostgresProcessingCommitter(store.engine).commit(ProcessingCommit(operation, fid, request, response,
+        response.processor, source=source, chunks=tuple(rows), make_primary=not save_variant),
+        checkpoint=JobCheckpoint(*job_owner) if job_owner else None)
+    if save_variant:
+        return 'variant_saved'
     return "text_only" if embedding_error else "processed"
 
 
@@ -205,9 +210,24 @@ def process_derived_file(store, provider, extractor, settings, job, worker, inde
                 raise IngestionError("Embedding service returned the wrong number of vectors")
             for row, vector in zip(batch, vectors):
                 row["embedding"] = vector
-        store.replace_embeddings(fid, rows, payload["embedding_model"], job_owner=(job["id"], worker))
+        from osii.processor_sdk import (Capability, ProcessorDescriptor, ProcessorKind,
+            EmbeddingRequest, EmbeddingInput, EmbeddingResponse, EmbeddingVector)
+        from osii.domain.storage.commits import text_digest
+        producer = ProcessorDescriptor(name="core.openai-compatible-embedder", version="1",
+            display_name="Configured embedding endpoint", description="Core model-provider adapter",
+            kind=ProcessorKind.EMBEDDER, capabilities=Capability(scope_types=["object"]))
+        request = EmbeddingRequest(request_id=identifier(), config={"model": payload["embedding_model"]},
+            inputs=[EmbeddingInput(id=row["chunk_id"], text=row["text"]) for row in rows])
+        response = EmbeddingResponse(request_id=request.request_id, processor=producer,
+            model=payload["embedding_model"], vectors=[EmbeddingVector(id=row["chunk_id"],
+                vector=row["embedding"], dimensions=len(row["embedding"])) for row in rows],
+            metadata={"endpoint_type": "openai-compatible", "provider_id": settings.endpoints()["embedding"].base_url})
         steps["embedding"] = "done"
-        store.update_processing_item(job["id"], worker, index, current)
+        PostgresProcessingCommitter(store.engine).commit(ProcessingCommit(
+            f"{job['id']}:{index}:embedding", fid, request, response, producer,
+            input_revision=InputRevision(fid, doc["metadata"]["primary_extraction_id"], text_digest(doc["text"])),
+            chunks=tuple(rows), provenance={"run_id": job["id"]}),
+            checkpoint=JobCheckpoint(job["id"], worker, index, current))
     current["current_step"] = "finished"
 
 def process_plan(store: PostgresStore, provider, extractor, settings: Settings,

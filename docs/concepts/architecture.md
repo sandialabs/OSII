@@ -123,6 +123,12 @@ sidecar and PostgreSQL adapters and one contract suite. Hosted preferred-text
 and artifact inspection use the PostgreSQL adapter behind the existing account
 checks. This does not enable local storage, change writes, or migrate data.
 
+The [processing commit boundary](../reference/processing-commits.md) now accepts
+validated SDK responses with stable operation IDs and explicit input revisions.
+Hosted ingestion, document synthesis/enrichment, and embedding-only jobs commit
+through PostgreSQL with transactional receipts and leased job checkpoints.
+Existing aggregate workflows and index publication retain their current adapters.
+
 OSII-local and OSII-server are compositions of the same product. Their storage,
 identity, and deployment adapters differ; intake, processor contracts, document
 inspection, topic exploration, and RAG strategies should converge on shared code.
