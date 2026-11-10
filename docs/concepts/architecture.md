@@ -127,7 +127,9 @@ The [processing commit boundary](../reference/processing-commits.md) now accepts
 validated SDK responses with stable operation IDs and explicit input revisions.
 Hosted ingestion, document synthesis/enrichment, and embedding-only jobs commit
 through PostgreSQL with transactional receipts and leased job checkpoints.
-Existing aggregate workflows and index publication retain their current adapters.
+Folder, collection, and root synthesis/enrichment use shared scope commits,
+with frozen membership and full input revisions. Existing product paths and
+views remain compatible. Index publication retains its current adapters.
 
 OSII-local and OSII-server are compositions of the same product. Their storage,
 identity, and deployment adapters differ; intake, processor contracts, document

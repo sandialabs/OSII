@@ -6,6 +6,10 @@ from sqlalchemy import select, func, literal
 from osii.persistence.postgres import documents, extractions, identifier, now
 from osii.persistence.scope_products import ScopeProducts, address
 from osii.domain.library import scope_documents
+from osii.domain.read.contracts import ReadScope
+from osii.domain.read.postgres import PostgresLibraryReader
+from osii.domain.storage.commits import ScopeInputRevision, ScopeProcessingCommit, JobCheckpoint
+from osii.domain.storage.postgres_commits import PostgresProcessingCommitter
 from osii.server.intake import configuration_stamp
 from osii.server.processors import catalog, bounded_config, invoke
 from osii.processor_sdk import (
@@ -13,7 +17,7 @@ from osii.processor_sdk import (
     ScopeInput,
     SynthesisRequest,
     EnrichmentRequest,
-    WikiMarkdownArtifactData,
+    ProcessorDescriptor,
 )
 
 MAX_DOCUMENTS = 1000
@@ -142,6 +146,7 @@ def snapshot(store, scope, actor_id):
                     extraction_identity().label("extraction_id"),
                     func.length(documents.c.text).label("full_chars"),
                     func.md5(documents.c.text).label("text_fingerprint"),
+                    func.encode(func.sha256(func.convert_to(documents.c.text, "UTF8")), "hex").label("source_sha256"),
                     func.substr(documents.c.text, 1, allowance).label("text"),
                 )
                 .where(documents.c.active, documents.c.file_id.in_(ids))
@@ -163,6 +168,9 @@ def snapshot(store, scope, actor_id):
         raise ValueError("Read document text before running a library tool")
     return {
         "member_ids": ids,
+        "processing_revision": {"member_ids": ids, "inputs": [{
+            "file_id": row["file_id"], "representation_id": row["extraction_id"],
+            "text_sha256": row["source_sha256"]} for row in rows]},
         "documents": texts,
         "text_chars": sum(len(row["text"]) for row in texts),
         "truncated_documents": sum(row["truncated"] for row in texts),
@@ -275,6 +283,15 @@ def execute(store, settings, provider, job, worker, stopping, report):
     choice = payload["selection"]
     frozen = payload["frozen"]
     kind, identity = address(payload["scope"])
+    if "processing_revision" in frozen:
+        revision = ScopeInputRevision.from_dict(frozen["processing_revision"])
+    else:
+        # Already queued jobs retain their original MD5/extraction checks before
+        # capturing the new full SHA-256 commit record; never bless stale inputs.
+        if input_state(store, payload["scope"], {"member_ids": frozen["member_ids"],
+            "inputs": frozen["documents"]}, actor["id"]) != "current":
+            raise ValueError("Scope input changed; start a new tool run")
+        revision = ScopeInputRevision.capture(PostgresLibraryReader(store.engine, actor_id=actor["id"]), frozen["member_ids"])
     scope = ScopeInput(
         scope_type=kind,
         scope_id=identity,
@@ -325,36 +342,6 @@ def execute(store, settings, provider, job, worker, stopping, report):
     response = response.model_validate_json(
         response.model_dump_json().replace("\\u0000", "\\ufffd")
     )
-    outputs = []
-    if choice["kind"] == "synthesizer":
-        wiki = WikiMarkdownArtifactData(
-            title=payload["scope_title"] + " · " + choice["display_name"],
-            markdown=response.markdown,
-            citations=response.citations,
-        )
-        outputs.append(
-            {"id": "wiki", "family": "synthesis", "data": wiki.model_dump(mode="json")}
-        )
-    else:
-        for artifact in response.artifacts:
-            data = (
-                artifact.standard_data.model_dump(mode="json")
-                if artifact.standard_data
-                else {
-                    "artifact_type": "text",
-                    "title": artifact.id,
-                    "text": artifact.text,
-                }
-                if artifact.text is not None
-                else {
-                    "artifact_type": "json",
-                    "title": artifact.id,
-                    "data": artifact.json_data,
-                }
-            )
-            outputs.append({"id": artifact.id, "family": "enrichment", "data": data})
-    if not outputs:
-        raise ValueError("The tool returned no usable products")
     actor = store.account(user_id=payload["actor_id"])
     if not actor or not actor["active"] or actor["role"] != "admin":
         raise ValueError("Processing permission was revoked during this run")
@@ -371,6 +358,7 @@ def execute(store, settings, provider, job, worker, stopping, report):
         else None,
         "configuration_stamp": payload["configuration_stamp"],
         "scope": payload["scope"],
+        "scope_title": payload["scope_title"],
         "member_ids": frozen["member_ids"],
         "inputs": [
             {k: v for k, v in row.items() if k != "text"} for row in frozen["documents"]
@@ -379,10 +367,12 @@ def execute(store, settings, provider, job, worker, stopping, report):
             k: v for k, v in frozen.items() if k not in {"documents", "member_ids"}
         },
     }
-    ScopeProducts(store).generated(
-        payload["scope"], choice["id"], outputs, job, worker, provenance
-    )
     item.update(status="done", finished_at=now().isoformat())
+    PostgresProcessingCommitter(store.engine, actor_id=actor["id"]).commit(ScopeProcessingCommit(
+        f"{job['id']}:scope:{choice['kind']}", ReadScope(kind, identity), request, response,
+        ProcessorDescriptor.model_validate(choice["descriptor"]), revision, provenance=provenance,
+        product_parents=payload.get("product_parents", {})),
+        checkpoint=JobCheckpoint(job["id"], worker, 0, item))
     report(
         "Scope products and provenance saved. Originals and extracted text are unchanged."
     )
