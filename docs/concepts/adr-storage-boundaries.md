@@ -2,8 +2,8 @@
 
 Date: 10 November 2026
 
-Status: Accepted direction. Shared reads and the initial document processing
-commit boundary are implemented; broader adoption, backend selection, and
+Status: Accepted direction. Shared reads, document commits, and aggregate product
+commits are implemented; broader adoption, backend selection, and
 migrations remain staged work.
 
 ## Context and current behavior
@@ -150,7 +150,7 @@ content. Search indexes can be rebuilt for the destination.
    representation/segment reads, and artifact listing/content access. Existing
    sidecar readers and PostgreSQL operations supply these interfaces without
    moving data. Compatibility mappings preserve existing REST response shapes.
-2. **Validated processing commits: initial document slice implemented.** See
+2. **Validated processing commits: document and aggregate product slices implemented.** See
    [processing commit contracts and guarantees](../reference/processing-commits.md)
    for adapter adoption, retry/lease behavior, and the distinction between an
    atomic product and a resumable multi-product step. Reuse storage-independent SDK processors;
