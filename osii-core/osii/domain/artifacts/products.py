@@ -244,13 +244,15 @@ def read_product(path: Path) -> dict:
     }
 
 
-def _commit(path: Path, manifest: dict):
+def _commit(path: Path, manifest: dict, *, write_compatibility: bool = True):
     manifest["filename"] = path.name
     # A single atomic manifest contains complete immutable revisions, including
     # legacy imports. A crash cannot publish a pointer to a missing revision.
     atomic_write_text(
         _directory(path) / "manifest.json", json.dumps(manifest, ensure_ascii=False)
     )
+    if not write_compatibility:
+        return
     current = next(
         (r for r in manifest["revisions"] if r["id"] == manifest["current"]), None
     )
@@ -351,9 +353,10 @@ def edit_product(
         raise ValueError("This product is not an editable wiki.")
     data = {**current["data"], "markdown": markdown}
     # Keep citations as provenance; a changed human passage is not automatically grounded.
-    publish_product(
-        root, path, data, origin="human", expected=expected, check_expected=True
-    )
+    from osii.domain.storage.authoring import ProductRef
+    from osii.domain.storage.sidecar_authoring import SidecarProductAuthoring
+    SidecarProductAuthoring(root).save(ProductRef.from_scope(scope, filename), data,
+        expected_revision=expected, activate=True)
     return read_product(path)
 
 
@@ -366,27 +369,13 @@ def activate_product(
     family: str = "enrichment",
 ) -> dict:
     path = product_path(root, scope, filename, family)
-    with _lock(root):
-        manifest = _load(path)
-        if manifest["current"] != expected:
-            raise FileExistsError(
-                "This product changed. Reload its history before restoring a revision."
-            )
-        if not any(r["id"] == revision for r in manifest["revisions"]):
-            raise ValueError("Revision not found")
-        # A restore is a human decision: subsequent generation must not replace it.
-        original = next(r for r in manifest["revisions"] if r["id"] == revision)
-        restored = {
-            **original,
-            "id": uuid.uuid4().hex,
-            "origin": "human",
-            "restored_from": revision,
-            "parent": expected,
-            "created_at": datetime.now(UTC).isoformat(),
-        }
-        manifest["revisions"].append(restored)
-        manifest["current"] = restored["id"]
-        _commit(path, manifest)
+    from osii.domain.storage.authoring import ProductRef
+    from osii.domain.storage.sidecar_authoring import SidecarProductAuthoring
+    try:
+        SidecarProductAuthoring(root).activate(ProductRef.from_scope(scope, filename, family),
+            revision, expected_revision=expected)
+    except KeyError as exc:
+        raise ValueError("Revision not found") from exc
     return read_product(path)
 
 
@@ -442,57 +431,18 @@ def edit_product_data(
     expected: str,
     family: str = "enrichment",
 ) -> dict:
-    from pydantic import TypeAdapter
-    from osii.processor_sdk.models import StandardArtifactData
-
     path = product_path(root, scope, filename, family)
     history = read_product(path)
     if history["data"] is None:
         raise ValueError("Product not found")
-    serialized = json.dumps(data, allow_nan=False)
-    if len(serialized) > 5_000_000:
-        raise ValueError("An edited product must contain at most 5,000,000 characters")
-    if (
-        isinstance(history["data"], dict)
-        and history["data"].get("artifact_type") == "document_metadata"
-    ):
-        from osii.processor_sdk.document_metadata import DocumentMetadata
-
-        if (
-            not isinstance(data, dict)
-            or data.get("artifact_type") != "document_metadata"
-        ):
-            raise ValueError("Preserve the document metadata format")
-        record = DocumentMetadata.model_validate(data.get("document_metadata"))
-        data = {
-            **data,
-            "document_metadata": record.model_copy(
-                update={"method": "human", "model": None}
-            ).model_dump(mode="json"),
-        }
     if path.suffix == ".txt":
         if not isinstance(data, dict) or not isinstance(data.get("text"), str):
             raise ValueError("A summary requires text")
         data = {**history["data"], "text": data["text"]}
-    elif isinstance(history["data"], dict) and history["data"].get("artifact_type") in {
-        "wiki_markdown",
-        "table",
-        "entity_list",
-        "knowledge_graph",
-    }:
-        if (
-            not isinstance(data, dict)
-            or data.get("artifact_type") != history["data"]["artifact_type"]
-        ):
-            raise ValueError("Preserve the product format when editing")
-        data = (
-            TypeAdapter(StandardArtifactData)
-            .validate_python(data)
-            .model_dump(mode="json")
-        )
-    publish_product(
-        root, path, data, origin="human", expected=expected, check_expected=True
-    )
+    from osii.domain.storage.authoring import ProductRef
+    from osii.domain.storage.sidecar_authoring import SidecarProductAuthoring
+    SidecarProductAuthoring(root).save(ProductRef.from_scope(scope, filename, family), data,
+        expected_revision=expected, activate=True)
     return read_product(path)
 
 

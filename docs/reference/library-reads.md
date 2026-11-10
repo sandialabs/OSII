@@ -113,7 +113,8 @@ the contract itself.
 
 The [processing commit boundary](processing-commits.md) now handles document
 results and folder/collection/root synthesis and enrichment products.
-Broader legacy write adoption, durable job interfaces,
-backend-neutral collection commands, complete authoring parity, and explicit
+The [authoring/collection interfaces](library-authoring.md) add product draft
+save/activation and version-checked collection commands. Broader legacy write
+adoption, durable job interfaces, document-text authoring parity, and explicit
 library transfer remain later work. Replacing
 whole-corpus server retrieval snapshots is also separate from these read APIs.

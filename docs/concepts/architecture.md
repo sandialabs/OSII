@@ -135,6 +135,11 @@ folder/collection/root synthesis and enrichment use shared scope commits with
 frozen membership and input revisions. Vector-index publication retains its
 current adapters.
 
+[Shared authoring and collection interfaces](../reference/library-authoring.md)
+add revisioned product drafts/activation and version-checked collection commands.
+Existing product editors keep immediate activation for compatibility; legacy
+document-text overrides are preserved, not silently migrated into product history.
+
 OSII-local and OSII-server are compositions of the same product. Their storage,
 identity, and deployment adapters differ; intake, processor contracts, document
 inspection, topic exploration, and RAG strategies should converge on shared code.
