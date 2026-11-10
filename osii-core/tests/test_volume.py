@@ -739,3 +739,22 @@ def test_changed_mount_is_reported_for_contextual_recovery(library):
     assert result["status"] == "error"
     assert result["issue_code"] == "identity_changed"
     assert store.runs(recent=True)[0]["issue_code"] == "identity_changed"
+
+
+def test_registered_mount_does_not_block_startup_or_trigger_source_io(library, monkeypatch):
+    store, root, source_id = library
+    with store.connect() as conn:
+        conn.execute("UPDATE sources SET inode='previous-mount' WHERE id=?", (source_id,))
+    original = Path.is_dir
+    def no_source_probe(path):
+        if path == root:
+            raise AssertionError("Existing mounts must not be probed during inventory startup")
+        return original(path)
+    monkeypatch.setattr(Path, "is_dir", no_source_probe)
+    app = create_app(store.path)
+    app.state.source_root = str(root)
+    with TestClient(app) as client:
+        response = client.get("/api/volume/sources")
+        assert response.status_code == 200
+        assert response.json()["items"][0]["inode"] == "previous-mount"
+    assert store.source(source_id)["inode"] == "previous-mount"

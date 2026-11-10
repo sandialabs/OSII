@@ -32,8 +32,18 @@ def create_app(path: Path | None = None, *, api_prefix: str = "/api/volume") -> 
         source_root = getattr(
             app.state, "source_root", os.getenv("SHARED_VOLUME_ROOT", "")
         )
-        if source_root and Path(source_root).is_dir():
-            store.register_source(Path(source_root))
+        if source_root:
+            root = Path(source_root).expanduser().absolute()
+            # A remount must not prevent opening the UI needed to recover it.
+            # Existing locations are verified by explicit scans, never bootstrap.
+            known = {Path(source["root"]) for source in store.sources()}
+            if root not in known and root.is_dir():
+                try:
+                    store.register_source(root)
+                except ValueError as exc:
+                    # An alias may resolve to an existing, remounted root.
+                    if "identity changed" not in str(exc):
+                        raise
         yield
 
     app = FastAPI(title="OSII file inventory API", lifespan=lifespan)
