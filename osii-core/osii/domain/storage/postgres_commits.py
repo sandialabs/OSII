@@ -61,7 +61,7 @@ class PostgresProcessingCommitter:
                 receipt = replace(CommitReceipt(**saved["receipt"]), replayed=True)
             elif scoped:
                 command.input_revision.verify_current(current)
-                result = self._scope_products(conn, command, checkpoint, actor)
+                result = self._scope_products(conn, command, actor)
                 receipt = CommitReceipt(command.commit_id, None, command.kind, result,
                     scope_type=command.scope.kind, scope_id=command.scope.identifier)
                 self._sql(conn, "INSERT INTO settings(id,value) VALUES (:key,CAST(:value AS jsonb))",
@@ -117,7 +117,7 @@ class PostgresProcessingCommitter:
         return ScopeInputRevision(tuple(row["file_id"] for row in rows), tuple(
             InputRevision(row["file_id"], row["representation_id"], row["text_sha256"]) for row in rows))
 
-    def _scope_products(self, conn, command, checkpoint, actor):
+    def _scope_products(self, conn, command, actor):
         """Use the existing hosted scope-product/revision tables and addresses."""
         import hashlib
         response = command.response
@@ -149,8 +149,7 @@ class PostgresProcessingCommitter:
             parent = (product["current_revision"] if command.product_parents is None
                       else command.product_parents.get(name))
             current_origin = self._sql(conn, "SELECT origin FROM scope_revisions WHERE id=:id", id=product["current_revision"]).scalar()
-            run = checkpoint.job_id if checkpoint else command.commit_id
-            revision = str(uuid.uuid5(uuid.NAMESPACE_URL, f"osii:scope-product:{run}:{output['id']}"))
+            revision = str(uuid.uuid5(uuid.NAMESPACE_URL, f"osii:scope-product:{command.commit_id}:{output['id']}"))
             self._sql(conn, """INSERT INTO scope_revisions(id,product_id,parent,origin,created_at,actor_id,data,provenance)
                 VALUES (:id,:product,:parent,'generated',:created,:actor,CAST(:data AS jsonb),CAST(:provenance AS jsonb))""",
                 id=revision, product=product["id"], parent=parent, created=datetime.now(UTC).isoformat(), actor=actor,
