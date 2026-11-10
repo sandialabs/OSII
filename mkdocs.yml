@@ -60,6 +60,7 @@ nav:
       - Store structure: reference/osii-store.md
       - Rebuildable catalog: reference/catalog.md
       - Shared library reads: reference/library-reads.md
+      - Shared processing commits: reference/processing-commits.md
       - Storage boundaries and implementation plan: concepts/adr-storage-boundaries.md
   - Extend OSII:
       - Choose an extension: extending/index.md

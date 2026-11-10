@@ -127,6 +127,12 @@ sidecar and PostgreSQL adapters and one contract suite. Local document metadata,
 preferred-text inspection, and object enrichment payloads use the sidecar
 adapter. This does not select a new write backend or migrate the inventory.
 
+The [processing commit boundary](../reference/processing-commits.md) now accepts
+validated SDK responses with stable operation IDs and explicit input revisions.
+Sidecars preserve extraction versions and per-product history; PostgreSQL commits
+results, receipts, and optional leased job checkpoints transactionally. Existing
+aggregate workflows and vector-index publication retain their current adapters.
+
 OSII-local and OSII-server are compositions of the same product. Their storage,
 identity, and deployment adapters differ; intake, processor contracts, document
 inspection, topic exploration, and RAG strategies should converge on shared code.

@@ -38,6 +38,9 @@ from osii.domain.artifacts.enrichment_artifacts import (
 from osii.enrichment.common import collect_scope_texts
 from osii.domain.artifacts.text_representations import get_preferred_text_representation
 from osii.domain.read.docs import get_doc_meta
+from osii.domain.read.sidecar import SidecarLibraryReader
+from osii.domain.storage.commits import InputRevision, ProcessingCommit
+from osii.domain.storage.sidecar_commits import SidecarProcessingCommitter
 from osii.extraction.base import ExtractionArtifact, ExtractionSegment, ExtractionState
 from osii.extraction.common import (
     build_result_dict,
@@ -54,6 +57,28 @@ from osii.domain.artifacts.synth_artifacts import (
     write_folder_synthesis_variant,
     write_root_synthesis_variant,
 )
+
+
+def _commit_input(root: Path, file_id: str) -> InputRevision:
+    from osii.enrichment.common import frozen_object_text
+    frozen = frozen_object_text(root, file_id)
+    if frozen and frozen.get("source_sha256"):
+        return InputRevision(file_id,
+            "edited" if frozen.get("representation") == "edited" else frozen.get("extraction_id") or "canonical",
+            frozen["source_sha256"])
+    return InputRevision.capture(SidecarLibraryReader(root), file_id)
+
+
+def _commit_context(request_id: str, file_id: str, kind: str) -> tuple[str, dict]:
+    from osii.domain.artifacts.products import current_product_provenance
+    context = current_product_provenance()
+    operation = f"{context['run_id']}:{file_id}:{kind}" if context.get("run_id") else request_id
+    return operation, context
+
+
+def _commit_descriptor(descriptor: dict) -> ProcessorDescriptor:
+    return ProcessorDescriptor.model_validate({key: value for key, value in descriptor.items()
+        if key in ProcessorDescriptor.model_fields})
 
 
 def configured_processor_urls() -> list[str]:
@@ -366,6 +391,7 @@ class RemoteSynthesizer:
         file_meta = meta.get("file", {})
         if preferred is None:
             raise RuntimeError(f"No preferred text is available for {file_id}.")
+        input_revision = _commit_input(osii_store, file_id)
         request_id = str(uuid.uuid4())
         model_context = _model_context(
             processor_name=self.name,
@@ -374,7 +400,7 @@ class RemoteSynthesizer:
             osii_root=osii_store,
         )
         try:
-            response = self._client.synthesize(SynthesisRequest(
+            request = SynthesisRequest(
                 request_id=request_id,
                 scope=ScopeInput(
                     scope_type="object",
@@ -390,37 +416,21 @@ class RemoteSynthesizer:
                 expert_context=expert_context,
                 config=synthesizer_config or {},
                 model_context=model_context,
-            ))
+            )
+            response = self._client.synthesize(request)
         finally:
             _revoke_model_context(model_context)
         if response.request_id != request_id:
             raise RuntimeError("Synthesizer returned a mismatched request_id.")
-        path = write_synth_text(
-            osii_store=osii_store,
-            file_id=file_id,
-            text=response.markdown,
-            synthesizer_name=self.name,
-            synthesizer_version=self.version,
-            config={
-                **(synthesizer_config or {}),
-                "processor_url": self.base_url,
-                "document_title": response.metadata.get("document_title"),
-                "title_method": response.metadata.get("title_method"),
-                **({"document_metadata": DocumentMetadata.model_validate(response.metadata["document_metadata"]).model_dump(mode="json", exclude_none=True)} if response.metadata.get("document_metadata") else {}),
-                "expert_context": expert_context,
-                # Processor API citations have optional grounding fields. TOML
-                # cannot encode None, so provenance records only supplied data.
-                "citations": [
-                    item.model_dump(mode="json", exclude_none=True)
-                    for item in response.citations
-                ],
-            },
-            expert_context_used=bool(expert_context),
-        )
+        if response.metadata.get("document_metadata"):
+            response.metadata["document_metadata"] = DocumentMetadata.model_validate(response.metadata["document_metadata"]).model_dump(mode="json", exclude_none=True)
+        operation, provenance = _commit_context(request_id, file_id, "synthesis")
+        saved = SidecarProcessingCommitter(osii_store).commit(ProcessingCommit(operation, file_id,
+            request, response, _commit_descriptor(self._descriptor), input_revision=input_revision,
+            provenance={**provenance, "processor_url": self.base_url}))
         return {
             "file_id": file_id,
-            "synthesis_rel": path.relative_to(osii_store).as_posix(),
-            "provenance_rel": f"objects/{file_id}/provenance.toml",
+            **saved.result,
             "error": None,
         }
 
@@ -590,6 +600,7 @@ class RemoteEnricher:
         }
 
         request_id = str(uuid.uuid4())
+        input_revision = _commit_input(osii_store, str(scope_id)) if scope_type == "object" else None
         model_context = _model_context(
             processor_name=self.name,
             descriptor=self._descriptor,
@@ -616,6 +627,16 @@ class RemoteEnricher:
         validated = EnrichmentResponse.model_validate(response)
         if validated.request_id != request_id or validated.processor.name != self.name:
             raise ValueError("Processor returned a response for a different request or tool")
+        if scope_type == "object":
+            from osii.processor_sdk import EnrichmentRequest
+            request = EnrichmentRequest(request_id=request_id, scope=ScopeInput.model_validate(processor_input["scope"]),
+                expert_context=expert_context, config=enricher_config or {})
+            operation, provenance = _commit_context(request_id, str(scope_id), "enrichment")
+            saved = SidecarProcessingCommitter(osii_store).commit(ProcessingCommit(operation, str(scope_id), request,
+                validated, _commit_descriptor(self._descriptor), input_revision=input_revision,
+                provenance={**provenance, "processor_url": self.base_url}))
+            results = saved.result["artifacts"]
+            return {"ok": True, "result": results[0], "artifacts": results, "error": None}
         response = validated.model_dump(mode="json")
         artifacts = response.get("artifacts") or []
         if not artifacts:

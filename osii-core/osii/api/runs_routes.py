@@ -420,6 +420,7 @@ def run_worker(
                                 ),
                                 make_primary=None if extraction_policy == "auto" else extraction_policy == "make_primary",
                                 dispatcher=dispatch_extract,
+                                operation_id=f"{run_id}:{file_id}:extraction:{extractor_name}",
                             )
                             break
                         except Exception as exc:

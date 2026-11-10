@@ -29,6 +29,11 @@ def product_provenance(value: dict):
         _PROVENANCE.reset(token)
 
 
+def current_product_provenance() -> dict:
+    """Core orchestration metadata, without introducing a global job context."""
+    return dict(_PROVENANCE.get())
+
+
 def artifact_metadata(metadata: dict | None) -> dict:
     provenance = _PROVENANCE.get()
     return {**(metadata or {}), **({"provenance": provenance} if provenance else {})}
@@ -292,13 +297,21 @@ def publish_product(
                 r
                 for r in manifest["revisions"]
                 if origin == "generated"
-                and provenance.get("run_id")
-                and r.get("provenance", {}).get("run_id") == provenance["run_id"]
+                and (provenance.get("commit_id") or provenance.get("run_id"))
+                and (
+                    r.get("provenance", {}).get("commit_id") == provenance["commit_id"]
+                    if provenance.get("commit_id") else
+                    r.get("provenance", {}).get("run_id") == provenance["run_id"]
+                )
                 and r["origin"] == origin
             ),
             None,
         )
         if previous:
+            if provenance.get("commit_id") and (previous["data"] != data or
+                previous.get("provenance", {}).get("commit_fingerprint") != provenance.get("commit_fingerprint")):
+                from osii.domain.storage.commits import CommitConflict
+                raise CommitConflict("Processing commit already saved different product data")
             _commit(path, manifest)  # Repair a lagging/missing compatibility view.
             return previous
         revision = {
