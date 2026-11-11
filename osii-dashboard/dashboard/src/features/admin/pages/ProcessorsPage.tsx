@@ -1,3 +1,4 @@
+import { ServiceRow } from "../components/ServiceRow";
 import { CapabilitySection, SetupLayout } from "../components/SetupLayout";
 import { ProcessorConfigInput as ConfigInput } from "../../queue/components/ProcessorConfigInput";
 import { FormEvent, useEffect, useRef, useState } from "react";
@@ -58,12 +59,6 @@ function blankProvider(type: ModelProvider["type"]): ModelProvider {
   };
 }
 
-function statusColor(status: string): "success" | "default" | "error" | "info" {
-  if (status === "running" || status === "external") return "success";
-  if (status === "failed") return "error";
-  if (status === "starting") return "info";
-  return "default";
-}
 
 function modelNameMatches(installed: string, requested: string): boolean {
   return installed === requested
@@ -72,32 +67,6 @@ function modelNameMatches(installed: string, requested: string): boolean {
 }
 
 
-function ServiceRow({ service, busy, onAction, onLogs }: {
-  service: ManagedCapabilityService;
-  busy: boolean;
-  onAction: (action: "start" | "stop" | "restart") => void;
-  onLogs?: () => void;
-}) {
-  const label = service.status === "external" ? "Running externally" : service.status.replace(/_/g, " ");
-  return <Stack spacing={0.75} sx={{ py: 0.75 }}>
-    <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}>
-      <Stack spacing={0.25}>
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Typography variant="body2" fontWeight={700}>{service.display_name}</Typography>
-          <Chip size="small" color={statusColor(service.status)} label={label} />
-        </Stack>
-        <Typography variant="caption" color="text.secondary">{service.description}</Typography>
-        {service.prerequisite ? <Typography variant="caption" color="text.secondary">{service.prerequisite}</Typography> : null}
-      </Stack>
-      <Stack direction="row" spacing={0.75} alignItems="center">
-        {service.can_start ? <Button size="small" variant="contained" disabled={busy} onClick={() => onAction("start")}>Start</Button> : null}
-        {service.can_restart ? <Button size="small" variant="outlined" disabled={busy} onClick={() => onAction("restart")}>Restart</Button> : null}
-        {service.can_stop ? <Button size="small" variant="text" disabled={busy} onClick={() => onAction("stop")}>Stop</Button> : null}
-        {onLogs ? <Button size="small" variant="text" onClick={onLogs}>Logs</Button> : null}
-      </Stack>
-    </Stack>
-  </Stack>;
-}
 
 function ConnectionEndpointStatus({ provider, generation }: { provider: ModelProvider; generation?: number }) {
   const health = useQuery({
@@ -622,7 +591,7 @@ export function ProcessorsPage() {
   );
 
   return <SetupLayout>
-    <Dialog open={Boolean(sourceHelp)} onClose={() => setSourceHelp(null)} fullWidth maxWidth="sm"><DialogTitle>{sourceHelp?.display_name}</DialogTitle><DialogContent><Stack spacing={1} sx={{overflowWrap: "anywhere"}}><Typography>{sourceHelp?.description}</Typography><Typography variant="body2">Processor: <code>{sourceHelp?.id}</code></Typography>{sourceHelp?.base_url ? <Typography variant="body2">Service address: <code>{sourceHelp.base_url}</code></Typography> : null}<Typography variant="body2">Registration source: <code>{sourceHelp?.origin?.implementation}</code></Typography><Typography variant="body2">Configuration overrides: <code>{sourceHelp?.origin?.configuration_file}</code></Typography>{sourceHelp?.origin?.endpoint_source ? <Typography variant="body2">Endpoint configuration: {sourceHelp.origin.endpoint_source}</Typography> : null}<Typography variant="body2">Built-in registrations provide defaults. The configuration file stores your overrides, so it can be nearly empty. Independently deployed tool code lives in osii-processor-modules/; Core adapters live in osii-core/osii/extraction/. Model-backed tools use the Writing model endpoint selector in their service row.</Typography></Stack></DialogContent><DialogActions><Button onClick={() => setSourceHelp(null)}>Close</Button></DialogActions></Dialog>
+    <Dialog open={Boolean(sourceHelp)} onClose={() => setSourceHelp(null)} fullWidth maxWidth="sm"><DialogTitle>{sourceHelp?.display_name}</DialogTitle><DialogContent><Stack spacing={1} sx={{overflowWrap: "anywhere"}}><Typography>{sourceHelp?.description}</Typography><Typography variant="body2">Processor: <code>{sourceHelp?.id}</code></Typography>{sourceHelp?.base_url ? <Typography variant="body2">Service address: <code>{sourceHelp.base_url}</code></Typography> : null}<Typography variant="body2">Registration source: <code>{sourceHelp?.origin?.implementation}</code></Typography><Typography variant="body2">Configuration overrides: <code>{sourceHelp?.origin?.configuration_file}</code></Typography>{sourceHelp?.origin?.manifest ? <Typography variant="body2">Module manifest: <code>{sourceHelp.origin.manifest}</code></Typography> : null}{sourceHelp?.origin?.endpoint_source ? <Typography variant="body2">Endpoint configuration: {sourceHelp.origin.endpoint_source}</Typography> : null}<Typography variant="body2">Built-in registrations provide defaults. The configuration file stores your overrides, so it can be nearly empty. Independently deployed tool code lives in osii-processor-modules/; Core adapters live in osii-core/osii/extraction/. Model-backed tools use the Writing model endpoint selector in their service row.</Typography></Stack></DialogContent><DialogActions><Button onClick={() => setSourceHelp(null)}>Close</Button></DialogActions></Dialog>
     <Dialog open={routingHelp} onClose={() => setRoutingHelp(false)} maxWidth="sm" fullWidth><DialogTitle>Extraction routing defaults</DialogTitle><DialogContent><Stack spacing={2}>
       <Typography>Rules are checked from top to bottom. The first matching file extension chooses the primary extractor. If it fails, OSII tries the fallbacks from left to right. Put the * catch-all last.</Typography>
       <Typography>These are Intake defaults; an explicit reader choice for a batch overrides them. Each reader must support all file types in its rule, including fallbacks. Unavailable services are gray; their saved rules remain so a temporary outage does not change your configuration.</Typography>
