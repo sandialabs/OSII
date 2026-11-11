@@ -12,6 +12,10 @@ The API and worker use the same backend; the dashboard remains an API client.
 The optional MCP tool reads sidecar libraries and does not support this PostgreSQL backend.
 This does **not** turn local OSII into the hosted server or add users or login.
 
+In PostgreSQL mode, **Tools → Database explorer — read-only** provides bounded
+SQL inspection of library records. See the [query guide](database-query.md) for
+the available projection and safeguards. It does not expose either SQLite store.
+
 ## What lives where?
 
 | Data | Sidecar default | Optional PostgreSQL |

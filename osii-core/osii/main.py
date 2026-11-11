@@ -10,6 +10,7 @@ from osii.api.catalog_routes import router as catalog_router
 from osii.api.chat_routes import router as chat_router
 from osii.api.research_routes import router as research_router
 from osii.api.collections_routes import router as collections_router
+from osii.api.database_routes import create_database_router
 from osii.api.embedding_routes import router as embedding_router
 from osii.api.enrichment_jobs_routes import router as enrichment_jobs_router
 from osii.api.enrichments_routes import router as enrichments_router, products_router
@@ -58,6 +59,8 @@ async def lifespan(application):
         application.state.library_backend = LibraryBackend(application.state.osii_root, storage_settings)
         application.state.postgres_library = PostgresLibrary(application.state.library_backend)
         application.state.postgres_workflow = PostgresWorkflow(application.state.postgres_library)
+        from osii.domain.storage.database_query import DatabaseExplorer
+        application.state.database_explorer = DatabaseExplorer(application.state.library_backend.engine)
     inventory_app.state.volume_store.path = database_path(application.state.osii_root)
     application.state.inventory_store=inventory_app.state.volume_store
     if storage_settings.kind == "postgres":
@@ -85,6 +88,16 @@ app = FastAPI(
     lifespan=lifespan,
     )
 app.state.rag_reranker = create_reranker()
+
+# Local OSII has no accounts. The hosted composition supplies require("admin")
+# to this same router instead; authorization never lives in the query module.
+def local_operator() -> None:
+    return None
+
+app.include_router(create_database_router(
+    lambda request: getattr(request.app.state, "database_explorer", None),
+    authorize=local_operator,
+))
 
 app.state.shared_volume_root = Path(
     os.getenv("SHARED_VOLUME_ROOT", "./data_volume/my_data")

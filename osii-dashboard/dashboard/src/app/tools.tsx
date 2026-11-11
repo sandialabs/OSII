@@ -27,4 +27,6 @@ export const workbenchTools: readonly WorkbenchTool[] = [
     Page: lazy(() => import("../features/files/pages/ToolsPage").then(m => ({ default: m.ToolsWorkbench }))) },
   { id: "tools", path: "/tools", label: "Toolbox", group: "tools", icon: BuildOutlined, navigation: false,
     Page: lazy(() => import("../features/files/pages/ToolsPage").then(m => ({ default: m.ToolsPage }))) },
+  { id: "database", path: "/admin/database", label: "Database explorer", group: "setup", icon: BuildOutlined, navigation: false,
+    Page: lazy(() => import("../features/admin/pages/DatabaseExplorerPage").then(m => ({ default: m.DatabaseExplorerPage }))) },
 ];

@@ -200,6 +200,16 @@ def test_empty_workbench_has_no_auth_no_catalog_or_silent_import(pg_client):
     assert client.post("/api/catalog/rebuild").status_code == 409
 
 
+def test_local_database_explorer_is_read_only_and_does_not_add_auth(pg_client):
+    client, _, _, runtime = pg_client
+    schema = client.get("/api/admin/database/schema")
+    assert schema.status_code == 200 and schema.json()["available"]
+    result = client.post("/api/admin/database/query", json={"sql": "SELECT count(*) FROM documents"})
+    assert result.status_code == 200 and result.json()["rows"] == [{"c0": 0}]
+    assert client.post("/api/admin/database/query", json={"sql": "DELETE FROM documents"}).status_code == 422
+    assert not (runtime / "objects").exists()
+
+
 def test_postgres_research_and_source_rescan_use_saved_library(pg_client, monkeypatch):
     file_id, _ = intake(pg_client, monkeypatch)
     client, app, source, runtime = pg_client

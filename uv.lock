@@ -779,6 +779,7 @@ openai = [
 postgres = [
     { name = "psycopg", extra = ["binary"] },
     { name = "sqlalchemy" },
+    { name = "sqlglot" },
 ]
 rag-haystack = [
     { name = "haystack-ai" },
@@ -807,6 +808,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6,<7" },
     { name = "requests", specifier = "==2.33.1" },
     { name = "sqlalchemy", marker = "extra == 'postgres'", specifier = ">=2.0,<3" },
+    { name = "sqlglot", marker = "extra == 'postgres'", specifier = "==30.31.0" },
     { name = "tomli-w", specifier = "==1.2.0" },
     { name = "tqdm", specifier = ">=4.66" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.35.0" },
@@ -1459,6 +1461,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/92/8f/94b309df5fa7ff7eb45d06bdc20a54eeca5b9e9d15121b9a9eca064c7fa9/sqlalchemy-2.1.8-cp313-cp313-win_amd64.whl", hash = "sha256:db7777f7ae23175aaef0778d718d5d6f5005bc8979fc3b9b494455a0556cc050", size = 2437193, upload-time = "2026-11-04T01:47:00.074Z" },
     { url = "https://files.pythonhosted.org/packages/8d/e6/73e80f32b494263af266a353d8299422fb8b3b9db4b6a385787090948ddb/sqlalchemy-2.1.8-cp313-cp313-win_arm64.whl", hash = "sha256:dc1ab4740247b7601ad44a992a9571389bc5e5e4a8807fa23485767c3fd5a08d", size = 2398094, upload-time = "2026-11-04T02:24:00.322Z" },
     { url = "https://files.pythonhosted.org/packages/a3/1e/6eba6770b626a991e58de306385d414b9f3ae780ae60c61aa1d0841dcaaf/sqlalchemy-2.1.8-py3-none-any.whl", hash = "sha256:69aea77b5d8a64e95d01fd7ec54985c84b4a8ef3cac3108e9271145441400c1b", size = 2067639, upload-time = "2026-11-04T01:30:31.914Z" },
+]
+
+[[package]]
+name = "sqlglot"
+version = "30.31.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/89/de/aa6cc05536bec18c7ad7d3def4d724d1d7086cbc9e96dc1e39fdaf83965d/sqlglot-30.31.0.tar.gz", hash = "sha256:448404736cb0ed1335774e34399a3a99d28274778fb718877556fb7d475d8808", size = 6198638, upload-time = "2026-11-10T18:02:51.359Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/92/68/e351109f7732f193133c67fbf104178f79b534a925db8f69c074fd190c2c/sqlglot-30.31.0-py3-none-any.whl", hash = "sha256:51a876a43edecf8ee6fd4c872cf6713d899c4234256bba0be96a8c7c8d8781e8", size = 811981, upload-time = "2026-11-10T18:02:49.108Z" },
 ]
 
 [[package]]

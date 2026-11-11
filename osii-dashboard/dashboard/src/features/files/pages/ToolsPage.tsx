@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Alert, Button, Card, CardContent, Chip, Divider, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { Link } from "react-router-dom";
 import { getToolCatalog } from "../../../api/tools";
+import { getDatabaseSchema } from "../../../api/database";
 import { ScopePicker } from "../../../components/discovery/ScopePicker";
 import { ScopeWikiPanel } from "../components/ScopeWikiPanel";
 import { ScopeEnrichmentsPanel } from "../components/ScopeEnrichmentsPanel";
@@ -55,6 +56,8 @@ export function ToolsWorkbench() {
 }
 
 export function ToolsPage() {
+  const catalog = useQuery({ queryKey: ["tool-catalog"], queryFn: getToolCatalog, staleTime: 30_000 });
+  const database = useQuery({ queryKey: ["database-schema"], queryFn: getDatabaseSchema, retry: false, enabled: Boolean(catalog.data) && catalog.data?.permissions?.run !== false });
   return <Stack spacing={3} sx={{ maxWidth: 1200, mx: "auto" }}>
     <WorkbenchHome setupPath="/admin/processors" toolsOnly />
     <Card variant="outlined"><CardContent><Stack spacing={1.5}>
@@ -62,5 +65,6 @@ export function ToolsPage() {
       <Typography color="text.secondary">Choose a processing method, select documents or a collection, and inspect saved results.</Typography>
       <Button component={Link} to="/tools/workbench" variant="outlined" sx={{ alignSelf: "start" }}>Open processing workbench</Button>
     </Stack></CardContent></Card>
+    {database.data?.available ? <Button component={Link} to="/admin/database" variant="outlined" sx={{ alignSelf: "start" }}>Database explorer — read-only ↗</Button> : null}
   </Stack>;
 }

@@ -26,6 +26,7 @@ download.
 | Generate a cited wiki | [Wiki tutorial](tutorials/llm-wiki.md) |
 | Add a processor | [Extend OSII](extending/index.md) |
 | Add a dashboard workflow | [Frontend extensions](extending/frontend-tools.md) |
+| Inspect PostgreSQL library records | [Read-only database explorer](reference/database-query.md) |
 | Call Core from another application | [REST API](reference/api/index.md) |
 | Contribute a change | [Contributor guide](contributing/developer-guide.md) |
 
