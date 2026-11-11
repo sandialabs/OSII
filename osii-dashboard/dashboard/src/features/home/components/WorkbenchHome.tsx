@@ -5,15 +5,15 @@ import { documentTools } from "../../../domain/workbench";
 import { useWorkbenchHome } from "../../../hooks/useWorkbenchHome";
 import { dismissHomeSetup } from "../../../api/workbench";
 
-export function WorkbenchHome({ setupPath }: { setupPath: string }) {
+export function WorkbenchHome({ setupPath, toolsOnly = false }: { setupPath: string; toolsOnly?: boolean }) {
   const home = useWorkbenchHome();
   const client = useQueryClient();
   const dismiss = useMutation({ mutationFn: dismissHomeSetup, onSuccess: () => client.invalidateQueries({ queryKey: ["workbench-home"] }) });
   return <Stack spacing={3} sx={{ maxWidth: 1200, mx: "auto" }}>
-    <Stack spacing={0.5}><Typography variant="h4" fontWeight={750}>Welcome to OSII</Typography><Typography color="text.secondary">Choose what you’d like to do with your documents.</Typography></Stack>
+    <Stack spacing={0.5}><Typography variant="h4" fontWeight={750}>{toolsOnly ? "Tools" : "Welcome to OSII"}</Typography><Typography color="text.secondary">Choose what you’d like to do with your documents.</Typography></Stack>
     {home.isPending ? <Stack spacing={1}><LinearProgress aria-label="Checking tool readiness" /><Typography role="status">Checking what’s ready…</Typography></Stack> : null}
     {home.isError ? <Alert severity="warning" action={<Button onClick={() => void home.refetch()}>Retry</Button>}>Could not check tool readiness. Your library and settings are unchanged.</Alert> : null}
-    {!home.isError && home.data?.setup.visible ? <Card variant="outlined" component="section" aria-labelledby="home-setup-title"><CardContent><Stack spacing={1.5}>
+    {!toolsOnly && !home.isError && home.data?.setup.visible ? <Card variant="outlined" component="section" aria-labelledby="home-setup-title"><CardContent><Stack spacing={1.5}>
       <Typography id="home-setup-title" variant="h6" fontWeight={700}>Setup</Typography>
       <Typography>Connect your document tools and models, then add documents. You can return to Setup from the sidebar at any time.</Typography>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>

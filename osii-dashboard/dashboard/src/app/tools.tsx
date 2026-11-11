@@ -25,6 +25,8 @@ export const workbenchTools: readonly WorkbenchTool[] = [
     Page: lazy(() => import("../features/volume/VolumePage")) },
   { id: "setup", path: "/admin/processors", label: "Setup", group: "setup", icon: SettingsOutlined,
     Page: lazy(() => import("../features/admin/pages/ProcessorsPage").then(m => ({ default: m.ProcessorsPage }))) },
+  { id: "tool-workbench", path: "/tools/workbench", label: "Processing workbench", group: "tools", icon: BuildOutlined, navigation: false,
+    Page: lazy(() => import("../features/files/pages/ToolsPage").then(m => ({ default: m.ToolsWorkbench }))) },
   { id: "tools", path: "/tools", label: "All tools", group: "tools", icon: BuildOutlined, navigation: false,
     Page: lazy(() => import("../features/files/pages/ToolsPage").then(m => ({ default: m.ToolsPage }))) },
 ];

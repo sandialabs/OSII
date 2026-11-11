@@ -114,3 +114,17 @@ is administrator-only. It remains accessible in the sidebar after dismissal.
 apply on the hosted service). Home does not read source text, load vector payloads,
 compute projections, or invoke models. Shared tile/navigation definitions and
 UI components consume product adapters; they do not access storage directly.
+
+
+### Shared Tools and Setup screens
+
+`/tools` is the document-tool landing page, using the Home tiles and readiness
+contract. Library-wide operation selection and saved results remain at
+`/tools/workbench`, linked as **Open processing workbench**.
+
+Local and hosted Setup share `SetupLayout`, `CapabilitySection`, and
+`ReadinessPanel`: model connections, four OSII component drawers, and advanced
+diagnostics. Product adapters retain their own persistence and permissions.
+Hosted source selection stays inside the read-only mounted root; local file-type
+routing and launcher lifecycle controls remain local capabilities. Registering a
+Processor API address never installs or starts it.

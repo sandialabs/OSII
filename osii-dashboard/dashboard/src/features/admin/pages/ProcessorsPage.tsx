@@ -1,3 +1,4 @@
+import { CapabilitySection, SetupLayout } from "../components/SetupLayout";
 import { ProcessorConfigInput as ConfigInput } from "../../queue/components/ProcessorConfigInput";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import {
@@ -8,10 +9,6 @@ import {
 import type { AlertColor } from "@mui/material";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import TextSnippetOutlinedIcon from "@mui/icons-material/TextSnippetOutlined";
-import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
-import HubOutlinedIcon from "@mui/icons-material/HubOutlined";
-import ExtensionOutlinedIcon from "@mui/icons-material/ExtensionOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
@@ -42,12 +39,6 @@ const CAPABILITY_COPY = {
   embedder: ["Embedders", "Connect an embedding model for semantic search and related documents."],
   enricher: ["Enrichers", "Create keywords, entities, tables, graphs, and other reusable knowledge products."],
 } as const;
-const CAPABILITY_ICONS = {
-  extractor: TextSnippetOutlinedIcon,
-  synthesizer: AutoAwesomeOutlinedIcon,
-  embedder: HubOutlinedIcon,
-  enricher: ExtensionOutlinedIcon,
-};
 const BUNDLED_FALLBACKS = new Set(["native_text", "local.native-text", "local.extractive-preview", "local.hashing", "local.stats-keywords"]);
 
 function blankProvider(type: ModelProvider["type"]): ModelProvider {
@@ -560,39 +551,15 @@ export function ProcessorsPage() {
   );
 
   const renderCapabilityDrawer = (kind: keyof typeof CAPABILITY_COPY) => {
-    const [title, explanation] = CAPABILITY_COPY[kind];
     const selected = data?.methods[kind];
     const methods = capabilityMethods(kind);
-    const Icon = CAPABILITY_ICONS[kind];
     const defaultLabel = !selected ? "Checking configured methods…"
       : kind === "extractor" ? `${currentRoutes.length} file-type rules · ${selected.display_name}`
         : kind === "embedder" && (!selected.available || selected.id === "bm25") ? "Connect an embedding model · BM25 fallback available"
           : `${BUNDLED_FALLBACKS.has(selected.id) ? "Fallback" : "Default"} · ${selected.display_name}${selected.model && !selected.display_name.includes(selected.model) ? ` · ${selected.model}` : ""}`;
-    return <Accordion
-      key={kind} disableGutters elevation={0}
-      expanded={expandedCapability === kind}
-      onChange={(_, expanded) => setExpandedCapability(expanded ? kind : false)}
-      slotProps={{ transition: { unmountOnExit: true } }}
-      sx={{
-        border: "1px solid", borderColor: expandedCapability === kind ? "secondary.main" : "divider",
-        borderRadius: "12px !important", overflow: "hidden", "&:before": { display: "none" },
-      }}
-    >
-      <AccordionSummary
-        id={`setup-${kind}-heading`} aria-controls={`setup-${kind}-content`}
-        expandIcon={<ExpandMoreIcon />} sx={{ px: { xs: 1.5, sm: 2 }, minHeight: 80, "&:hover": { bgcolor: "rgba(0,95,114,0.025)" } }}
-      >
-        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ width: "100%", minWidth: 0, pr: 1 }}>
-          <Box sx={{ display: "grid", placeItems: "center", flexShrink: 0, width: 42, height: 42, borderRadius: 2, bgcolor: "rgba(102,206,227,0.15)", color: "secondary.main" }}><Icon /></Box>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography fontWeight={750}>{title}</Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: "block", overflowWrap: "anywhere" }}>{defaultLabel}</Typography>
-          </Box>
-          <Chip variant="outlined" label={data ? `${methods.filter((item) => item.available).length} available` : "Checking…"} sx={{ display: { xs: "none", sm: "inline-flex" }, flexShrink: 0 }} />
-        </Stack>
-      </AccordionSummary>
-      <AccordionDetails sx={{ px: { xs: 1.5, sm: 2.5 }, pb: 2.5 }}><Stack spacing={1.25}>
-      <Typography variant="body2" color="text.secondary">{explanation}</Typography>
+    return <CapabilitySection key={kind} kind={kind} expanded={expandedCapability === kind}
+      onChange={expanded => setExpandedCapability(expanded ? kind : false)} summary={defaultLabel}
+      available={data ? methods.filter(item => item.available).length : undefined}>
       <Divider />
       {methods.map((item) => {
         const schema = schemaFor(item);
@@ -637,7 +604,7 @@ export function ProcessorsPage() {
       })}
       {!methods.length ? <Typography variant="body2" color="text.secondary">Checking methods…</Typography> : null}
       {kind === "extractor" ? renderExtractionRouting() : null}
-    </Stack></AccordionDetails></Accordion>;
+    </CapabilitySection>;
   };
 
   // Render feedback inside the active dialog when present, so its focus trap
@@ -654,8 +621,7 @@ export function ProcessorsPage() {
     </Snackbar>
   );
 
-  return <Stack spacing={3} sx={{ maxWidth: 1100, mx: "auto" }}>
-    <Typography variant="h5" fontWeight={750}>Setup</Typography>
+  return <SetupLayout>
     <Dialog open={Boolean(sourceHelp)} onClose={() => setSourceHelp(null)} fullWidth maxWidth="sm"><DialogTitle>{sourceHelp?.display_name}</DialogTitle><DialogContent><Stack spacing={1} sx={{overflowWrap: "anywhere"}}><Typography>{sourceHelp?.description}</Typography><Typography variant="body2">Processor: <code>{sourceHelp?.id}</code></Typography>{sourceHelp?.base_url ? <Typography variant="body2">Service address: <code>{sourceHelp.base_url}</code></Typography> : null}<Typography variant="body2">Registration source: <code>{sourceHelp?.origin?.implementation}</code></Typography><Typography variant="body2">Configuration overrides: <code>{sourceHelp?.origin?.configuration_file}</code></Typography>{sourceHelp?.origin?.endpoint_source ? <Typography variant="body2">Endpoint configuration: {sourceHelp.origin.endpoint_source}</Typography> : null}<Typography variant="body2">Built-in registrations provide defaults. The configuration file stores your overrides, so it can be nearly empty. Independently deployed tool code lives in osii-processor-modules/; Core adapters live in osii-core/osii/extraction/. Model-backed tools use the Writing model endpoint selector in their service row.</Typography></Stack></DialogContent><DialogActions><Button onClick={() => setSourceHelp(null)}>Close</Button></DialogActions></Dialog>
     <Dialog open={routingHelp} onClose={() => setRoutingHelp(false)} maxWidth="sm" fullWidth><DialogTitle>Extraction routing defaults</DialogTitle><DialogContent><Stack spacing={2}>
       <Typography>Rules are checked from top to bottom. The first matching file extension chooses the primary extractor. If it fails, OSII tries the fallbacks from left to right. Put the * catch-all last.</Typography>
@@ -778,5 +744,5 @@ export function ProcessorsPage() {
     </Box></Dialog>
 
     <Dialog open={Boolean(serviceLogs)} onClose={() => setServiceLogs(null)} fullWidth maxWidth="md"><DialogTitle>{serviceLogs?.title} logs</DialogTitle><DialogContent>{serviceLogs ? renderNotice() : null}<Box component="pre" sx={{ bgcolor: "grey.950", color: "grey.100", p: 1.5, borderRadius: 1, maxHeight: 420, overflow: "auto", whiteSpace: "pre-wrap", fontSize: "0.75rem" }}>{serviceLogs?.lines.join("\n") || "No recent output."}</Box></DialogContent><DialogActions><Button onClick={() => setServiceLogs(null)}>Close</Button></DialogActions></Dialog>
-  </Stack>;
+  </SetupLayout>;
 }
