@@ -1,4 +1,4 @@
-# OSII Toolbox integration - 2026-11-06
+# OSII processor modules integration - 2026-11-06
 
 `banyan_extract.integrations.osii_extractor` exposes Banyan's Nemotron Parse
 backend as an optional OSII Processor API v1 extractor. Its stable processor
@@ -9,20 +9,20 @@ conversion workflows.
 
 ## Initialize and configure
 
-In an OSII checkout this repository lives at `osii-toolbox/banyan-ingest` as a
+In an OSII checkout this repository lives at `osii-processor-modules/banyan` as a
 Git subtree. A normal OSII clone includes the source; no submodule initialization
 is required.
 
 Copy this tool's `.env.example` to `.env` in the same directory. On macOS/Linux:
 
 ```sh
-cp osii-toolbox/banyan-ingest/.env.example osii-toolbox/banyan-ingest/.env
+cp osii-processor-modules/banyan/.env.example osii-processor-modules/banyan/.env
 ```
 
 On Windows PowerShell:
 
 ```powershell
-Copy-Item osii-toolbox/banyan-ingest/.env.example osii-toolbox/banyan-ingest/.env
+Copy-Item osii-processor-modules/banyan/.env.example osii-processor-modules/banyan/.env
 ```
 
 Set `NEMOPARSE_ENDPOINT` to your approved Nemotron deployment's
@@ -39,13 +39,13 @@ From the OSII root, on macOS, Linux, or Windows, use Python 3.12 and the shared
 `osii.processor_sdk` from this checkout:
 
 ```sh
-uv run --no-project --python 3.12 --with-editable osii-core --with-editable "osii-toolbox/banyan-ingest[nemotronparse,osii]" python -m uvicorn banyan_extract.integrations.osii_extractor:app --host 127.0.0.1 --port 8101
+uv run --no-project --python 3.12 --with-editable osii-core --with-editable "osii-processor-modules/banyan[nemotronparse,osii]" python -m uvicorn banyan_extract.integrations.osii_extractor:app --host 127.0.0.1 --port 8101
 ```
 
 This creates an independent environment; no Banyan dependencies are added to
 OSII's root workspace or lock. The normal local development stack starts the
-service through `osii-toolbox/banyan-nemotron-parse`, which owns the OSII host
-environment. Set `OSII_START_TOOLBOX=false` to leave Toolbox services stopped,
+service through `osii-processor-modules/banyan`, which owns the OSII host
+environment. Set `OSII_START_PROCESSOR_MODULES=false` to leave Processor module services stopped,
 and `OSII_BANYAN_PORT` to change the default port 8101. Starting the service
 does not invoke a model. Health and descriptor discovery work without endpoint
 access; extraction returns an actionable validation error until endpoint and
@@ -81,7 +81,7 @@ Nemotron output is model-generated extraction, not authoritative source data.
 From the OSII root:
 
 ```sh
-uv run --no-project --python 3.12 --with-editable osii-core --with-editable "osii-toolbox/banyan-ingest[nemotronparse,osii]" --with pytest --with httpx python -m pytest osii-toolbox/banyan-ingest/tests/unit/test_osii_extractor.py -q --api-test-mode=mock
+uv run --no-project --python 3.12 --with-editable osii-core --with-editable "osii-processor-modules/banyan[nemotronparse,osii]" --with pytest --with httpx python -m pytest osii-processor-modules/banyan/tests/unit/test_osii_extractor.py -q --api-test-mode=mock
 ```
 
 The tests cover descriptor discovery, missing configuration, validation,

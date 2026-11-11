@@ -199,7 +199,7 @@ supply `capabilities.file_extensions`; dispatch also checks this before sending
 files. Unavailable services are gray but their saved routes remain inspectable.
 
 The question-mark button explains rule order, fallbacks, TOML loading, and how
-to add an extractor. Start with `osii-core/osii/extraction/` and `osii-toolbox/`,
+to add an extractor. Start with `osii-core/osii/extraction/` and `osii-processor-modules/`,
 then read [the extraction API](processor-api/extraction.md) to build a service
 that accepts bounded inputs and returns text with source locations.
 
@@ -209,32 +209,13 @@ enabled compatible connection; the resolved alias is displayed. Explicit choices
 remain explicit. Endpoint health is shown by Model Connections; an automatic
 choice cannot guarantee a remote service will remain reachable during a run.
 
-## Apache Tika toolbox adapter
+## Apache Tika processor module
 
-`osii-toolbox/tika-adapter` implements the HTTP integration. Existing `tika` and
-`tika_catchall` routes remain valid; Core retains a delegating compatibility shim.
-The upstream Apache Tika server must be installed and run separately by the user.
-OSII neither bundles nor downloads Apache Tika, and never starts a JVM or container.
-
-`make dev` (or the Windows dev command) starts only the small adapter on loopback
-port 8102, in its independent toolbox environment. `OSII_START_TOOLBOX=false`
-disables automatic wrapper startup. `OSII_TIKA_ADAPTER_PORT` changes its local
-port. Existing routing and selection defaults are preserved.
-
-In **Setup → Extractors → Apache Tika**, enter the separately managed Apache
-Tika base URL in **Apache Tika endpoint** and click **Save endpoint**. The setting
-persists in the active `tools.toml`:
-
-```toml
-[processor_settings.tika]
-tika_endpoint = "http://127.0.0.1:9998"
-chunk_chars = 4000
-```
-
-`TIKA_URL` and `OSII_TIKA_PORT` no longer configure Core. Transfer any prior
-custom upstream address to the Setup field. The adapter defaults to loopback
-9998 until changed. Readiness probes the saved upstream through the wrapper;
-an unavailable upstream is gray while its endpoint remains editable.
-The adapter receives only selected document bytes and returns plain text chunks
-with extracted-text character offsets. It does not claim PDF page boxes or
-original-file byte offsets. Canonical persistence remains in Core.
+`osii-processor-modules/tika-adapter` owns the HTTP integration and managed Java
+runtime. `make dev` prepares Apache Tika automatically. Existing `tika` and
+`tika_catchall` routes and settings remain compatible. Set `OSII_ENABLE_TIKA=false`
+in `.env` to omit it; set `OSII_TIKA_MANAGED=false` and configure an endpoint in
+Setup to use an externally managed server instead. Defaults are loopback 8102
+for the adapter and 9998 for Apache Tika. See the
+[startup guide](../operations/runbook-development.md#start-and-check) for caching,
+first-start network access, offline provisioning, and startup switches.

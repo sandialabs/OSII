@@ -301,7 +301,7 @@ not the output of the UTF-8 example above:
 }
 ```
 
-| Existing Toolbox field / setting | Interpretation |
+| Existing processor module field / setting | Interpretation |
 | --- | --- |
 | `source_origin.page` | One-based document page |
 | `source_origin.bbox` | `[left, top, right, bottom]`, normalized by rendered page width/height |
@@ -338,7 +338,7 @@ version to see its boxes. Grounding is limited by the extractor’s page renderi
 and reading order. See the optional provenance conventions below.
 
 The actual implementation and separate tool-native routes are documented in
-`osii-toolbox/osii-tesseract/README.md`,
+`osii-processor-modules/osii-tesseract/README.md`,
 `docs/API.md`, and `docs/OSII_INTEGRATION.md` under that tool directory.
 Those native routes are not the portable Processor API v1 contract.
 
@@ -365,11 +365,11 @@ to other kinds; see [canonical outputs](canonical-outputs.md).
 | Direct result does not appear in OSII | Direct SDK calls do not commit it; register the service and run Core extraction |
 | New parser quality needs testing | Compare a [new extraction version](../extraction-versions.md) against the original evidence |
 
-The experimental Toolbox Tesseract service is a real implementation of this
+The experimental Tesseract processor module is a real implementation of this
 contract: it returns `ocr_region` segments with page and region grounding.
 It also has its own OCR endpoints and tuning UI, separate from
 `/v1/extract`. Read its README at
-`osii-toolbox/osii-tesseract/README.md` in your checkout.
+`osii-processor-modules/osii-tesseract/README.md` in your checkout.
 
 Next: [synthesis](synthesis.md) for explaining the extracted text, or
 [enrichment](enrichment.md) for adding a standard knowledge artifact.
@@ -382,7 +382,7 @@ geometry, confidence, source character/byte spans, combinations of them, or none
 Consumers must not fabricate a location or interpret missing confidence as zero.
 Core preserves these fields across remote transport, immutable extraction
 versions, and primary promotion. The baseline Tesseract extractor now emits
-word-level TSV regions; the OpenCV Toolbox method emits detected text regions.
+word-level TSV regions; the OpenCV processor module method emits detected text regions.
 
 For the shared source viewer, use one-based `page` and top-left-origin normalized
 `bbox: [x1,y1,x2,y2]` with `coordinate_space: "normalized-page"`. Values lie in

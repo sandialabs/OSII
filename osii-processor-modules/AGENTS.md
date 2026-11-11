@@ -1,9 +1,10 @@
-# OSII Toolbox guidance
+# OSII processor module guidance
 
 These optional processors live in the main repository but remain independently
 deployable. Do not add their dependencies to Core, the root uv workspace/lock,
 or the baseline image. The host development launcher starts them by default
-in independent environments; `OSII_START_TOOLBOX=false` opts out. Starting a
+in independent environments; per-module `OSII_ENABLE_…=false` switches omit
+dependency setup and startup. `OSII_START_PROCESSOR_MODULES=false` defers startup. Starting a
 service does not authorize processing or model invocation.
 
 - Core owns canonical `.osii` storage. Tools receive bounded requests and return

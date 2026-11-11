@@ -2,7 +2,7 @@
 
 LLM wikis are optional, derived knowledge products. They are not built into
 OSII Core. Two independent Processor API enrichers live in
-`osii-toolbox/llm-wiki-enrichers`:
+`osii-processor-modules/llm-wiki-enrichers`:
 
 - **Readable LLM wiki** produces a traditional, cited narrative page.
 - **Concept and entity LLM wiki** produces a concept/entity-oriented wiki plus
@@ -23,13 +23,13 @@ enricher and remains the only component that writes `.osii`.
    Local capability services**. Or use a separate terminal:
 
    Use the source commands in
-   `osii-toolbox/llm-wiki-enrichers/README.md`. Container build commands
+   `osii-processor-modules/llm-wiki-enrichers/README.md`. Container build commands
    are archived; local capability controls start the Python services.
 4. In **Setup → Register running processor**, register
    `http://127.0.0.1:8099` and `http://127.0.0.1:8100`.
 
 For source-only development commands and OpenAI-compatible routing, see
-`osii-toolbox/llm-wiki-enrichers/README.md` in the repository.
+`osii-processor-modules/llm-wiki-enrichers/README.md` in the repository.
 
 ## Generate and compare
 

@@ -1,3 +1,24 @@
+# Banyan OSII processor module
+
+This directory contains the Banyan implementation, Processor API adapter,
+configuration template, tests, and isolated host setup. Its processor ID remains
+`banyan.nemotron-parse`. The original Banyan documentation follows below.
+
+`make dev` prepares this module with its `osii` extra and starts it on port 8101.
+Set `OSII_ENABLE_BANYAN=false` in the repository `.env` to omit it. Configure
+Nemotron with this directory's `.env.example` copied to `.env`.
+For independent startup, from this directory:
+
+```sh
+uv run --extra osii python -m uvicorn banyan_extract.integrations.osii_extractor:app --host 127.0.0.1 --port 8101
+```
+
+The former `banyan-ingest` source directory and `banyan-nemotron-parse` host
+project are consolidated here. Existing processor IDs and API behavior remain
+compatible. See [the OSII integration docs](docs/osii-compatibility.md).
+
+---
+
 # Banyan Extract
 
 `banyan_extract` is a python module that prepares documents for use in GenAI and LLM applications. 
@@ -18,8 +39,8 @@ pip install banyan-extract
 
 ### From source
 ```bash
-git clone https://github.com/sandialabs/banyan-ingest.git
-cd banyan-ingest/
+git clone https://github.com/sandialabs/banyan.git
+cd banyan/
 pip install .
 ```
 

@@ -101,7 +101,7 @@ def builtin_tools_config() -> dict[str, Any]:
         "version": CONFIG_VERSION,
         "tools": {
             "tika": {
-                "enabled": True, "processor_id": "tika", "display_name": "Apache Tika (toolbox)",
+                "enabled": True, "processor_id": "tika", "display_name": "Apache Tika",
                 "kind": "extractor", "aliases": ["tika_catchall"],
                 "runtime": {"mode": "external", "endpoint": "http://127.0.0.1:8102"},
                 "model_access": {"mode": "none"},
@@ -419,6 +419,10 @@ def configured_tools(osii_root: Path | None = None, profile: str | None = None) 
     tools = dict(builtin_tools_config()["tools"]) if (profile or active_profile()) == DEFAULT_PROFILE else {}
     if isinstance(overrides, dict):
         tools.update(overrides)
+    flags = {"tika": "TIKA", "banyan-nemotron-parse": "BANYAN", "tesseract-opencv": "TESSERACT_OPENCV", "readable-llm-wiki": "READABLE_WIKI", "concept-entity-llm-wiki": "CONCEPT_ENTITY_WIKI"}
+    for tool_id, flag in flags.items():
+        if tool_id in tools and os.getenv("OSII_ENABLE_" + flag, "true").lower() in {"false", "0", "no", "off"}:
+            tools[tool_id] = {**tools[tool_id], "enabled": False}
     return tools
 
 

@@ -9,7 +9,7 @@ license = { text = "BSD 3" }
 authors = [
     { name="Sandia National Laboratories" },
 ]
-requires-python = ">= 3.10"
+requires-python = ">=3.11,<3.14"
 
 dependencies = [
     "python-pptx",
@@ -30,3 +30,6 @@ osii = ["osii", "uvicorn[standard]>=0.35,<1"]
 
 [project.scripts]
 banyan-extract = "banyan_extract.cli:main"
+
+[tool.uv.sources]
+osii = { path = "../../osii-core", editable = true }

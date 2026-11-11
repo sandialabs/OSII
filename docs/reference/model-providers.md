@@ -213,7 +213,7 @@ prompts and bounds through Processor API descriptors. Saved defaults apply to
 Intake, file actions, and direct enrichment jobs; an explicit request
 configuration overrides them.
 
-## Model Gateway for Toolbox processors
+## Model Gateway for processors
 
 The bridge also exposes the ordinary OpenAI client surface at
 `/v1/chat/completions`, `/v1/embeddings`, and `/v1/models`. Core supplies each

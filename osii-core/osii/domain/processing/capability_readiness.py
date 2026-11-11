@@ -47,9 +47,9 @@ def _processor_origin(
         }
     if identifier in {"tika", "tika_catchall"}:
         return {
-            "label": "Optional Toolbox service",
-            "description": "Lightweight adapter for a separately installed Apache Tika server.",
-            "implementation": "osii-toolbox/tika-adapter/tika_adapter/main.py",
+            "label": "Processor module",
+            "description": "Lightweight adapter for a managed or external Apache Tika server.",
+            "implementation": "osii-processor-modules/tika-adapter/tika_adapter/main.py",
             "endpoint_source": "Setup → Extractors → Apache Tika → Settings → Apache Tika endpoint",
             "configuration_file": str(tools_path()),
             "configuration_key": "processor_settings.tika.tika_endpoint",
@@ -84,7 +84,7 @@ def _processor_origin(
         tool_id = str(registration["id"])
         saved = tool_id in saved_tools
         return {
-            "label": "Configured processor" if saved else "Optional Toolbox service",
+            "label": "Configured processor" if saved else "Processor module",
             "description": "Separately deployed Processor API service." if saved else "Development registration supplied by OSII; availability depends on starting this optional service.",
             "implementation": "Service descriptor at " + endpoint + "/v1/descriptor" if saved else "osii-core/osii/configuration.py: builtin_tools_config",
             "configuration_file": str(tools_path()),
@@ -420,11 +420,11 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
     tika = next((item for item in remote_by_kind["extractor"] if item["id"] == "tika"), None)
     if tika:
         tika["aliases"] = ["tika_catchall"]
-        query = urlencode({"tika_endpoint": processor_settings(osii_root, "tika").get("tika_endpoint", "http://127.0.0.1:9998")})
+        query = urlencode({"tika_endpoint": processor_settings(osii_root, "tika").get("tika_endpoint", f"http://127.0.0.1:{os.getenv('OSII_TIKA_SERVER_PORT', '9998')}")})
         tika["available"], tika["detail"] = _service_probe(f"{tika['base_url']}/upstream-health?{query}")
     elif any(item.get("processor_id") == "tika" for item in registrations):
-        extractors.append({"id": "tika", "aliases": ["tika_catchall"], "display_name": "Apache Tika (toolbox)",
-            "description": "Start the Tika adapter, then configure your separately installed Apache Tika endpoint in Settings.",
+        extractors.append({"id": "tika", "aliases": ["tika_catchall"], "display_name": "Apache Tika",
+            "description": "Start the Tika adapter, then configure the Apache Tika endpoint in Settings.",
             "available": False, "detail": "Tika adapter unavailable. Start it with make dev or Setup service controls.", "bundled": False})
 
     for kind in ("synthesizer", "embedder"):

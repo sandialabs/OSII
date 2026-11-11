@@ -36,7 +36,7 @@ SERVICE_DISPLAY_NAMES = {
     "concept-entity-wiki": "Concept and Entity LLM Wiki",
     "tesseract-opencv": "Tesseract OCR with OpenCV regions",
     "banyan": "Banyan Nemotron Parse",
-    "tika": "Apache Tika adapter (user-managed upstream)",
+    "tika": "Apache Tika",
     "csv-extractor": "CSV table extractor",
     "collection-table": "Collection table enricher",
     "api": "OSII backend API and grounded chat",
@@ -70,32 +70,35 @@ CAPABILITY_SERVICE_INFO = {
     "banyan": ("Banyan Nemotron Parse", "Parses PDFs and images using Banyan's locally configured Nemotron endpoint.", "/health"),
     "csv-extractor": ("CSV table extractor", "Extracts CSV rows with source-line provenance.", "/health"),
     "collection-table": ("Collection table enricher", "Combines compatible extracted tables within a selected scope.", "/health"),
-    "tika": ("Apache Tika adapter", "Connects to your separately installed Apache Tika server; never installs or starts Apache Tika.", "/health"),
+    "tika": ("Apache Tika adapter", "Extracts document text with the managed Apache Tika runtime or a configured external server.", "/health"),
 }
 
 
-def toolbox_services(uv: str, env: dict[str, str]) -> list[Service]:
-    enabled = env.get("OSII_START_TOOLBOX", "true").strip().lower() not in {"false", "0", "no", "off"}
+def processor_module_services(uv: str, env: dict[str, str]) -> list[Service]:
+    enabled = env.get("OSII_START_PROCESSOR_MODULES", env.get("OSII_START_TOOLBOX", "true")).strip().lower() not in {"false", "0", "no", "off"}
     specifications = (
         ("tika", "tika-adapter", ("-m", "uvicorn", "tika_adapter.main:app"), "OSII_TIKA_ADAPTER_PORT", "8102"),
         ("readable-wiki", "llm-wiki-enrichers", ("run.py", "readable"), "OSII_READABLE_WIKI_PORT", "8099"),
         ("concept-entity-wiki", "llm-wiki-enrichers", ("run.py", "concept-entity"), "OSII_CONCEPT_ENTITY_WIKI_PORT", "8100"),
         ("tesseract-opencv", "osii-tesseract", ("-m", "uvicorn", "app.main:app"), "OSII_TESSERACT_OPENCV_PORT", "8081"),
-        ("banyan", "banyan-nemotron-parse", ("-m", "uvicorn", "banyan_extract.integrations.osii_extractor:app"), "OSII_BANYAN_PORT", "8101"),
+        ("banyan", "banyan", ("-m", "uvicorn", "banyan_extract.integrations.osii_extractor:app"), "OSII_BANYAN_PORT", "8101"),
         ("csv-extractor", "tabular-dataset-processors", ("run.py", "extractor"), "OSII_CSV_EXTRACTOR_PORT", "8097"),
         ("collection-table", "tabular-dataset-processors", ("run.py", "enricher"), "OSII_COLLECTION_TABLE_PORT", "8098"),
     )
     services = []
     for name, directory, entry, port_variable, default_port in specifications:
-        root = REPOSITORY_ROOT / "osii-toolbox" / directory
+        flag = "OSII_ENABLE_" + name.upper().replace("-", "_")
+        if env.get(flag, "true").strip().lower() in {"false", "0", "no", "off"}:
+            continue
+        root = REPOSITORY_ROOT / "osii-processor-modules" / directory
         port = env.get(port_variable, default_port)
         # Automatic startup prepares each independent environment first. On
-        # demand, uv prepares it when Setup starts a disabled Toolbox service.
+        # demand, uv prepares it when Setup starts a disabled processor module service.
         sync_option = ("--no-sync",) if enabled else ()
         services.append(Service(
             name,
             (uv, "run", *sync_option, "--python", env.get("UV_PYTHON", "3.12"),
-             "--project", ".", "python", *entry, "--host", "127.0.0.1", "--port", port),
+             "--project", ".", *(("--extra", "osii") if name == "banyan" else ()), "python", *entry, "--host", "127.0.0.1", "--port", port),
             root, int(port),
             environment=(("UV_PROJECT_ENVIRONMENT", str(root / "osii-env")),),
             start_automatically=enabled,
@@ -304,7 +307,7 @@ def build_environment(core_only: bool) -> dict[str, str]:
         # Retain registrations when startup is disabled so Setup can start a
         # tool on demand without requiring a Core restart or URL registration.
         local_urls.extend(f"http://127.0.0.1:{service.port}"
-                          for service in toolbox_services("uv", env))
+                          for service in processor_module_services("uv", env))
         env.update({
             "OSII_PROCESSORS": ",".join(local_urls + configured),
             "OSII_DEFAULT_EXTRACTOR": env.get("OSII_DEFAULT_EXTRACTOR") or "local.native-text",
@@ -357,12 +360,12 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str], *, core_only: b
         check=True,
     )
     prepared: set[Path] = set()
-    for service in ([] if core_only else toolbox_services(uv, env)):
+    for service in ([] if core_only else processor_module_services(uv, env)):
         if not service.start_automatically or service.working_directory in prepared:
             continue
-        print(f"[setup] Preparing Toolbox environment: {service.working_directory.name}", flush=True)
+        print(f"[setup] Preparing processor module environment: {service.working_directory.name}", flush=True)
         subprocess.run(
-            [uv, "sync", "--python", env.get("UV_PYTHON", "3.12"), "--project", "."],
+            [uv, "sync", "--python", env.get("UV_PYTHON", "3.12"), "--project", ".", *(("--extra", "osii") if service.name == "banyan" else ())],
             cwd=service.working_directory,
             env={**env, **dict(service.environment)},
             check=True,
@@ -493,7 +496,7 @@ def service_commands(
             services.insert(0, Service(name, (uv, "run", "--no-sync", "--package", package, "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "osii-core" / "services" / directory, int(port)))
         bridge_port = env.get("OSII_MODEL_BRIDGE_PORT", "8095")
         services.insert(4, Service("model-bridge", (uv, "run", "--no-sync", "--package", "osii-model-provider-bridge", "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", bridge_port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "osii-core" / "services" / "model-provider-bridge", int(bridge_port)))
-        services.extend(toolbox_services(uv, env))
+        services.extend(processor_module_services(uv, env))
     return services
 
 
@@ -879,7 +882,7 @@ def run(
             processes=processes,
         )
         for service in services:
-            if service.start_automatically and service.working_directory.is_relative_to(REPOSITORY_ROOT / "osii-toolbox"):
+            if service.start_automatically and service.working_directory.is_relative_to(REPOSITORY_ROOT / "osii-processor-modules"):
                 wait_for_http_service(
                     service_name=SERVICE_DISPLAY_NAMES[service.name],
                     url=f"http://127.0.0.1:{service.port}/health", processes=processes,

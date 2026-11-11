@@ -13,7 +13,7 @@ For bare-metal development, install Tesseract on the host before `make dev` or
 
 This service intentionally has no OpenCV contour detection or region tuning.
 Both OCR methods provide source geometry. The optional **Tesseract OCR with
-OpenCV regions** processor in `osii-toolbox/osii-tesseract` adds region detection
+OpenCV regions** processor in `osii-processor-modules/osii-tesseract` adds region detection
 and tuning. View a saved OCR version with its original in the document’s Text
 versions view; earlier page-only results need to be extracted again.
 

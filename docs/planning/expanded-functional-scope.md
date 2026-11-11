@@ -162,7 +162,7 @@ implementations without changing the library's fundamental information model.
 
 Included baseline services provide native document extraction, full-page OCR,
 local extractive summaries, lexical-hashing embeddings, basic statistical
-enrichment, and adapters to configured model services. Optional Toolbox
+enrichment, and adapters to configured model services. Optional processor modules
 implementations add region-based OpenCV/Tesseract OCR, tabular processing, and
 model-generated narrative or concept/entity wikis. Their presence in the source
 tree does not make them default services or establish Server integration.
@@ -264,7 +264,7 @@ completed recovery validation.
 | Intake and processing management | Local selection/upload and multi-step workflows | Curator-triggered processing of the fixed dataset |
 | Version selection, editable text, package transfer, sensitivity annotations | Implemented Local workflows | Not part of the current hosted API |
 | Shared collections | Filesystem-backed collections | Database-backed, curator-managed collections |
-| Processor SDK and optional Toolbox | Implemented contracts and optional tools | Uses extraction contracts; full Toolbox workflow parity is not implemented |
+| Processor SDK and optional processor modules | Implemented contracts and optional tools | Uses extraction contracts; full processor modules workflow parity is not implemented |
 | Agent-maintained cited documentation wiki and MCP | Implemented | Filesystem MCP not exposed; hosted integration deferred |
 | Topic map and frontend tool registry | Present in Local working-tree development | Not ported |
 | Accounts, sessions, and roles | Not the hosted permission system | Present in Server working-tree development |

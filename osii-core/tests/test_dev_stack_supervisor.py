@@ -204,7 +204,7 @@ def test_supervisor_http_requires_private_token(tmp_path):
 
 def test_supervisor_rejects_unknown_services_and_actions():
     supervisor = DEV_STACK.CapabilitySupervisor(
-        services=DEV_STACK.toolbox_services("uv", {"OSII_START_TOOLBOX": "false"}),
+        services=DEV_STACK.processor_module_services("uv", {"OSII_START_PROCESSOR_MODULES": "false"}),
         env={},
         uv="uv",
         token="private-token",
@@ -249,31 +249,31 @@ def test_service_plan_uses_nested_components_without_concurrent_uv_sync():
             assert "--no-sync" in service.command
     assert by_name["readable-wiki"].start_automatically is True
     assert by_name["readable-wiki"].working_directory == (
-        ROOT / "osii-toolbox" / "llm-wiki-enrichers"
+        ROOT / "osii-processor-modules" / "llm-wiki-enrichers"
     )
     assert by_name["concept-entity-wiki"].port == 8100
     assert by_name["tesseract-opencv"].port == 8081
     assert by_name["tesseract-opencv"].working_directory == (
-        ROOT / "osii-toolbox" / "osii-tesseract"
+        ROOT / "osii-processor-modules" / "osii-tesseract"
     )
     assert by_name["csv-extractor"].port == 8097
     assert by_name["collection-table"].port == 8098
     assert by_name["banyan"].port == 8101
-    assert by_name["banyan"].working_directory == ROOT / "osii-toolbox" / "banyan-nemotron-parse"
+    assert by_name["banyan"].working_directory == ROOT / "osii-processor-modules" / "banyan"
     assert "banyan_extract.integrations.osii_extractor:app" in by_name["banyan"].command
     environments = {dict(service.environment)["UV_PROJECT_ENVIRONMENT"]
-                    for service in services if service.working_directory.is_relative_to(ROOT / "osii-toolbox")}
+                    for service in services if service.working_directory.is_relative_to(ROOT / "osii-processor-modules")}
     assert len(environments) == 5
-    assert by_name["tika"].working_directory == ROOT / "osii-toolbox" / "tika-adapter"
+    assert by_name["tika"].working_directory == ROOT / "osii-processor-modules" / "tika-adapter"
     assert "tika_adapter.main:app" in by_name["tika"].command
     assert by_name["tika"].port == 8102
     assert str(ROOT / "osii-env") not in environments
 
 
 def test_toolbox_opt_out_retains_manual_controls_and_core_only_omits_services():
-    env = {"OSII_START_TOOLBOX": "false"}
+    env = {"OSII_START_PROCESSOR_MODULES": "false"}
     services = DEV_STACK.service_commands("uv", "npm", env, core_only=False)
-    tools = [s for s in services if s.working_directory.is_relative_to(ROOT / "osii-toolbox")]
+    tools = [s for s in services if s.working_directory.is_relative_to(ROOT / "osii-processor-modules")]
     assert len(tools) == 7 and all(not s.start_automatically for s in tools)
     assert all("--no-sync" not in s.command for s in tools)
     core = DEV_STACK.service_commands("uv", "npm", {}, core_only=True)
@@ -290,7 +290,7 @@ def test_toolbox_environment_registers_custom_ports_without_changing_routes(monk
     monkeypatch.setenv("OSII_SOURCE_DIR", str(tmp_path / "source"))
     monkeypatch.setenv("OSII_RUNTIME_DIR", str(tmp_path / "runtime"))
     monkeypatch.setenv("OSII_CONFIG_DIR", str(tmp_path / "config"))
-    monkeypatch.setenv("OSII_START_TOOLBOX", "true")
+    monkeypatch.setenv("OSII_START_PROCESSOR_MODULES", "true")
     monkeypatch.setenv("OSII_TESSERACT_OPENCV_PORT", "18081")
     monkeypatch.setenv("OSII_BANYAN_PORT", "18101")
     monkeypatch.setenv("OSII_PROCESSORS", "http://processor.test:9999")
@@ -302,7 +302,7 @@ def test_toolbox_environment_registers_custom_ports_without_changing_routes(monk
     assert "http://127.0.0.1:18101" in urls
     assert "http://processor.test:9999" in urls
     assert env["OSII_DEFAULT_EXTRACTOR"] == "local.native-text"
-    monkeypatch.setenv("OSII_START_TOOLBOX", "false")
+    monkeypatch.setenv("OSII_START_PROCESSOR_MODULES", "false")
     assert "http://127.0.0.1:18081" in DEV_STACK.build_environment(False)["OSII_PROCESSORS"].split(",")
 
 
@@ -315,9 +315,9 @@ def test_toolbox_dependencies_prepare_once_per_isolated_environment(monkeypatch,
     monkeypatch.setattr(DEV_STACK, "REPOSITORY_ROOT", tmp_path)
     calls = []
     monkeypatch.setattr(DEV_STACK.subprocess, "run", lambda command, **kwargs: calls.append((command, kwargs)))
-    env = {"UV_PROJECT_ENVIRONMENT": str(tmp_path / "osii-env"), "OSII_START_TOOLBOX": str(enabled)}
+    env = {"UV_PROJECT_ENVIRONMENT": str(tmp_path / "osii-env"), "OSII_START_PROCESSOR_MODULES": str(enabled)}
     DEV_STACK.prepare_dependencies("uv", "npm", env, core_only=core_only)
-    tool_calls = [(cmd, kw) for cmd, kw in calls if kw["cwd"].is_relative_to(tmp_path / "osii-toolbox")]
+    tool_calls = [(cmd, kw) for cmd, kw in calls if kw["cwd"].is_relative_to(tmp_path / "osii-processor-modules")]
     assert len(tool_calls) == expected
     assert len({kw["env"]["UV_PROJECT_ENVIRONMENT"] for _, kw in tool_calls}) == expected
     assert all(kw["env"]["UV_PROJECT_ENVIRONMENT"] != env["UV_PROJECT_ENVIRONMENT"] for _, kw in tool_calls)
@@ -494,3 +494,15 @@ def test_public_env_template_uses_current_model_and_endpoint_keys():
     settings = DEV_STACK.load_dotenv(ROOT / ".env.example")
     assert {"OSII_CHAT_MODEL", "OSII_EMBEDDING_MODEL", "OPENAI_BASE_URL"} <= settings.keys()
     assert not ({"CHAT_PROVIDER", "CHAT_PROVIDER_CHAIN", "CHAT_MODEL", "OSII_MODEL_BASE_URL", "OSII_MODEL_API_KEY", "OPENAI_CHAT_MODEL", "OPENAI_SYNTHESIS_MODEL"} & settings.keys())
+
+
+def test_individual_module_opt_out_skips_environment_and_service(monkeypatch, tmp_path):
+    env = {'OSII_ENABLE_TIKA': 'false', 'OSII_ENABLE_BANYAN': 'false', 'OSII_ENABLE_READABLE_WIKI': 'false'}
+    services = DEV_STACK.processor_module_services('uv', env)
+    assert not {'tika','banyan','readable-wiki'} & {service.name for service in services}
+    assert {'concept-entity-wiki','csv-extractor'} <= {service.name for service in services}
+
+
+def test_legacy_module_startup_flag_remains_compatible():
+    assert all(not service.start_automatically for service in DEV_STACK.processor_module_services('uv', {'OSII_START_TOOLBOX': 'false'}))
+    assert all(service.start_automatically for service in DEV_STACK.processor_module_services('uv', {'OSII_START_TOOLBOX': 'false', 'OSII_START_PROCESSOR_MODULES': 'true'}))

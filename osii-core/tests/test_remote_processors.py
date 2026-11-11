@@ -40,6 +40,7 @@ def test_configured_processor_urls_includes_enabled_admin_registry(tmp_path, mon
 
     assert remote.configured_processor_urls() == [
         "http://processor-a:8000",
+        "http://127.0.0.1:8102",
         "http://127.0.0.1:8095/metadata",
         "http://127.0.0.1:8099",
         "http://127.0.0.1:8100",
@@ -62,6 +63,7 @@ def test_openai_provider_uses_standard_embedding_and_synthesis_adapters(tmp_path
     urls = remote.configured_processor_urls()
 
     assert urls == [
+        "http://127.0.0.1:8102",
         "http://127.0.0.1:8095/metadata",
         "http://127.0.0.1:8099",
         "http://127.0.0.1:8100",
@@ -249,3 +251,14 @@ def test_invalid_descriptor_is_isolated_from_other_tools(monkeypatch):
     monkeypatch.setattr(remote, "_request_json", lambda url, **kwargs: {"capabilities": []} if "invalid" in url else descriptor)
     assert [item["name"] for item in remote.discover_remote_processors()] == ["test.valid"]
     assert remote.discover_remote_processors(include_errors=True)[0]["error"]
+
+
+def test_omitted_module_is_not_discovered(tmp_path, monkeypatch):
+    monkeypatch.setenv("OSII_ROOT", str(tmp_path))
+    monkeypatch.delenv("OSII_PROCESSORS", raising=False)
+    monkeypatch.setenv("OSII_ENABLE_TIKA", "false")
+    monkeypatch.setenv("OSII_ENABLE_BANYAN", "false")
+    urls = remote.configured_processor_urls()
+    assert "http://127.0.0.1:8102" not in urls
+    assert "http://127.0.0.1:8101" not in urls
+    assert "http://127.0.0.1:8099" in urls

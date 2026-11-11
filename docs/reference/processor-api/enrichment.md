@@ -354,7 +354,7 @@ For a model-backed method, declare the required capability in the descriptor
 and use the [model-handler adapter](../../extending/processor-development.md#use-a-language-model-without-learning-an-osii-client).
 A generated wiki is derived knowledge; provide citations and label uncertainty.
 The model-backed wiki implementations live in
-`osii-toolbox/llm-wiki-enrichers/`.
+`osii-processor-modules/llm-wiki-enrichers/`.
 
 Finally register the running processor, run enrichment through Core, and
 inspect the saved artifact in the dashboard. Direct Python/HTTP calls return

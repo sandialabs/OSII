@@ -12,6 +12,16 @@ An OSII processor is a small HTTP service that performs one specialized task.
 It receives a self-contained, validated request and returns grounded text or a
 standard artifact. It never writes directly to the OSII store.
 
+## Processor module layout
+
+Use one folder per module under `osii-processor-modules/`: implementation,
+`pyproject.toml`, configuration template, tests, and README stay together.
+`banyan/` is a consolidated example; `tika-adapter/` also demonstrates an owned
+runtime. Keep module environments independent from Core. Add its launcher entry
+and an `OSII_ENABLE_…` switch to `.env.example`; an omitted module must not install
+dependencies or start services. **Toolbox** is the frontend collection of tools.
+Existing `toolbox.*` processor IDs remain stable for saved-route compatibility.
+
 ## Choose a processor kind
 
 | You need to… | Kind | Typical input | Output |

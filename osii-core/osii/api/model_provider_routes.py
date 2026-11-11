@@ -220,7 +220,7 @@ def _credential_help(name: str, source: str | None) -> str:
     if source == "secret_file":
         return f"OSII is using the secret file configured by {name}_FILE. Update that file to change the key."
     path = configured_env_file() or secrets_path()
-    return f"Saved locally in {path}; never stored in .osii or sent to Toolbox processors."
+    return f"Saved locally in {path}; never stored in .osii or sent to processor modules."
 
 
 def _public(record: dict[str, Any]) -> dict[str, Any]:

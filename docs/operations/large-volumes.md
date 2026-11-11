@@ -20,13 +20,13 @@ Set these values in `.env`, using an existing source and a local runtime path:
 OSII_SOURCE_DIR=/mnt/team-documents
 OSII_RUNTIME_DIR=/local-disk/osii-runtime
 OSII_INVENTORY_DB=/local-disk/osii-runtime/inventory.sqlite3
-OSII_START_TOOLBOX=false
+OSII_START_PROCESSOR_MODULES=false
 ```
 
 Run `make dev`, or `.\scripts\osii.ps1 dev` on Windows, and open **Intake →
 Add files** in the normal dashboard. The regular API, sidecar intake worker, metadata inventory
 worker, MCP, and other tools run together. No branch or storage-mode switch is
-needed. `OSII_START_TOOLBOX=false` is an optional startup setting, not an
+needed. `OSII_START_PROCESSOR_MODULES=false` is an optional startup setting, not an
 inventory requirement.
 
 The inventory database defaults to `OSII_ROOT/state/inventory.sqlite3`; the

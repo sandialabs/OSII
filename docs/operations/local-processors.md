@@ -36,7 +36,7 @@ language model. Every index records provider, model, dimension, and
 normalization metadata. Switching vector spaces requires rebuilding.
 
 The experimental OpenCV/Tesseract region extractor and
-tabular processors live in `osii-toolbox/` in
+tabular processors live in `osii-processor-modules/` in
 this repository. Their dependencies remain separate from Core's lockfile and
 default host runtime. Use the per-tool Python source commands and register the
 running Processor API endpoint in Setup. Container builds and component export
@@ -94,4 +94,4 @@ native executable is missing; `/health` alone only confirms the HTTP process
 is alive. Install the native executable and required language data before
 queuing OCR. The shared PDF viewer accepts both page `regions` and a segment's
 normalized `source_origin.bbox` for overlays. OSII-tesseract remains an optional
-Toolbox extractor, not a model endpoint or part of RAG orchestration.
+processor module, not a model endpoint or part of RAG orchestration.

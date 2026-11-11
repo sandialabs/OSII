@@ -1,7 +1,7 @@
 # OSII tabular dataset processors
 
 Two optional, Python OSII Processor API services for grounded tabular
-data. Their source lives in `osii-toolbox/` in the main OSII repository, separately
+data. Their source lives in `osii-processor-modules/` in the main OSII repository, separately
 from Core's runtime dependencies: an organization may run them by default, replace
 them with a domain-specific implementation, or leave them out entirely.
 
@@ -22,12 +22,12 @@ From the OSII root, these commands work in macOS/Linux and Windows PowerShell.
 Each run uses an isolated uv environment rather than Core's environment:
 
 ```bash
-uv run --no-project --python 3.12 --with-editable osii-core --with-editable osii-toolbox/tabular-dataset-processors --with pytest python -m pytest osii-toolbox/tabular-dataset-processors/tests -q
-uv run --no-project --python 3.12 --with-editable osii-core --with-editable osii-toolbox/tabular-dataset-processors python osii-toolbox/tabular-dataset-processors/run.py extractor --host 127.0.0.1
+uv run --no-project --python 3.12 --with-editable osii-core --with-editable osii-processor-modules/tabular-dataset-processors --with pytest python -m pytest osii-processor-modules/tabular-dataset-processors/tests -q
+uv run --no-project --python 3.12 --with-editable osii-core --with-editable osii-processor-modules/tabular-dataset-processors python osii-processor-modules/tabular-dataset-processors/run.py extractor --host 127.0.0.1
 ```
 
 The last command stays running. Start the enricher in a second terminal:
 
 ```bash
-uv run --no-project --python 3.12 --with-editable osii-core --with-editable osii-toolbox/tabular-dataset-processors python osii-toolbox/tabular-dataset-processors/run.py enricher --host 127.0.0.1
+uv run --no-project --python 3.12 --with-editable osii-core --with-editable osii-processor-modules/tabular-dataset-processors python osii-processor-modules/tabular-dataset-processors/run.py enricher --host 127.0.0.1
 ```

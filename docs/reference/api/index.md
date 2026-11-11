@@ -1135,5 +1135,6 @@ Save the upstream address with `PUT /api/admin/processor-settings/tika` and
 Both `tika` and `tika_catchall` intake routes use these saved settings. The
 adapter exposes the standard `/v1/descriptor` and `/v1/extract` endpoints;
 `/health` checks the wrapper and `/upstream-health?tika_endpoint=...` checks
-Apache Tika without launching or installing it. See the
-[Apache Tika adapter guide](../extractor-routing.md#apache-tika-toolbox-adapter).
+Apache Tika. The normal development stack prepares and manages Apache Tika
+automatically; `OSII_TIKA_MANAGED=false` selects an externally managed runtime. See the
+[Apache Tika adapter guide](../extractor-routing.md#apache-tika-processor-module).

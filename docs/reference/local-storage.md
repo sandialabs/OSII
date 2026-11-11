@@ -75,7 +75,7 @@ Windows:
 ```
 
 Both launchers install the optional PostgreSQL dependencies only when selected.
-Core, worker, baseline processors and Toolbox keep the normal host workflow.
+Core, worker, baseline processors and processor modules keep the normal host workflow.
 No separate image build, launcher menu or authentication setup is necessary.
 
 ## Explicit one-way import of an existing sidecar library

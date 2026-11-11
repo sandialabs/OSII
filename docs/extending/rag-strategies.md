@@ -2,14 +2,14 @@
 
 Use this guide for custom retrieval, query decomposition, reranking, context
 selection, or iterative question answering. These extend **Core RAG**, not the
-Toolbox. Start in OSII-local; the same contracts transfer to the hosted server.
+processor modules. Start in OSII-local; the same contracts transfer to the hosted server.
 
 For the research behind inspecting intermediate searches and evaluating their
 quality, see [Agent traces and evaluation for multi-step RAG](../concepts/agent-traces-research.md).
 
 ## Boundaries and code locations
 
-Toolbox contains exactly four OSII processor kinds: **extractor, synthesizer,
+Processor modules contain exactly four OSII processor kinds: **extractor, synthesizer,
 enricher, embedder**. A reranker is an optional step in a RAG process. It is not
 a fifth kind and does not need a Processor SDK descriptor or registration in
 Setup's processor list. A RAG pipeline may consume the outputs of those four
@@ -37,7 +37,7 @@ scope-bound retriever supplies candidates to the strategy. PostgreSQL, sidecar,
 and volume implementations remain separate; no strategy guesses the active store
 or falls back to another store. A local function and a client of an existing
 remote reranking service can satisfy the same RAG contract. Remote compute does
-not make that client a Toolbox processor.
+not make that client a processor.
 
 ## Strategy contract
 

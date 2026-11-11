@@ -294,19 +294,22 @@ def test_intake_readiness_reports_bundled_tools(
     monkeypatch.delenv("OSII_MODEL_BASE_URL", raising=False)
     monkeypatch.delenv("NEMOTRON_BASE_URL", raising=False)
 
+    monkeypatch.setattr(capability_readiness, "discover_remote_processors", lambda **_: [
+        {"name": "tika", "kind": "extractor", "base_url": "http://127.0.0.1:8102"},
+    ])
     response = client.get("/api/intake/readiness")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["extractors"][0]["id"] == "native_text"
-    assert payload["extractors"][0]["available"] is True
+    native = next(item for item in payload["extractors"] if item["id"] == "native_text")
+    assert native["available"] is True
     tika = next(item for item in payload["extractors"] if item["id"] == "tika")
     assert tika["available"] is True
     assert tika["bundled"] is False
-    assert tika["origin"]["label"] == "Optional Apache service"
-    assert tika["origin"]["implementation"] == "compose.yaml: services.tika"
-    assert payload["extractors"][0]["origin"]["label"] == "Bundled Core"
-    assert payload["extractors"][0]["origin"]["configuration_file"].endswith("tools.toml")
+    assert tika["origin"]["label"] == "Processor module"
+    assert tika["origin"]["implementation"] == "osii-processor-modules/tika-adapter/tika_adapter/main.py"
+    assert native["origin"]["label"] == "Bundled Core"
+    assert native["origin"]["configuration_file"].endswith("tools.toml")
     assert not any(item["id"] == "pdf_default" for item in payload["extractors"])
     assert payload["synthesizers"] == []
     assert payload["embedders"][0]["available"] is False
@@ -357,7 +360,7 @@ def test_processor_origins_point_to_registration_or_model_configuration(client, 
     payload = client.get("/api/intake/readiness").json()
     enrichers = {item["id"]: item for item in payload["enrichers"]}
     assert enrichers["example.custom"]["origin"]["configuration_key"] == "tools.custom"
-    assert enrichers["toolbox.readable-wiki"]["origin"]["label"] == "Optional Toolbox service"
+    assert enrichers["toolbox.readable-wiki"]["origin"]["label"] == "Processor module"
     assert "builtin_tools_config" in enrichers["toolbox.readable-wiki"]["origin"]["implementation"]
     assert enrichers["local.custom"]["bundled"] is False
     assert payload["synthesizers"][0]["origin"]["configuration_file"].endswith("models.toml")

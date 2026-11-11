@@ -188,18 +188,24 @@ instances, Windows execution, and a large PDF corpus remain unverified.
 
 Run `make dev` (Windows: `.\\scripts\\osii.ps1 dev`). This installs locked
 Python dependencies and dashboard dependencies, then starts the application,
-baseline processors, and all Toolbox services on the host. Toolbox dependencies
+baseline processors, and enabled processor modules on the host. Module dependencies
 are prepared once per project in that project's ignored `osii-env/`, separately
 from Core. Later starts reuse those environments and npm dependencies.
 
-The Toolbox services are OpenCV/Tesseract region OCR (`8081`), CSV extraction
-(`8097`), collection-table enrichment (`8098`), Readable LLM Wiki (`8099`), and
-Concept and Entity LLM Wiki (`8100`). `.env.example` lists their port overrides.
-Baseline full-page Tesseract remains on `8080`. Install native Tesseract for
-either OCR service. All five Toolbox endpoints are registered with Core, and
-their health checks must pass before the dashboard starts.
+Modules include OpenCV/Tesseract (`8081`), CSV extraction (`8097`), collection
+tables (`8098`), Readable Wiki (`8099`), Concept/Entity Wiki (`8100`), Banyan
+(`8101`), and Tika (`8102`, managed Apache runtime on `9998`). The first Tika
+startup downloads and verifies its pinned jar; Java is included in its module
+environment. Baseline full-page Tesseract remains on `8080`; native Tesseract
+is still required for OCR. Nemotron and Wiki models require endpoint configuration.
 
-Set `OSII_START_TOOLBOX=false` in `.env` for baseline-only startup. The same
+Set individual `OSII_ENABLE_TIKA=false`, `OSII_ENABLE_BANYAN=false`, or the other
+`OSII_ENABLE_…` switches in `.env` to omit a module's dependencies and startup.
+The complete switch list is in `.env.example`. Restart the stack after changing
+these flags. Banyan's implementation and launch configuration are both under
+`osii-processor-modules/banyan/`; no separate host project is needed.
+
+Set `OSII_START_PROCESSOR_MODULES=false` in `.env` for baseline-only startup. The same
 setting works with `make dev`, `make demo`, and the PowerShell commands.
 Setup's service controls can start stopped tools on demand. Starting services
 does not change saved processing routes, invoke models, or download model
@@ -249,7 +255,7 @@ runtime data before product changes that require a storage migration.
 
 ## Connect an optional tool or your own processor
 
-Toolbox implementations remain under `osii-toolbox/` and start automatically
+processor module implementations remain under `osii-processor-modules/` and start automatically
 unless opted out as described above. To deploy a tool independently or connect
 your own processor, start its service using its source instructions, register
 its base URL in Setup's custom Processor API services, then choose its

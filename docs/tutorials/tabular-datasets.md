@@ -57,7 +57,7 @@ the first run.
 
 The CSV extractor and collection enricher are optional Tool Chest services, not
 part of OSII Core's default development stack. Use the isolated source commands
-in `osii-toolbox/tabular-dataset-processors/README.md` to run the extractor and
+in `osii-processor-modules/tabular-dataset-processors/README.md` to run the extractor and
 enricher in separate terminals.
 
 Before starting OSII Core, add the following to its `.env` (use deployment
@@ -106,7 +106,7 @@ rather than the incidental layout of a drive.
 ## Copy the extension
 
 The complete, containerized reference implementation is the
-`osii-toolbox/tabular-dataset-processors/` component in this repository. It
+`osii-processor-modules/tabular-dataset-processors/` component in this repository. It
 contains one extractor and one enricher built only against the public Processor
 SDK, with direct tests and an API contract embedded in the
 image. A subject-matter expert can copy that component into an independent

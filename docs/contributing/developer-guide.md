@@ -18,7 +18,7 @@ The main repository boundaries are:
 - `osii-core/services`: guaranteed local, independently addressable processor hosts;
 - `osii-dashboard/dashboard`: React and TypeScript user interface;
 - `osii-mcp`: agent-facing OSII tools;
-- `osii-toolbox`: optional processors with independent dependencies and images.
+- `osii-processor-modules`: optional processors with independent dependencies and images.
 
 ## Design invariants
 

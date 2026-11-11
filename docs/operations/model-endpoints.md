@@ -6,7 +6,7 @@ Chat and embeddings use OpenAI-compatible APIs. The reranking adapter uses the
 [Cohere rerank request/response contract](https://docs.cohere.com/reference/rerank):
 `POST <base URL>/rerank`, `model`, `query`, string `documents`, and `top_n`, returning
 `results` containing `index` and `relevance_score`. Other reranking protocols need
-their own Core RAG adapter. Reranking is not a Toolbox component or Processor API kind.
+their own Core RAG adapter. Reranking is not a processor module or Processor API kind.
 
 | Capability | Base URL | Inline credential | Credential file |
 | --- | --- | --- | --- |
@@ -82,7 +82,7 @@ change an endpoint. Set `api_key_env` to the corresponding capability key name
 (for example `OSII_EMBEDDING_API_KEY`, without `_FILE`). The model bridge reads
 the associated secret file. It does not substitute a shared key if a selected
 connection's named credential is missing. New chat connections also provide
-synthesis; Toolbox tools continue to use their explicitly bound connections.
+synthesis; processor modules continue to use their explicitly bound connections.
 
 Reranking configuration creates a callable in `app.state.rag_reranker` for
 opt-in Core RAG strategies. It does not change default chat or ordinary search.

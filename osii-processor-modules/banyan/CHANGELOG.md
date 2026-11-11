@@ -3,7 +3,7 @@
 - Correct multi-page bbox JSON and byte-return serialization; align output backends with the common save interface.
 
 ### PR #TBD - 2026-11-06
-- Add an opt-in OSII Toolbox extractor with bounded document bytes and Nemotron bounding-box provenance.
+- Add an opt-in OSII processor module with bounded document bytes and Nemotron bounding-box provenance.
 - Configure endpoint credentials locally and isolate temporary request files, with offline API tests.
 
 ### PR #TBD - 2026-05-07

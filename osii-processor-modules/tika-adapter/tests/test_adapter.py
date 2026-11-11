@@ -7,6 +7,11 @@ from osii.processor_sdk import DocumentInput, ExtractionRequest
 from tika_adapter.main import TikaExtractor, app, endpoint
 
 
+@pytest.fixture(autouse=True)
+def unmanaged_tests(monkeypatch):
+    monkeypatch.setenv('OSII_TIKA_MANAGED', 'false')
+
+
 def request(config=None):
     return ExtractionRequest(request_id='test', document=DocumentInput(file_id='test', filename='a.pdf', media_type='application/pdf', content_base64=base64.b64encode(b'%PDF input').decode()), config=config or {})
 

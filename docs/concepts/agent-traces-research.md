@@ -219,7 +219,7 @@ Recommended implementation order:
    strategies against a baseline on a labeled corpus. Report measured strengths
    and failures before selecting defaults.
 
-RAG orchestration and reranking remain Core responsibilities. Toolbox retains
+RAG orchestration and reranking remain Core responsibilities. processor modules retains
 exactly four processor kinds: extractor, synthesizer, enricher, and embedder.
 The trace feature does not introduce a fifth kind, a new authoritative document
 store, local user accounts, or a framework dependency in the domain contracts.

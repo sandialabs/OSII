@@ -48,12 +48,13 @@ On Windows, install uv and Node.js and run:
 ```
 
 Open [the dashboard](http://localhost:5173), process your files, and explore the
-library. Toolbox services start automatically and are available in **Setup**;
-choose a tool when you want to use it. Keep the terminal open; **Ctrl+C** stops
-OSII. For sample files, use
+library. Processor modules start automatically and are available in **Setup**.
+Set individual `OSII_ENABLE_…` switches in `.env` to omit modules.
+Keep the terminal open; **Ctrl+C** stops OSII. For sample files, use
 `make demo` (Windows: `.\scripts\osii.ps1 demo`). Install Tesseract for OCR;
+Apache Tika and its Java runtime are prepared automatically on first startup;
 configure optional model connections in **Setup**. The
-[Banyan Toolbox extractor](osii-toolbox/banyan-nemotron-parse/README.md) uses its
+[Banyan processor module](osii-processor-modules/banyan/README.md) uses its
 own local Nemotron endpoint configuration. Keep credentials outside Git.
 Choose an Intake preset for selected files; the startup guide covers provider
 profiles and configurable processing defaults.

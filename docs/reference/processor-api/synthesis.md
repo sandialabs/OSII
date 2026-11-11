@@ -365,7 +365,7 @@ fails the metadata step rather than silently fabricating a completed record.
 `osii.processors.document_metadata` owns text prompting and parsing;
 `osii.processors.synthesis` orchestrates summary windows and the metadata call.
 A future VLM synthesizer can return the same `DocumentMetadata` contract with an
-explicit vision method and model; no new Toolbox component kind is required.
+explicit vision method and model; no new processor module kind is required.
 The caller remains responsible for source/extraction provenance. Core stores the
 record in the existing synthesis output (PostgreSQL in server; portable provenance
 in local). Local TOML omits null keys; the read adapter restores them as unknowns.

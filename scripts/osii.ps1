@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = "Stop"
 $RepositoryRoot = Split-Path -Parent $PSScriptRoot
 if ($Command -eq "help") {
-    Write-Host ".\scripts\osii.ps1 dev        Start OSII and all Toolbox services"
+    Write-Host ".\scripts\osii.ps1 dev        Start OSII and all processor modules services"
     Write-Host ".\scripts\osii.ps1 demo       Add sample data, then start OSII"
     Write-Host ".\scripts\osii.ps1 doctor     Report disk usage"
     Write-Host "Optional: -EnvFile <file> -SourceDir <folder> -RuntimeDir <folder> -DryRun"
