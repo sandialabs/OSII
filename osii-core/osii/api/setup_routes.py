@@ -190,3 +190,12 @@ def control_service(service_id: str, action: str):
 @router.get("/services/{service_id}/logs")
 def service_logs(service_id: str):
     return _supervisor_request("GET", f"/services/{service_id}/logs")
+
+
+@router.post("/setup/dismiss")
+def dismiss_home_setup(request: Request):
+    import json
+    from osii.domain.storage.atomic import atomic_write_text
+    root = request.app.state.osii_root.resolve()
+    atomic_write_text(root / "state" / "home.json", json.dumps({"setup_dismissed": True}))
+    return {"setup": {"visible": False}}

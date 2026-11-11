@@ -2,7 +2,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from osii.api.collection_synthesis_routes import router as collection_synthesis_router
@@ -151,3 +151,9 @@ async def download_artifact(file_path: str):
 @app.get("/")
 async def root():
     return {"message": "AI Ready Ingest OSII Core Backend"}
+
+
+@app.get("/api/workbench/home")
+def workbench_home(request: Request):
+    from osii.domain.workbench_local import local_home
+    return local_home(request.app.state.osii_root.resolve())
