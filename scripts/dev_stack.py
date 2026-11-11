@@ -348,6 +348,8 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str], *, core_only: b
             "--package", "osii-local-enricher",
             "--package", "osii-model-provider-bridge",
         ]
+    if env.get("OSII_STORAGE_BACKEND", "sidecar").strip().lower() == "postgres":
+        sync_command.extend(["--extra", "postgres"])
     subprocess.run(
         sync_command,
         cwd=REPOSITORY_ROOT,
@@ -523,13 +525,21 @@ def render_command(service: Service) -> str:
     return f"[{display_name}] ({service.working_directory}) {command}"
 
 
+def service_environment(service: Service, env: dict[str,str]) -> dict[str,str]:
+    result={**env,**dict(service.environment)}
+    if service.name not in {"api","worker"}:
+        result.pop("DATABASE_URL",None)
+        result.pop("OSII_STORAGE_BACKEND",None)
+    return result
+
+
 def start_service(service: Service, env: dict[str, str]) -> subprocess.Popen[bytes]:
     display_name = SERVICE_DISPLAY_NAMES.get(service.name, service.name)
     print(f"[dev] Starting {display_name}...")
     kwargs: dict[str, object] = {
         "args": service.command,
         "cwd": service.working_directory,
-        "env": {**env, **dict(service.environment)},
+        "env": service_environment(service,env),
     }
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -582,7 +592,7 @@ class CapabilitySupervisor:
         kwargs: dict[str, object] = {
             "args": service.command,
             "cwd": service.working_directory,
-            "env": {**self.env, **dict(service.environment)},
+            "env": service_environment(service,self.env),
             "stdout": subprocess.PIPE,
             "stderr": subprocess.STDOUT,
         }

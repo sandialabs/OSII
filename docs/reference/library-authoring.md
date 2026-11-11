@@ -1,5 +1,12 @@
 # Shared authoring and collections
 
+Optional local PostgreSQL also composes these ports; see
+[local storage](local-storage.md) for setup and explicit import. Preferred text
+uses `TextAuthoring.get/save` with an expected revision. Both implementations
+preserve extraction evidence and human edit history. PostgreSQL refreshes lexical
+chunks on edit and invalidates embeddings; sidecars retain their existing
+stale-index rebuild workflow. No authentication or filesystem mirror is introduced.
+
 Core's `osii.domain.storage.authoring` defines two small interfaces:
 
 - `ProductAuthoring`: read history, save a draft, and activate a revision.

@@ -1,5 +1,11 @@
 # Shared processing commits
 
+[Optional local PostgreSQL](local-storage.md) uses these same commit ports for
+the Workbench and worker, without hosted accounts. Optional claim-generation
+fencing on `JobCheckpoint` prevents an old worker claim from committing under a
+reused worker ID. Embedding identity can include a credential-free connection
+fingerprint; endpoint/model-binding changes require an explicit index rebuild.
+
 Core's `osii.domain.storage.commits` defines the commit boundary for completed
 Processor API responses. It complements the [shared reads](library-reads.md).
 Processor authors keep using the existing SDK: they return results, never a
@@ -181,7 +187,8 @@ The hosted suite separately tests the migrated schema and existing workflows.
 Sidecar product-history cases run in the local checkout; the hosted checkout
 does not acquire the local authoring implementation just to run those cases.
 
-This boundary does not make `.env` backend selection available. Remaining work
-includes broader legacy adapter adoption, shared job interfaces,
-complete authoring parity, and explicit inventory/library migrations. See the
+These low-level commits do not choose a backend. The
+[local Workbench composition](local-storage.md) now provides explicit selection
+and library import. Broader legacy adoption and inventory migration remain
+separate work. See the
 [storage decision and staged plan](../concepts/adr-storage-boundaries.md).

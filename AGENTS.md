@@ -77,8 +77,10 @@ The agent's job is to execute the human's command—nothing more.
 
 ## Current delivery scope
 
-- `main` is the standalone, filesystem-backed application. `osii-server` is
-  developed separately for PostgreSQL, hosted accounts, and OpenShift. Keep
+- `main` is the standalone application, using sidecars by default with optional,
+  explicitly initialized PostgreSQL storage. Never auto-import or silently fall
+  back between stores. The canonical inventory SQLite stays independent.
+  `osii-server` is developed separately for hosted accounts and OpenShift. Keep
   portable fixes isolated for transfer between the branches; never merge server
   persistence or hosted startup into main implicitly.
 

@@ -13,8 +13,9 @@ type Range = { file_id?: string; filename?: string; source_relpath?: string; cha
 type Batch = { id: string; ordinal: number; status: string; source_ranges: Range[] };
 type Result = { markdown?: string; citations?: unknown[]; artifacts: { id: string; data: unknown }[]; warnings?: string[] };
 
-function ResultBody({ runId, batch }: { runId: string; batch: Batch }) {
-  const query = useQuery({ queryKey: ["scope-batch-result", runId, batch.id, batch.status], queryFn: () => apiJson<{ result: Result | null }>(`/api/enrichment-jobs/runs/${encodeURIComponent(runId)}/batches/${encodeURIComponent(batch.id)}`) });
+function ResultBody({ runId, batch, taskId }: { runId: string; batch: Batch; taskId?: string }) {
+  const taskQuery = taskId ? `?task_id=${encodeURIComponent(taskId)}` : "";
+  const query = useQuery({ queryKey: ["scope-batch-result", runId, taskId, batch.id, batch.status], queryFn: () => apiJson<{ result: Result | null }>(`/api/enrichment-jobs/runs/${encodeURIComponent(runId)}/batches/${encodeURIComponent(batch.id)}${taskQuery}`) });
   return <Stack spacing={1.5}>
     <Typography fontWeight={650}>Documents and text processed</Typography>
     {batch.source_ranges.map((range, index) => <Typography key={index} variant="body2">
@@ -30,14 +31,15 @@ function ResultBody({ runId, batch }: { runId: string; batch: Batch }) {
   </Stack>;
 }
 
-export function ScopeBatchResults({ runId, progress, title }: { runId: string; progress?: BatchProgress; title?: string }) {
+export function ScopeBatchResults({ runId, progress, title, taskId }: { runId: string; progress?: BatchProgress; title?: string; taskId?: string }) {
+  const taskQuery = taskId ? `&task_id=${encodeURIComponent(taskId)}` : "";
   const [missingCursor, setMissingCursor] = useState(0);
   const [missingPrevious, setMissingPrevious] = useState<number[]>([]);
   const [missing, setMissing] = useState(false);
-  const missingQuery = useQuery({ queryKey: ["scope-batch-missing", runId, missingCursor], queryFn: () => apiJson<{items: {file_id: string; filename?: string}[]; next_cursor: number | null}>(`/api/enrichment-jobs/runs/${encodeURIComponent(runId)}/sources?only_missing=true&limit=50&cursor=${missingCursor}`), enabled: missing });
+  const missingQuery = useQuery({ queryKey: ["scope-batch-missing", runId, taskId, missingCursor], queryFn: () => apiJson<{items: {file_id: string; filename?: string}[]; next_cursor: number | null}>(`/api/enrichment-jobs/runs/${encodeURIComponent(runId)}/sources?only_missing=true&limit=50&cursor=${missingCursor}${taskQuery}`), enabled: missing });
   const [open, setOpen] = useState(false); const [cursor, setCursor] = useState(0);
   const [previous, setPrevious] = useState<number[]>([]);
-  const query = useQuery({ queryKey: ["scope-batch-list", runId, cursor, progress?.completed_batches], queryFn: () => apiJson<{ items: Batch[]; next_cursor: number | null }>(`/api/enrichment-jobs/runs/${encodeURIComponent(runId)}/batches?cursor=${cursor}&limit=10`), enabled: open,
+  const query = useQuery({ queryKey: ["scope-batch-list", runId, taskId, cursor, progress?.completed_batches], queryFn: () => apiJson<{ items: Batch[]; next_cursor: number | null }>(`/api/enrichment-jobs/runs/${encodeURIComponent(runId)}/batches?cursor=${cursor}&limit=10${taskQuery}`), enabled: open,
     refetchInterval: open && progress && progress.completed_batches < progress.map_batches ? 2500 : false });
   return <Stack spacing={1.5}>
     {title ? <Typography variant="h6">{title}</Typography> : null}
@@ -55,7 +57,7 @@ export function ScopeBatchResults({ runId, progress, title }: { runId: string; p
       {query.isError ? <Alert severity="error">Could not load batches. <Button onClick={() => void query.refetch()}>Retry</Button></Alert> : null}
       {query.data?.items.map(batch => <Accordion key={batch.id} variant="outlined" disableGutters slotProps={{ transition: { unmountOnExit: true } }}>
         <AccordionSummary expandIcon={<ExpandMoreOutlined />}><Typography>Batch {batch.ordinal + 1} · {batch.status} · {batch.source_ranges.length} text windows</Typography></AccordionSummary>
-        <AccordionDetails><ResultBody runId={runId} batch={batch} /></AccordionDetails>
+        <AccordionDetails><ResultBody runId={runId} batch={batch} taskId={taskId} /></AccordionDetails>
       </Accordion>)}
       <Stack direction="row" spacing={1}>
         <Button disabled={!previous.length} onClick={() => { setCursor(previous[previous.length - 1]); setPrevious(value => value.slice(0, -1)); }}>Previous batches</Button>

@@ -125,7 +125,9 @@ The first shared persistence boundary is the
 [document and artifact read interface](../reference/library-reads.md), with
 sidecar and PostgreSQL adapters and one contract suite. Local document metadata,
 preferred-text inspection, and object enrichment payloads use the sidecar
-adapter. This does not select a new write backend or migrate the inventory.
+adapter by default. The [optional local PostgreSQL composition](../reference/local-storage.md)
+now uses the shared ports for the whole Workbench, with explicit initialization
+and non-destructive one-way import. It never migrates the inventory implicitly.
 
 The [processing commit boundary](../reference/processing-commits.md) now accepts
 validated SDK responses with stable operation IDs and explicit input revisions.
@@ -143,17 +145,18 @@ document-text overrides are preserved, not silently migrated into product histor
 [Shared retrieval/job interfaces](../reference/retrieval-jobs.md) bound search
 responses and fence worker mutations by claim generation. Native search indexes,
 RAG guards, queue records, authorization, and normal startup remain in their
-existing compositions; this does not enable database selection or replace queues.
+existing compositions. Optional local PostgreSQL uses bounded file/model steps
+and keeps all optional Intake work under one run's pause/cancel controls.
 
 OSII-local and OSII-server are compositions of the same product. Their storage,
 identity, and deployment adapters differ; intake, processor contracts, document
 inspection, topic exploration, and RAG strategies should converge on shared code.
-`main` keeps standalone startup and sidecar storage. `osii-server` keeps hosted
+`main` keeps standalone startup and sidecar storage by default. `osii-server` keeps hosted
 accounts, PostgreSQL, and OpenShift delivery. File inventory is part of normal
 local operation; `osii.volume` owns its separate canonical SQLite database.
 Neither server migrations nor sidecar catalog rebuilds apply to that database.
 The [storage decision and staged plan](adr-storage-boundaries.md) separates this
-implemented read boundary from future write adapters and backend selection.
+implemented boundaries from future inventory migration and database-native retrieval.
 
 Shared work belongs in the existing repository, not a new research server or an
 unrelated repository:

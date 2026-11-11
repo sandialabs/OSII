@@ -67,12 +67,12 @@ all their public responsibilities.
 
 ### Select the backend at startup
 
-The target local configuration is `OSII_STORAGE_BACKEND=sidecar` by default or
-`OSII_STORAGE_BACKEND=postgres` with `DATABASE_URL`. These are **planned settings**;
-adding them to today's `.env` does not switch storage. Selection will happen at
-process startup, with the same selection supplied to API, workers, Python entry
-points, and MCP. It will not require a different build. PostgreSQL dependencies
-will be optional for the normal local installation.
+Local configuration is `OSII_STORAGE_BACKEND=sidecar` by default or
+`OSII_STORAGE_BACKEND=postgres` with `DATABASE_URL`. Selection happens at startup;
+the same selection reaches API and workers, while MCP remains an API client.
+It does not require a different build. PostgreSQL dependencies are optional.
+[Initialization and transfer](../reference/local-storage.md) are explicit commands,
+never startup side effects. Existing sidecars are not mirrored or overwritten.
 
 Local operation stays on loopback without user accounts or login, including
 when PostgreSQL is selected. Hosted authentication and permissions remain
@@ -80,10 +80,10 @@ server responsibilities. The server requires PostgreSQL; it never falls back
 to files. Backend selection does not enable hosted startup or authentication.
 
 The hosted target uses one application PostgreSQL database, including inventory
-and jobs. Local PostgreSQL mode should likewise use one application database
-once those adapters and their explicit migrations are implemented. Existing
-canonical inventory SQLite remains unchanged until that dedicated migration is
-implemented and verified. Do not temporarily route its records through sidecar
+and jobs. Local PostgreSQL uses one application database for library data and
+jobs. The existing canonical inventory SQLite remains independent; its migration
+is not part of local backend selection. Processing-status joins are connection-local
+projections only and never overwrite inventory evidence. Do not route its records through sidecar
 catalog rebuild or corruption recovery.
 
 ### Preserve meaning across adapters
@@ -170,10 +170,12 @@ content. Search indexes can be rebuilt for the destination.
    adoption and database-bounded ranking remain incremental. Preserve hosted authorization before
    evidence selection or processor dispatch. Keep current search backends until
    benchmarks justify a change.
-5. **Local PostgreSQL selection and transfer.** Wire the startup setting and
-   optional dependencies only after the required adapters pass. Add explicit
-   transfer and inventory migration with backup, verification, and recovery;
-   preserve source stores. Keep ordinary `make dev` and PowerShell startup simple.
+5. **Local PostgreSQL selection and transfer implemented.** The optional Workbench
+   composition uses shared read, commit, authoring, retrieval and job contracts.
+   Explicit empty-schema initialization and transactional one-way import preserve
+   source stores; portable collection exchange stays explicit. Inventory migration
+   and database-native bounded retrieval remain separate work. Ordinary `make dev`
+   and PowerShell startup are unchanged.
 
 Shared changes are focused commits transferred between the local and server
 branches. Do not merge hosted authentication, database migrations, or startup

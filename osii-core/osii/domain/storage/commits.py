@@ -156,6 +156,7 @@ class JobCheckpoint:
     worker_id: str
     index: int | None = None
     item: dict[str, Any] | None = None
+    generation: str | None = None
 
 
 @dataclass(frozen=True)
@@ -326,7 +327,7 @@ def embedding_identity(response: EmbeddingResponse) -> dict:
     return {"provider": response.metadata.get("provider_id") or response.processor.name, "model": response.model,
         "dimensions": response.vectors[0].dimensions if response.vectors else 0,
         "normalized": response.normalized,
-        **{key: response.metadata[key] for key in ("model_digest", "endpoint_type", "chunking") if key in response.metadata}}
+        **{key: response.metadata[key] for key in ("model_digest", "endpoint_type", "chunking", "connection_fingerprint") if key in response.metadata}}
 
 
 @dataclass(frozen=True)

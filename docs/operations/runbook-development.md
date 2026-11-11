@@ -35,6 +35,10 @@ Runtime data defaults to `osii-data/`, separately from original documents.
 Configuration is in `osii-data/config/`. Preserve these directories and your
 `.env` when updating the checkout.
 
+Sidecars are the default library store. [Optional local PostgreSQL](../reference/local-storage.md)
+uses the same startup commands, but requires explicit schema initialization and
+an explicit, non-destructive import to carry over existing sidecar data.
+
 For the shared model endpoint set `OPENAI_BASE_URL`, `OSII_CHAT_MODEL`, and
 `OSII_EMBEDDING_MODEL` if embeddings are available. Enter credentials in
 Setup or inject `OPENAI_API_KEY`. Existing saved model settings are retained;

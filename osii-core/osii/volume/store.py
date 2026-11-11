@@ -190,9 +190,10 @@ def predicate(filters: Filters, alias: str = "e") -> tuple[str, list]:
 class VolumeStore:
     def __init__(self, path: Path):
         self.path = Path(path).expanduser().resolve()
+        self.processing_links = None
 
     @contextmanager
-    def connect(self) -> Iterator[sqlite3.Connection]:
+    def connect(self, *, project_processing: bool = False) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.path, timeout=30)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
@@ -208,6 +209,12 @@ class VolumeStore:
         )
         try:
             with conn:
+                if project_processing and self.processing_links is not None:
+                    # A connection-local read projection only. Never migrate,
+                    # overwrite, or reinterpret the canonical inventory evidence.
+                    conn.execute("CREATE TEMP TABLE sidecar_links(entry_id INTEGER,revision INTEGER,file_id TEXT,run_id TEXT,updated REAL,PRIMARY KEY(entry_id,revision))")
+                    conn.executemany("INSERT OR REPLACE INTO temp.sidecar_links VALUES(?,?,?,?,?)",self.processing_links(conn))
+                    conn.commit()
                 yield conn
         finally:
             conn.close()
@@ -383,7 +390,7 @@ class VolumeStore:
 
     def summary(self, filters: Filters) -> dict:
         where, values = predicate(filters)
-        with self.connect() as conn:
+        with self.connect(project_processing=filters.sidecar_state!="any") as conn:
             row = dict(
                 conn.execute(
                     f"SELECT count(*) AS files,coalesce(sum(CASE WHEN metadata_state='known' THEN size_bytes ELSE 0 END),0) AS bytes, count(extraction_id) AS extracted,coalesce(sum(metadata_state!='known'),0) AS unknown_sizes FROM entries e WHERE {where}",
@@ -409,7 +416,7 @@ class VolumeStore:
 
     def entries(self, filters: Filters, after: int = 0, limit: int = 100) -> dict:
         where, values = predicate(filters)
-        with self.connect() as conn:
+        with self.connect(project_processing=filters.sidecar_state!="any") as conn:
             rows = [
                 dict(r)
                 for r in conn.execute(
@@ -474,7 +481,7 @@ class VolumeStore:
           SELECT id,revision,sum(size_bytes) OVER(ORDER BY {order}) AS running_bytes,
           row_number() OVER(ORDER BY {order}) AS position FROM candidates)
           SELECT ?,id,revision FROM bounded WHERE position<=? AND running_bytes<=?"""
-        with self.connect() as conn:
+        with self.connect(project_processing=request.filters.sidecar_state!="any") as conn:
             conn.execute("BEGIN IMMEDIATE")
             incomplete = conn.execute(
                 "SELECT 1 FROM runs r WHERE kind='scan' AND id=(SELECT max(id) FROM runs x WHERE x.source_id=r.source_id AND x.kind='scan') AND status!='done'"
@@ -565,7 +572,7 @@ class VolumeStore:
             raise ValueError(
                 "Intake requires between 1 and 10,000 frozen files; select a smaller batch"
             )
-        with self.connect() as conn:
+        with self.connect(project_processing=True) as conn:
             rows = [
                 dict(row)
                 for row in conn.execute(

@@ -1,10 +1,10 @@
 # Shared document and artifact reads
 
 Core has a read-only `LibraryReader` contract under `osii.domain.read.contracts`.
-The same contract and tests are used by local sidecars and the PostgreSQL hosted
-composition. This is the first persistence boundary, not a completed backend
-switch: local startup still uses sidecars, and hosted startup still requires
-PostgreSQL. No `.env` storage selector or automatic migration is available.
+The same contract and tests are used by sidecars, optional local PostgreSQL and
+the PostgreSQL hosted composition. Sidecars remain the local default. See
+[local storage](local-storage.md) for explicit backend selection, initialization
+and one-way import; nothing migrates automatically. Hosted startup remains separate.
 
 ## What the interface returns
 
@@ -73,10 +73,13 @@ Queries do not initialize a store, rebuild/quarantine a catalog, or write to
 inventory SQLite. Existing startup/maintenance owns catalog recovery.
 
 `PostgresLibraryReader(engine, actor_id=...)` accepts the composition's SQLAlchemy
-PostgreSQL engine over the existing hosted schema. Transactions are read-only;
+PostgreSQL engine over the shared table contracts. Transactions are read-only;
 the adapter neither creates tables nor imports server accounts or startup into
 local. Install the optional `osii[postgres]` extra for direct local Python use;
-the hosted `server` extra already supplies these dependencies.
+the hosted `server` extra already supplies these dependencies. An optional
+composition-owned `connection` keeps multi-operation exports in one explicit
+read snapshot. Object artifact reads also include active shared scope products;
+the legacy hosted response-envelope method remains unchanged.
 
 Authentication remains at the hosted API boundary. All users currently share
 the hosted document corpus; private collection membership additionally requires
@@ -115,6 +118,6 @@ The [processing commit boundary](processing-commits.md) now handles document
 results and folder/collection/root synthesis and enrichment products.
 The [authoring/collection interfaces](library-authoring.md) add product draft
 save/activation and version-checked collection commands. Broader legacy write
-adoption, durable job interfaces, document-text authoring parity, and explicit
-library transfer remain later work. Replacing
+adoption remains incremental. [Local storage](local-storage.md) now composes
+document-text authoring, durable jobs and explicit library transfer. Replacing
 whole-corpus server retrieval snapshots is also separate from these read APIs.

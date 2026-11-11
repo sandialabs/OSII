@@ -132,7 +132,8 @@ def _selected_method(readiness: dict[str, Any], kind: str) -> dict[str, Any]:
 @router.get("/setup")
 def setup_summary(request: Request):
     osii_root = request.app.state.osii_root.resolve()
-    readiness = intake_capability_readiness(osii_root)
+    readiness_provider=getattr(request.app.state,"intake_readiness",None)
+    readiness = readiness_provider(request) if readiness_provider else intake_capability_readiness(osii_root)
     readiness["source"] = source_access_summary(
         request.app.state.shared_volume_root, osii_root,
         configured_kind=getattr(request.app.state, "source_kind", "auto"),

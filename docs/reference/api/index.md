@@ -35,6 +35,12 @@ Compatibility read routes under `/api/osii/...` still exist, but new integration
 
 ## Base assumptions
 
+These filesystem locations describe the default sidecar backend. The optional
+[local PostgreSQL composition](../local-storage.md) preserves the Workbench route
+families but saves library records and processing jobs in PostgreSQL. Runtime
+reports `storage_backend`; initialization/import remain explicit CLI commands.
+This is still the standalone API without hosted login, not an authentication bypass.
+
 By default the application commonly runs on:
 
 ```text
@@ -1130,4 +1136,4 @@ Both `tika` and `tika_catchall` intake routes use these saved settings. The
 adapter exposes the standard `/v1/descriptor` and `/v1/extract` endpoints;
 `/health` checks the wrapper and `/upstream-health?tika_endpoint=...` checks
 Apache Tika without launching or installing it. See the
-[adapter contract](../../../osii-toolbox/tika-adapter/README.md).
+[Apache Tika adapter guide](../extractor-routing.md#apache-tika-toolbox-adapter).

@@ -46,6 +46,7 @@ as a service. Core handles storing the results when invoked through its workflow
 - [Shared processing commits and retry guarantees](reference/processing-commits.md)
 - [Shared authoring and collection interfaces](reference/library-authoring.md)
 - [Shared retrieval and job interfaces](reference/retrieval-jobs.md)
+- [Optional local PostgreSQL and explicit sidecar import](reference/local-storage.md)
 - [Storage boundaries and staged implementation plan](concepts/adr-storage-boundaries.md)
 - [Extraction architecture](concepts/extraction.md)
 - [Synthesis architecture](concepts/synthesis.md)

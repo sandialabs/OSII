@@ -1,4 +1,4 @@
-"""Standalone composition: sidecar retrieval and configured models over shared RAG.
+"""Standalone composition: selected-library retrieval and configured models over shared RAG.
 
 Read guards detect index/config/membership changes; this is not a transactional
 snapshot of a concurrently edited filesystem. No rebuild or configuration writes
@@ -51,15 +51,17 @@ def profile_catalog(root: Path, reranker=None) -> dict:
 
 
 class _Session:
-    def __init__(self, root: Path, request, reranker=None):
+    def __init__(self, root: Path, request, reranker=None, library=None):
+        self.library = library
         self.root, self.scope, self.reranker = root.resolve(), deepcopy(request.scope.model_dump()), reranker
         self.question = Question(request.query, Scope(self.scope["scope_type"],
             self.scope.get({"folder": "folder_id", "collection": "collection_id", "object": "file_id"}.get(self.scope["scope_type"], "")) or ""),
             tuple((turn.role, turn.content) for turn in request.history))
         self.settings = get_chat_settings(root)
         self.primary, self.model = _model(self.settings)
-        self.filters = build_scope_filters(root, self.scope)
-        if self.scope["scope_type"] == "folder" and self.filters["folder_relpath"] is None:
+        self.filters = (frozenset(d.file_id for d in library.documents(self.scope))
+                        if library is not None else build_scope_filters(root, self.scope))
+        if library is None and self.scope["scope_type"] == "folder" and self.filters["folder_relpath"] is None:
             raise StrategyError("Folder scope was not found; an experiment cannot broaden to root")
         self.initial = self._signature()
         self.corpus_check = hashlib.sha256(repr(self.initial).encode()).hexdigest()[:20]
@@ -75,12 +77,16 @@ class _Session:
             return None
 
     def _signature(self):
+        if self.library is not None:
+            from osii.domain.processing.postgres_workflow import configuration_stamp
+            revision = self.library.query("SELECT revision FROM datasets WHERE id='shared'")[0]["revision"]
+            return (revision, configuration_stamp(self.root), tuple(d.file_id for d in self.library.documents(self.scope)))
         folder = self.root / "embeddings"
         paths = [folder / "chunks/chunks.jsonl", models_path(), tools_path(), *folder.glob("segments.*"), *folder.glob("providers/*/*/segments.*")]
         return tuple((str(p), self._stat(p)) for p in sorted(set(paths)))
 
     def guard(self):
-        if self._signature() != self.initial or build_scope_filters(self.root, self.scope) != self.filters:
+        if self._signature() != self.initial or (self.library is None and build_scope_filters(self.root, self.scope) != self.filters):
             raise CorpusChanged("The corpus, scope membership, or model configuration changed. Start a new comparison.")
         for path, stat in self.object_guards.items():
             if self._stat(path) != stat:
@@ -91,6 +97,14 @@ class _Session:
         wanted = {(row["file_id"], row.get("chunk_id")) for row in rows}
         passages = {}
         if not wanted:
+            return passages
+        if self.library is not None:
+            for row in self.rows_for_query:
+                key=(row["file_id"],row.get("chunk_id"))
+                if key in wanted:
+                    passages[key]=row
+            if set(passages)!=wanted:
+                raise StrategyError("A search hit has no matching PostgreSQL passage")
             return passages
         with (self.root / "embeddings/chunks/chunks.jsonl").open(encoding="utf-8") as handle:
             for line in handle:
@@ -120,12 +134,17 @@ class _Session:
         def retrieve(query, *, top_k):
             self.guard()
             manifest = self.root / "embeddings/chunks/chunks.jsonl"
-            if not manifest.is_file():
+            if self.library is not None:
+                from osii.domain.storage.retrieval import RetrievalRequest
+                found=self.library.retrieve(RetrievalRequest(query,self.library.scope(self.scope),profile.retrieval,top_k))
+                mode,rows=found.actual_mode,found.legacy_rows()
+                self.rows_for_query=deepcopy(rows)
+            elif not manifest.is_file():
                 mode, rows = "empty", []
             else:
                 mode, rows = dashboard_search(self.root, query=query, mode=profile.retrieval, top_k=top_k, scope=deepcopy(self.scope))
-            rows = [row for row in rows[:top_k] if file_matches_scope(file_id=row["file_id"],
-                source_relpath=row.get("source_relpath", ""), scope_filters=self.filters)]
+            rows = [row for row in rows[:top_k] if (row["file_id"] in self.filters if self.library is not None else
+                file_matches_scope(file_id=row["file_id"],source_relpath=row.get("source_relpath", ""),scope_filters=self.filters))]
             passages = self.indexed_passages(rows)
             values = []
             for row in rows:
@@ -146,6 +165,8 @@ class _Session:
                 self.evidence_records[eid] = value
                 self.rows[eid] = deepcopy(row)
                 values.append(value)
+                if self.library is not None:
+                    continue
                 directory = self.root / "objects" / row["file_id"]
                 if not directory.resolve().is_relative_to(self.root / "objects"):
                     raise StrategyError("Invalid document identity")
@@ -180,7 +201,7 @@ class _Session:
         if "empty" in actual_modes:
             warnings.append("No chunk index is available. Process documents in Intake before comparing retrieval quality.")
         trace = {**asdict(experiment), "profile": asdict(profile), "corpus_check": self.corpus_check,
-            "consistency": "local-read-guard", "actual_retrieval_modes": actual_modes, "chat_calls": len(calls),
+            "consistency": "postgres-revision-guard" if self.library is not None else "local-read-guard", "actual_retrieval_modes": actual_modes, "chat_calls": len(calls),
             "chat_usage": calls, "reranker_calls": sum(event.reranker_called for event in experiment.retrieval),
             "usage_scope": "Chat calls are measured; query embedding and custom reranker token usage is not reported by these adapters.", "warnings": warnings}
         return ChatResponse(answer=result.answer, citations=citations, provider=self.primary, model=calls[-1]["model"] if calls else self.model,
@@ -188,12 +209,12 @@ class _Session:
             profile_id=profile.id, experiment=trace)
 
 
-def answer_experiment(root: Path, request: ChatRequest, *, reranker=None) -> ChatResponse:
-    return _Session(root, request, reranker).run(request.profile_id)
+def answer_experiment(root: Path, request: ChatRequest, *, reranker=None, library=None) -> ChatResponse:
+    return _Session(root, request, reranker, library).run(request.profile_id)
 
 
-def compare_profiles(root: Path, request: CompareRequest, *, reranker=None) -> ComparisonResponse:
-    session = _Session(root, request, reranker)
+def compare_profiles(root: Path, request: CompareRequest, *, reranker=None, library=None) -> ComparisonResponse:
+    session = _Session(root, request, reranker, library)
     for identifier in request.profile_ids:
         get_profile(identifier)
         if not session.available[identifier]["available"]:

@@ -191,6 +191,11 @@ def execute_job(job: dict) -> None:
 
 
 def main() -> None:
+    from osii.domain.storage.backend import BackendSettings, LibraryBackend
+    settings = BackendSettings.from_environment()
+    if settings.kind == "postgres":
+        from osii.domain.processing.postgres_workflow import run_worker
+        return run_worker(LibraryBackend(Path(os.getenv("OSII_ROOT", "./data_volume/.osii")), settings))
     from osii.domain.storage.sidecar_jobs import SidecarJobStore
     from osii.domain.storage.job_store import JobOwnershipLost
     osii_root = Path(os.getenv("OSII_ROOT", "./data_volume/.osii")).resolve()

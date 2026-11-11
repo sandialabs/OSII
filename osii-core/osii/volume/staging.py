@@ -15,8 +15,8 @@ def selection_id(value: object) -> int:
     return value
 
 
-def staged_bundle(osii_root: Path, selection_id: int) -> dict:
-    store = VolumeStore(database_path(osii_root))
+def staged_bundle(osii_root: Path, selection_id: int, *, store: VolumeStore | None = None) -> dict:
+    store = store or VolumeStore(database_path(osii_root))
     members = store.staged_members(selection_id)
     return {
         "database": str(store.path),

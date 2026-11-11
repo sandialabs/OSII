@@ -9,7 +9,9 @@ computer or a shared drive mounted on it.
 It runs without user accounts or a login; OSII-server provides hosted user access.
 
 The source material is the evidence. OSII keeps originals unchanged and saves
-extracted content and provenance in portable `.osii` sidecars. Search indexes
+extracted content and provenance in portable `.osii` sidecars by default. An
+[optional PostgreSQL backend](docs/reference/local-storage.md) supports the same
+local Workbench, with explicit, non-destructive one-way import. Search indexes
 are rebuildable, processors are replaceable, and model interpretations remain
 traceable to their sources. Basic extraction and keyword search work without
 an AI model.

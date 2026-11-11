@@ -38,6 +38,7 @@ nav:
   - Install and use:
       - What are you trying to do?: operations/runbooks.md
       - Start from source: operations/runbook-development.md
+      - Optional local PostgreSQL: reference/local-storage.md
       - File inventory: operations/large-volumes.md
       - Model endpoints: operations/model-endpoints.md
       - Python walkthrough: tutorials/python-demonstrations.md

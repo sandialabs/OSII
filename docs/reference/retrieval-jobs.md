@@ -121,6 +121,9 @@ ranking; existing local and hosted search suites verify actual native ranking,
 provider fallback, permission checks, and citations. Worker-loop tests exercise
 real queue adapters with fake processing, without contacting models.
 
-Startup remains `make dev` or `.\scripts\osii.ps1 dev` on local. Hosted startup,
-authentication, and PostgreSQL migrations stay separate. No new dependencies,
-broker, model download, `.env` backend selector, or data transfer is introduced.
+Startup remains `make dev` or `.\scripts\osii.ps1 dev` on local. Optional local
+PostgreSQL now composes these same job ports; see [local storage](local-storage.md)
+for explicit selection and import. Its bounded file/model steps release claims
+between units and keep optional Intake work under the parent run's controls.
+Private embedding checkpoints are not public Activity payloads. Hosted startup,
+authentication and migrations stay separate; no broker or model download is added.

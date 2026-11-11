@@ -180,6 +180,24 @@ def test_host_environment_uses_shared_python_default(monkeypatch):
     assert env["UV_PYTHON"] == "3.13"
 
 
+@pytest.mark.parametrize("backend",["sidecar","postgres"])
+def test_optional_postgres_dependency_setup_and_private_core_environment(monkeypatch,tmp_path,backend):
+    dashboard=tmp_path/"osii-dashboard/dashboard"
+    dashboard.mkdir(parents=True);(dashboard/"package-lock.json").write_text("{}")
+    (dashboard/"node_modules").mkdir()
+    monkeypatch.setattr(DEV_STACK,"REPOSITORY_ROOT",tmp_path)
+    calls=[]
+    monkeypatch.setattr(DEV_STACK.subprocess,"run",lambda command,**kw:calls.append(command))
+    env={"OSII_STORAGE_BACKEND":backend,"DATABASE_URL":"postgresql://private:secret@host/library","UV_PROJECT_ENVIRONMENT":str(tmp_path/"osii-env")}
+    DEV_STACK.prepare_dependencies("uv","npm",env,core_only=True)
+    assert ("postgres" in calls[0])==(backend=="postgres")
+    for name in ("api","worker","inventory-worker","mcp","dashboard","readable-wiki","extractor","model-bridge"):
+        service=DEV_STACK.Service(name,("python",),tmp_path,0)
+        child=DEV_STACK.service_environment(service,env)
+        assert ("DATABASE_URL" in child)==(name in {"api","worker"})
+    assert env["DATABASE_URL"].startswith("postgresql://private")
+
+
 def test_shared_drive_environment_keeps_artifacts_in_separate_local_root(monkeypatch, tmp_path):
     source = tmp_path / "mounted-share"
     source.mkdir()
