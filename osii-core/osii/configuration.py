@@ -100,6 +100,12 @@ def builtin_tools_config() -> dict[str, Any]:
     return {
         "version": CONFIG_VERSION,
         "tools": {
+            "tika": {
+                "enabled": True, "processor_id": "tika", "display_name": "Apache Tika (toolbox)",
+                "kind": "extractor", "aliases": ["tika_catchall"],
+                "runtime": {"mode": "external", "endpoint": "http://127.0.0.1:8102"},
+                "model_access": {"mode": "none"},
+            },
             "document-metadata": {
                 "enabled": True, "processor_id": "core.document-metadata",
                 "runtime": {"endpoint": "http://127.0.0.1:8095/metadata"},

@@ -27,3 +27,11 @@ and [Processor API](../docs/reference/processor-api/index.md).
 
 Container builds, Quay publication, and separate-repository exports are preserved
 on `archive/workstation-deployment-2026-11-03` and deferred on main.
+
+## Apache Tika adapter
+
+[tika-adapter](tika-adapter/README.md) connects to an Apache Tika server you install
+and manage separately. OSII starts only its lightweight wrapper, with no Tika
+binary, JVM, container, or automatic Apache Tika download. Set the upstream
+address in **Setup → Extractors → Apache Tika → Apache Tika endpoint**. Existing
+`tika` and `tika_catchall` routes remain compatible.

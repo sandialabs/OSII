@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "osii-tika-adapter"
+version = "0.1.0"
+description = "Processor API wrapper for a user-managed Apache Tika server"
+requires-python = ">=3.11,<3.14"
+dependencies = ["osii", "requests>=2.32,<3", "uvicorn[standard]>=0.35,<1"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+
+[tool.uv.sources]
+osii = { path = "../../osii-core", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["tika_adapter"]

@@ -1121,3 +1121,13 @@ review the returned draft before using PUT.
 Processor administration records expose `resolved_models` and `model_error`
 for per-service model assignment. Missing bindings inherit enabled compatible
 library defaults; explicit disabled or missing bindings report a setup error.
+
+### Apache Tika toolbox configuration
+
+Save the upstream address with `PUT /api/admin/processor-settings/tika` and
+`{"config": {"tika_endpoint": "http://your-tika:9998", "chunk_chars": 4000}}`.
+Both `tika` and `tika_catchall` intake routes use these saved settings. The
+adapter exposes the standard `/v1/descriptor` and `/v1/extract` endpoints;
+`/health` checks the wrapper and `/upstream-health?tika_endpoint=...` checks
+Apache Tika without launching or installing it. See the
+[adapter contract](../../../osii-toolbox/tika-adapter/README.md).

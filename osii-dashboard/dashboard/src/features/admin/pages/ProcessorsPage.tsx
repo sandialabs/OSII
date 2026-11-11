@@ -168,6 +168,7 @@ export function ProcessorsPage() {
   const [editingCapability, setEditingCapability] = useState<string | null>(null);
   const [capabilityDraft, setCapabilityDraft] = useState<Record<string, unknown>>({});
   const [routeDraft, setRouteDraft] = useState<ExtractorRoute[] | null>(null);
+  const [tikaEndpoint, setTikaEndpoint] = useState<string | null>(null);
   const [sourceHelp, setSourceHelp] = useState<CapabilityReadiness | null>(null);
   const [routingHelp, setRoutingHelp] = useState(false);
   const [savingRoutes, setSavingRoutes] = useState(false);
@@ -434,10 +435,10 @@ export function ProcessorsPage() {
   };
   const saveCapability = async (item: CapabilityReadiness) => {
     try {
-      await saveProcessorSettings(item.id, capabilityDraft);
+      await saveProcessorSettings(item.id, {...settings.data?.settings[item.id], ...capabilityDraft});
       setEditingCapability(null);
       notify(`${item.display_name}: settings saved.`);
-      await queryClient.invalidateQueries({ queryKey: ["admin", "processor-settings"] });
+      await queryClient.invalidateQueries({ queryKey: ["admin"] });
     } catch (error) {
       notify(error instanceof Error ? error.message : "Could not save processor settings.", "error");
     }
@@ -622,6 +623,13 @@ export function ProcessorsPage() {
             {processor.model_error ? <Typography variant="caption" color="error">{processor.model_error}</Typography> : null}
             <Button size="small" onClick={() => openNewConnection()}>Connect model</Button>
           </Stack> : null}
+          {item.id === "tika" ? <Stack direction={{xs: "column", sm: "row"}} spacing={1}><TextField size="small" label="Apache Tika endpoint" value={tikaEndpoint ?? String(settings.data?.settings.tika?.tika_endpoint ?? "http://127.0.0.1:9998")} onChange={event => setTikaEndpoint(event.target.value)} sx={{minWidth: 300}} /><Button size="small" onClick={async () => {
+            const endpoint = String(tikaEndpoint ?? settings.data?.settings.tika?.tika_endpoint ?? "http://127.0.0.1:9998");
+            try { const url = new URL(endpoint); if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("invalid"); }
+            catch { notify("Enter an HTTP(S) base URL without credentials, query, or fragment.", "error"); return; }
+            try { await saveProcessorSettings("tika", {...settings.data?.settings.tika, tika_endpoint: endpoint}); notify("Apache Tika endpoint saved."); await queryClient.invalidateQueries({queryKey: ["admin"]}); }
+            catch (error) { notify(error instanceof Error ? error.message : "Could not save endpoint.", "error"); }
+          }}>Save endpoint</Button></Stack> : null}
           {Object.keys(schema?.properties ?? {}).length ? <Button size="small" sx={{ alignSelf: "flex-start", px: 0 }} onClick={() => editingCapability === item.id ? setEditingCapability(null) : editCapability(item)}>{editingCapability === item.id ? "Hide settings" : "Settings"}</Button> : null}
           {editingCapability === item.id ? <Stack spacing={1}>{Object.entries(schema?.properties ?? {}).map(([name, property]) => <ConfigInput key={name} name={name} property={property} value={capabilityDraft[name]} onChange={(value) => setCapabilityDraft((current) => ({ ...current, [name]: value }))} />)}<Button variant="contained" size="small" onClick={() => void saveCapability(item)} sx={{ alignSelf: "flex-start" }}>Save settings</Button></Stack> : null}
           <IconButton size="small" aria-label={`About ${item.display_name} implementation and configuration`} onClick={() => setSourceHelp(item)} sx={{alignSelf: "flex-start"}}><HelpOutlineIcon fontSize="small" /></IconButton>

@@ -36,6 +36,7 @@ SERVICE_DISPLAY_NAMES = {
     "concept-entity-wiki": "Concept and Entity LLM Wiki",
     "tesseract-opencv": "Tesseract OCR with OpenCV regions",
     "banyan": "Banyan Nemotron Parse",
+    "tika": "Apache Tika adapter (user-managed upstream)",
     "csv-extractor": "CSV table extractor",
     "collection-table": "Collection table enricher",
     "api": "OSII backend API and grounded chat",
@@ -69,13 +70,14 @@ CAPABILITY_SERVICE_INFO = {
     "banyan": ("Banyan Nemotron Parse", "Parses PDFs and images using Banyan's locally configured Nemotron endpoint.", "/health"),
     "csv-extractor": ("CSV table extractor", "Extracts CSV rows with source-line provenance.", "/health"),
     "collection-table": ("Collection table enricher", "Combines compatible extracted tables within a selected scope.", "/health"),
-    "tika": ("Apache Tika", "Adds broad document-format text extraction using Podman or Docker.", "/version"),
+    "tika": ("Apache Tika adapter", "Connects to your separately installed Apache Tika server; never installs or starts Apache Tika.", "/health"),
 }
 
 
 def toolbox_services(uv: str, env: dict[str, str]) -> list[Service]:
     enabled = env.get("OSII_START_TOOLBOX", "true").strip().lower() not in {"false", "0", "no", "off"}
     specifications = (
+        ("tika", "tika-adapter", ("-m", "uvicorn", "tika_adapter.main:app"), "OSII_TIKA_ADAPTER_PORT", "8102"),
         ("readable-wiki", "llm-wiki-enrichers", ("run.py", "readable"), "OSII_READABLE_WIKI_PORT", "8099"),
         ("concept-entity-wiki", "llm-wiki-enrichers", ("run.py", "concept-entity"), "OSII_CONCEPT_ENTITY_WIKI_PORT", "8100"),
         ("tesseract-opencv", "osii-tesseract", ("-m", "uvicorn", "app.main:app"), "OSII_TESSERACT_OPENCV_PORT", "8081"),
@@ -225,7 +227,6 @@ def build_environment(core_only: bool) -> dict[str, str]:
 
     api_port = env.get("OSII_API_PORT", "8511")
     embeddings_port = env.get("OSII_EMBEDDINGS_PORT", "8085")
-    tika_port = env.get("OSII_TIKA_PORT", "9998")
     mcp_port = env.get("OSII_MCP_PORT", "8022")
     workspace_python_path = os.pathsep.join(
         (
@@ -260,7 +261,6 @@ def build_environment(core_only: bool) -> dict[str, str]:
             "OSII_ROOT": str(osii_root),
             "OSII_INVENTORY_DB": str(inventory_database),
             "UPLOAD_ORIGINALS_ROOT": str(uploads_root),
-            "TIKA_URL": f"http://127.0.0.1:{tika_port}",
             "OSII_BACKEND_BASE_URL": f"http://127.0.0.1:{api_port}",
             "MCP_HOST": "127.0.0.1",
             "MCP_PORT": mcp_port,
@@ -557,11 +557,10 @@ class CapabilitySupervisor:
             for service in services
             if service.name in CAPABILITY_SERVICE_INFO
         }
-        self.tika_port = int(env.get("OSII_TIKA_PORT", "9998"))
         self.server: ThreadingHTTPServer | None = None
 
     def _reachable(self, service_id: str) -> bool:
-        port = self.tika_port if service_id == "tika" else self.services[service_id].port
+        port = self.services[service_id].port
         if port <= 0:
             return False
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
@@ -602,16 +601,8 @@ class CapabilitySupervisor:
             self._start_process(service.name)
             return self.processes[service.name]
 
-    def _compose_command(self) -> list[str] | None:
-        # Workstation container orchestration is archived. Tika may still be
-        # supplied externally; the supervisor owns host Python processes only.
-        return None
-
-    def _compose(self, *arguments: str) -> subprocess.CompletedProcess[str]:
-        raise RuntimeError("Container startup is archived. Configure an already-running Tika endpoint instead.")
-
     def status(self, service_id: str) -> dict[str, object]:
-        if service_id not in {*self.services, "tika"}:
+        if service_id not in self.services:
             raise KeyError(service_id)
         with self.lock:
             process = self.processes.get(service_id)
@@ -626,11 +617,9 @@ class CapabilitySupervisor:
             else:
                 state, ownership = "stopped", "none"
             title, description, health_path = CAPABILITY_SERVICE_INFO[service_id]
-            port = self.tika_port if service_id == "tika" else self.services[service_id].port
+            port = self.services[service_id].port
             prerequisite = None
-            if service_id == "tika" and self._compose_command() is None:
-                prerequisite = "Configure an already-running Tika endpoint; container startup is archived."
-            elif service_id in {"ocr", "tesseract-opencv"} and shutil.which("tesseract") is None:
+            if service_id in {"ocr", "tesseract-opencv"} and shutil.which("tesseract") is None:
                 prerequisite = "Install the native Tesseract program, then restart OSII."
             return {
                 "id": service_id,
@@ -648,44 +637,27 @@ class CapabilitySupervisor:
             }
 
     def list_status(self) -> list[dict[str, object]]:
-        return [self.status(item) for item in (*self.services.keys(), "tika")]
+        return [self.status(item) for item in self.services.keys()]
 
     def action(self, service_id: str, action: str) -> dict[str, object]:
-        if service_id not in {*self.services, "tika"}:
+        if service_id not in self.services:
             raise KeyError(service_id)
         if action not in {"start", "stop", "restart"}:
             raise ValueError("Unsupported service action")
         with self.lock:
             if action in {"stop", "restart"}:
-                if service_id == "tika":
-                    result = self._compose("stop", "tika")
-                    if result.returncode != 0:
-                        raise RuntimeError((result.stderr or result.stdout).strip())
-                else:
-                    process = self.processes.get(service_id)
-                    if process is None or process.poll() is not None:
-                        raise RuntimeError("OSII does not own this service process.")
-                    stop_service(process)
-                    self.processes.pop(service_id, None)
+                process = self.processes.get(service_id)
+                if process is None or process.poll() is not None:
+                    raise RuntimeError("OSII does not own this service process.")
+                stop_service(process)
+                self.processes.pop(service_id, None)
             if action in {"start", "restart"}:
-                if service_id == "tika":
-                    result = self._compose("up", "-d", "tika")
-                    self.logs[service_id].extend(
-                        line for line in (result.stdout + result.stderr).splitlines() if line
-                    )
-                    if result.returncode != 0:
-                        raise RuntimeError((result.stderr or result.stdout).strip())
-                else:
-                    self._start_process(service_id)
+                self._start_process(service_id)
             return self.status(service_id)
 
     def service_logs(self, service_id: str) -> list[str]:
-        if service_id not in {*self.services, "tika"}:
+        if service_id not in self.services:
             raise KeyError(service_id)
-        if service_id == "tika" and self._compose_command() is not None:
-            result = self._compose("logs", "--tail", "200", "tika")
-            if result.stdout:
-                self.logs[service_id].extend(result.stdout.splitlines())
         return list(self.logs[service_id])
 
     def start_http(self, port: int) -> None:

@@ -55,5 +55,6 @@ def merged_processor_settings(
     processor_name: str | None,
     overrides: dict[str, Any] | None,
 ) -> dict[str, Any]:
+    processor_name = "tika" if processor_name == "tika_catchall" else processor_name
     configured = processor_settings(osii_root, processor_name) if processor_name else {}
     return {**configured, **(overrides or {})}

@@ -43,15 +43,15 @@ def test_supervisor_http_requires_private_token(tmp_path):
         )
         with urllib.request.urlopen(request) as response:
             payload = json.load(response)
-        assert {item["id"] for item in payload["services"]} == {"tika"}
+        assert payload["services"] == []  # No implicit Apache Tika service.
     finally:
         supervisor.close()
 
 
 def test_supervisor_rejects_unknown_services_and_actions():
     supervisor = DEV_STACK.CapabilitySupervisor(
-        services=[],
-        env={"OSII_TIKA_PORT": "19998"},
+        services=DEV_STACK.toolbox_services("uv", {"OSII_START_TOOLBOX": "false"}),
+        env={},
         uv="uv",
         token="private-token",
     )
@@ -109,7 +109,10 @@ def test_service_plan_uses_nested_components_without_concurrent_uv_sync():
     assert "banyan_extract.integrations.osii_extractor:app" in by_name["banyan"].command
     environments = {dict(service.environment)["UV_PROJECT_ENVIRONMENT"]
                     for service in services if service.working_directory.is_relative_to(ROOT / "osii-toolbox")}
-    assert len(environments) == 4
+    assert len(environments) == 5
+    assert by_name["tika"].working_directory == ROOT / "osii-toolbox" / "tika-adapter"
+    assert "tika_adapter.main:app" in by_name["tika"].command
+    assert by_name["tika"].port == 8102
     assert str(ROOT / "osii-env") not in environments
 
 
@@ -117,7 +120,7 @@ def test_toolbox_opt_out_retains_manual_controls_and_core_only_omits_services():
     env = {"OSII_START_TOOLBOX": "false"}
     services = DEV_STACK.service_commands("uv", "npm", env, core_only=False)
     tools = [s for s in services if s.working_directory.is_relative_to(ROOT / "osii-toolbox")]
-    assert len(tools) == 6 and all(not s.start_automatically for s in tools)
+    assert len(tools) == 7 and all(not s.start_automatically for s in tools)
     assert all("--no-sync" not in s.command for s in tools)
     core = DEV_STACK.service_commands("uv", "npm", {}, core_only=True)
     assert {s.name for s in core} == {"api", "worker", "inventory-worker", "mcp", "dashboard"}
@@ -149,7 +152,7 @@ def test_toolbox_environment_registers_custom_ports_without_changing_routes(monk
     assert "http://127.0.0.1:18081" in DEV_STACK.build_environment(False)["OSII_PROCESSORS"].split(",")
 
 
-@pytest.mark.parametrize("enabled, core_only, expected", [(True, False, 4), (False, False, 0), (True, True, 0)])
+@pytest.mark.parametrize("enabled, core_only, expected", [(True, False, 5), (False, False, 0), (True, True, 0)])
 def test_toolbox_dependencies_prepare_once_per_isolated_environment(monkeypatch, tmp_path, enabled, core_only, expected):
     dashboard = tmp_path / "osii-dashboard" / "dashboard"
     dashboard.mkdir(parents=True)

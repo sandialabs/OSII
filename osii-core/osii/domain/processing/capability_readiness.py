@@ -45,14 +45,14 @@ def _processor_origin(
             "configuration_file": str(tools_path()),
             "configuration_key": "routes / processor_settings",
         }
-    if identifier == "tika":
+    if identifier in {"tika", "tika_catchall"}:
         return {
-            "label": "Optional Apache service",
-            "description": "Apache Tika runs separately. Compose supplies apache/tika in the optional ocr profile; make dev can start it from diagnostics.",
-            "implementation": "compose.yaml: services.tika",
-            "endpoint_source": "TIKA_URL (startup environment)",
+            "label": "Optional Toolbox service",
+            "description": "Lightweight adapter for a separately installed Apache Tika server.",
+            "implementation": "osii-toolbox/tika-adapter/tika_adapter/main.py",
+            "endpoint_source": "Setup → Extractors → Apache Tika → Settings → Apache Tika endpoint",
             "configuration_file": str(tools_path()),
-            "configuration_key": "routes.extractor",
+            "configuration_key": "processor_settings.tika.tika_endpoint",
         }
     if identifier == "pdf_default":
         return {
@@ -314,9 +314,6 @@ def _registered_endpoints(osii_root: Path) -> list[dict[str, Any]]:
 
 
 def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
-    tika_url = os.getenv("TIKA_URL", "http://localhost:9998").rstrip("/")
-    tika_available, tika_detail = _service_probe(f"{tika_url}/version")
-
     nemotron_url = os.getenv("NEMOTRON_BASE_URL", "").strip().rstrip("/")
     if nemotron_url:
         nemotron_available, nemotron_detail = _service_probe(
@@ -326,18 +323,7 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
         nemotron_available = False
         nemotron_detail = "NEMOTRON_BASE_URL is not configured."
 
-    extractors = [
-        {
-            "id": "tika",
-            "aliases": ["tika", "tika_catchall"],
-            "display_name": "Apache Tika",
-            "description": "General text extraction for PDFs, Office files, and catch-all formats.",
-            "available": tika_available,
-            "detail": tika_detail,
-            "bundled": False,
-            "base_url": tika_url,
-        },
-    ]
+    extractors = []
     nemotron_aliases = {"pdf_default", "banyan", "banyan_ingest", "banyan-extract"}
     configured_extractors = {
         name
@@ -426,6 +412,20 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
                 **({"model": model} if model else {}),
             }
         )
+
+    # Descriptor health only establishes that the adapter is running. Report the
+    # actual user-configured upstream separately, without launching Apache Tika.
+    from urllib.parse import urlencode
+    from osii.domain.processor_settings import processor_settings
+    tika = next((item for item in remote_by_kind["extractor"] if item["id"] == "tika"), None)
+    if tika:
+        tika["aliases"] = ["tika_catchall"]
+        query = urlencode({"tika_endpoint": processor_settings(osii_root, "tika").get("tika_endpoint", "http://127.0.0.1:9998")})
+        tika["available"], tika["detail"] = _service_probe(f"{tika['base_url']}/upstream-health?{query}")
+    elif any(item.get("processor_id") == "tika" for item in registrations):
+        extractors.append({"id": "tika", "aliases": ["tika_catchall"], "display_name": "Apache Tika (toolbox)",
+            "description": "Start the Tika adapter, then configure your separately installed Apache Tika endpoint in Settings.",
+            "available": False, "detail": "Tika adapter unavailable. Start it with make dev or Setup service controls.", "bundled": False})
 
     for kind in ("synthesizer", "embedder"):
         for item in remote_by_kind[kind]:
