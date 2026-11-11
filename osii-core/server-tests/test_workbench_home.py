@@ -1,6 +1,6 @@
-from sqlalchemy import insert
+from sqlalchemy import insert, update, event
 from conftest import login
-from osii.persistence.postgres import documents, chunks, now
+from osii.persistence.postgres import documents, chunks, datasets, now
 
 
 def test_home_is_safe_for_readers_and_setup_dismissal_is_admin_only(
@@ -90,4 +90,40 @@ def test_home_uses_aggregates_and_reports_partial_indexing(client, app, monkeypa
                 embedding_model="test-model",
             )
         )
+    with store.transaction() as c:
+        c.execute(
+            update(datasets)
+            .where(datasets.c.id == "shared")
+            .values(revision=datasets.c.revision + 1)
+        )
     assert not client.get("/api/workbench/home").json()["tools"]["topics"]["enabled"]
+
+
+def test_compatibility_check_is_cached_until_corpus_or_model_changes(client, app):
+    store = app.state.store
+    store.save_configuration({"embedding_model": "model-a"})
+    login(client)
+    checks = []
+
+    def track(conn, cursor, statement, parameters, context, executemany):
+        if "min(dimension)" in statement:
+            checks.append(statement)
+
+    event.listen(store.engine, "before_cursor_execute", track)
+    try:
+        assert client.get("/api/workbench/home").status_code == 200
+        assert client.get("/api/workbench/home").status_code == 200
+        assert len(checks) == 1
+        with store.transaction() as c:
+            c.execute(
+                update(datasets)
+                .where(datasets.c.id == "shared")
+                .values(revision=datasets.c.revision + 1)
+            )
+        assert client.get("/api/workbench/home").status_code == 200
+        assert len(checks) == 2
+        store.save_configuration({"embedding_model": "model-b"})
+        assert client.get("/api/workbench/home").status_code == 200
+        assert len(checks) == 3
+    finally:
+        event.remove(store.engine, "before_cursor_execute", track)
