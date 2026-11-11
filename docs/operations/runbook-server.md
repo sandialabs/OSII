@@ -458,3 +458,23 @@ is administrator-only. It remains accessible in the sidebar after dismissal.
 apply on the hosted service). Home does not read source text, load vector payloads,
 compute projections, or invoke models. Shared tile/navigation definitions and
 UI components consume product adapters; they do not access storage directly.
+
+
+### Droplet proxy after API replacement
+
+The Droplet dashboard mounts `/etc/osii/dashboard-nginx.conf`, rendered by
+`deploy/droplet/configure.py` from the shared OpenShift template. It uses the
+validated private Podman DNS server (`10.89.0.1`) and a variable API upstream
+with a five-second DNS validity period. Paths, query strings, request bodies,
+authentication cookies, and the existing security headers are preserved.
+This avoids retaining an obsolete container address after an API-only rollout.
+The OpenShift template continues to target its stable Service address.
+
+Check the public `/api/auth/me` after deployment: an anonymous request must
+return JSON HTTP 401, not HTTP 502 or HTML. A successful static Home page alone
+is insufficient. If an older deployment retains an obsolete API address,
+restart **only** `osii-dashboard` to restore it, then install the rendered
+Droplet configuration. Workers and OCR services need no restart.
+
+See the [NGINX proxy documentation](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_pass)
+for variable upstream resolution.

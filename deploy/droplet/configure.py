@@ -23,6 +23,19 @@ def sql(statement):
     return subprocess.check_output(["runuser", "-u", "postgres", "--", "psql", "-XAt", "-v", "ON_ERROR_STOP=1"], input=statement, text=True).strip()
 
 
+def dashboard_proxy_configuration(source: Path) -> str:
+    """Resolve the replaceable API container through the private Podman DNS."""
+    template = (source / "deploy/openshift/nginx.conf").read_text()
+    upstream = "proxy_pass http://osii-api:8512;"
+    if template.count("http {\n") != 1 or template.count(upstream) != 1:
+        raise ValueError("Unexpected dashboard proxy template; review before configuring")
+    return template.replace("http {\n", "http {\n  resolver 10.89.0.1 valid=5s ipv6=off;\n  resolver_timeout 2s;\n", 1).replace(
+        upstream,
+        "set $osii_api http://osii-api:8512;\n      proxy_pass $osii_api$request_uri;\n      proxy_connect_timeout 5s;",
+        1,
+    )
+
+
 def configure_backup():
     Path("/var/backups/osii").mkdir(mode=0o700, exist_ok=True)
     write("/usr/local/sbin/osii-backup", "#!/bin/sh\nset -eu\numask 077\nbackup=/var/backups/osii/osii-$(date -u +%Y%m%dT%H%M%SZ).dump\ntrap 'rm -f \"$backup.partial\"' EXIT\nrunuser -u postgres -- pg_dump --format=custom osii_server > \"$backup.partial\"\nmv \"$backup.partial\" \"$backup\"\nfind /var/backups/osii -maxdepth 1 -type f -name 'osii-*.dump' -mtime +7 -delete\n", 0o700)
@@ -157,6 +170,7 @@ def main():
         sql("CREATE DATABASE osii_server OWNER osii;")
     if not (config / "runtime.env").exists():
         write(config / "runtime.env", f"DATABASE_URL=postgresql+psycopg://osii:{password}@/osii_server?host=/var/run/postgresql\nOSII_SOURCE_DIR=/data/source\nOPENAI_BASE_URL=https://openrouter.ai/api/v1\nOSII_MODEL_API_KEY_FILE=/run/osii-model-key\nOSII_ORIGINS=https://{args.hostname}\nOSII_EXTRACTOR_URL=http://osii-extractor:8192\nOSII_PROCESSOR_GATEWAY_URL=http://osii-api:8512/api/processor-model/v1\n", 0o600)
+    write(config / "dashboard-nginx.conf", dashboard_proxy_configuration(Path(__file__).resolve().parents[2]))
     for component, memory in [("api", "1g"), ("worker", "1g"), ("extractor", "768m"), ("dashboard", "128m")]:
         image = f"localhost/osii-{'dashboard' if component == 'dashboard' else 'core'}:{args.image_tag}"
         command = f"/usr/bin/podman run --rm --name osii-{component} --network osii --read-only --cap-drop ALL --security-opt no-new-privileges --user 1001:0 --tmpfs /tmp:rw,nosuid,nodev,size=256m --memory {memory}"
@@ -166,7 +180,7 @@ def main():
             command += " --env-file /etc/osii/runtime.env --volume /var/run/postgresql:/var/run/postgresql:ro --volume /etc/osii/model-key:/run/osii-model-key:ro --volume /etc/osii/keys:/run/osii-keys:ro --volume /mnt/nfs-documents:/data/source:ro"
         if component == "dashboard":
             dependencies = "Wants=osii-api.service\nAfter=osii-api.service\n"
-            command += " --publish 127.0.0.1:18080:8080"
+            command += " --publish 127.0.0.1:18080:8080 --volume /etc/osii/dashboard-nginx.conf:/etc/nginx/nginx.conf:ro"
         command += " " + image
         if component == "worker":
             command += " python3.12 -m osii.server.worker"
