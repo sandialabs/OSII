@@ -41,7 +41,9 @@ def test_unavailable_upstream_is_clear_and_does_not_crash_adapter(monkeypatch):
     monkeypatch.setattr(requests, 'put', unavailable)
     client = TestClient(app)
     assert client.get('/health').status_code == 200
-    assert client.get('/upstream-health', params={'tika_endpoint': 'http://offline:9998'}).status_code == 503
+    health = client.get('/upstream-health', params={'tika_endpoint': 'http://offline:9998'})
+    assert health.status_code == 503
+    assert health.json()['detail'] == 'Apache Tika is unavailable at http://offline:9998. Check the server and its endpoint in Setup.'
     result = client.post('/v1/extract', json=request().model_dump(mode='json'))
     assert result.status_code == 422
     assert 'Apache Tika extraction failed' in result.json()['detail']

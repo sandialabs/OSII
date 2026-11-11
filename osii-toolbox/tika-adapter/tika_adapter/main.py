@@ -16,6 +16,12 @@ def endpoint(value: str) -> str:
     return value
 
 
+def upstream_error(address: str, error: requests.RequestException) -> str:
+    status = error.response.status_code if error.response is not None else None
+    reason = f"returned HTTP {status}" if status else "is unavailable"
+    return f"Apache Tika {reason} at {address}. Check the server and its endpoint in Setup."
+
+
 class TikaExtractor(Extractor):
     descriptor = ProcessorDescriptor(
         name='tika', version='2.0.0', display_name='Apache Tika (toolbox)',
@@ -44,7 +50,7 @@ class TikaExtractor(Extractor):
                 headers={'Accept': 'text/plain', 'Content-Type': request.document.media_type or 'application/octet-stream'}, timeout=300)
             response.raise_for_status()
         except requests.RequestException as exc:
-            raise ValueError(f'Apache Tika extraction failed at {address}: {exc}') from exc
+            raise ValueError(f'Apache Tika extraction failed. {upstream_error(address, exc)}') from exc
         text = response.text.strip()
         return ExtractionResponse(request_id=request.request_id, processor=self.descriptor,
             segments=[TextSegment(id=f'chunk-{i // size + 1}', segment_type='chunk', text=text[i:i+size],
@@ -63,6 +69,8 @@ def upstream_health(tika_endpoint: str = 'http://127.0.0.1:9998'):
         address = endpoint(tika_endpoint)
         response = requests.get(address + '/version', timeout=3)
         response.raise_for_status()
-    except (ValueError, requests.RequestException) as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=503, detail=upstream_error(address, exc)) from exc
     return {'status': 'ok', 'endpoint': address}
