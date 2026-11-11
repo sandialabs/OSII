@@ -104,6 +104,7 @@ def builtin_tools_config() -> dict[str, Any]:
                 "enabled": True, "processor_id": "core.document-metadata",
                 "runtime": {"endpoint": "http://127.0.0.1:8095/metadata"},
                 "model_access": {"mode": "gateway", "bindings": {}},
+                "model_requirements": {"chat": "required"},
             },
             "readable-llm-wiki": {
                 "enabled": True,
@@ -112,6 +113,7 @@ def builtin_tools_config() -> dict[str, Any]:
                 "kind": "enricher",
                 "runtime": {"mode": "external", "endpoint": "http://127.0.0.1:8099"},
                 "model_access": {"mode": "gateway", "bindings": {}},
+                "model_requirements": {"chat": "required"},
             },
             "concept-entity-llm-wiki": {
                 "enabled": True,
@@ -120,6 +122,7 @@ def builtin_tools_config() -> dict[str, Any]:
                 "kind": "enricher",
                 "runtime": {"mode": "external", "endpoint": "http://127.0.0.1:8100"},
                 "model_access": {"mode": "gateway", "bindings": {}},
+                "model_requirements": {"chat": "required"},
             },
             "tesseract-opencv": {
                 "enabled": True,
@@ -471,12 +474,12 @@ def resolve_tool_models(processor_id: str, requirements: dict[str, str], osii_ro
         explicit = bool(alias)
         alias = alias or str(defaults.get(capability) or "")
         connection = model_connection(alias, osii_root) if alias else None
-        if not explicit and (connection is None or capability not in connection.get("capabilities", [])):
+        if not explicit and (connection is None or not connection.get("enabled", True) or capability not in connection.get("capabilities", [])):
             alias = next((name for name in configuration.get("models", {})
                           if (model_connection(name, osii_root) or {}).get("enabled", True)
                           and capability in (model_connection(name, osii_root) or {}).get("capabilities", [])), "")
             connection = model_connection(alias, osii_root) if alias else None
-        if connection is None or capability not in connection.get("capabilities", []):
+        if connection is None or not connection.get("enabled", True) or capability not in connection.get("capabilities", []):
             if requirement == "required" or explicit:
                 raise ValueError(f"Choose an enabled {capability} model for this tool in Setup.")
             continue

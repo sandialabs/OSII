@@ -3,9 +3,10 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip,
   Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel,
-  LinearProgress, MenuItem, Paper, Snackbar, Stack, Switch, TextField, Tooltip, Typography,
+  IconButton, LinearProgress, MenuItem, Paper, Snackbar, Stack, Switch, TextField, Tooltip, Typography,
 } from "@mui/material";
 import type { AlertColor } from "@mui/material";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import TextSnippetOutlinedIcon from "@mui/icons-material/TextSnippetOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
@@ -167,6 +168,8 @@ export function ProcessorsPage() {
   const [editingCapability, setEditingCapability] = useState<string | null>(null);
   const [capabilityDraft, setCapabilityDraft] = useState<Record<string, unknown>>({});
   const [routeDraft, setRouteDraft] = useState<ExtractorRoute[] | null>(null);
+  const [sourceHelp, setSourceHelp] = useState<CapabilityReadiness | null>(null);
+  const [routingHelp, setRoutingHelp] = useState(false);
   const [savingRoutes, setSavingRoutes] = useState(false);
   const [processorForm, setProcessorForm] = useState({
     base_url: "http://", model_connection: "",
@@ -413,8 +416,8 @@ export function ProcessorsPage() {
   const changeProcessorBinding = async (processor: ProcessorEndpoint, modelConnection: string) => {
     try {
       await updateProcessorEndpoint(processor.id, { model_connection: modelConnection });
-      notify(`${processor.display_name}: model connection changed to ${modelConnection}.`);
-      await queryClient.invalidateQueries({ queryKey: ["admin", "processors"] });
+      notify(`${processor.display_name}: model connection changed to ${modelConnection || "the library default"}.`);
+      await queryClient.invalidateQueries({ queryKey: ["admin"] });
     } catch (error) {
       notify(error instanceof Error ? error.message : "Could not change the model connection.", "error");
     }
@@ -514,11 +517,26 @@ export function ProcessorsPage() {
       .filter((item) => !["firstN", "recursive"].includes(item.id));
   };
 
+  const routeChoiceSupported = (id: string, route: ExtractorRoute) => {
+    const item = capabilityMethods("extractor").find(item => item.id === id || item.aliases?.includes(id));
+    const extensions = item?.descriptor?.capabilities?.file_extensions;
+    return !extensions?.length || extensions.includes("*") || route.extensions.every(ext => extensions.includes(ext));
+  };
+  const routeChoiceStyle = (id: string) => ({ color: capabilityMethods("extractor").find(item => item.id === id || item.aliases?.includes(id))?.available ? "text.primary" : "text.disabled" });
   const renderExtractionRouting = () => (
-    <Paper variant="outlined" sx={{ p: 2 }}><Stack spacing={1.5}>
+    <Paper variant="outlined" sx={{ p: 2, mt: 3, borderTop: "4px solid", borderTopColor: "secondary.main", bgcolor: "action.hover" }}><Stack spacing={1.5}>
       <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1} alignItems={{ md: "center" }}>
-        <Stack spacing={0.25}><Typography variant="h6" fontWeight={700}>Extraction routing</Typography><Typography variant="body2" color="text.secondary">For each file type, OSII tries the primary extractor first, then each fallback from left to right. Intake uses these saved rules automatically.</Typography></Stack>
-        <Stack direction="row" spacing={1}><Button variant="outlined" onClick={addRoute}>Add file-type rule</Button><Button variant="contained" disabled={!routeDraft || savingRoutes} onClick={() => void persistRoutes()}>{savingRoutes ? "Saving…" : "Save routes"}</Button></Stack>
+        <Stack spacing={0.5}><Stack direction="row" alignItems="center"><Typography variant="h6" fontWeight={700}>Extraction routing defaults</Typography><IconButton aria-label="About extraction routing defaults" onClick={() => setRoutingHelp(true)}><HelpOutlineIcon /></IconButton></Stack><Typography variant="body2" color="text.secondary">Choose a reader and fallback order for each file type.</Typography><Typography variant="caption" sx={{ overflowWrap: "anywhere" }}>Saved to: <code>{extractorRoutes.data?.path ?? "Loading configuration path…"}</code></Typography></Stack>
+        <Stack direction="row" spacing={1}><Button component="label" variant="outlined">Load TOML<input hidden type="file" accept=".toml" onChange={async (event) => {
+          const file = event.target.files?.[0]; event.target.value = "";
+          if (!file) return;
+          try {
+            if (file.size > 1024 * 1024) throw new Error("Choose a TOML file no larger than 1 MiB.");
+            const result = await apiJson<{ok: boolean; routes: ExtractorRoute[]; errors?: string[]; warnings?: string[]}>("/api/extractor-routes/import", {method: "POST", json: {toml: await file.text()}});
+            if (!result.ok) throw new Error(result.errors?.join(" ") || "Invalid routing TOML.");
+            setRouteDraft(result.routes); notify("TOML loaded. Review the rules, then Save routes.");
+          } catch (error) { notify(error instanceof Error ? error.message : "Could not load TOML.", "error"); }
+        }} /></Button><Button variant="outlined" onClick={addRoute}>Add file-type rule</Button><Button variant="contained" disabled={!routeDraft || savingRoutes} onClick={() => void persistRoutes()}>{savingRoutes ? "Saving…" : "Save routes"}</Button></Stack>
       </Stack>
       {extractorRoutes.isLoading ? <LinearProgress /> : null}
       {currentRoutes.map((route, index) => {
@@ -527,13 +545,13 @@ export function ProcessorsPage() {
         return <Paper key={`${route.name}-${index}`} variant="outlined" sx={{ p: 1.5 }}><Stack spacing={1}>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ md: "center" }} flexWrap="wrap" useFlexGap>
             <TextField size="small" label="File extensions" value={route.extensions.join(", ")} onChange={(event) => updateRoute(index, { extensions: event.target.value.split(",").map((value) => value.trim().toLowerCase()).filter(Boolean) })} helperText="Comma-separated, or * for everything else" sx={{ minWidth: 250 }} />
-            <TextField select size="small" label="Primary extractor" value={route.extractor} onChange={(event) => updateRoute(index, { extractor: event.target.value, fallbacks: route.fallbacks.filter((item) => item !== event.target.value) })} sx={{ minWidth: 230 }}>{choices.map((id) => <MenuItem key={id} value={id}>{capabilityMethods("extractor").find((item) => item.id === id || item.aliases?.includes(id))?.display_name ?? id}</MenuItem>)}</TextField>
+            <TextField select size="small" label="Primary extractor" value={route.extractor} onChange={(event) => updateRoute(index, { extractor: event.target.value, fallbacks: route.fallbacks.filter((item) => item !== event.target.value) })} sx={{ minWidth: 230 }}>{choices.map((id) => <MenuItem key={id} value={id} disabled={!routeChoiceSupported(id, route)} sx={routeChoiceStyle(id)}>{capabilityMethods("extractor").find((item) => item.id === id || item.aliases?.includes(id))?.display_name ?? id}</MenuItem>)}</TextField>
             <Typography aria-hidden color="text.secondary" fontSize="1.4rem">→</Typography>
-            <TextField select size="small" label="First fallback" value={route.fallbacks[0] ?? ""} onChange={(event) => updateRoute(index, { fallbacks: event.target.value ? [event.target.value, ...route.fallbacks.slice(1).filter((id) => id !== event.target.value)] : [] })} sx={{ minWidth: 220 }}><MenuItem value="">No fallback</MenuItem>{choices.filter((id) => id !== route.extractor).map((id) => <MenuItem key={id} value={id}>{capabilityMethods("extractor").find((item) => item.id === id || item.aliases?.includes(id))?.display_name ?? id}</MenuItem>)}</TextField>
+            <TextField select size="small" label="First fallback" value={route.fallbacks[0] ?? ""} onChange={(event) => updateRoute(index, { fallbacks: event.target.value ? [event.target.value, ...route.fallbacks.slice(1).filter((id) => id !== event.target.value)] : [] })} sx={{ minWidth: 220 }}><MenuItem value="">No fallback</MenuItem>{choices.filter((id) => id !== route.extractor).map((id) => <MenuItem key={id} value={id} disabled={!routeChoiceSupported(id, route)} sx={routeChoiceStyle(id)}>{capabilityMethods("extractor").find((item) => item.id === id || item.aliases?.includes(id))?.display_name ?? id}</MenuItem>)}</TextField>
             <Typography aria-hidden color="text.secondary" fontSize="1.4rem">→</Typography>
-            <TextField select size="small" label="Second fallback" disabled={!route.fallbacks[0]} value={route.fallbacks[1] ?? ""} onChange={(event) => updateRoute(index, { fallbacks: event.target.value ? [route.fallbacks[0], event.target.value, ...route.fallbacks.slice(2).filter((id) => id !== event.target.value)] : route.fallbacks.slice(0, 1) })} sx={{ minWidth: 220 }}><MenuItem value="">No second fallback</MenuItem>{choices.filter((id) => id !== route.extractor && id !== route.fallbacks[0]).map((id) => <MenuItem key={id} value={id}>{capabilityMethods("extractor").find((item) => item.id === id || item.aliases?.includes(id))?.display_name ?? id}</MenuItem>)}</TextField>
+            <TextField select size="small" label="Second fallback" disabled={!route.fallbacks[0]} value={route.fallbacks[1] ?? ""} onChange={(event) => updateRoute(index, { fallbacks: event.target.value ? [route.fallbacks[0], event.target.value, ...route.fallbacks.slice(2).filter((id) => id !== event.target.value)] : route.fallbacks.slice(0, 1) })} sx={{ minWidth: 220 }}><MenuItem value="">No second fallback</MenuItem>{choices.filter((id) => id !== route.extractor && id !== route.fallbacks[0]).map((id) => <MenuItem key={id} value={id} disabled={!routeChoiceSupported(id, route)} sx={routeChoiceStyle(id)}>{capabilityMethods("extractor").find((item) => item.id === id || item.aliases?.includes(id))?.display_name ?? id}</MenuItem>)}</TextField>
           </Stack>
-          <Stack direction="row" spacing={0.75} alignItems="center" justifyContent="space-between" flexWrap="wrap" useFlexGap><Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap><Chip size="small" label={route.name} />{[route.extractor, ...route.fallbacks].map((id, chainIndex) => <Stack key={`${id}-${chainIndex}`} direction="row" spacing={0.75} alignItems="center">{chainIndex ? <Typography color="text.secondary">→</Typography> : null}<Chip size="small" color={capabilityMethods("extractor").find((item) => item.id === id || item.aliases?.includes(id))?.available ? "success" : "default"} variant="outlined" label={capabilityMethods("extractor").find((item) => item.id === id || item.aliases?.includes(id))?.display_name ?? id} /></Stack>)}</Stack><Button size="small" color="error" onClick={() => setRouteDraft(currentRoutes.filter((_, routeIndex) => routeIndex !== index))}>Remove rule</Button></Stack>
+          <Button size="small" color="error" sx={{ alignSelf: "flex-end" }} onClick={() => setRouteDraft(currentRoutes.filter((_, routeIndex) => routeIndex !== index))}>Remove rule</Button>
         </Stack></Paper>;
       })}
       {!currentRoutes.length && !extractorRoutes.isLoading ? <Alert severity="warning">No extraction routes are configured.</Alert> : null}
@@ -577,12 +595,15 @@ export function ProcessorsPage() {
       <Divider />
       {methods.map((item) => {
         const schema = schemaFor(item);
+        const processor = processors.data?.processors.find(p => p.processor_id === item.id || p.id === item.id);
+        const binding = processor?.model_access?.bindings?.chat ?? "";
+        const languageConnections = (providerData.data?.providers ?? []).filter(provider => provider.enabled && provider.chat_model);
         const isSelected = kind === "extractor"
           ? currentRoutes.some((route) => [route.extractor, ...route.fallbacks].some(
             (id) => id === item.id || item.aliases?.includes(id),
           ))
           : selected?.id === item.id || item.aliases?.includes(selected?.id ?? "");
-        return <Box key={item.id} sx={{ py: 1, borderBottom: "1px solid", borderColor: "divider", "&:last-child": { borderBottom: 0 } }}><Stack spacing={0.6}>
+        return <Box key={item.id} sx={{ color: item.available ? "text.primary" : "text.disabled", bgcolor: item.available ? "transparent" : "action.hover", px: 1, py: 1, borderBottom: "1px solid", borderColor: "divider", "&:last-child": { borderBottom: 0 } }}><Stack spacing={0.6}>
           <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
             <Typography variant="body2" fontWeight={700}>{item.display_name}</Typography>
             {isSelected ? <Chip size="small" color="primary" label={kind === "extractor" ? "In routing" : "Default"} /> : null}
@@ -592,9 +613,18 @@ export function ProcessorsPage() {
           <Typography variant="caption" color="text.secondary">{item.description}</Typography>
 
           {!item.available ? <Typography variant="caption" color="text.secondary">{item.detail}</Typography> : null}
+          {processor?.model_requirements?.chat ? <Stack direction={{xs: "column", sm: "row"}} spacing={1} alignItems={{sm: "center"}}>
+            <TextField select size="small" label="Writing model endpoint" value={binding} onChange={event => void changeProcessorBinding(processor, event.target.value)} sx={{minWidth: 280}}>
+              <MenuItem value="">Automatic · {processor.resolved_models?.chat ?? "connect a language model"}</MenuItem>
+              {binding && !languageConnections.some(provider => provider.id === binding) ? <MenuItem value={binding}>{binding} · unavailable</MenuItem> : null}
+              {languageConnections.map(provider => <MenuItem key={provider.id} value={provider.id}>{provider.id} · {provider.chat_model} · {provider.base_url}</MenuItem>)}
+            </TextField>
+            {processor.model_error ? <Typography variant="caption" color="error">{processor.model_error}</Typography> : null}
+            <Button size="small" onClick={() => openNewConnection()}>Connect model</Button>
+          </Stack> : null}
           {Object.keys(schema?.properties ?? {}).length ? <Button size="small" sx={{ alignSelf: "flex-start", px: 0 }} onClick={() => editingCapability === item.id ? setEditingCapability(null) : editCapability(item)}>{editingCapability === item.id ? "Hide settings" : "Settings"}</Button> : null}
           {editingCapability === item.id ? <Stack spacing={1}>{Object.entries(schema?.properties ?? {}).map(([name, property]) => <ConfigInput key={name} name={name} property={property} value={capabilityDraft[name]} onChange={(value) => setCapabilityDraft((current) => ({ ...current, [name]: value }))} />)}<Button variant="contained" size="small" onClick={() => void saveCapability(item)} sx={{ alignSelf: "flex-start" }}>Save settings</Button></Stack> : null}
-          <Box component="details" sx={{ overflowWrap: "anywhere" }}><Typography component="summary" variant="caption" sx={{ cursor: "pointer" }}>Implementation and configuration source</Typography><Typography variant="caption" component="div">Processor: <code>{item.id}</code>{item.base_url ? <> · <code>{item.base_url}</code></> : null}</Typography>{item.origin?.implementation ? <Typography variant="caption" component="div">Implementation: <code>{item.origin.implementation}</code></Typography> : null}{item.origin?.endpoint_source ? <Typography variant="caption" component="div">Endpoint: {item.origin.endpoint_source}</Typography> : null}{item.origin?.configuration_file ? <Typography variant="caption" component="div">Configuration: <code>{item.origin.configuration_file}</code></Typography> : null}</Box>
+          <IconButton size="small" aria-label={`About ${item.display_name} implementation and configuration`} onClick={() => setSourceHelp(item)} sx={{alignSelf: "flex-start"}}><HelpOutlineIcon fontSize="small" /></IconButton>
         </Stack></Box>;
       })}
       {!methods.length ? <Typography variant="body2" color="text.secondary">Checking methods…</Typography> : null}
@@ -618,6 +648,13 @@ export function ProcessorsPage() {
 
   return <Stack spacing={3} sx={{ maxWidth: 1100, mx: "auto" }}>
     <Typography variant="h5" fontWeight={750}>Setup</Typography>
+    <Dialog open={Boolean(sourceHelp)} onClose={() => setSourceHelp(null)} fullWidth maxWidth="sm"><DialogTitle>{sourceHelp?.display_name}</DialogTitle><DialogContent><Stack spacing={1} sx={{overflowWrap: "anywhere"}}><Typography>{sourceHelp?.description}</Typography><Typography variant="body2">Processor: <code>{sourceHelp?.id}</code></Typography>{sourceHelp?.base_url ? <Typography variant="body2">Service address: <code>{sourceHelp.base_url}</code></Typography> : null}<Typography variant="body2">Registration source: <code>{sourceHelp?.origin?.implementation}</code></Typography><Typography variant="body2">Configuration overrides: <code>{sourceHelp?.origin?.configuration_file}</code></Typography>{sourceHelp?.origin?.endpoint_source ? <Typography variant="body2">Endpoint configuration: {sourceHelp.origin.endpoint_source}</Typography> : null}<Typography variant="body2">Built-in registrations provide defaults. The configuration file stores your overrides, so it can be nearly empty. Independently deployed tool code lives in osii-toolbox/; Core adapters live in osii-core/osii/extraction/. Model-backed tools use the Writing model endpoint selector in their service row.</Typography></Stack></DialogContent><DialogActions><Button onClick={() => setSourceHelp(null)}>Close</Button></DialogActions></Dialog>
+    <Dialog open={routingHelp} onClose={() => setRoutingHelp(false)} maxWidth="sm" fullWidth><DialogTitle>Extraction routing defaults</DialogTitle><DialogContent><Stack spacing={2}>
+      <Typography>Rules are checked from top to bottom. The first matching file extension chooses the primary extractor. If it fails, OSII tries the fallbacks from left to right. Put the * catch-all last.</Typography>
+      <Typography>These are Intake defaults; an explicit reader choice for a batch overrides them. Each reader must support all file types in its rule, including fallbacks. Unavailable services are gray; their saved rules remain so a temporary outage does not change your configuration.</Typography>
+      <Typography>Save routes writes the active tools.toml shown in this section. Load TOML reads [[routes.extractor]] rules for review; it does not save or replace other tool settings until you click Save routes.</Typography>
+      <Typography>To add your own extractor, start with the code in <code>osii-core/osii/extraction/</code> and the independent tools in <code>osii-toolbox/</code>. Read <code>docs/reference/extractor-routing.md</code> and <code>docs/reference/processor-api/extraction.md</code>. Build a tool that follows OSII’s Processor API: it receives selected files, declares the file types it accepts, and returns text and source locations. Register its service address in Setup.</Typography>
+    </Stack></DialogContent><DialogActions><Button onClick={() => setRoutingHelp(false)}>Close</Button></DialogActions></Dialog>
     <WorkflowProgress readiness={data?.readiness} checking={setup.isLoading} failed={setup.isError} onStep={followWorkflowStep} />
 
     {!connectionOpen && !serviceLogs ? renderNotice() : null}
@@ -678,9 +715,7 @@ export function ProcessorsPage() {
           <Box component="form" onSubmit={(event) => void addProcessor(event)}><Stack spacing={1}><TextField size="small" label="Running processor URL" required value={processorForm.base_url} onChange={(event) => setProcessorForm({ ...processorForm, base_url: event.target.value })} helperText="For example, http://127.0.0.1:8099" /><TextField size="small" select label="Writing model" value={processorForm.model_connection} onChange={(event) => setProcessorForm({ ...processorForm, model_connection: event.target.value })}><MenuItem value="">Library default</MenuItem>{(providerData.data?.providers ?? []).filter((provider) => provider.chat_model).map((provider) => <MenuItem key={provider.id} value={provider.id}>{provider.id} · {provider.chat_model}</MenuItem>)}</TextField><Button type="submit" variant="contained" sx={{ alignSelf: "flex-start" }}>Discover and register</Button></Stack></Box>
           {(processors.data?.processors ?? []).map((processor) => {
             const binding = processor.model_access?.mode === "gateway" ? Object.values(processor.model_access.bindings ?? {})[0] : null;
-            const languageConnections = (providerData.data?.providers ?? []).filter((provider) => provider.chat_model);
-            const bindingExists = languageConnections.some((provider) => provider.id === binding);
-            return <Stack key={processor.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}><Stack><Typography variant="body2" fontWeight={700}>{processor.display_name}</Typography><Typography variant="caption" color="text.secondary">{processor.kind} · {processor.base_url} · {binding ? `Language model: ${binding}` : processor.model_requirements?.chat ? "Library default" : "No model required"}</Typography>{processor.model_requirements?.chat ? <TextField size="small" select label="Writing model" value={binding ?? ""} onChange={(event) => void changeProcessorBinding(processor, event.target.value)} sx={{ mt: 1, minWidth: 240 }}><MenuItem value="">Library default</MenuItem>{binding && !bindingExists ? <MenuItem value={binding}>{binding} · not configured</MenuItem> : null}{languageConnections.map((provider) => <MenuItem key={provider.id} value={provider.id}>{provider.id} · {provider.chat_model}</MenuItem>)}</TextField> : null}</Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => void testProcessor(processor, false)}>Health</Button><Button size="small" variant="outlined" onClick={() => void testProcessor(processor, true)}>Descriptor</Button><Button size="small" color="error" onClick={() => void removeProcessor(processor)}>Remove</Button></Stack></Stack>;
+            return <Stack key={processor.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}><Stack><Typography variant="body2" fontWeight={700}>{processor.display_name}</Typography><Typography variant="caption" color="text.secondary">{processor.kind} · {processor.base_url} · {binding ? `Language model: ${binding}` : processor.model_requirements?.chat ? "Library default" : "No model required"}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => void testProcessor(processor, false)}>Health</Button><Button size="small" variant="outlined" onClick={() => void testProcessor(processor, true)}>Descriptor</Button><Button size="small" color="error" onClick={() => void removeProcessor(processor)}>Remove</Button></Stack></Stack>;
           })}
         </Stack></AccordionDetails></Accordion>
       </Stack></AccordionDetails>

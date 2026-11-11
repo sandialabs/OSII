@@ -802,6 +802,8 @@ export type ProcessingRunsResponse = {
 };
 
 export type ProcessorEndpoint = {
+  resolved_models?: Record<string, string>;
+  model_error?: string | null;
   id: string;
   processor_id?: string;
   display_name: string;
@@ -928,6 +930,7 @@ export type ExtractorRoute = {
 };
 
 export type ExtractorRoutesResponse = {
+  path?: string;
   routes: ExtractorRoute[];
 };
 

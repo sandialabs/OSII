@@ -24,6 +24,9 @@ def dispatch_extract(
         from osii.processors.remote import RemoteExtractor, resolve_remote_processor
 
         descriptor = resolve_remote_processor(extractor_name, "extractor")
+        supported = descriptor.get("capabilities", {}).get("file_extensions", [])
+        if supported and "*" not in supported and source_path.suffix.lower() not in supported:
+            raise ValueError(f"Extractor '{extractor_name}' does not accept {source_path.suffix}; supported: {', '.join(supported)}")
         extractor = RemoteExtractor(descriptor)
 
     return extractor.extract(

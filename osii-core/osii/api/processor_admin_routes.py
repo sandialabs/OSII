@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from osii.configuration import (
     builtin_tools_config,
     configured_tools,
+    resolve_tool_models,
     load_tools_config,
     save_tools_config,
 )
@@ -72,7 +73,15 @@ def _records(osii_root: Path) -> list[dict[str, Any]]:
         if not endpoint:
             continue
         descriptor = _cached_descriptor(endpoint)
+        requirements = descriptor.get("model_requirements") or tool.get("model_requirements") or {}
+        try:
+            resolved_models = resolve_tool_models(str(tool.get("processor_id") or tool_id), requirements, osii_root)
+            model_error = None
+        except ValueError as exc:
+            resolved_models, model_error = {}, str(exc)
         records.append({
+            "resolved_models": resolved_models,
+            "model_error": model_error,
             "id": tool_id,
             "processor_id": str(tool.get("processor_id") or tool_id),
             "display_name": str(tool.get("display_name") or tool.get("processor_id") or tool_id),

@@ -47,6 +47,7 @@ export function HeaderBar({
             <MenuOutlined />
           </IconButton>
         )}
+        <Box component="img" src="/corp-logo.png" alt="OSII magnifying glass" sx={{ width: 44, height: 44, flexShrink: 0 }} />
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography component={Link} to="/"
             sx={{ textDecoration: "none",

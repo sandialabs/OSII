@@ -45,6 +45,12 @@ The agent's job is to execute the human's command—nothing more.
   Preserve standard artifact formats so people, the dashboard, and agents can
   inspect the same results.
 
+## Interface guidance
+
+- Keep screens concise. Put explanations behind accessible, labeled question-mark
+  buttons that open focused help dialogs. Prefer these to persistent paragraphs
+  or additional drawers. Keep essential state, errors, and actions visible.
+
 ## Implementation and documentation
 
 - Prefer ordinary, typed Python; descriptive names; small focused units; and

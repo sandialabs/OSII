@@ -18,7 +18,7 @@ def extractors_config_path() -> Path:
 
 
 def load_extractor_routes_file() -> dict:
-    return {"routes": load_extractor_routes()}
+    return {"routes": load_extractor_routes(), "path": str(tools_path())}
 
 
 def load_extractors_file() -> dict:
@@ -42,6 +42,22 @@ def validate_routes(payload: dict) -> tuple[list[str], list[str]]:
 
     extractors = load_extractors_file().get("extractors", [])
     extractor_map = {p.get("id"): p for p in extractors if p.get("id")}
+
+    from osii.api.processor_admin_routes import _cached_descriptor
+    from osii.configuration import configured_tools
+    from osii.domain.processing.extractor_selection import NATIVE_EXTENSIONS
+    accepted = {"native_text": NATIVE_EXTENSIONS, "local.native-text": NATIVE_EXTENSIONS}
+    images = [".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff"]
+    for identifier in ["local.tesseract-page-ocr", "toolbox.tesseract-opencv", "toolchest.tesseract-opencv"]:
+        accepted[identifier] = images
+    for tool_id, tool in configured_tools().items():
+        endpoint = tool.get("runtime", {}).get("endpoint")
+        descriptor = _cached_descriptor(endpoint.rstrip("/")) if endpoint else {}
+        extensions = descriptor.get("capabilities", {}).get("file_extensions")
+        if extensions:
+            for identifier in [tool_id, tool.get("processor_id"), *tool.get("aliases", [])]:
+                if identifier:
+                    accepted[identifier] = extensions
 
     for i, route in enumerate(routes):
         if not isinstance(route, dict):
@@ -104,6 +120,13 @@ def validate_routes(payload: dict) -> tuple[list[str], list[str]]:
 
             normalized_exts.append(ext.lower())
 
+        for identifier in [extractor, *(fallbacks if isinstance(fallbacks, list) else [])]:
+            supported = accepted.get(identifier) if isinstance(identifier, str) else None
+            if supported and "*" not in supported:
+                unsupported = [ext for ext in normalized_exts if ext not in supported]
+                if unsupported:
+                    errors.append(f"Route '{name}': extractor '{identifier}' cannot accept {', '.join(unsupported)}. Supported: {', '.join(supported)}.")
+
         if "*" in normalized_exts:
             if catch_all_seen_at is not None:
                 errors.append(
@@ -159,3 +182,19 @@ async def put_extractor_routes(payload: dict):
         "routes": payload.get("routes", []),
         "warnings": warnings,
     }
+
+
+@router.post("/extractor-routes/import")
+async def import_extractor_routes(payload: dict):
+    """Parse and validate an uploaded TOML without changing saved configuration."""
+    text = payload.get("toml")
+    if not isinstance(text, str) or len(text.encode("utf-8")) > 1024 * 1024:
+        return {"ok": False, "errors": ["Provide a TOML file no larger than 1 MiB."]}
+    try:
+        parsed = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        return {"ok": False, "errors": [f"Invalid TOML: {exc}"]}
+    routes = parsed.get("routes", {})
+    routes = routes.get("extractor") if isinstance(routes, dict) else routes
+    errors, warnings = validate_routes({"routes": routes})
+    return {"ok": not errors, "errors": errors, "warnings": warnings, "routes": routes if not errors else []}

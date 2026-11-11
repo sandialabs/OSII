@@ -1106,3 +1106,18 @@ review. The response exposes `documents_in_scope`, `documents_sampled`, source
 snapshots, writing provider/model, format, and coverage warnings. Narrow large
 collections for fuller coverage. Core rechecks text fingerprints after writing
 and rejects changed evidence rather than silently attaching stale locations.
+
+### Extraction routing setup
+
+`GET /api/extractor-routes` returns `routes` and the active `path` to
+`tools.toml`. `PUT /api/extractor-routes` preserves other tool configuration and
+validates primary and fallback file-type compatibility.
+
+`POST /api/extractor-routes/import` accepts `{"toml": "..."}` (up to 1 MiB)
+and returns `ok`, `routes`, `errors`, and `warnings`. It accepts
+`[[routes.extractor]]` or legacy `[[routes]]` tables and never saves; clients
+review the returned draft before using PUT.
+
+Processor administration records expose `resolved_models` and `model_error`
+for per-service model assignment. Missing bindings inherit enabled compatible
+library defaults; explicit disabled or missing bindings report a setup error.
