@@ -6,6 +6,28 @@ from conftest import document, login
 from osii.server.auth import digest
 
 
+@pytest.mark.parametrize('failed', [False, True])
+def test_worker_loop_uses_shared_job_claims(app, monkeypatch, failed):
+    from conftest import Provider
+    from osii.server import worker
+    from osii.domain.storage.postgres_jobs import PostgresJobStore
+    store = app.state.store
+    queue = PostgresJobStore(store.engine)
+    queued = queue.submit('intake', {})
+    monkeypatch.setattr(worker, 'PostgresStore', lambda url: store)
+    monkeypatch.setattr(worker, 'ConfiguredModelProvider', lambda connections: Provider())
+    monkeypatch.setattr(worker, 'ProcessorClient', lambda *args, **kwargs: object())
+    monkeypatch.setattr(worker.signal, 'signal', lambda *args: None)
+    def process(*args, **kwargs):
+        kwargs['stopping'].set()
+        if failed:
+            raise ValueError('Expected test failure')
+        return False
+    monkeypatch.setattr(worker, 'ingest_batch', process)
+    worker.run(app.state.settings)
+    assert queue.get(queued.job_id).state == ('error' if failed else 'done')
+
+
 def test_anonymous_denied_and_bootstrap_not_public(client):
     assert client.get("/health").status_code == 200
     for path in ("/api/catalog/files", "/api/admin/users", "/openapi.json", "/artifact/state/jobs.sqlite3"):

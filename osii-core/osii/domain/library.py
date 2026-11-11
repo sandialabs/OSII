@@ -28,6 +28,20 @@ class Library:
         return revision, [d for d in documents if d["file_id"] in allowed], rows
 
     def search(self, query: str, mode: str, top_k: int, scope: dict, user_id: str | None = None) -> dict:
+        from osii.domain.storage.retrieval import RetrievalRequest
+        from osii.domain.read.contracts import ReadScope
+        kind = scope.get('scope_type', 'root')
+        key = {'object': 'file_id', 'folder': 'folder_id', 'collection': 'collection_id'}.get(kind)
+        request = RetrievalRequest(query, ReadScope(kind, scope.get(key, '') if key else ''), mode, top_k)
+        found = self.retrieve(request, user_id)
+        return {**found.metadata, 'results': found.legacy_rows()}
+
+    def retrieve(self, request, user_id: str | None = None):
+        from osii.domain.storage.retrieval import BoundedRetriever
+        return BoundedRetriever(lambda value: self._search(value.query, value.mode,
+            value.top_k, value.scope_payload(), user_id)).retrieve(request)
+
+    def _search(self, query: str, mode: str, top_k: int, scope: dict, user_id: str | None = None) -> dict:
         revision, documents, rows = self.scoped(scope, user_id)
         configuration = self.store.configuration()
         vector, warning = None, None

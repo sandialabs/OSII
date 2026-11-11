@@ -136,6 +136,11 @@ add revisioned product drafts/activation and version-checked collection commands
 Existing product editors keep immediate activation for compatibility; legacy
 document-text overrides are preserved, not silently migrated into product history.
 
+[Shared retrieval/job interfaces](../reference/retrieval-jobs.md) bound search
+responses and fence worker mutations by claim generation. Native search indexes,
+RAG guards, queue records, authorization, and normal startup remain in their
+existing compositions; this does not enable database selection or replace queues.
+
 OSII-local and OSII-server are compositions of the same product. Their storage,
 identity, and deployment adapters differ; intake, processor contracts, document
 inspection, topic exploration, and RAG strategies should converge on shared code.

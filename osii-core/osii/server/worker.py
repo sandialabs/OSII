@@ -313,9 +313,12 @@ def process_plan(store: PostgresStore, provider, extractor, settings: Settings,
 
 
 def run(settings: Settings | None = None) -> None:
+    from osii.domain.storage.postgres_jobs import PostgresJobStore
+    from osii.domain.storage.job_store import JobOwnershipLost
     settings = settings or Settings.environment()
     store = PostgresStore(settings.database_url)
     store.ready()
+    queue = PostgresJobStore(store.engine)
     provider = ConfiguredModelProvider(ModelConnections(store, settings))
     extractor = ProcessorClient(settings.extractor_url, timeout=120)
     ocr = ProcessorClient(settings.ocr_url, timeout=180) if settings.ocr_url else None
@@ -334,14 +337,18 @@ def run(settings: Settings | None = None) -> None:
                 stopping.wait(1)
                 continue
             try:
-                job = store.claim(worker)
-                if not job:
+                claimed = queue.claim(worker)
+                if not claimed:
                     stopping.wait(1)
                     continue
+                job = claimed.job.native
                 finished = threading.Event()
-                def heartbeat():
+                def heartbeat(lease=claimed.lease):
                     while not finished.wait(10):
-                        store.heartbeat(job["id"], worker)
+                        try:
+                            queue.heartbeat(lease)
+                        except JobOwnershipLost:
+                            break
                         store.save_setting("worker_status", {"last_seen": now().isoformat()})
                 thread = threading.Thread(target=heartbeat, daemon=True)
                 thread.start()
@@ -370,7 +377,11 @@ def run(settings: Settings | None = None) -> None:
                 finally:
                     finished.set()
                     thread.join(timeout=2)
-                    store.finish(job["id"], worker, logs, failed, reschedule=reschedule)
+                    try:
+                        queue.finish(claimed.lease, outcome='error' if failed else 'done',
+                            logs=tuple(logs), reschedule=reschedule)
+                    except JobOwnershipLost:
+                        pass  # Do not overwrite recovery or a newer worker's result.
             finally:
                 lock.execute(text("SELECT pg_advisory_unlock(914035)"))
 
