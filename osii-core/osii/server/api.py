@@ -764,4 +764,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
     register_inventory_routes(app, store, settings)
     register_tool_routes(app, store, settings)
 
+    from osii.server.service_routes import register_service_routes
+    register_service_routes(app, store)
+
     return app

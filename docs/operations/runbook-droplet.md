@@ -279,3 +279,34 @@ Topic Explorer streams database vectors rather than loading the entire index
 into Python objects. Catalog browsing reads only document headers. A proxy HTML
 response now produces an HTTP/service diagnostic instead of a JSON parser error;
 check Core readiness and its journal when that diagnostic appears.
+
+## Hosted service status and lifecycle controls
+
+Administrators see **Setup → Service status** with live process state, a separate
+Processor API health check, bounded recent logs, and start/stop/restart actions.
+Stop and restart require confirmation because an active extraction can fail;
+pause Intake and wait for the current document first. Queued work and saved
+outputs are not deleted. Readers and curators cannot read service logs or control
+services. Writes use session/CSRF authorization and actions are audited.
+
+Enable explicitly with `configure.py --with-tool-control` when configuring the
+Droplet. The controller is a separate systemd service, not a Core subprocess.
+Only the API mounts `/run/osii-tools` and receives
+`OSII_TOOL_CONTROL_SOCKET=/run/osii-tools/control.sock`. It has no public port or
+container-engine socket. The host controller accepts only the three fixed units:
+`osii-extractor`, `osii-ocr-page`, and `osii-ocr-regions`. It cannot manage SSH,
+Core, PostgreSQL, workers, or arbitrary units. Optional missing units are shown
+without lifecycle controls. Installing this controller does not start or restart
+the managed tools.
+
+The socket directory is preserved across controller restarts; systemd starts it
+before the API on reboot. Logs are at most 80 entries from the last hour and
+64 KiB of journal output. Common credential patterns are redacted; administrators
+should still treat logs as potentially containing document text and sensitive
+operational details. Raw command output is never returned for failed actions.
+
+No controller is enabled by default on OpenShift. That deployment requires a
+separate adapter with namespace-scoped permissions; the UI reports unavailable
+controls while processor health remains available. External model endpoints,
+remote processors, and in-process synthesizers/enrichers cannot be restarted
+through the Droplet controller.

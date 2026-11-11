@@ -121,11 +121,43 @@ WantedBy=multi-user.target
     run("systemctl", "restart", "osii-ocr-page", "osii-ocr-regions")
 
 
+def configure_tool_control(source: Path):
+    """Explicitly install the socket-only, fixed-unit tool controller."""
+    import shutil
+    destination = Path("/opt/osii/tool-supervisor.py")
+    shutil.copyfile(source / "deploy/droplet/tool_supervisor.py", destination)
+    destination.chmod(0o700)
+    write("/etc/systemd/system/osii-tool-controller.service", """[Unit]
+Description=OSII private tool lifecycle controller
+After=network.target
+[Service]
+ExecStart=/usr/bin/python3 /opt/osii/tool-supervisor.py
+RuntimeDirectory=osii-tools
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+UMask=0077
+Restart=on-failure
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+InaccessiblePaths=/etc/osii /mnt/nfs-documents /var/run/postgresql
+[Install]
+WantedBy=multi-user.target
+""")
+    run("systemctl", "daemon-reload")
+    run("systemctl", "enable", "--now", "osii-tool-controller")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hostname", required=True)
     parser.add_argument("--image-tag", required=True)
     parser.add_argument("--with-ocr", action="store_true", help="Explicitly install optional native OCR services")
+    parser.add_argument("--with-tool-control", action="store_true", help="Enable admin lifecycle controls for the fixed deployed tool units")
     args = parser.parse_args()
     import re
     if not re.fullmatch(r"[a-z0-9.-]+", args.hostname) or not re.fullmatch(r"[a-z0-9-]+", args.image_tag):
@@ -171,6 +203,8 @@ def main():
     if not (config / "runtime.env").exists():
         write(config / "runtime.env", f"DATABASE_URL=postgresql+psycopg://osii:{password}@/osii_server?host=/var/run/postgresql\nOSII_SOURCE_DIR=/data/source\nOPENAI_BASE_URL=https://openrouter.ai/api/v1\nOSII_MODEL_API_KEY_FILE=/run/osii-model-key\nOSII_ORIGINS=https://{args.hostname}\nOSII_EXTRACTOR_URL=http://osii-extractor:8192\nOSII_PROCESSOR_GATEWAY_URL=http://osii-api:8512/api/processor-model/v1\n", 0o600)
     write(config / "dashboard-nginx.conf", dashboard_proxy_configuration(Path(__file__).resolve().parents[2]))
+    if args.with_tool_control:
+        configure_tool_control(Path(__file__).resolve().parents[2])
     for component, memory in [("api", "1g"), ("worker", "1g"), ("extractor", "768m"), ("dashboard", "128m")]:
         image = f"localhost/osii-{'dashboard' if component == 'dashboard' else 'core'}:{args.image_tag}"
         command = f"/usr/bin/podman run --rm --name osii-{component} --network osii --read-only --cap-drop ALL --security-opt no-new-privileges --user 1001:0 --tmpfs /tmp:rw,nosuid,nodev,size=256m --memory {memory}"
@@ -178,6 +212,9 @@ def main():
         if component in {"api", "worker"}:
             dependencies = "Wants=postgresql@16-main.service\nAfter=postgresql@16-main.service\nRequiresMountsFor=/mnt/nfs-documents\n"
             command += " --env-file /etc/osii/runtime.env --volume /var/run/postgresql:/var/run/postgresql:ro --volume /etc/osii/model-key:/run/osii-model-key:ro --volume /etc/osii/keys:/run/osii-keys:ro --volume /mnt/nfs-documents:/data/source:ro"
+        if component == "api" and Path("/etc/systemd/system/osii-tool-controller.service").exists():
+            dependencies += "Wants=osii-tool-controller.service\nAfter=osii-tool-controller.service\n"
+            command += " --env OSII_TOOL_CONTROL_SOCKET=/run/osii-tools/control.sock --volume /run/osii-tools:/run/osii-tools:ro"
         if component == "dashboard":
             dependencies = "Wants=osii-api.service\nAfter=osii-api.service\n"
             command += " --publish 127.0.0.1:18080:8080 --volume /etc/osii/dashboard-nginx.conf:/etc/nginx/nginx.conf:ro"

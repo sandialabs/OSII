@@ -478,3 +478,14 @@ Droplet configuration. Workers and OCR services need no restart.
 
 See the [NGINX proxy documentation](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_pass)
 for variable upstream resolution.
+
+### Hosted tool lifecycle boundary
+
+**Setup → Service status** reuses the local service-row presentation through an
+administrator-only API. The Droplet deployment can opt into a private Unix-socket
+controller for its explicitly deployed extractor/OCR units; see the
+[Droplet service controls](runbook-droplet.md#hosted-service-status-and-lifecycle-controls).
+Missing controllers fail closed. No shell, arbitrary service/unit name, provider
+key, or container-engine socket is exposed to the dashboard or Core. Stop/restart
+can interrupt an extraction; pause Intake before using them. OpenShift lifecycle
+control requires a separate deployment adapter and is not implicitly enabled.

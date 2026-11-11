@@ -1,3 +1,4 @@
+import { ServiceAdmin } from "./ServiceAdmin";
 import { ExpandMore } from "@mui/icons-material";
 import { CapabilitySection, SetupLayout, type CapabilityKind } from "../admin/components/SetupLayout";
 import { useEffect, useState } from "react";
@@ -165,6 +166,7 @@ export function Setup({
         services and run only when requested; browsing and keyword search work
         without models.
       </Typography>
+      <ServiceAdmin />
       <Box id="setup-models" sx={{ scrollMarginTop: 80 }}>
         <ModelAdmin embedded onChanged={() => setRevision(v => v + 1)} />
       </Box>
