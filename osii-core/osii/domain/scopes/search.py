@@ -60,10 +60,11 @@ def build_scope_filters(osii_root: Path, scope: dict | None) -> dict:
 
     if scope_type == SCOPE_FOLDER:
         folder_id = (scope.get("folder_id") or "").strip()
+        path = resolve_folder_relpath(osii_root, folder_id)
         return {
             "scope_type": SCOPE_FOLDER,
-            "folder_relpath": resolve_folder_relpath(osii_root, folder_id),
-            "collection_members": None,
+            "folder_relpath": path,
+            "collection_members": set() if path is None else None,
             "object_file_id": None,
         }
 

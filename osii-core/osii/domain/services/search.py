@@ -282,3 +282,14 @@ def dashboard_search(
         results = _group_results_by_file(results, top_k=top_k)
 
     return retrieval_mode_used, results
+
+
+def retrieve_dashboard(osii_root: Path, request, *, search=None):
+    """Shared typed boundary; the existing dashboard envelope stays compatible."""
+    from osii.domain.storage.retrieval import BoundedRetriever
+    search = search or dashboard_search
+    def native(query):
+        used, rows = search(osii_root, query=query.query, mode=query.mode, top_k=query.top_k,
+            scope=query.scope_payload(), group_by=query.group_by)
+        return {"retrieval_mode_used": used, "results": rows}
+    return BoundedRetriever(native).retrieve(request)

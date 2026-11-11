@@ -63,6 +63,7 @@ nav:
       - Shared library reads: reference/library-reads.md
       - Shared processing commits: reference/processing-commits.md
       - Shared authoring and collections: reference/library-authoring.md
+      - Shared retrieval and jobs: reference/retrieval-jobs.md
       - Storage boundaries and implementation plan: concepts/adr-storage-boundaries.md
   - Extend OSII:
       - Choose an extension: extending/index.md

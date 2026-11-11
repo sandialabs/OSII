@@ -5,6 +5,8 @@ import sqlite3
 import threading
 import time
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -14,14 +16,32 @@ from .pathing import display_rel
 RUNS: dict[str, dict] = {}
 RUNS_LOCK = threading.Lock()
 _STATE_DB: Path | None = None
+_STORE_OVERRIDE = ContextVar('osii_job_store', default=None)
+
+
+def _store_path():
+    return _STORE_OVERRIDE.get() or _STATE_DB
+
+
+@contextmanager
+def using_job_store(root: Path):
+    """Bind an explicit local store without changing the process default."""
+    token = _STORE_OVERRIDE.set(root.resolve() / 'state' / 'jobs.sqlite3')
+    try:
+        yield
+    finally:
+        _STORE_OVERRIDE.reset(token)
 
 
 def configure_job_store(osii_root: Path) -> Path:
     """Configure the durable operational-state store for this process."""
     global _STATE_DB
     state_dir = osii_root.resolve() / "state"
+    if _STORE_OVERRIDE.get() is not None and _STORE_OVERRIDE.get() != state_dir / 'jobs.sqlite3':
+        raise ValueError('Requested job store differs from the explicit store context')
     state_dir.mkdir(parents=True, exist_ok=True)
-    _STATE_DB = state_dir / "jobs.sqlite3"
+    if _STORE_OVERRIDE.get() is None:
+        _STATE_DB = state_dir / "jobs.sqlite3"
     with _connection() as conn:
         conn.executescript(
             """
@@ -60,13 +80,13 @@ def configure_job_store(osii_root: Path) -> Path:
             conn.execute("ALTER TABLE queue_jobs ADD COLUMN worker_id TEXT")
         if "heartbeat_at" not in columns:
             conn.execute("ALTER TABLE queue_jobs ADD COLUMN heartbeat_at TEXT")
-    return _STATE_DB
+    return _store_path()
 
 
 def _connection() -> sqlite3.Connection:
-    if _STATE_DB is None:
+    if _store_path() is None:
         raise RuntimeError("Job store is not configured. Call configure_job_store first.")
-    conn = sqlite3.connect(_STATE_DB, timeout=30)
+    conn = sqlite3.connect(_store_path(), timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -76,7 +96,7 @@ def _now() -> str:
 
 
 def save_run(run: dict) -> None:
-    if _STATE_DB is None:
+    if _store_path() is None:
         return
     with _connection() as conn:
         conn.execute(
@@ -150,7 +170,7 @@ def create_run_record(
 
 
 def _load_run(run_id: str) -> dict | None:
-    if _STATE_DB is None:
+    if _store_path() is None:
         return None
     with _connection() as conn:
         row = conn.execute("SELECT data_json FROM runs WHERE id = ?", (run_id,)).fetchone()
@@ -158,7 +178,7 @@ def _load_run(run_id: str) -> dict | None:
 
 
 def _latest_queue_state(run_id: str) -> dict | None:
-    if _STATE_DB is None:
+    if _store_path() is None:
         return None
     with _connection() as conn:
         row = conn.execute(
@@ -219,7 +239,7 @@ def get_run(run_id: str) -> dict | None:
 
 
 def list_runs(*, limit: int = 100) -> list[dict]:
-    if _STATE_DB is None:
+    if _store_path() is None:
         return []
     with _connection() as conn:
         rows = conn.execute(
@@ -277,7 +297,7 @@ def unregister_worker(worker_id: str) -> None:
 
 
 def worker_status(*, stale_after_seconds: float = 15.0) -> dict[str, Any]:
-    if _STATE_DB is None:
+    if _store_path() is None:
         return {
             "available": False,
             "detail": "The processing job store is not configured.",
@@ -623,7 +643,7 @@ def control_run(run_id: str, action: str) -> dict:
 
 
 def list_queue_jobs(*, limit: int = 100) -> list[dict]:
-    if _STATE_DB is None:
+    if _store_path() is None:
         return []
     with _connection() as conn:
         rows = conn.execute(
@@ -645,7 +665,7 @@ def list_queue_jobs(*, limit: int = 100) -> list[dict]:
 
 def find_active_jobs_for_paths(paths: list[str]) -> list[dict]:
     """Return queued/running jobs that still reference one of the source paths."""
-    if _STATE_DB is None or not paths:
+    if _store_path() is None or not paths:
         return []
     normalized = {str(path).replace("\\", "/") for path in paths if path}
     matches: list[dict] = []
@@ -666,7 +686,7 @@ def find_active_jobs_for_paths(paths: list[str]) -> list[dict]:
 
 def find_job_history_for_paths(paths: list[str]) -> list[str]:
     """Return completed or failed run IDs whose records mention a source path."""
-    if _STATE_DB is None or not paths:
+    if _store_path() is None or not paths:
         return []
     normalized = {str(path).replace("\\", "/") for path in paths if path}
     with _connection() as conn:
@@ -680,7 +700,7 @@ def find_job_history_for_paths(paths: list[str]) -> list[str]:
 
 def purge_job_history(run_ids: list[str]) -> int:
     """Remove operational history for runs disclosed by a deletion preview."""
-    if _STATE_DB is None or not run_ids:
+    if _store_path() is None or not run_ids:
         return 0
     placeholders = ",".join("?" for _ in run_ids)
     with _connection() as conn:

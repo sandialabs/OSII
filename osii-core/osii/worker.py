@@ -11,16 +11,10 @@ from pathlib import Path
 
 from osii.domain.processing.jobs import (
     append_log,
-    cancel_queue_job,
-    claim_next_queue_job,
-    complete_queue_job,
     configure_job_store,
     get_run,
-    heartbeat_queue_job,
     heartbeat_worker,
     honor_run_control,
-    pause_queue_job,
-    recover_stale_queue_jobs,
     register_worker,
     save_run,
     unregister_worker,
@@ -197,8 +191,11 @@ def execute_job(job: dict) -> None:
 
 
 def main() -> None:
+    from osii.domain.storage.sidecar_jobs import SidecarJobStore
+    from osii.domain.storage.job_store import JobOwnershipLost
     osii_root = Path(os.getenv("OSII_ROOT", "./data_volume/.osii")).resolve()
     configure_job_store(osii_root)
+    queue = SidecarJobStore(osii_root)
     idle_seconds = min(
         5.0,
         max(0.2, float(os.getenv("OSII_WORKER_POLL_SECONDS", "1"))),
@@ -208,17 +205,25 @@ def main() -> None:
     try:
         while True:
             heartbeat_worker(worker_id)
-            recover_stale_queue_jobs()
-            job = claim_next_queue_job(worker_id)
-            if job is None:
+            claimed = queue.claim(worker_id)
+            if claimed is None:
                 time.sleep(idle_seconds)
                 continue
+            job = claimed.job.native
+            def settle(outcome='done', error=None):
+                try:
+                    queue.finish(claimed.lease, outcome=outcome, error=error)
+                except JobOwnershipLost:
+                    pass  # Recovery owns the job now; never finish its newer claim.
             stop_heartbeat = threading.Event()
 
-            def keep_job_alive() -> None:
+            def keep_job_alive(lease=claimed.lease) -> None:
                 while not stop_heartbeat.wait(3):
                     heartbeat_worker(worker_id)
-                    heartbeat_queue_job(job["id"], worker_id)
+                    try:
+                        queue.heartbeat(lease)
+                    except JobOwnershipLost:
+                        break
 
             heartbeat = threading.Thread(target=keep_job_alive, daemon=True)
             heartbeat.start()
@@ -234,20 +239,20 @@ def main() -> None:
                         if item.get("status") in {"pending", "running"}:
                             item["status"] = "cancelled"
                     save_run(run)
-                    cancel_queue_job(job["id"])
+                    settle('cancelled')
                 elif run and run.get("control_state") == "pause_requested":
                     run["status"] = "paused"
                     run["control_state"] = "paused"
                     save_run(run)
-                    pause_queue_job(job["id"])
+                    settle('paused')
                 elif run and run.get("status") == "paused":
-                    pause_queue_job(job["id"])
+                    settle('paused')
                 elif run and run.get("status") == "cancelled":
-                    cancel_queue_job(job["id"])
+                    settle('cancelled')
                 else:
-                    complete_queue_job(job["id"])
+                    settle()
             except Exception as exc:
-                complete_queue_job(job["id"], error=str(exc))
+                settle('error', error=str(exc))
             finally:
                 stop_heartbeat.set()
                 heartbeat.join(timeout=4)

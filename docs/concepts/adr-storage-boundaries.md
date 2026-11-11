@@ -163,8 +163,11 @@ content. Search indexes can be rebuilt for the destination.
    existing storage. Product editors retain immediate activation for compatibility.
    Legacy document-text overrides and extraction versions remain unchanged;
    their shared authoring/migration work is still explicit future work.
-4. **Retrieval and jobs.** Supply bounded retrieval to shared RAG workflows and
-   converge job controls/checkpoints. Preserve hosted authorization before
+4. **Retrieval and jobs: initial interface/adoption slice implemented.**
+   [Retrieval/job contracts](../reference/retrieval-jobs.md) supply bounded native
+   search results and explicit job claims, heartbeats, progress, and fenced completion.
+   Standard search and both worker loops use the interfaces. Broader RAG/step
+   adoption and database-bounded ranking remain incremental. Preserve hosted authorization before
    evidence selection or processor dispatch. Keep current search backends until
    benchmarks justify a change.
 5. **Local PostgreSQL selection and transfer.** Wire the startup setting and
@@ -198,5 +201,6 @@ and identity adapters. Human edits become durable authored records with explicit
 lineage. Contributors can build processors and views without learning both
 persistence implementations. Compatibility and recovery contracts add work, but
 the staged approach keeps current libraries and startup behavior intact while
-each boundary is proven. This decision records the plan; it does not implement
-the backend setting, editing model, queue consolidation, or migrations.
+each boundary is proven. Linked slices implement the initial interfaces;
+backend selection, shared document-text editing, broader queue convergence,
+and explicit data migrations remain future work.
