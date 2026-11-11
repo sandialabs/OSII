@@ -111,3 +111,17 @@ when adding a tool: preserve every supplied text window, return relative
 citations, and declare whether derived wiki summaries can be combined. The
 shared `ScopeBatchResults` component loads result metadata by page and opens
 individual results on demand.
+
+
+### Shared Tools and Setup screens
+
+`/tools` is the document-tool landing page, using the Home tiles and readiness
+contract. Library-wide operation selection and saved results remain at
+`/tools/workbench`, linked as **Open processing workbench**.
+
+Local and hosted Setup share `SetupLayout`, `CapabilitySection`, and
+`ReadinessPanel`: model connections, four OSII component drawers, and advanced
+diagnostics. Product adapters retain their own persistence and permissions.
+Hosted source selection stays inside the read-only mounted root; local file-type
+routing and launcher lifecycle controls remain local capabilities. Registering a
+Processor API address never installs or starts it.

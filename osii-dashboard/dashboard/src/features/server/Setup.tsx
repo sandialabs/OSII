@@ -1,11 +1,12 @@
+import { ExpandMore } from "@mui/icons-material";
+import { CapabilitySection, SetupLayout, type CapabilityKind } from "../admin/components/SetupLayout";
 import { useEffect, useState } from "react";
 import {
   Alert,
   Box,
   Button,
   Stack,
-  Tab,
-  Tabs,
+  Accordion, AccordionSummary, AccordionDetails,
   Typography,
 } from "@mui/material";
 import { ReadinessPanel } from "../../components/discovery/ReadinessPanel";
@@ -34,6 +35,21 @@ export function Setup({
   const [checking, setChecking] = useState(true);
   const [failed, setFailed] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [expanded, setExpanded] = useState<CapabilityKind | false>(false);
+  const [sourceOpen, setSourceOpen] = useState(section === "source");
+  useEffect(() => {
+    if (section === "source") setSourceOpen(true);
+    if (section === "processors") setExpanded("extractor");
+    if (section === "models") return;
+    const timer = window.setTimeout(() => document.getElementById(`setup-${section}`)?.scrollIntoView({ block: "start" }), 0);
+    return () => window.clearTimeout(timer);
+  }, [section]);
+  const followSection = (value: SetupSection) => {
+    onSection(value);
+    if (value === "source") setSourceOpen(true);
+    if (value === "processors") setExpanded("extractor");
+    window.setTimeout(() => document.getElementById(`setup-${value}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
   useEffect(() => {
     let current = true;
     const refresh = async () => {
@@ -119,11 +135,9 @@ export function Setup({
     },
   ];
   return (
-    <Stack spacing={2.5} sx={{ maxWidth: 1100, mx: "auto" }}>
+    <SetupLayout>
       <Stack direction="row" justifyContent="space-between" alignItems="center">
-        <Typography variant="h5" fontWeight={750}>
-          Setup
-        </Typography>
+        <Typography color="text.secondary">Connect models, choose processing methods, then continue to Intake.</Typography>
         <Button disabled={checking} onClick={() => setRevision((v) => v + 1)}>
           Refresh readiness
         </Button>
@@ -137,7 +151,7 @@ export function Setup({
         onStep={(id) =>
           id === "text" || id === "index"
             ? onProcessing()
-            : onSection(
+            : followSection(
                 id === "source"
                   ? "source"
                   : id === "extractor"
@@ -151,57 +165,46 @@ export function Setup({
         services and run only when requested; browsing and keyword search work
         without models.
       </Typography>
-      <Tabs
-        value={section}
-        onChange={(_, value: SetupSection) => onSection(value)}
-        variant="scrollable"
-        allowScrollButtonsMobile
-        aria-label="Setup sections"
-      >
-        <Tab
-          value="models"
-          label="Model connections"
-          id="setup-models"
-          aria-controls="setup-panel-models"
-        />
-        <Tab
-          value="source"
-          label="Source folder"
-          id="setup-source"
-          aria-controls="setup-panel-source"
-        />
-        <Tab
-          value="processors"
-          label="Processing methods"
-          id="setup-processors"
-          aria-controls="setup-panel-processors"
-        />
-      </Tabs>
-      <Box
-        role="tabpanel"
-        id={`setup-panel-${section}`}
-        aria-labelledby={`setup-${section}`}
-      >
-        {section === "models" && (
-          <ModelAdmin embedded onChanged={() => setRevision((v) => v + 1)} />
-        )}
-        {section === "source" && (
-          <SourceAdmin embedded onChanged={() => setRevision((v) => v + 1)} />
-        )}
-        {section === "processors" && (
-          <ProcessorAdmin
-            embedded
-            queue={queue}
-            onChanged={() => setRevision((v) => v + 1)}
-          />
-        )}
+      <Box id="setup-models" sx={{ scrollMarginTop: 80 }}>
+        <ModelAdmin embedded onChanged={() => setRevision(v => v + 1)} />
       </Box>
+      <Stack spacing={1.25} id="setup-processors" sx={{ scrollMarginTop: 80 }}>
+        <Typography variant="h6" fontWeight={700}>Processing defaults</Typography>
+        {(["extractor", "synthesizer", "embedder", "enricher"] as CapabilityKind[]).map(kind => {
+          const methods = data?.processors.filter(p => p.kind === kind) ?? [];
+          const available = kind === "embedder" ? Number(configured("embedding")) : methods.filter(p => p.available).length;
+          const summary = !data ? "Checking configured methods…" : kind === "embedder"
+            ? configured("embedding") ? data.models.endpoints.embedding.model : "Connect an embedding model · keyword search remains available"
+            : `${methods.length} configured · ${available} available`;
+          return <CapabilitySection key={kind} kind={kind} expanded={expanded === kind}
+            onChange={open => setExpanded(open ? kind : false)} summary={summary} available={data ? available : undefined} countLabel={kind === "embedder" ? "configured" : "available"}>
+            {kind === "embedder" ? <Stack spacing={1}>
+              <Typography>Embedding configuration is shown above in Model connections. Selecting a model does not test its connection.</Typography>
+              <Button onClick={() => followSection("models")} sx={{ alignSelf: "start" }}>Configure embedding model</Button>
+              <Button onClick={onProcessing} sx={{ alignSelf: "start" }}>Queue embeddings in Intake</Button>
+            </Stack> : <ProcessorAdmin embedded kind={kind} queue={queue} onChanged={() => setRevision(v => v + 1)} />}
+            {kind !== "embedder" && data && !methods.length && <Typography color="text.secondary">No configured methods. Register a running Processor API service under Advanced &amp; diagnostics.</Typography>}
+          </CapabilitySection>;
+        })}
+      </Stack>
+      <Accordion slotProps={{ transition: { unmountOnExit: true } }} id="setup-source" expanded={sourceOpen} onChange={(_, open) => setSourceOpen(open)} variant="outlined" disableGutters sx={{ scrollMarginTop: 80, borderRadius: "12px !important" }}>
+        <AccordionSummary expandIcon={<ExpandMore />}><Typography fontWeight={700}>Source folder</Typography></AccordionSummary>
+        <AccordionDetails><SourceAdmin embedded onChanged={() => setRevision(v => v + 1)} /></AccordionDetails>
+      </Accordion>
+      <Accordion slotProps={{ transition: { unmountOnExit: true } }} variant="outlined" disableGutters sx={{ borderRadius: "12px !important" }}>
+        <AccordionSummary expandIcon={<ExpandMore />}><Typography fontWeight={700}>Advanced &amp; diagnostics</Typography></AccordionSummary>
+        <AccordionDetails><Stack spacing={2}>
+          <Typography color="text.secondary">Inspect service health and register optional Toolbox connections. Services are deployed and restarted by the server operator; registering an address does not start a service.</Typography>
+          <ProcessorAdmin embedded queue={queue} onChanged={() => setRevision(v => v + 1)} />
+        </Stack></AccordionDetails>
+      </Accordion>
+      <Button variant="contained" color="secondary" onClick={onProcessing} sx={{ alignSelf: "end" }}>Continue to Intake →</Button>
       {failed && !data && (
         <Alert severity="info">
           Source and connection controls remain available. Refresh readiness
           after resolving the service error.
         </Alert>
       )}
-    </Stack>
+    </SetupLayout>
   );
 }

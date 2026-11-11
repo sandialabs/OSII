@@ -3,7 +3,7 @@ import { sharedNavigation } from "../../app/layout/workbenchNavigation";
 import { WorkbenchHome } from "../home/components/WorkbenchHome";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ResearchPage } from "../research/ResearchPage";
-import { ToolsPage } from "../files/pages/ToolsPage";
+import { ToolsPage, ToolsWorkbench } from "../files/pages/ToolsPage";
 import { LibraryOverviewPage } from "../library/pages/LibraryOverviewPage";
 import { DiscoveryIntakePanel } from "../queue/components/DiscoveryIntakePanel";
 import type { PickedFile } from "../../components/discovery/LocationBrowser";
@@ -52,7 +52,7 @@ import {
   type SearchMode,
 } from "../search/components/SearchModeSelect";
 
-const pagePaths: Record<string, string> = { home: "/", files: "/files", browse: "/browse", search: "/search", chat: "/chat", topics: "/topics", collections: "/collections", tools: "/tools", research: "/research", overview: "/library-overview", inventory: "/inventory", processing: "/intake", setup: "/setup", users: "/users" };
+const pagePaths: Record<string, string> = { home: "/", files: "/files", browse: "/browse", search: "/search", chat: "/chat", topics: "/topics", collections: "/collections", tools: "/tools", workbench: "/tools/workbench", research: "/research", overview: "/library-overview", inventory: "/inventory", processing: "/intake", setup: "/setup", users: "/users" };
 
 function InventoryPage() {
   const navigate = useNavigate();
@@ -101,7 +101,7 @@ export function Workspace({
     const hash = window.location.hash.slice(1);
     const id = (hash === "library" ? "files" : hash) || Object.keys(pagePaths).find(key => pagePaths[key] === location.pathname) || (location.pathname.startsWith("/admin/") ? "setup" : location.pathname.startsWith("/files/") ? "files" : "home");
     if (setupAliases[id] && user.role === "admin") return "setup";
-    if (id === "tools") return "tools";
+    if (id === "tools" || id === "workbench") return id;
     return availablePages.some((page) => page.id === id) ? id : "home";
   };
   const [setupSection, setSetupSection] = useState<SetupSection>(
@@ -475,6 +475,7 @@ export function Workspace({
           />
         )}
         {tab === "tools" && <ToolsPage />}
+        {tab === "workbench" && <ToolsWorkbench />}
         {tab === "research" && <ResearchPage draftKey={user.id} />}
         {tab === "overview" && <LibraryOverviewPage />}
         {tab === "inventory" && user.role === "admin" && <InventoryPage />}

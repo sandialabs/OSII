@@ -26,6 +26,7 @@ export function ReadinessPanel<Id extends string>({
     complete: boolean;
     detail?: string;
     statusLabel?: string;
+    action?: string;
   }[];
   loading?: boolean;
   failed?: boolean;
@@ -34,6 +35,7 @@ export function ReadinessPanel<Id extends string>({
   completionLabel?: string;
 }) {
   const completed = steps.filter((step) => step.complete).length;
+  const next = steps.find(step => !step.complete);
   return (
     <Paper
       variant="outlined"
@@ -51,7 +53,7 @@ export function ReadinessPanel<Id extends string>({
           alignItems={{ sm: "center" }}
         >
           <Typography variant="h6" fontWeight={700}>
-            Library readiness
+            Your path to search &amp; AI chat
           </Typography>
           <Chip
             variant="outlined"
@@ -142,6 +144,11 @@ export function ReadinessPanel<Id extends string>({
             </Box>
           ))}
         </Box>
+        {!loading && !failed && next && <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} justifyContent="space-between" sx={{ borderTop: "1px solid", borderColor: "divider", pt: 1.5 }}>
+          <Stack spacing={0.25}><Typography variant="body2" fontWeight={700}>Next: {next.label}</Typography><Typography variant="body2" color="text.secondary">{next.detail}</Typography></Stack>
+          <Button variant="contained" color="secondary" onClick={() => onStep(next.id)} sx={{ flexShrink: 0, alignSelf: "start" }}>{next.action || "Review " + next.label.toLowerCase()}</Button>
+        </Stack>}
+        <Typography variant="caption" color="text.secondary">Keyword search and source browsing work earlier. Summaries and enrichments add optional knowledge products.</Typography>
         {failed && (
           <Alert severity="warning">
             {hasPrevious

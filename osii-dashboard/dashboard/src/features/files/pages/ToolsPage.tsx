@@ -1,3 +1,4 @@
+import { WorkbenchHome } from "../../home/components/WorkbenchHome";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Button, Card, CardContent, Chip, Divider, MenuItem, Stack, TextField, Typography } from "@mui/material";
@@ -11,7 +12,7 @@ import type { ScopeDescribeRequest } from "../../../api/types";
 
 const labels: Record<string, string> = { "text.read": "Read text", "summary.write": "Summarize", "metadata.suggest": "Suggest metadata", "wiki.write": "Write a wiki", "embedding.build": "Build embeddings", "topics.model": "Model topics", "topics.project": "Project embeddings", "documents.recommend": "Recommend documents", analyze: "Analyze" };
 
-export function ToolsPage() {
+export function ToolsWorkbench() {
   const catalog = useQuery({ queryKey: ["tool-catalog"], queryFn: getToolCatalog, staleTime: 30_000 });
   const [action, setAction] = useState("wiki.write");
   const [scope, setScope] = useState<ScopeDescribeRequest>({ scope_type: "root" });
@@ -24,7 +25,8 @@ export function ToolsPage() {
     setScope(kind === "object" ? { scope_type: "object", file_id: "" } : kind === "collection" ? { scope_type: "collection", collection_id: "" } : kind === "folder" ? { scope_type: "folder", folder_id: "" } : { scope_type: "root" });
   }, [action, catalog.data]);
   return <Stack spacing={3} sx={{ maxWidth: 1100, mx: "auto" }}>
-    <Stack spacing={0.5}><Typography variant="h4" fontWeight={750}>Tools</Typography><Typography color="text.secondary">Choose an operation, then a method.</Typography></Stack>
+    <Stack spacing={0.5}><Typography variant="h4" fontWeight={750}>Library-wide processing</Typography><Typography color="text.secondary">Choose an operation, then a method.</Typography></Stack>
+    <Button component={Link} to="/tools">← All tools</Button>
     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
       <Button component={Link} to="/research" variant="contained">Write a research report ↗</Button>
       <Button component={Link} to="/topics" variant="outlined">Topic explorer ↗</Button>
@@ -49,5 +51,16 @@ export function ToolsPage() {
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>{method.outputs.map(output => <Chip key={output} size="small" label={output.replace(/_/g, " ")} />)}</Stack>
     </Stack></CardContent></Card>)}
     {!catalog.isPending && !methods.length ? <Alert severity="info">Connect a compatible method in Setup.</Alert> : null}
+  </Stack>;
+}
+
+export function ToolsPage() {
+  return <Stack spacing={3} sx={{ maxWidth: 1200, mx: "auto" }}>
+    <WorkbenchHome setupPath="/admin/processors" toolsOnly />
+    <Card variant="outlined"><CardContent><Stack spacing={1.5}>
+      <Typography variant="h6" fontWeight={700}>Library-wide processing</Typography>
+      <Typography color="text.secondary">Choose a processing method, select documents or a collection, and inspect saved results.</Typography>
+      <Button component={Link} to="/tools/workbench" variant="outlined" sx={{ alignSelf: "start" }}>Open processing workbench</Button>
+    </Stack></CardContent></Card>
   </Stack>;
 }
