@@ -10,21 +10,82 @@ or container runtime.
 
 ## First start in a corporate checkout
 
-Copy `.env.example` to `.env` only if you want to customize defaults. Never
-commit credentials. Package installation still requires access to your approved
-Python and npm registries and their corporate trust configuration.
+Copy `.env.example` to `.env` before startup when corporate certificate trust
+or other custom settings are required. Preserve an existing `.env`. Install uv,
+Node.js, and make (macOS/Linux) using your approved software sources; uv can
+obtain the required Python 3.12 itself. Never commit credentials or certificates.
 
 ```bash
 # macOS/Linux — copy once, preserve existing settings
 test -f .env || cp .env.example .env
+# Configure corporate certificate trust in .env as described below, then:
 make dev
 ```
 
 ```powershell
 # Windows PowerShell
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+# Configure corporate certificate trust in .env as described below, then:
 .\\scripts\\osii.ps1 dev
 ```
+
+### Configure corporate certificate trust once
+
+Both startup commands read certificate settings from root `.env` **before the
+first uv invocation**, including when Python 3.12 is not installed. No separate
+`export` commands or manual Python download are required. These values are
+inherited by dependency installation and child services. Existing shell/CI
+variables override `.env`; editing `.env` does not override a value already set
+in the terminal. PowerShell restores its prior certificate environment after
+the command exits, so the next invocation rereads changed settings.
+
+Named profiles work the same way: `make dev ENV_FILE=.env.corporate` or
+`.\scripts\osii.ps1 dev -EnvFile .env.corporate` reads certificate settings
+from that selected file before uv starts. An explicitly selected missing file
+is reported immediately, without attempting a Python download.
+
+If IT has installed and trusted the corporate CA in the operating system's
+certificate store, put this in `.env`:
+
+```dotenv
+UV_SYSTEM_CERTS=true
+```
+
+Alternatively, obtain a **PEM-encoded CA bundle** from IT and keep it outside
+the checkout. Set its actual absolute path in `.env`:
+
+```dotenv
+SSL_CERT_FILE="/absolute/path/to/corporate-ca-bundle.crt"
+REQUESTS_CA_BUNDLE="/absolute/path/to/corporate-ca-bundle.crt"
+NODE_EXTRA_CA_CERTS="/absolute/path/to/corporate-ca-bundle.crt"
+```
+
+On Windows, use a path such as `"C:/corporate certificates/ca-bundle.crt"`.
+Quote paths with spaces. These early settings accept literal, single-line
+`KEY=value` entries, optional single/double quotes, and `#` comments. Use the
+full path in each entry; shell expressions, `${...}` expansion, and `~`
+expansion are not supported. Configuration is read as data, never executed.
+
+`SSL_CERT_FILE` configures uv; `REQUESTS_CA_BUNDLE` configures Python requests;
+`NODE_EXTRA_CA_CERTS` configures Node/npm. The loader also supports `SSL_CERT_DIR`,
+`PIP_CERT`, and the legacy uv option `UV_NATIVE_TLS`. `OSII_CA_BUNDLE` is not a uv
+trust setting. Custom `SSL_CERT_FILE`/`SSL_CERT_DIR` settings replace uv's default
+trust source, including system trust: remove stale overrides when choosing
+`UV_SYSTEM_CERTS=true`. A `.crt` extension does not establish the encoding;
+PEM contains `-----BEGIN CERTIFICATE-----`, while binary DER needs to be exported
+as PEM. The bundle must contain the CA chain needed for your network.
+See [uv certificate configuration](https://docs.astral.sh/uv/concepts/authentication/certificates/).
+
+Then run the normal startup command above. Package installation still requires
+access to approved Python/npm registries and, when Python is missing, the
+configured Python download source. This configures trust without bypassing
+certificate verification. Optional processors can also have their own endpoint
+and credential settings; configure those when selecting them for processing.
+
+If uv still reports `Invalid peer certificate: UnknownIssuer`, check for an old
+shell override, the correct CA chain/PEM encoding, and the approved proxy or
+download mirror with IT. An unreadable or non-PEM `SSL_CERT_FILE` is reported
+before uv starts. Fix the setting and rerun; no environment deletion is needed.
 
 The default document folder is `osii-data/source/`. Set `OSII_SOURCE_DIR` to
 an existing readable folder to use your own files. Quote paths containing

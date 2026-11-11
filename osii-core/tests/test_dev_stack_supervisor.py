@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
+import shlex
+import shutil
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -16,6 +20,156 @@ assert SPEC and SPEC.loader
 DEV_STACK = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = DEV_STACK
 SPEC.loader.exec_module(DEV_STACK)
+
+
+STARTUP_TRUST_KEYS = (
+    "UV_SYSTEM_CERTS", "UV_NATIVE_TLS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+    "REQUESTS_CA_BUNDLE", "PIP_CERT", "NODE_EXTRA_CA_CERTS",
+)
+
+
+@pytest.fixture
+def trust_startup(tmp_path):
+    checkout = tmp_path / "fresh checkout"
+    checkout.mkdir()
+    shutil.copyfile(ROOT / "Makefile", checkout / "Makefile")
+    (checkout / "scripts").mkdir()
+    shutil.copyfile(ROOT / "scripts/osii.ps1", checkout / "scripts/osii.ps1")
+    bundle = tmp_path / "corporate # roots.crt"
+    bundle.write_text("-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----\n")
+    # The stub observes the first uv process without selecting/installing Python.
+    stub = tmp_path / "uv-stub.py"
+    stub.write_text("import os, json\n"
+                    f"print(json.dumps({{key: os.getenv(key) for key in {STARTUP_TRUST_KEYS!r}}}))\n")
+    uv = tmp_path / ("uv.cmd" if os.name == "nt" else "uv")
+    if os.name == "nt":
+        uv.write_text(f'@"{sys.executable}" "{stub}"\r\n')
+    else:
+        uv.write_text(f"#!{sys.executable}\n" + stub.read_text())
+        uv.chmod(0o755)
+    env = {key: value for key, value in os.environ.items() if key not in STARTUP_TRUST_KEYS}
+    env["PATH"] = str(tmp_path) + os.pathsep + env["PATH"]
+    return checkout, bundle, uv, env
+
+
+def invoke_trust_startup(fixture, launcher, *, env=None, env_file=None):
+    checkout, _, uv, original_env = fixture
+    if launcher == "make":
+        executable = shutil.which("make")
+        if not executable:
+            pytest.skip("Make is not installed")
+        command = [executable, "dev", f"UV={shlex.quote(str(uv))}"]
+        if env_file is not None:
+            command.append(f"ENV_FILE={env_file}")
+    else:
+        executable = shutil.which("pwsh") or shutil.which("powershell")
+        if not executable:
+            pytest.skip("PowerShell is not installed")
+        command = [executable, "-NoProfile", "-File", str(checkout / "scripts/osii.ps1"), "dev", "-DryRun"]
+        if env_file is not None:
+            command.extend(["-EnvFile", env_file])
+    return subprocess.run(command, cwd=checkout, env=env or original_env,
+                          text=True, capture_output=True)
+
+
+@pytest.mark.parametrize("launcher", ["make", "powershell"])
+def test_trust_is_loaded_before_the_first_uv_invocation(trust_startup, launcher):
+    checkout, bundle, _, _ = trust_startup
+    (checkout / ".env").write_text(
+        f'  export   SSL_CERT_FILE = "{bundle}" # IT bundle\r\n'
+        f"REQUESTS_CA_BUNDLE='{bundle}'\r\n"
+        f'NODE_EXTRA_CA_CERTS="{bundle}"\r\n'
+        'UV_SYSTEM_CERTS=false\r\nUV_SYSTEM_CERTS=true # use OS trust\r\n'
+        'UNRELATED=$(touch must-not-execute)\r\n', encoding="utf-8")
+    result = invoke_trust_startup(trust_startup, launcher)
+    assert result.returncode == 0, result.stderr
+    values = json.loads(result.stdout)
+    assert values["SSL_CERT_FILE"] == str(bundle)
+    assert values["REQUESTS_CA_BUNDLE"] == str(bundle)
+    assert values["NODE_EXTRA_CA_CERTS"] == str(bundle)
+    assert values["UV_SYSTEM_CERTS"] == "true"
+    assert not (checkout / "must-not-execute").exists()
+
+
+@pytest.mark.parametrize("launcher", ["make", "powershell"])
+def test_startup_trust_preserves_shell_overrides(trust_startup, launcher):
+    checkout, _, _, env = trust_startup
+    (checkout / ".env").write_text('UV_SYSTEM_CERTS=true\nSSL_CERT_FILE="missing.crt"\n')
+    env.update(UV_SYSTEM_CERTS="false", SSL_CERT_FILE="")
+    result = invoke_trust_startup(trust_startup, launcher)
+    assert result.returncode == 0, result.stderr
+    values = json.loads(result.stdout)
+    assert values["UV_SYSTEM_CERTS"] == "false"
+    assert not values["SSL_CERT_FILE"]
+
+
+@pytest.mark.parametrize("launcher", ["make", "powershell"])
+@pytest.mark.parametrize("contents", [None, "not a PEM certificate"])
+def test_bad_ca_bundle_fails_before_uv(trust_startup, launcher, contents):
+    checkout, bundle, _, _ = trust_startup
+    if contents is None:
+        bundle.unlink()
+    else:
+        bundle.write_text(contents)
+    (checkout / ".env").write_text(f'SSL_CERT_FILE="{bundle}"\n')
+    result = invoke_trust_startup(trust_startup, launcher)
+    assert result.returncode != 0
+    assert "PEM CA bundle" in result.stderr
+    assert not result.stdout.strip()
+
+
+@pytest.mark.parametrize("launcher", ["make", "powershell"])
+def test_startup_without_dotenv_still_works(trust_startup, launcher):
+    result = invoke_trust_startup(trust_startup, launcher)
+    assert result.returncode == 0, result.stderr
+    assert not any(json.loads(result.stdout).values())
+
+
+@pytest.mark.parametrize("launcher", ["make", "powershell"])
+def test_selected_profile_supplies_early_trust(trust_startup, launcher):
+    checkout, bundle, _, _ = trust_startup
+    (checkout / ".env").write_text('SSL_CERT_FILE="must-not-use-this.crt"\n')
+    profile = checkout / ".env corporate"
+    profile.write_text(f'UV_SYSTEM_CERTS=true\nSSL_CERT_FILE="{bundle}"\n')
+    result = invoke_trust_startup(trust_startup, launcher, env_file=profile.name)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["SSL_CERT_FILE"] == str(bundle)
+
+
+@pytest.mark.parametrize("launcher", ["make", "powershell"])
+def test_missing_selected_profile_fails_before_uv(trust_startup, launcher):
+    result = invoke_trust_startup(trust_startup, launcher, env_file=".env.missing")
+    assert result.returncode != 0
+    assert "Startup env file not found" in result.stderr
+    assert not result.stdout.strip()
+
+
+@pytest.mark.parametrize("launcher", ["make", "powershell"])
+def test_unclosed_certificate_setting_is_actionable(trust_startup, launcher):
+    checkout, _, _, _ = trust_startup
+    (checkout / ".env").write_text('UV_SYSTEM_CERTS="\n')
+    result = invoke_trust_startup(trust_startup, launcher)
+    assert result.returncode != 0
+    assert "UV_SYSTEM_CERTS" in result.stderr
+    assert not result.stdout.strip()
+
+
+def test_powershell_reloads_trust_settings_without_polluting_the_shell(trust_startup):
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
+    if not powershell:
+        pytest.skip("PowerShell is not installed")
+    checkout, _, _, env = trust_startup
+    (checkout / ".env").write_text("UV_SYSTEM_CERTS=true\n")
+    result = subprocess.run([
+        powershell, "-NoProfile", "-Command",
+        "$ErrorActionPreference = 'Stop'; "
+        "& ./scripts/osii.ps1 dev -DryRun; "
+        "if (Test-Path Env:UV_SYSTEM_CERTS) { throw 'Trust settings leaked' }; "
+        "Set-Content .env 'UV_SYSTEM_CERTS=false'; "
+        "& ./scripts/osii.ps1 dev -DryRun",
+    ], cwd=checkout, env=env, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert [json.loads(line)["UV_SYSTEM_CERTS"] for line in result.stdout.splitlines()] == ["true", "false"]
 
 
 def test_supervisor_http_requires_private_token(tmp_path):
