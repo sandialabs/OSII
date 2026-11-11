@@ -68,6 +68,7 @@ nav:
       - Storage boundaries and implementation plan: concepts/adr-storage-boundaries.md
   - Extend OSII:
       - Choose an extension: extending/index.md
+      - Discoverable processor modules: extending/processor-modules.md
       - Frontend tools and topic explorer: extending/frontend-tools.md
       - Hello table enricher: extending/hello-enricher.md
       - Processor development: extending/processor-development.md

@@ -10,6 +10,9 @@ service does not authorize processing or model invocation.
 - Core owns canonical `.osii` storage. Tools receive bounded requests and return
   typed results; never mount or browse the library from a processor.
 - Use the shared `osii.processor_sdk` contract included in `osii`, not a copied SDK.
+- Keep each module's launch/registration metadata in `processor-module.toml`;
+  never add a central Python list entry for a new module. Preserve stable processor
+  IDs and declare accepted inputs/model needs in its descriptor.
 - Keep per-tool dependencies, tests, and API documentation.
   Run tests separately: several independent services use an `app` package name.
 - Container packaging is archived. Maintain host commands and Processor API contracts.

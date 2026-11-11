@@ -17,9 +17,10 @@ standard artifact. It never writes directly to the OSII store.
 Use one folder per module under `osii-processor-modules/`: implementation,
 `pyproject.toml`, configuration template, tests, and README stay together.
 `banyan/` is a consolidated example; `tika-adapter/` also demonstrates an owned
-runtime. Keep module environments independent from Core. Add its launcher entry
-and an `OSII_ENABLE_…` switch to `.env.example`; an omitted module must not install
-dependencies or start services. **Toolbox** is the frontend collection of tools.
+runtime. Add a `processor-module.toml` to declare launch and registration metadata;
+OSII discovers it and derives enable/port switches automatically. No central Python
+list or `.env.example` edit is required. Follow the
+[manifest authoring guide](processor-modules.md). **Toolbox** is the frontend collection of tools.
 Existing `toolbox.*` processor IDs remain stable for saved-route compatibility.
 
 ## Choose a processor kind
@@ -47,16 +48,15 @@ enrichment. The exact output boundary is summarized in
 3. Give the processor a stable descriptor name and semantic version.
 4. Implement the one method for its processor kind.
 5. Test representative, redistributable examples locally.
-6. Package the service in a container.
-7. Paste its base URL under **Setup → Advanced & diagnostics → Register running processor**.
+6. Add its [module manifest](processor-modules.md), then restart `make dev`.
+7. Find it in **Setup**; configure any model bindings and processing settings.
 8. Use **Health** to test liveness and **Test** to validate the v1 contract.
 9. Run it against an ingested file and inspect the result in the dashboard.
 
-When developing both services on the host, register a loopback base URL such
-as `http://127.0.0.1:8091`. When the OSII API is packaged, use a Compose service
-name for another service on the same network, or `host.containers.internal`
-for a processor running on the host. Enter only the base URL; OSII appends the
-health, descriptor, and operation paths.
+For services deployed independently, **Setup → Advanced & diagnostics → Custom
+Processor API services** can register an existing endpoint manually. Enter only
+the base URL reachable by Core; OSII appends descriptor and operation paths.
+Manifest discovery manages local module startup; remote deployments remain explicit.
 
 ## What OSII handles for you
 

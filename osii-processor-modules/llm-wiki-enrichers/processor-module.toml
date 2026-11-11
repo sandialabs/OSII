@@ -1,0 +1,35 @@
+schema_version = 1
+id = "llm-wiki-enrichers"
+extras = []
+
+[[processors]]
+id = "readable-wiki"
+registration_id = "readable-llm-wiki"
+processor_id = "toolbox.readable-wiki"
+kind = "enricher"
+display_name = "Readable LLM Wiki"
+description = "Creates a cited, reader-friendly Markdown wiki using a configured chat connection."
+command = [
+    "run.py",
+    "readable",
+]
+port = 8099
+
+[processors.model_requirements]
+chat = "required"
+
+[[processors]]
+id = "concept-entity-wiki"
+registration_id = "concept-entity-llm-wiki"
+processor_id = "toolbox.concept-entity-wiki"
+kind = "enricher"
+display_name = "Concept and Entity LLM Wiki"
+description = "Creates a wiki, entity list, and concept table using a configured chat connection."
+command = [
+    "run.py",
+    "concept-entity",
+]
+port = 8100
+
+[processors.model_requirements]
+chat = "required"

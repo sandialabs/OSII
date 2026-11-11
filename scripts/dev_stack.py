@@ -25,6 +25,9 @@ import urllib.request
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+# The loader uses only the standard library; startup works before uv sync.
+sys.path.insert(0, str(REPOSITORY_ROOT / "osii-core"))
+from osii.processor_modules import active_processors, modules_directory, enabled, ModuleManifestError
 SERVICE_DISPLAY_NAMES = {
     "extractor": "Python text-layer PDF and Office extractor",
     "ocr": "Tesseract OCR — full page",
@@ -32,13 +35,6 @@ SERVICE_DISPLAY_NAMES = {
     "embedder": "lexical hashing vectors (no AI model)",
     "enricher": "document statistics and frequent keywords",
     "model-bridge": "Ollama/OpenAI-compatible HTTP adapter (not Ollama itself)",
-    "readable-wiki": "Readable LLM Wiki",
-    "concept-entity-wiki": "Concept and Entity LLM Wiki",
-    "tesseract-opencv": "Tesseract OCR with OpenCV regions",
-    "banyan": "Banyan Nemotron Parse",
-    "tika": "Apache Tika",
-    "csv-extractor": "CSV table extractor",
-    "collection-table": "Collection table enricher",
     "api": "OSII backend API and grounded chat",
     "worker": "sequential intake worker",
     "inventory-worker": "file metadata inventory worker",
@@ -55,6 +51,12 @@ class Service:
     port: int
     environment: tuple[tuple[str, str], ...] = ()
     start_automatically: bool = True
+    display_name: str = ""
+    description: str = ""
+    health_path: str = "/health"
+    extras: tuple[str, ...] = ()
+    requires: tuple[str, ...] = ()
+    processor_module: bool = False
 
 
 CAPABILITY_SERVICE_INFO = {
@@ -64,46 +66,33 @@ CAPABILITY_SERVICE_INFO = {
     "embedder": ("Lexical hashing compatibility embedder", "Optional lexical vectors; BM25 search works without it.", "/health"),
     "enricher": ("Statistics and keywords enricher", "Creates local document statistics and keyword artifacts.", "/health"),
     "model-bridge": ("AI provider bridge", "Connects OSII to Ollama or an OpenAI-compatible endpoint.", "/health"),
-    "readable-wiki": ("Readable LLM Wiki", "Creates a cited, reader-friendly Markdown wiki using a configured chat connection.", "/health"),
-    "concept-entity-wiki": ("Concept and Entity LLM Wiki", "Creates a wiki, entity list, and concept table using a configured chat connection.", "/health"),
-    "tesseract-opencv": ("Tesseract OCR with OpenCV regions", "Finds page regions with OpenCV and preserves OCR bounding boxes.", "/health"),
-    "banyan": ("Banyan Nemotron Parse", "Parses PDFs and images using Banyan's locally configured Nemotron endpoint.", "/health"),
-    "csv-extractor": ("CSV table extractor", "Extracts CSV rows with source-line provenance.", "/health"),
-    "collection-table": ("Collection table enricher", "Combines compatible extracted tables within a selected scope.", "/health"),
-    "tika": ("Apache Tika adapter", "Extracts document text with the managed Apache Tika runtime or a configured external server.", "/health"),
+
 }
 
 
 def processor_module_services(uv: str, env: dict[str, str]) -> list[Service]:
-    enabled = env.get("OSII_START_PROCESSOR_MODULES", env.get("OSII_START_TOOLBOX", "true")).strip().lower() not in {"false", "0", "no", "off"}
-    specifications = (
-        ("tika", "tika-adapter", ("-m", "uvicorn", "tika_adapter.main:app"), "OSII_TIKA_ADAPTER_PORT", "8102"),
-        ("readable-wiki", "llm-wiki-enrichers", ("run.py", "readable"), "OSII_READABLE_WIKI_PORT", "8099"),
-        ("concept-entity-wiki", "llm-wiki-enrichers", ("run.py", "concept-entity"), "OSII_CONCEPT_ENTITY_WIKI_PORT", "8100"),
-        ("tesseract-opencv", "osii-tesseract", ("-m", "uvicorn", "app.main:app"), "OSII_TESSERACT_OPENCV_PORT", "8081"),
-        ("banyan", "banyan", ("-m", "uvicorn", "banyan_extract.integrations.osii_extractor:app"), "OSII_BANYAN_PORT", "8101"),
-        ("csv-extractor", "tabular-dataset-processors", ("run.py", "extractor"), "OSII_CSV_EXTRACTOR_PORT", "8097"),
-        ("collection-table", "tabular-dataset-processors", ("run.py", "enricher"), "OSII_COLLECTION_TABLE_PORT", "8098"),
-    )
+    automatic = enabled(env.get("OSII_START_PROCESSOR_MODULES", env.get("OSII_START_TOOLBOX", "true")))
     services = []
-    for name, directory, entry, port_variable, default_port in specifications:
-        flag = "OSII_ENABLE_" + name.upper().replace("-", "_")
-        if env.get(flag, "true").strip().lower() in {"false", "0", "no", "off"}:
-            continue
-        root = REPOSITORY_ROOT / "osii-processor-modules" / directory
-        port = env.get(port_variable, default_port)
-        # Automatic startup prepares each independent environment first. On
-        # demand, uv prepares it when Setup starts a disabled processor module service.
-        sync_option = ("--no-sync",) if enabled else ()
+    for processor in active_processors(modules_directory(env, REPOSITORY_ROOT), env):
+        if processor.id in SERVICE_DISPLAY_NAMES:
+            raise ModuleManifestError(f"{processor.manifest}: service id {processor.id} conflicts with a Core service")
+        root = processor.directory
+        port = processor.resolved_port(env)
+        extras = tuple(arg for extra in processor.extras for arg in ("--extra", extra))
         services.append(Service(
-            name,
-            (uv, "run", *sync_option, "--python", env.get("UV_PYTHON", "3.12"),
-             "--project", ".", *(("--extra", "osii") if name == "banyan" else ()), "python", *entry, "--host", "127.0.0.1", "--port", port),
-            root, int(port),
-            environment=(("UV_PROJECT_ENVIRONMENT", str(root / "osii-env")),),
-            start_automatically=enabled,
+            processor.id,
+            (uv, "run", *(("--no-sync",) if automatic else ()), "--python", env.get("UV_PYTHON", "3.12"),
+             "--project", ".", *extras, "python", *processor.command, "--host", "127.0.0.1", "--port", str(port)),
+            root, port, environment=(("UV_PROJECT_ENVIRONMENT", str(root / "osii-env")),),
+            start_automatically=automatic, display_name=processor.display_name,
+            description=processor.description, health_path=processor.health_path,
+            extras=processor.extras, requires=processor.requires, processor_module=True,
         ))
     return services
+
+
+def service_info(service: Service) -> tuple[str, str, str]:
+    return (service.display_name, service.description, service.health_path) if service.processor_module else CAPABILITY_SERVICE_INFO[service.name]
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
@@ -365,7 +354,7 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str], *, core_only: b
             continue
         print(f"[setup] Preparing processor module environment: {service.working_directory.name}", flush=True)
         subprocess.run(
-            [uv, "sync", "--python", env.get("UV_PYTHON", "3.12"), "--project", ".", *(("--extra", "osii") if service.name == "banyan" else ())],
+            [uv, "sync", "--python", env.get("UV_PYTHON", "3.12"), "--project", ".", *(arg for extra in service.extras for arg in ("--extra", extra))],
             cwd=service.working_directory,
             env={**env, **dict(service.environment)},
             check=True,
@@ -502,7 +491,12 @@ def service_commands(
 
 def ensure_ports_available(services: list[Service]) -> None:
     occupied: list[Service] = []
+    assigned: dict[int, str] = {}
     for service in services:
+        if service.start_automatically and service.port > 0:
+            if service.port in assigned:
+                raise RuntimeError(f"Port {service.port} is assigned to both {assigned[service.port]} and {service.name}; adjust the port settings.")
+            assigned[service.port] = service.name
         if not service.start_automatically:
             continue
         if service.port <= 0:
@@ -524,7 +518,7 @@ def ensure_ports_available(services: list[Service]) -> None:
 
 def render_command(service: Service) -> str:
     command = subprocess.list2cmdline(service.command)
-    display_name = SERVICE_DISPLAY_NAMES.get(service.name, service.name)
+    display_name = service.display_name or SERVICE_DISPLAY_NAMES.get(service.name, service.name)
     return f"[{display_name}] ({service.working_directory}) {command}"
 
 
@@ -537,7 +531,7 @@ def service_environment(service: Service, env: dict[str,str]) -> dict[str,str]:
 
 
 def start_service(service: Service, env: dict[str, str]) -> subprocess.Popen[bytes]:
-    display_name = SERVICE_DISPLAY_NAMES.get(service.name, service.name)
+    display_name = service.display_name or SERVICE_DISPLAY_NAMES.get(service.name, service.name)
     print(f"[dev] Starting {display_name}...")
     kwargs: dict[str, object] = {
         "args": service.command,
@@ -568,7 +562,7 @@ class CapabilitySupervisor:
         self.services = {
             service.name: service
             for service in services
-            if service.name in CAPABILITY_SERVICE_INFO
+            if service.processor_module or service.name in CAPABILITY_SERVICE_INFO
         }
         self.server: ThreadingHTTPServer | None = None
 
@@ -591,7 +585,7 @@ class CapabilitySupervisor:
     def _start_process(self, service_id: str) -> None:
         service = self.services[service_id]
         if self._reachable(service_id):
-            raise RuntimeError(f"{CAPABILITY_SERVICE_INFO[service_id][0]} is already running externally.")
+            raise RuntimeError(f"{service_info(service)[0]} is already running externally.")
         kwargs: dict[str, object] = {
             "args": service.command,
             "cwd": service.working_directory,
@@ -629,11 +623,13 @@ class CapabilitySupervisor:
                 state, ownership = "failed", "osii"
             else:
                 state, ownership = "stopped", "none"
-            title, description, health_path = CAPABILITY_SERVICE_INFO[service_id]
+            title, description, health_path = service_info(self.services[service_id])
             port = self.services[service_id].port
             prerequisite = None
-            if service_id in {"ocr", "tesseract-opencv"} and shutil.which("tesseract") is None:
-                prerequisite = "Install the native Tesseract program, then restart OSII."
+            required = self.services[service_id].requires or (("tesseract",) if service_id == "ocr" else ())
+            missing = [name for name in required if shutil.which(name) is None]
+            if missing:
+                prerequisite = f"Install required executable(s): {', '.join(missing)}, then restart OSII."
             return {
                 "id": service_id,
                 "display_name": title,
@@ -870,7 +866,7 @@ def run(
                 continue
             if not service.start_automatically:
                 continue
-            if supervisor is not None and service.name in CAPABILITY_SERVICE_INFO:
+            if supervisor is not None and service.name in supervisor.services:
                 processes[service.name] = (service, supervisor.start_initial(service))
             else:
                 processes[service.name] = (service, start_service(service, env))
@@ -882,10 +878,10 @@ def run(
             processes=processes,
         )
         for service in services:
-            if service.start_automatically and service.working_directory.is_relative_to(REPOSITORY_ROOT / "osii-processor-modules"):
+            if service.start_automatically and service.processor_module:
                 wait_for_http_service(
-                    service_name=SERVICE_DISPLAY_NAMES[service.name],
-                    url=f"http://127.0.0.1:{service.port}/health", processes=processes,
+                    service_name=service.display_name or service.name,
+                    url=f"http://127.0.0.1:{service.port}{service.health_path}", processes=processes,
                 )
         processes[dashboard_service.name] = (
             dashboard_service,
@@ -916,7 +912,7 @@ def run(
             for name, (_, process) in processes.items():
                 return_code = process.poll()
                 if return_code is not None:
-                    if name in CAPABILITY_SERVICE_INFO:
+                    if supervisor is not None and name in supervisor.services:
                         continue
                     raise RuntimeError(
                         f"{name} exited unexpectedly with code {return_code}"

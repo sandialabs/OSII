@@ -102,7 +102,8 @@ def _save_tool(osii_root: Path, tool_id: str, tool: dict[str, Any] | None) -> No
     tools = config.setdefault("tools", {})
     if tool is None:
         if tool_id in builtin_tools_config()["tools"]:
-            tools[tool_id] = {**builtin_tools_config()["tools"][tool_id], "enabled": False}
+            saved = tools.get(tool_id, {})
+            tools[tool_id] = {**(saved if isinstance(saved, dict) else {}), "enabled": False}
         else:
             tools.pop(tool_id, None)
     else:

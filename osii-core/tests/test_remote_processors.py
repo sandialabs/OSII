@@ -38,16 +38,11 @@ def test_configured_processor_urls_includes_enabled_admin_registry(tmp_path, mon
         encoding="utf-8",
     )
 
-    assert remote.configured_processor_urls() == [
-        "http://processor-a:8000",
-        "http://127.0.0.1:8102",
-        "http://127.0.0.1:8095/metadata",
-        "http://127.0.0.1:8099",
-        "http://127.0.0.1:8100",
-        "http://127.0.0.1:8081",
-        "http://127.0.0.1:8101",
-        "http://custom:8000",
-    ]
+    assert set(remote.configured_processor_urls()) == {
+        "http://processor-a:8000", "http://127.0.0.1:8095/metadata",
+        "http://127.0.0.1:8099", "http://127.0.0.1:8100", "http://127.0.0.1:8081",
+        "http://127.0.0.1:8101", "http://127.0.0.1:8102", "http://127.0.0.1:8097", "http://127.0.0.1:8098", "http://custom:8000",
+    }
 
 
 def test_openai_provider_uses_standard_embedding_and_synthesis_adapters(tmp_path, monkeypatch):
@@ -62,16 +57,12 @@ def test_openai_provider_uses_standard_embedding_and_synthesis_adapters(tmp_path
 
     urls = remote.configured_processor_urls()
 
-    assert urls == [
-        "http://127.0.0.1:8102",
-        "http://127.0.0.1:8095/metadata",
-        "http://127.0.0.1:8099",
-        "http://127.0.0.1:8100",
-        "http://127.0.0.1:8081",
-        "http://127.0.0.1:8101",
-        "http://model-bridge:8095/openai/embedder",
-        "http://model-bridge:8095/openai/synthesizer",
-    ]
+    assert set(urls) == {
+        "http://127.0.0.1:8095/metadata", "http://127.0.0.1:8099", "http://127.0.0.1:8100",
+        "http://127.0.0.1:8081", "http://127.0.0.1:8101", "http://127.0.0.1:8102",
+        "http://127.0.0.1:8097", "http://127.0.0.1:8098",
+        "http://model-bridge:8095/openai/embedder", "http://model-bridge:8095/openai/synthesizer",
+    }
     assert not any(url.endswith("/extractor") for url in urls)
 
 

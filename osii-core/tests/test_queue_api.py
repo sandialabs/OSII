@@ -307,7 +307,8 @@ def test_intake_readiness_reports_bundled_tools(
     assert tika["available"] is True
     assert tika["bundled"] is False
     assert tika["origin"]["label"] == "Processor module"
-    assert tika["origin"]["implementation"] == "osii-processor-modules/tika-adapter/tika_adapter/main.py"
+    assert tika["origin"]["implementation"].endswith("osii-processor-modules/tika-adapter")
+    assert tika["origin"]["manifest"].endswith("processor-module.toml")
     assert native["origin"]["label"] == "Bundled Core"
     assert native["origin"]["configuration_file"].endswith("tools.toml")
     assert not any(item["id"] == "pdf_default" for item in payload["extractors"])
@@ -361,7 +362,7 @@ def test_processor_origins_point_to_registration_or_model_configuration(client, 
     enrichers = {item["id"]: item for item in payload["enrichers"]}
     assert enrichers["example.custom"]["origin"]["configuration_key"] == "tools.custom"
     assert enrichers["toolbox.readable-wiki"]["origin"]["label"] == "Processor module"
-    assert "builtin_tools_config" in enrichers["toolbox.readable-wiki"]["origin"]["implementation"]
+    assert enrichers["toolbox.readable-wiki"]["origin"]["implementation"].endswith("osii-processor-modules/llm-wiki-enrichers")
     assert enrichers["local.custom"]["bundled"] is False
     assert payload["synthesizers"][0]["origin"]["configuration_file"].endswith("models.toml")
 

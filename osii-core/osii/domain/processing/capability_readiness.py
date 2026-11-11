@@ -45,15 +45,6 @@ def _processor_origin(
             "configuration_file": str(tools_path()),
             "configuration_key": "routes / processor_settings",
         }
-    if identifier in {"tika", "tika_catchall"}:
-        return {
-            "label": "Processor module",
-            "description": "Lightweight adapter for a managed or external Apache Tika server.",
-            "implementation": "osii-processor-modules/tika-adapter/tika_adapter/main.py",
-            "endpoint_source": "Setup → Extractors → Apache Tika → Settings → Apache Tika endpoint",
-            "configuration_file": str(tools_path()),
-            "configuration_key": "processor_settings.tika.tika_endpoint",
-        }
     if identifier == "pdf_default":
         return {
             "label": "Configured legacy adapter",
@@ -86,7 +77,8 @@ def _processor_origin(
         return {
             "label": "Configured processor" if saved else "Processor module",
             "description": "Separately deployed Processor API service." if saved else "Development registration supplied by OSII; availability depends on starting this optional service.",
-            "implementation": "Service descriptor at " + endpoint + "/v1/descriptor" if saved else "osii-core/osii/configuration.py: builtin_tools_config",
+            "implementation": registration.get("implementation") or ("Service descriptor at " + endpoint + "/v1/descriptor" if saved else "osii-core/osii/configuration.py: builtin_tools_config"),
+            "manifest": registration.get("manifest_path"),
             "configuration_file": str(tools_path()),
             "configuration_key": f"tools.{tool_id} (saved override)" if not saved else f"tools.{tool_id}",
         }
@@ -309,6 +301,7 @@ def _registered_endpoints(osii_root: Path) -> list[dict[str, Any]]:
                 "base_url": endpoint,
                 "enabled": bool(tool.get("enabled", True)),
                 "model_access": tool.get("model_access") or {"mode": "none"},
+                **{key: tool[key] for key in ("manifest_path", "implementation", "aliases", "description", "capabilities", "config_schema", "readiness_path", "readiness_config") if key in tool},
             })
     return records
 
@@ -388,6 +381,12 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
         if kind not in remote_by_kind:
             continue
         name = str(descriptor.get("name", descriptor.get("base_url")))
+        expected = next((record for record in registrations if record.get("manifest_path") and record["base_url"] == descriptor.get("base_url") and record.get("enabled")), None)
+        if expected and (name != expected["processor_id"] or kind != expected["kind"]):
+            remote_by_kind[expected["kind"]].append({**expected, "id": expected["processor_id"],
+                "available": False, "bundled": False,
+                "detail": f"Processor descriptor does not match manifest: expected {expected['processor_id']} ({expected['kind']}), received {name} ({kind})."})
+            continue
         model = (
             processor_model(name, kind, osii_root=osii_root)
             if kind in {"embedder", "synthesizer"}
@@ -413,19 +412,26 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
             }
         )
 
-    # Descriptor health only establishes that the adapter is running. Report the
-    # actual user-configured upstream separately, without launching Apache Tika.
+    # A module can declare a deeper readiness check than adapter liveness.
     from urllib.parse import urlencode
     from osii.domain.processor_settings import processor_settings
-    tika = next((item for item in remote_by_kind["extractor"] if item["id"] == "tika"), None)
-    if tika:
-        tika["aliases"] = ["tika_catchall"]
-        query = urlencode({"tika_endpoint": processor_settings(osii_root, "tika").get("tika_endpoint", f"http://127.0.0.1:{os.getenv('OSII_TIKA_SERVER_PORT', '9998')}")})
-        tika["available"], tika["detail"] = _service_probe(f"{tika['base_url']}/upstream-health?{query}")
-    elif any(item.get("processor_id") == "tika" for item in registrations):
-        extractors.append({"id": "tika", "aliases": ["tika_catchall"], "display_name": "Apache Tika",
-            "description": "Start the Tika adapter, then configure the Apache Tika endpoint in Settings.",
-            "available": False, "detail": "Tika adapter unavailable. Start it with make dev or Setup service controls.", "bundled": False})
+    for registration in registrations:
+        kind = registration.get("kind")
+        if not registration.get("enabled") or kind not in remote_by_kind:
+            continue
+        name = registration.get("processor_id")
+        item = next((item for item in remote_by_kind[kind] if item["id"] == name), None)
+        if item is None:
+            item = {**registration, "id": name, "available": False,
+                "detail": "Processor descriptor unavailable. Start this module from Setup or make dev.", "bundled": False}
+            remote_by_kind[kind].append(item)
+        item["aliases"] = registration.get("aliases", [])
+        readiness_path = registration.get("readiness_path")
+        if item["available"] and readiness_path:
+            settings = processor_settings(osii_root, name)
+            query = urlencode({key: settings[key] for key in registration.get("readiness_config", []) if key in settings})
+            url = registration["base_url"] + readiness_path + ("?" + query if query else "")
+            item["available"], item["detail"] = _service_probe(url)
 
     for kind in ("synthesizer", "embedder"):
         for item in remote_by_kind[kind]:

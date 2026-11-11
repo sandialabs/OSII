@@ -626,6 +626,7 @@ export type CapabilityReadiness = {
     label: string;
     description: string;
     implementation?: string;
+    manifest?: string | null;
     endpoint_source?: string;
     configuration_file?: string;
     configuration_key?: string;

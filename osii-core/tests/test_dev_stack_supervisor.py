@@ -308,6 +308,11 @@ def test_toolbox_environment_registers_custom_ports_without_changing_routes(monk
 
 @pytest.mark.parametrize("enabled, core_only, expected", [(True, False, 5), (False, False, 0), (True, True, 0)])
 def test_toolbox_dependencies_prepare_once_per_isolated_environment(monkeypatch, tmp_path, enabled, core_only, expected):
+    for manifest in (ROOT / "osii-processor-modules").glob("*/processor-module.toml"):
+        target = tmp_path / "osii-processor-modules" / manifest.parent.name
+        target.mkdir(parents=True)
+        shutil.copyfile(manifest, target / manifest.name)
+        (target / "pyproject.toml").write_text('[project]\nname="fixture"\nversion="0.1.0"\n')
     dashboard = tmp_path / "osii-dashboard" / "dashboard"
     dashboard.mkdir(parents=True)
     (dashboard / "package-lock.json").write_text("{}")

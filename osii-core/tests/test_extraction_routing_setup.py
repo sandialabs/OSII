@@ -9,7 +9,9 @@ from osii.extraction.dispatcher import dispatch_extract
 
 @pytest.fixture(autouse=True)
 def offline_tools(monkeypatch):
-    monkeypatch.setattr('osii.configuration.configured_tools', lambda: {})
+    from osii.configuration import builtin_tools_config
+    monkeypatch.setattr('osii.configuration.configured_tools', lambda: builtin_tools_config()['tools'])
+    monkeypatch.setattr('osii.api.processor_admin_routes._cached_descriptor', lambda *a: {})
 
 
 def test_tesseract_rejects_incompatible_primary_and_fallback():

@@ -48,12 +48,11 @@ def validate_routes(payload: dict) -> tuple[list[str], list[str]]:
     from osii.domain.processing.extractor_selection import NATIVE_EXTENSIONS
     accepted = {"native_text": NATIVE_EXTENSIONS, "local.native-text": NATIVE_EXTENSIONS}
     images = [".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff"]
-    for identifier in ["local.tesseract-page-ocr", "toolbox.tesseract-opencv", "toolchest.tesseract-opencv"]:
-        accepted[identifier] = images
+    accepted["local.tesseract-page-ocr"] = images
     for tool_id, tool in configured_tools().items():
         endpoint = tool.get("runtime", {}).get("endpoint")
         descriptor = _cached_descriptor(endpoint.rstrip("/")) if endpoint else {}
-        extensions = descriptor.get("capabilities", {}).get("file_extensions")
+        extensions = descriptor.get("capabilities", {}).get("file_extensions") or tool.get("capabilities", {}).get("file_extensions")
         if extensions:
             for identifier in [tool_id, tool.get("processor_id"), *tool.get("aliases", [])]:
                 if identifier:
