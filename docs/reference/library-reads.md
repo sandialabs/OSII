@@ -1,5 +1,12 @@
 # Shared document and artifact reads
 
+The shared PostgreSQL adapter also supports a composition-owned read connection
+for consistent multi-operation exports, preferred human-text overrides, exact
+imported representation spans and active object-scoped products. Legacy hosted
+artifact-response envelopes remain unchanged. These additions do not alter hosted
+authentication, collection visibility, startup or migrations. Local `main` offers
+an explicit optional PostgreSQL composition; this branch still requires PostgreSQL.
+
 Core has a read-only `LibraryReader` contract under `osii.domain.read.contracts`.
 The same contract and tests are used by local sidecars and the PostgreSQL hosted
 composition. This is the first persistence boundary, not a completed backend

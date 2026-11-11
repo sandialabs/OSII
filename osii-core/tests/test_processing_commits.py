@@ -30,6 +30,22 @@ def descriptor(kind):
         description="Contract fixture", kind=ProcessorKind(kind), capabilities=Capability(scope_types=["object"]))
 
 
+def test_processing_checkpoint_rejects_superseded_claim_generation(backend):
+    writer,reader=backend
+    if hasattr(reader,"root"):
+        pytest.skip("Sidecar checkpoint ownership stays with its queue")
+    from sqlalchemy import text
+    from osii.domain.storage.commits import JobCheckpoint,CommitConflict
+    with reader.engine.begin() as conn:
+        conn.execute(text("""INSERT INTO jobs VALUES('generation-test','reused-worker','running',
+            CURRENT_TIMESTAMP+interval '1 minute','{"_osii_claim_generation":"new","items":[{}]}')"""))
+    with pytest.raises(CommitConflict,match="superseded"):
+        writer.commit(extraction("generation"),checkpoint=JobCheckpoint("generation-test","reused-worker",0,{"status":"done"},generation="old"))
+    assert reader.get_document(FILE_ID) is None
+    writer.commit(extraction("generation"),checkpoint=JobCheckpoint("generation-test","reused-worker",0,{"status":"done"},generation="new"))
+    assert reader.get_document(FILE_ID) is not None
+
+
 def extraction(operation="extract", text=TEXT, primary=True):
     producer = descriptor("extractor")
     request = ExtractionRequest(request_id="request-" + operation, document=DocumentInput(file_id=FILE_ID,

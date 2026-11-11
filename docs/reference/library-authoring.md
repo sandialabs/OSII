@@ -1,5 +1,12 @@
 # Shared authoring and collections
 
+`osii.domain.storage.text_authoring` adds a shared `get/save` preferred-text port
+with an expected revision, immutable extraction evidence and retained human
+history. PostgreSQL edits regenerate lexical chunks from the selected saved text
+and invalidate vectors; the pure `chunk_saved_text` helper performs no source IO
+or model calls. This port is composition-supplied, not a new hosted permission
+grant or public editing route. Local and PostgreSQL contract tests cover it.
+
 Core's `osii.domain.storage.authoring` defines two small interfaces:
 
 - `ProductAuthoring`: read history, save a draft, and activate a revision.

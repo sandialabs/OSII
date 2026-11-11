@@ -1,5 +1,12 @@
 # Shared processing commits
 
+`JobCheckpoint` accepts an optional claim generation. When supplied, a superseded
+worker cannot commit even if its worker ID is reused. Existing callers remain
+compatible. Embedding identities can include a credential-free connection
+fingerprint; different endpoint/model bindings must not share a vector space.
+New primary extractions retain human-text history and invalidate derived vectors.
+Hosted authentication and schema migrations are unchanged.
+
 Core's `osii.domain.storage.commits` defines the commit boundary for completed
 Processor API responses. It complements the [shared reads](library-reads.md).
 Processor authors keep using the existing SDK: they return results, never a

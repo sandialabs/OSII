@@ -19,13 +19,20 @@ if TYPE_CHECKING:
 
 
 class PostgresLibraryReader:
-    def __init__(self, engine: Engine, *, actor_id: str | None = None):
+    def __init__(self, engine: Engine, *, actor_id: str | None = None, connection=None):
         if engine.dialect.name != "postgresql":
             raise ValueError("PostgresLibraryReader requires PostgreSQL")
         self.engine, self.actor_id = engine, actor_id
+        self.connection = connection
+        self._has_products = None
 
     @contextmanager
     def _connection(self):
+        if self.connection is not None:
+            # The composition owns the explicit transaction/isolation level;
+            # this allows a multi-operation export to share one read snapshot.
+            yield self.connection
+            return
         from sqlalchemy import text
         with self.engine.begin() as connection:
             connection.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
@@ -81,6 +88,12 @@ class PostgresLibraryReader:
             if not doc:
                 return None
             selected = representation_id
+            edited = doc["metadata"].get("edited_representation")
+            if selected in {"preferred", "edited"} and edited is not None:
+                return RepresentationRecord("edited", file_id, edited["text"], kind="edited_text",
+                    provenance={"revision": edited.get("revision")})
+            if selected == "edited":
+                return None
             if selected in {"preferred", "canonical"} or selected == doc["metadata"].get("primary_extraction_id"):
                 selected = doc["metadata"].get("primary_extraction_id")
                 row = self._execute(conn, """SELECT id, response FROM extractions WHERE file_id=:file_id
@@ -88,9 +101,16 @@ class PostgresLibraryReader:
                 content = doc["text"]
                 segments = doc["metadata"].get("segments", [])
             else:
-                row = self._execute(conn, "SELECT id, response FROM extractions WHERE file_id=:file_id AND id=:id", {"file_id": file_id, "id": selected}).mappings().first()
+                row = self._execute(conn, """SELECT id, response FROM extractions WHERE file_id=:file_id
+                    AND (id=:id OR response->'metadata'->>'source_representation_id'=:id)
+                    ORDER BY (id=:id) DESC,id LIMIT 1""", {"file_id": file_id, "id": selected}).mappings().first()
                 if not row:
                     return None
+                imported = row["response"].get("osii_representation")
+                if imported is not None:
+                    return RepresentationRecord(row["id"], file_id, imported["text"],
+                        representation_segments(imported["text"], imported["segments"]),
+                        provenance=imported.get("provenance") or {})
                 parts, segments, position = [], [], 0
                 for item in row["response"].get("segments", []):
                     if parts:
@@ -106,16 +126,17 @@ class PostgresLibraryReader:
             response = row["response"]
             processor = response.get("processor", {})
             return RepresentationRecord(row["id"], file_id, content, representation_segments(content, segments),
-                provenance={"extractor": processor, "response_metadata": response.get("metadata", {})})
+                provenance=response.get("osii_representation",{}).get("provenance") or
+                    {"extractor": processor, "response_metadata": response.get("metadata", {})})
 
     @staticmethod
     def _artifact(row) -> ArtifactRecord:
         payload = row["payload"]
-        data = payload.get("data", payload)
+        data = payload.get("data", payload.get("standard_data",payload))
         data = data if isinstance(data, dict) else {}
         return ArtifactRecord(row["id"], row["file_id"],
             str(data.get("artifact_type") or row["kind"]), str(payload.get("media_type") or "application/json"),
-            str(data.get("title") or ""), {"storage_kind": row["kind"], "provenance": payload.get("metadata", {})})
+            str(data.get("title") or ""), {"storage_kind": row["kind"], "provenance": payload.get("metadata", {}), "source_origin":payload.get("source_origin",{})})
 
     def artifact_responses(self, file_id: str) -> list[dict]:
         """Preserve the existing unpaginated hosted HTTP envelope at its edge.
@@ -129,6 +150,16 @@ class PostgresLibraryReader:
                 ORDER BY a.id COLLATE "C"
                 """, {"id": file_id}).mappings()]
 
+    def _artifact_query(self,conn):
+        if self._has_products is None:
+            self._has_products=bool(self._execute(conn,"SELECT to_regclass('scope_products') IS NOT NULL AND to_regclass('scope_revisions') IS NOT NULL",{}).scalar())
+        base="SELECT id,file_id,kind,payload FROM artifacts"
+        if not self._has_products:return base
+        return base+""" UNION ALL SELECT 'product:'||p.id AS id,p.scope_id AS file_id,p.family AS kind,
+            jsonb_build_object('media_type','application/json','data',r.data,'metadata',r.provenance) AS payload
+            FROM scope_products p JOIN scope_revisions r ON r.id=p.current_revision
+            WHERE p.scope_type='object'"""
+
     def list_artifacts(self, file_id: str, *, limit: int = 100, cursor: str | None = None) -> Page[ArtifactRecord]:
         limit = page_size(limit)
         context = json.dumps(["artifacts", file_id])
@@ -136,8 +167,9 @@ class PostgresLibraryReader:
         values = {"id": file_id, "after": after[0] if after else None, "limit": limit + 1}
         where = "a.file_id=:id AND EXISTS (SELECT 1 FROM documents d WHERE d.file_id=a.file_id AND d.active)"
         with self._connection() as conn:
-            total = self._execute(conn, f"SELECT count(*) FROM artifacts a WHERE {where}", values).scalar_one()
-            rows = self._execute(conn, f"""SELECT a.* FROM artifacts a WHERE {where}
+            source=self._artifact_query(conn)
+            total = self._execute(conn, f"SELECT count(*) FROM ({source}) a WHERE {where}", values).scalar_one()
+            rows = self._execute(conn, f"""SELECT a.* FROM ({source}) a WHERE {where}
                 AND (CAST(:after AS text) IS NULL OR a.id COLLATE "C" > :after) ORDER BY a.id COLLATE "C" LIMIT :limit""", values).mappings().all()
         items = tuple(self._artifact(row) for row in rows[:limit])
         return Page(items, total, cursor_encode(context, [items[-1].artifact_id]) if len(rows) > limit else None)
@@ -146,15 +178,18 @@ class PostgresLibraryReader:
         if max_bytes is not None and max_bytes < 0:
             raise ValueError("max_bytes must be nonnegative")
         with self._connection() as conn:
-            row = self._execute(conn, """SELECT a.* FROM artifacts a WHERE a.file_id=:file_id AND a.id=:id
+            source=self._artifact_query(conn)
+            row = self._execute(conn, f"""SELECT a.* FROM ({source}) a WHERE a.file_id=:file_id AND a.id=:id
                 AND EXISTS (SELECT 1 FROM documents d WHERE d.file_id=a.file_id AND d.active)""", {"file_id": file_id, "id": artifact_id}).mappings().first()
         if row is None:
             return None
         payload = row["payload"]
         if payload.get("data_base64") is not None:
             data = base64.b64decode(payload["data_base64"], validate=True)
+        elif payload.get("text") is not None:
+            data=payload["text"].encode("utf-8")
         else:
-            data = json.dumps(payload.get("data", payload), ensure_ascii=False).encode("utf-8")
+            data = json.dumps(payload.get("data", payload.get("standard_data",payload.get("json_data",payload))), ensure_ascii=False).encode("utf-8")
         if max_bytes is not None and len(data) > max_bytes:
             raise ValueError("Artifact exceeds the requested byte limit")
         return ArtifactContent(self._artifact(row), data)

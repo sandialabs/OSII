@@ -34,6 +34,8 @@ class PostgresProcessingCommitter:
             id=checkpoint.job_id, worker=checkpoint.worker_id).mappings().first()
         if row is None:
             raise CommitConflict("Worker no longer owns this processing run")
+        if checkpoint.generation is not None and row["payload"].get("_osii_claim_generation") != checkpoint.generation:
+            raise CommitConflict("Worker claim was superseded")
         return row["payload"]
 
     def commit(self, command: ProcessingCommit | ScopeProcessingCommit, *, checkpoint: JobCheckpoint | None = None) -> CommitReceipt:
@@ -72,10 +74,12 @@ class PostgresProcessingCommitter:
                     if doc is None or not doc["active"]:
                         raise CommitConflict("No active input document is available")
                     primary = doc["metadata"].get("primary_extraction_id")
+                    edited = doc["metadata"].get("edited_representation")
                     if primary is None:
                         primary = self._sql(conn, "SELECT id FROM extractions WHERE file_id=:id ORDER BY created_at DESC,id LIMIT 1", id=command.file_id).scalar() or "canonical"
                     expected = command.input_revision
-                    if primary != expected.representation_id or text_digest(doc["text"]) != expected.text_sha256:
+                    if (("edited" if edited else primary) != expected.representation_id or
+                        text_digest(edited["text"] if edited else doc["text"]) != expected.text_sha256):
                         raise CommitConflict("Preferred text changed; stage a new processing step")
                 if isinstance(command.response, ExtractionResponse):
                     result = self._extract(conn, command, doc)
@@ -113,10 +117,11 @@ class PostgresProcessingCommitter:
                 raise CommitConflict("Collection is unavailable to this processing context")
             where += " AND d.file_id IN (SELECT jsonb_array_elements_text(CAST(:members AS jsonb)))"
             values["members"] = json.dumps(collection["members"])
-        rows = self._sql(conn, f"""SELECT d.file_id,encode(sha256(convert_to(d.text,'UTF8')),'hex') AS text_sha256,
-            COALESCE(d.metadata->>'primary_extraction_id',
+        rows = self._sql(conn, f"""SELECT d.file_id,encode(sha256(convert_to(
+            COALESCE(d.metadata->'edited_representation'->>'text',d.text),'UTF8')),'hex') AS text_sha256,
+            CASE WHEN d.metadata ? 'edited_representation' THEN 'edited' ELSE COALESCE(d.metadata->>'primary_extraction_id',
             (SELECT e.id FROM extractions e WHERE e.file_id=d.file_id ORDER BY e.created_at DESC,e.id LIMIT 1),
-            'canonical') AS representation_id FROM documents d WHERE {where}
+            'canonical') END AS representation_id FROM documents d WHERE {where}
             ORDER BY d.file_id COLLATE "C" LIMIT :limit FOR SHARE""", **values).mappings().all()
         return ScopeInputRevision(tuple(row["file_id"] for row in rows), tuple(
             InputRevision(row["file_id"], row["representation_id"], row["text_sha256"]) for row in rows))
@@ -173,10 +178,18 @@ class PostgresProcessingCommitter:
         if primary:
             self._sql(conn, "UPDATE documents SET active=false WHERE source_relpath=:path AND file_id<>:id",
                 path=source.source_relpath, id=command.file_id)
-            metadata = {**source.metadata, "segments": spans, "extractor": response.processor.model_dump(mode="json"),
+            metadata = {**(previous["metadata"] if previous else {}), **source.metadata,
+                "segments": spans, "extractor": response.processor.model_dump(mode="json"),
                 "primary_extraction_id": command.commit_id, "processing_commit_id": command.commit_id,
                 "extraction_config": command.request.config, "extraction_expert_context": command.request.expert_context,
                 "processing_provenance": command.provenance}
+            # An edited representation belongs to its extraction. Retain it in
+            # history, but never silently apply old segment edits to new evidence.
+            edited=metadata.pop("edited_representation",None)
+            if edited and not any(row.get("id")==edited["revision"] for row in metadata.get("edited_text_history",[])):
+                metadata.setdefault("edited_text_history",[]).append({**edited,"id":edited["revision"],"origin":"human",
+                    "retired_by_extraction":command.commit_id})
+            metadata["stale"]={**metadata.get("stale",{}),"embeddings":True,"search_chunks":False}
             self._sql(conn, """INSERT INTO documents(file_id,source_relpath,active,sha256,filename,media_type,size_bytes,text,metadata,updated_at)
                 VALUES (:id,:path,true,:sha,:name,:media,:size,:text,CAST(:meta AS jsonb),CURRENT_TIMESTAMP)
                 ON CONFLICT(file_id) DO UPDATE SET source_relpath=excluded.source_relpath, active=true,
@@ -239,6 +252,7 @@ class PostgresProcessingCommitter:
                     "embedding_provenance": {"processor": response.processor.model_dump(mode="json"),
                         "input_revision": asdict(command.input_revision), "config": command.request.config,
                         "metadata": response.metadata}}
+        metadata["stale"]={**metadata.get("stale",{}),"embeddings":False,"search_chunks":False}
         self._sql(conn, "UPDATE documents SET metadata=CAST(:meta AS jsonb),updated_at=CURRENT_TIMESTAMP WHERE file_id=:id",
             id=command.file_id, meta=json.dumps(metadata))
         self._sql(conn, "UPDATE datasets SET revision=revision+1 WHERE id='shared'")

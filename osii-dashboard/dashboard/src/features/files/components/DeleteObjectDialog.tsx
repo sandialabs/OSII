@@ -37,7 +37,8 @@ export function DeleteObjectDialog({ open, onClose, onDeleted, fileId }: { open:
         {preview.isPending ? <Typography variant="body2">Checking impact…</Typography> : null}
         {preview.data ? <Stack spacing={0.5}>
           <Typography variant="subtitle2">Impact preview</Typography>
-          <Typography variant="body2">{preview.data.object_file_count} object-sidecar files; {preview.data.collections.length} collections; {preview.data.folders.length} folders.</Typography>
+          <Typography variant="body2">{preview.data.object_file_count} {preview.data.storage_backend === "postgres" ? "saved database records" : "object-sidecar files"}; {preview.data.collections.length} collections; {preview.data.folders.length} folders.</Typography>
+          {preview.data.data_copy_note ? <Alert severity="info">{preview.data.data_copy_note}</Alert> : null}
           <Typography variant="body2">{preview.data.aggregate_paths.length} aggregate products and {preview.data.history_run_ids.length} Activity run record(s) will be removed. {preview.data.indexes_rebuild_required ? "Search/embedding indexes will require rebuilding." : "No current index files were found."}</Typography>
           <Typography variant="body2">Original: {preview.data.source_path ? (preview.data.source_will_be_deleted ? "will be deleted" : "will remain") : "not found"}.</Typography>
           {preview.data.active_jobs.length ? <Alert severity="error">An Intake job still references this file. Wait for it to finish before deleting.</Alert> : null}

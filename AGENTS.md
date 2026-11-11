@@ -17,7 +17,8 @@ The agent's job is to execute the human's command—nothing more.
 
 ## Architecture
 
-- `main` is OSII-local: standalone and filesystem-backed. This branch,
+- `main` is OSII-local: standalone and sidecar-backed by default, with an explicit
+  optional PostgreSQL backend and non-destructive import. This branch,
   `osii-server`, is the hosted PostgreSQL application. Preserve source identity,
   text, locations, scopes, and provenance in PostgreSQL. Never fall back to a
   `.osii` directory or SQLite here. Retrieval caches are derived and rebuildable.

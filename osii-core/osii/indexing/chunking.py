@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import hashlib
 import re
 
 from osii.domain.read.catalog import load_files_catalog
@@ -14,6 +15,26 @@ DEFAULT_CHUNKING_METHOD = "sentence_window"
 DEFAULT_CHUNK_SIZE = 768
 DEFAULT_CHUNK_OVERLAP = 128
 SUPPORTED_CHUNKING_METHODS = ("sentence_window", "paragraph", "window")
+
+
+def chunk_saved_text(file_id: str, text: str, segments=(), *, method: str = "sentence_window",
+                     size: int = 768, overlap: int = 128) -> tuple[dict, ...]:
+    """Pure chunking for storage adapters; never reads a source or calls a model."""
+    validate_chunking_settings(method, size, overlap)
+    spans = (_paragraph_spans(text) if method == "paragraph" else
+             _window_spans(text, size, overlap) if method == "window" else
+             _structured_window_spans(text, size, overlap))
+    digest=hashlib.sha256(text.encode()).hexdigest()
+    rows=[]
+    for start,end in spans:
+        overlaps=[row for row in segments if row.get("char_start") is not None and row.get("char_end") is not None
+                  and start<row["char_end"] and end>row["char_start"]]
+        origin=dict(overlaps[0].get("source_origin",{})) if len(overlaps)==1 else {}
+        origin.update(source_segment_ids=[row["id"] for row in overlaps],
+            source_pages=sorted({row["source_origin"]["page"] for row in overlaps if isinstance(row.get("source_origin",{}).get("page"),int)}))
+        rows.append({"chunk_id":hashlib.sha256(f"{file_id}:{digest}:{start}:{end}".encode()).hexdigest(),
+            "file_id":file_id,"text":text[start:end],"char_start":start,"char_end":end,"source_origin":origin})
+    return tuple(rows)
 
 
 def _paragraph_spans(text: str) -> list[tuple[int, int]]:
