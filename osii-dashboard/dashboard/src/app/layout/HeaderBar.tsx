@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import type { ReactNode } from "react";
 import {
   AppBar,
@@ -47,8 +48,8 @@ export function HeaderBar({
           </IconButton>
         )}
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography
-            sx={{
+          <Typography component={Link} to="/"
+            sx={{ textDecoration: "none",
               color: "#ffffff",
               fontWeight: 700,
               fontSize: { xs: "1.35rem", sm: "1.7rem" },
@@ -69,7 +70,7 @@ export function HeaderBar({
           </Typography>
         </Box>
         {actions && (
-          <Stack direction="row" spacing={0.5}>
+          <Stack direction="row" spacing={0.5} sx={{ width: { xs: "100%", sm: "auto" }, justifyContent: "flex-end" }}>
             {actions}
           </Stack>
         )}

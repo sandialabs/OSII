@@ -440,3 +440,21 @@ before starting matching API and worker images. Back up the database first and
 use the existing migrate CLI; startup does not run migrations. Inventory tables
 and scoped product histories are canonical records, not rebuildable caches. The
 downgrade refuses to discard them; restore a compatible backup for rollback.
+
+
+### Workbench landing page
+
+Home (`/`) presents six document tools; Files (`/files`) retains the flat library.
+Analyze Library opens the overview, whose **All tools** link opens the processor
+workbench. Search supports lexical retrieval without embeddings. Chat and report
+tiles require saved text and a configured AI model; Topic Explorer requires
+current compatible embeddings and can explore a partially indexed library.
+Gray tools show what is missing. A configured model is not a connection test.
+
+Setup appears until **Done with setup** is saved for this library. Hosted Setup
+is administrator-only. It remains accessible in the sidebar after dismissal.
+`GET /api/workbench/home` supplies metadata-only readiness;
+`POST /api/admin/setup/dismiss` persists dismissal (administrator and CSRF checks
+apply on the hosted service). Home does not read source text, load vector payloads,
+compute projections, or invoke models. Shared tile/navigation definitions and
+UI components consume product adapters; they do not access storage directly.

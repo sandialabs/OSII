@@ -284,6 +284,17 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
             "workflows": ["browse", "search", "chat", "collections", "source-preview", "topics", "scope-tools", "library-overview", *(["inventory"] if account["role"] == "admin" else [])],
             "private_saved_work": True, "uploads": False}
 
+    @app.get("/api/workbench/home")
+    def workbench_home(account=Depends(require())):
+        from osii.server.workbench import hosted_home
+        return hosted_home(store, settings, account)
+
+    @app.post("/api/admin/setup/dismiss")
+    def dismiss_home_setup(account=Depends(require("admin"))):
+        store.save_setting("home_setup", {"dismissed": True})
+        store.record("home_setup_dismissed", account["id"], "shared")
+        return {"setup": {"visible": False}}
+
     @app.get("/api/catalog/files")
     def files(limit: int = 100, cursor: str | None = None, collection_id: str | None = None, folder_id: str | None = None,
               direct: bool = False, account=Depends(require())):

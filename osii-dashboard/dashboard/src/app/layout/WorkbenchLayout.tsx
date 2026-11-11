@@ -10,9 +10,10 @@ import {
   Toolbar,
   Typography,
 } from "@mui/material";
+import type { ToolAvailability } from "../../domain/workbench";
 import { HeaderBar } from "./HeaderBar";
 
-export type NavigationGroup = "documents" | "tools" | "start" | "setup";
+export type NavigationGroup = "home" | "documents" | "tools" | "start" | "setup";
 export type NavigationItem = {
   id: string;
   label: string;
@@ -31,13 +32,16 @@ export function WorkbenchNavigation({
   items,
   selected,
   onNavigate,
+  availability,
 }: {
+  availability?: Record<string, ToolAvailability>;
   items: readonly NavigationItem[];
   selected: string;
   onNavigate: (id: string) => void;
 }) {
   return (
     <>
+      {items.filter(item => item.group === "home").map(({ id, label, icon: Icon }) => <ListItemButton key={id} selected={selected === id} aria-current={selected === id ? "page" : undefined} onClick={() => onNavigate(id)}><Icon fontSize="small" sx={{ mr: 1.5 }} /><ListItemText primary={label} /></ListItemButton>)}
       <Toolbar variant="dense">
         <Typography variant="caption" color="text.secondary" fontWeight={600}>
           Menu
@@ -56,10 +60,13 @@ export function WorkbenchNavigation({
                 </ListSubheader>
               }
             >
-              {entries.map(({ id, label, icon: Icon }) => (
-                <ListItemButton
+              {entries.map(({ id, label, icon: Icon }) => {
+                const state = (group.id === "tools" || id === "browse") ? availability?.[id] : undefined;
+                return <ListItemButton
                   key={id}
                   dense
+                  disabled={state?.enabled === false}
+                  sx={{ "&.Mui-disabled": { opacity: 1, color: "text.secondary" } }}
                   selected={selected === id}
                   aria-current={selected === id ? "page" : undefined}
                   onClick={() => onNavigate(id)}
@@ -67,10 +74,11 @@ export function WorkbenchNavigation({
                   <Icon fontSize="small" sx={{ mr: 1.5 }} />
                   <ListItemText
                     primary={label}
+                    secondary={state?.enabled === false ? state.reason : undefined}
                     primaryTypographyProps={{ variant: "body2" }}
                   />
-                </ListItemButton>
-              ))}
+                </ListItemButton>;
+              })}
             </List>
           </Box>
         ) : null;

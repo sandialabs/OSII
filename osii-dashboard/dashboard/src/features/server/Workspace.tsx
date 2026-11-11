@@ -1,3 +1,6 @@
+import { useWorkbenchAvailability } from "../../hooks/useWorkbenchHome";
+import { sharedNavigation } from "../../app/layout/workbenchNavigation";
+import { WorkbenchHome } from "../home/components/WorkbenchHome";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ResearchPage } from "../research/ResearchPage";
 import { ToolsPage } from "../files/pages/ToolsPage";
@@ -15,12 +18,8 @@ import {
   Typography,
 } from "@mui/material";
 import {
-  ChatOutlined,
-  CollectionsBookmarkOutlined,
   FolderOutlined,
   GroupOutlined,
-  HubOutlined,
-  Search,
   SettingsOutlined,
 } from "@mui/icons-material";
 import {
@@ -39,7 +38,7 @@ import {
   WorkbenchNavigation,
   type NavigationItem,
 } from "../../app/layout/WorkbenchLayout";
-import { HomeOutlined, MoveToInboxOutlined } from "@mui/icons-material";
+import { MoveToInboxOutlined } from "@mui/icons-material";
 import { TopicExplorer } from "./TopicExplorer";
 import { Collections, CollectionSelection } from "./Collections";
 
@@ -53,7 +52,7 @@ import {
   type SearchMode,
 } from "../search/components/SearchModeSelect";
 
-const pagePaths: Record<string, string> = { library: "/", browse: "/browse", search: "/search", chat: "/chat", topics: "/topics", collections: "/collections", tools: "/tools", research: "/research", overview: "/library-overview", inventory: "/inventory", processing: "/intake", setup: "/setup", users: "/users" };
+const pagePaths: Record<string, string> = { home: "/", files: "/files", browse: "/browse", search: "/search", chat: "/chat", topics: "/topics", collections: "/collections", tools: "/tools", research: "/research", overview: "/library-overview", inventory: "/inventory", processing: "/intake", setup: "/setup", users: "/users" };
 
 function InventoryPage() {
   const navigate = useNavigate();
@@ -68,27 +67,9 @@ function InventoryPage() {
 }
 
 const pages: readonly NavigationItem[] = [
-  { id: "library", label: "Files", group: "documents", icon: HomeOutlined },
-  { id: "browse", label: "Browse", group: "documents", icon: FolderOutlined },
-  { id: "search", label: "Search", group: "documents", icon: Search },
-  { id: "chat", label: "Chat", group: "documents", icon: ChatOutlined },
-  {
-    id: "collections",
-    label: "Collections",
-    group: "documents",
-    icon: CollectionsBookmarkOutlined,
-  },
-  { id: "research", label: "Research reports", group: "tools", icon: Search },
-  { id: "tools", label: "All tools", group: "tools", icon: SettingsOutlined },
-  { id: "overview", label: "Library at a glance", group: "tools", icon: Search },
+  ...sharedNavigation,
   { id: "inventory", label: "File inventory", group: "start", icon: FolderOutlined },
-  { id: "topics", label: "Topic explorer", group: "tools", icon: HubOutlined },
-  {
-    id: "processing",
-    label: "Add files",
-    group: "start",
-    icon: MoveToInboxOutlined,
-  },
+  { id: "processing", label: "Add files", group: "start", icon: MoveToInboxOutlined },
   { id: "setup", label: "Setup", group: "setup", icon: SettingsOutlined },
   { id: "users", label: "Users", group: "setup", icon: GroupOutlined },
 ];
@@ -108,6 +89,7 @@ export function Workspace({
   onLogout: () => void;
   onPassword: () => void;
 }) {
+  const availability = useWorkbenchAvailability();
   const location = useLocation();
   const route = useNavigate();
   const availablePages = pages.filter(
@@ -116,9 +98,11 @@ export function Workspace({
       user.role === "admin",
   );
   const pageFromHash = () => {
-    const id = window.location.hash.slice(1) || Object.keys(pagePaths).find(key => pagePaths[key] === location.pathname) || (location.pathname.startsWith("/admin/") ? "setup" : "library");
+    const hash = window.location.hash.slice(1);
+    const id = (hash === "library" ? "files" : hash) || Object.keys(pagePaths).find(key => pagePaths[key] === location.pathname) || (location.pathname.startsWith("/admin/") ? "setup" : location.pathname.startsWith("/files/") ? "files" : "home");
     if (setupAliases[id] && user.role === "admin") return "setup";
-    return availablePages.some((page) => page.id === id) ? id : "library";
+    if (id === "tools") return "tools";
+    return availablePages.some((page) => page.id === id) ? id : "home";
   };
   const [setupSection, setSetupSection] = useState<SetupSection>(
     setupAliases[window.location.hash.slice(1)] ?? "models",
@@ -194,11 +178,12 @@ export function Workspace({
     return result.items;
   };
   useEffect(() => {
+    if (!["files", "browse", "search", "chat", "topics", "collections"].includes(tab)) return;
     void refreshCollections().catch(fail);
     void api<{ items: typeof folders }>("/api/catalog/folders")
       .then((r) => setFolders(r.items))
       .catch(fail);
-  }, [libraryRevision]);
+  }, [libraryRevision, tab]);
   const changeScope = (value: Scope) => {
     setScope(value);
     setHits([]);
@@ -209,6 +194,7 @@ export function Workspace({
   const catalogPath = (cursor?: string) =>
     `/api/catalog/files?limit=500${!flat && scope.scope_type !== "collection" ? "&direct=true" : ""}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}${scope.collection_id ? `&collection_id=${encodeURIComponent(scope.collection_id)}` : ""}${scope.folder_id ? `&folder_id=${encodeURIComponent(scope.folder_id)}` : ""}`;
   useEffect(() => {
+    if (!["files", "browse"].includes(tab)) return;
     let current = true;
     setDocs([]);
     setNextCursor(null);
@@ -228,7 +214,7 @@ export function Workspace({
     return () => {
       current = false;
     };
-  }, [scope, libraryRevision, flat]);
+  }, [scope, libraryRevision, flat, tab]);
   const loadMore = async () => {
     try {
       const result = await api<{ items: Doc[]; next_cursor: string | null }>(
@@ -275,7 +261,7 @@ export function Workspace({
       setBusy(false);
     }
   };
-  const corpusPage = ["library", "browse", "topics", "search", "chat"].includes(
+  const corpusPage = ["files", "browse", "topics", "search", "chat"].includes(
     tab,
   );
   const queueProcessor = (processor: ProcessorStatus) => {
@@ -288,10 +274,11 @@ export function Workspace({
     <WorkbenchLayout
       navigation={
         <WorkbenchNavigation
+          availability={availability}
           items={availablePages}
-          selected={tab}
+          selected={tab === "tools" ? "overview" : tab}
           onNavigate={(id) => {
-            if (id === "library") changeScope(rootScope);
+            if (id === "files") changeScope(rootScope);
             navigate(id);
           }}
         />
@@ -318,6 +305,7 @@ export function Workspace({
             {error}
           </Alert>
         )}
+        {tab === "home" && <WorkbenchHome setupPath="/setup" />}
         {corpusPage && (
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
             <TextField
@@ -364,7 +352,7 @@ export function Workspace({
             </Button>
           </Stack>
         )}
-        {(tab === "library" || tab === "browse") && (
+        {(tab === "files" || tab === "browse") && (
           <>
             <Typography variant="h5" fontWeight={700}>
               {flat ? "Files" : "Browse"}
@@ -404,7 +392,7 @@ export function Workspace({
             fail={fail}
             choose={() => {
               changeScope(rootScope);
-              navigate("library");
+              navigate("files");
             }}
             browse={(id, page) => {
               changeScope({ scope_type: "collection", collection_id: id });
