@@ -204,7 +204,7 @@ or become search evidence automatically. Model-generated claims remain derived
 content, not verified source statements.
 
 Under **Processor connections**, add the base addresses of explicitly deployed
-Toolbox Processor API services, one per line. Their `/v1/descriptor` must declare
+Processor API services, one per line. Their `/v1/descriptor` must declare
 a unique processor name and one of the four SDK component kinds. Synthesis and
 enrichment methods must support object scope for per-file plans. Connections are
 admin-managed PostgreSQL settings; `OSII_PROCESSORS` supplies deployment defaults.
@@ -243,7 +243,7 @@ an already running Processor API service; it does not install software.
 Ordinary users cannot change connections or queue shared processing.
 
 To explicitly install the two native OCR services on this Ubuntu 24.04 host,
-include `osii-toolbox/osii-tesseract` in the immutable release archive and use
+include `osii-processor-modules/osii-tesseract` in the immutable release archive and use
 the configurator's `--with-ocr` flag. They use a separate hashed Python lockfile
 and environment under `/opt/osii/tools`; Core's image and lockfile gain no OCR
 dependencies. The `osii-ocr-page` service provides full-page Tesseract at private

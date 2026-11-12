@@ -30,8 +30,8 @@ First start normal OSII with `make dev` or `scripts\osii.ps1 dev`. In
 wiki service. The equivalent direct commands from the repository root are:
 
 ```bash
-uv run --project osii-toolbox/llm-wiki-enrichers python osii-toolbox/llm-wiki-enrichers/run.py readable --host 127.0.0.1
-uv run --project osii-toolbox/llm-wiki-enrichers python osii-toolbox/llm-wiki-enrichers/run.py concept-entity --host 127.0.0.1
+uv run --project osii-processor-modules/llm-wiki-enrichers python osii-processor-modules/llm-wiki-enrichers/run.py readable --host 127.0.0.1
+uv run --project osii-processor-modules/llm-wiki-enrichers python osii-processor-modules/llm-wiki-enrichers/run.py concept-entity --host 127.0.0.1
 ```
 
 Register these endpoints in **Setup → Register running processor**:

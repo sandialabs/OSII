@@ -122,6 +122,7 @@ export function Workspace({
   );
   const [docs, setDocs] = useState<Doc[]>([]);
   const [total, setTotal] = useState(0);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
@@ -161,6 +162,14 @@ export function Workspace({
     setTab(pageFromHash());
     if (location.pathname.startsWith("/admin/")) setSetupSection("processors");
     if (location.pathname === "/intake") setProcessingSection(new URLSearchParams(location.search).get("tab") === "activity" ? "activity" : "add");
+    if (location.pathname === "/browse") {
+      const folder = new URLSearchParams(location.search).get("folder_id");
+      const nextScope: Scope = folder && folder !== "." ? { scope_type: "folder", folder_id: folder } : rootScope;
+      if (scope.scope_type !== nextScope.scope_type || scope.folder_id !== nextScope.folder_id) {
+        setScope(nextScope);
+        setSelectedIds(new Set());
+      }
+    }
     if (location.pathname === "/search") {
       const params = new URLSearchParams(location.search);
       const term = params.get("q");
@@ -197,6 +206,7 @@ export function Workspace({
     if (!["files", "browse"].includes(tab)) return;
     let current = true;
     setDocs([]);
+    setCatalogLoading(true);
     setNextCursor(null);
     void api<{ items: Doc[]; next_cursor: string | null; total: number }>(
       catalogPath(),
@@ -210,7 +220,7 @@ export function Workspace({
       })
       .catch((e) => {
         if (current) fail(e);
-      });
+      }).finally(() => { if (current) setCatalogLoading(false); });
     return () => {
       current = false;
     };
@@ -306,7 +316,7 @@ export function Workspace({
           </Alert>
         )}
         {tab === "home" && <WorkbenchHome setupPath="/setup" />}
-        {corpusPage && (
+        {corpusPage && tab !== "browse" && (
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
             <TextField
               select
@@ -368,11 +378,20 @@ export function Workspace({
               · Select files to create your own collection.
             </Typography>
             <LibraryBrowser
+              loading={catalogLoading}
               flat={flat}
               docs={docs}
               folders={folders}
               scope={scope}
-              onScope={changeScope}
+              onScope={value => {
+                changeScope(value);
+                if (tab === "browse") {
+                  const params = new URLSearchParams(location.search);
+                  if (value.scope_type === "folder") params.set("folder_id", value.folder_id || ".");
+                  else params.delete("folder_id");
+                  route({ pathname: "/browse", search: params.toString() });
+                }
+              }}
               onOpen={(id) => void open(id)}
               selected={selectedIds}
               onToggle={toggle}

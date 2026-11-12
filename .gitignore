@@ -30,7 +30,7 @@ site/
 # The root lock covers this monorepo. Isolated service test runs may generate
 # disposable nested locks; do not mistake them for release inputs.
 osii-core/services/*/uv.lock
-osii-toolbox/*/uv.lock
+osii-processor-modules/*/uv.lock
 
 # Node
 node_modules/

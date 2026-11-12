@@ -34,7 +34,7 @@ scope-bound retriever supplies candidates to the strategy. PostgreSQL, sidecar,
 and volume implementations remain separate; no strategy guesses the active store
 or falls back to another store. A local function and a client of an existing
 remote reranking service can satisfy the same RAG contract. Remote compute does
-not make that client a Toolbox processor.
+not make that client a processor.
 
 ## Strategy contract
 

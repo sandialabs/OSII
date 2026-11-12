@@ -339,7 +339,7 @@ directly in each segment's `source_origin`. End-to-end UI alignment remains
 a follow-up, not a capability promised by this spec.
 
 The actual implementation and separate tool-native routes are documented in
-`osii-toolbox/osii-tesseract/README.md`,
+`osii-processor-modules/osii-tesseract/README.md`,
 `docs/API.md`, and `docs/OSII_INTEGRATION.md` under that tool directory.
 Those native routes are not the portable Processor API v1 contract.
 
@@ -370,7 +370,7 @@ The experimental Toolbox Tesseract service is a real implementation of this
 contract: it returns `ocr_region` segments with page and region grounding.
 It also has its own OCR endpoints and tuning UI, separate from
 `/v1/extract`. Read its README at
-`osii-toolbox/osii-tesseract/README.md` in your checkout.
+`osii-processor-modules/osii-tesseract/README.md` in your checkout.
 
 Next: [synthesis](synthesis.md) for explaining the extracted text, or
 [enrichment](enrichment.md) for adding a standard knowledge artifact.

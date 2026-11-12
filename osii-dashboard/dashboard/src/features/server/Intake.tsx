@@ -637,7 +637,7 @@ export function Intake({
                         setEnrichConfig({});
                       }}
                       options={processors.filter((p) => p.kind === "enricher" && p.descriptor.capabilities?.scope_types.includes("object"))}
-                      helperText="The built-in statistics/keywords method is deterministic and needs no model. Toolbox methods remain optional."
+                      helperText="The built-in statistics/keywords method is deterministic and needs no model. External processor methods remain optional."
                     >
                       {configFields(enricher, enrichConfig, setEnrichConfig)}
                     </ProcessorStepControl>
@@ -663,7 +663,7 @@ export function Intake({
                       <Stack spacing={1} sx={{ mt: 1 }}>
                         <Typography variant="body2">
                           Baseline methods work without another service. Add
-                          explicitly deployed Toolbox Processor API base
+                          explicitly deployed Processor API base
                           addresses below, one per line. These are processor
                           services, not model-provider endpoints.
                         </Typography>

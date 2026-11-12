@@ -78,7 +78,7 @@ runtime data before product changes that require a storage migration.
 
 ## Connect an optional tool or your own processor
 
-Optional processor implementations remain under `osii-toolbox/`; start their
+Optional processor implementations remain under `osii-processor-modules/`; start their
 Python service using that tool's source instructions. Register its base URL in
 Setup's custom Processor API services, then choose its extraction/enrichment
 route. The default host baseline starts automatically. External Tika can be

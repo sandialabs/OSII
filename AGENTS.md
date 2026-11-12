@@ -32,8 +32,8 @@ The agent's job is to execute the human's command—nothing more.
   Keep side effects at the edges and make paths, scopes, processors, and
   configuration explicit.
 - The dashboard and MCP server are Core clients. Guaranteed baseline Processor
-  API hosts live under `osii-core/services/`. `osii-toolbox/` owns separately
-  deployable tools. Toolbox processors are enabled only through explicit
+  API hosts live under `osii-core/services/`. `osii-processor-modules/` owns separately
+  deployable processors. Frontend tools belong to the Toolbox. Optional processors are enabled only through explicit
   configuration and do not join the default host stack automatically.
 - Treat `osii.processor_sdk` as the public boundary for external processors.
   Preserve standard artifact formats so people, the dashboard, and agents can
@@ -103,3 +103,9 @@ The agent's job is to execute the human's command—nothing more.
 - Report local commit hashes and relevant validation results. Include run or
   inspection instructions when needed, including required rebuild or restart
   steps.
+
+## Naming
+
+Frontend tools live in the dashboard **Toolbox**. Backend modules are **processors**
+and live under `osii-processor-modules/`. Preserve existing Processor API IDs and
+artifact provenance when changing display names.

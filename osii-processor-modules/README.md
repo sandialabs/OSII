@@ -1,4 +1,4 @@
-# OSII Toolbox
+# OSII processor modules
 
 Optional processor implementations live in this repository. They receive explicit
 Processor API requests and return typed results; Core owns persistence. They do
@@ -15,3 +15,5 @@ and [Processor API](../docs/reference/processor-api/index.md).
 
 Container builds, Quay publication, and separate-repository exports are preserved
 on `archive/workstation-deployment-2026-11-03` and deferred on main.
+
+Frontend tools belong to the dashboard **Toolbox**. This directory contains independently deployed backend **processors**, each implementing an OSII Processor API component.

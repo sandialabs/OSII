@@ -82,11 +82,11 @@ def configure_ocr(source: Path, release_tag: str, bind_address: str = "10.89.0.1
         "install",
         "--require-hashes",
         "-r",
-        str(source / "osii-toolbox/osii-tesseract/requirements-host.lock.txt"),
+        str(source / "osii-processor-modules/osii-tesseract/requirements-host.lock.txt"),
     )
     for name, directory, port in [
         ("osii-ocr-page", "osii-core/services/local-tesseract", 8193),
-        ("osii-ocr-regions", "osii-toolbox/osii-tesseract", 8194),
+        ("osii-ocr-regions", "osii-processor-modules/osii-tesseract", 8194),
     ]:
         write(
             "/etc/systemd/system/" + name + ".service",

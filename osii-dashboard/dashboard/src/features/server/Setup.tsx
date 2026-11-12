@@ -196,7 +196,7 @@ export function Setup({
       <Accordion slotProps={{ transition: { unmountOnExit: true } }} variant="outlined" disableGutters sx={{ borderRadius: "12px !important" }}>
         <AccordionSummary expandIcon={<ExpandMore />}><Typography fontWeight={700}>Advanced &amp; diagnostics</Typography></AccordionSummary>
         <AccordionDetails><Stack spacing={2}>
-          <Typography color="text.secondary">Inspect service health and register optional Toolbox connections. Services are deployed and restarted by the server operator; registering an address does not start a service.</Typography>
+          <Typography color="text.secondary">Inspect service health and register optional processor connections. Services are deployed and restarted by the server operator; registering an address does not start a service.</Typography>
           <ProcessorAdmin embedded queue={queue} onChanged={() => setRevision(v => v + 1)} />
         </Stack></AccordionDetails>
       </Accordion>

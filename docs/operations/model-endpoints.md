@@ -6,7 +6,7 @@ Chat and embeddings use OpenAI-compatible APIs. The reranking adapter uses the
 [Cohere rerank request/response contract](https://docs.cohere.com/reference/rerank):
 `POST <base URL>/rerank`, `model`, `query`, string `documents`, and `top_n`, returning
 `results` containing `index` and `relevance_score`. Other reranking protocols need
-their own Core RAG adapter. Reranking is not a Toolbox component or Processor API kind.
+their own Core RAG adapter. Reranking is not a processor component or Processor API kind.
 
 | Capability | Base URL | Inline credential | Credential file |
 | --- | --- | --- | --- |

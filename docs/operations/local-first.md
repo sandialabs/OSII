@@ -160,7 +160,7 @@ container or administrator-managed deployments.
 
 The normal `local.tesseract-page-ocr` processor runs each complete page through
 Tesseract and is part of `osii-baseline-processors`. The separate
-**Tesseract OCR with OpenCV regions** experiment lives in `osii-toolbox/`; see
+**Tesseract OCR with OpenCV regions** experiment lives in `osii-processor-modules/`; see
 [image publishing](publishing-images.md). Run and register it explicitly when
 you need tunable contour detection and normalized region boxes for Source and
 Split View overlays. Its default host port is 8081 so it can run beside the
@@ -273,7 +273,7 @@ only failed items and preserves files that already completed.
 ## Generate an LLM wiki
 
 LLM wiki generation is not implemented in Core. Start one or both optional
-wiki enrichers from `osii-toolbox`, register their Processor API endpoints in
+wiki enrichers from `osii-processor-modules`, register their Processor API endpoints in
 Setup, and assign a chat-model connection. Generate a wiki from a document,
 folder, collection, or the whole library. The operation runs in the background,
 records the processor and model provenance, and never substitutes the

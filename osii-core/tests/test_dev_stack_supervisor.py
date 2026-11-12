@@ -95,12 +95,12 @@ def test_service_plan_uses_nested_components_without_concurrent_uv_sync():
             assert "--no-sync" in service.command
     assert by_name["readable-wiki"].start_automatically is False
     assert by_name["readable-wiki"].working_directory == (
-        ROOT / "osii-toolbox" / "llm-wiki-enrichers"
+        ROOT / "osii-processor-modules" / "llm-wiki-enrichers"
     )
     assert by_name["concept-entity-wiki"].port == 8100
     assert by_name["tesseract-opencv"].port == 8081
     assert by_name["tesseract-opencv"].working_directory == (
-        ROOT / "osii-toolbox" / "osii-tesseract"
+        ROOT / "osii-processor-modules" / "osii-tesseract"
     )
 
 

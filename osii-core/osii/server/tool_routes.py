@@ -374,6 +374,33 @@ def register_tool_routes(app, store, settings):
             ],
         }
 
+    @router.post("/api/scopes/artifacts")
+    def scope_artifacts(payload: ScopeBody, actor=Depends(reader)):
+        from osii.persistence.scope_products import address
+        from osii.persistence.workspace_schema import scope_revisions
+        scope = payload.scope.model_dump(exclude_none=True)
+        rows = scope_rows(scope, actor)
+        kind, identity = address(scope)
+        records = products.records(scope)
+        syntheses = [row for row in records if row["family"] == "synthesis"]
+        enrichments = [row for row in records if row["family"] == "enrichment"]
+        preview = None
+        if syntheses:
+            # Read only a bounded preview of the current revision, not its history.
+            with store.engine.connect() as connection:
+                preview = connection.execute(select(func.substr(func.coalesce(
+                    scope_revisions.c.data["text"].astext,
+                    scope_revisions.c.data["markdown"].astext, ""), 1, 240)).where(
+                    scope_revisions.c.id == syntheses[0]["current_revision"])).scalar()
+        return {"scope": {**scope, "scope_id": identity, "label": identity},
+                "artifact_summary": {"member_count": len(rows),
+                    "has_synthesis": bool(syntheses), "synthesis_preview": preview or None,
+                    "syntheses": [{"name": row["title"], "relpath": row["filename"]} for row in syntheses],
+                    "has_enrichments": bool(enrichments),
+                    "enrichments": [{"name": row["title"], "relpath": row["filename"], "kind": "file", "can_edit": permissions(actor)["edit"]} for row in enrichments]},
+                "actions": {"can_synthesize": bool(rows) and permissions(actor)["run"],
+                            "can_enrich": bool(rows) and permissions(actor)["run"]}}
+
     @router.post("/api/scopes/overview")
     def overview(payload: ScopeBody, actor=Depends(reader)):
         scope = payload.scope.model_dump(exclude_none=True)

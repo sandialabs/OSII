@@ -150,7 +150,7 @@ works. From the OSII root, use the same Python 3.12 default as the application
 on macOS, Linux, or Windows:
 
 ```sh
-uv run --no-project --python 3.12 --with-editable osii-core --with-editable osii-toolbox/osii-tesseract python -m uvicorn app.main:app --app-dir osii-toolbox/osii-tesseract --host 127.0.0.1 --port 8081
+uv run --no-project --python 3.12 --with-editable osii-core --with-editable osii-processor-modules/osii-tesseract python -m uvicorn app.main:app --app-dir osii-processor-modules/osii-tesseract --host 127.0.0.1 --port 8081
 ```
 
 Container builds and publication are archived on

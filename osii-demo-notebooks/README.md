@@ -132,7 +132,7 @@ adapter, not the place where the research algorithm has to live. Example 11
 then shows how a notebook consumes an independently deployed processor.
 
 The dataset example uses the optional tabular processor in this repository's
-[`osii-toolbox/`](../osii-toolbox/README.md). From the Core repository, run `make demo-data` or
+[`osii-processor-modules/`](../osii-processor-modules/README.md). From the Core repository, run `make demo-data` or
 `.\scripts\osii.ps1 demo-data`, then start the Toolbox container and configure
 its URLs in `OSII_PROCESSORS` before using the live endpoint.
 
@@ -154,7 +154,7 @@ On Windows PowerShell, run `.\scripts\osii.ps1 dev`. Wait until
 <http://127.0.0.1:8080/health> returns `{"status":"ok"}`. The extraction
 notebook discovers and registers this endpoint for its own Python process. The
 experimental OpenCV region-OCR processor remains an optional
-[Toolbox](../osii-toolbox/README.md) deployment.
+[Toolbox](../osii-processor-modules/README.md) deployment.
 
 For an OpenAI-compatible model endpoint, set the endpoint and credential in
 `.env`, then start the normal stack. It provides model-backed synthesis,

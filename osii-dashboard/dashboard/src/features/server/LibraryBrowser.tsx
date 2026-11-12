@@ -7,8 +7,8 @@ import {
   filterFiles,
 } from "../../domain/fileFilters";
 import { FileGrid } from "../files/components/FileGrid";
-import { BrowseGrid } from "../browse/components/BrowseGrid";
-import { BrowseBreadcrumbs } from "../browse/components/BrowseBreadcrumbs";
+import { BrowseExplorer } from "../browse/components/BrowseExplorer";
+import { useSearchParams } from "react-router-dom";
 import { immediateFolders, normalizeFolderPath } from "../browse/contents";
 import type { FolderScopeDescriptor } from "../../api/types";
 import type { FileCardModel } from "../../domain/files";
@@ -24,8 +24,10 @@ export function LibraryBrowser({
   selected,
   onToggle,
   flat,
+  loading,
 }: {
   flat: boolean;
+  loading?: boolean;
   docs: Doc[];
   folders: { folder_id: string; path: string }[];
   scope: Scope;
@@ -36,7 +38,8 @@ export function LibraryBrowser({
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [filters, setFilters] = useState({ ...emptyFileFilters });
-  const [view, setView] = useState<"list" | "icons">("icons");
+  const [params, setParams] = useSearchParams();
+  const view = params.get("view") === "icons" ? "icons" : "list";
   const folder = (path: string): FolderScopeDescriptor => ({
     scope_type: "folder",
     scope_id: path || ".",
@@ -121,40 +124,8 @@ export function LibraryBrowser({
         />
       </Stack>
     );
-  return (
-    <FileGrid
-      files={files}
-      title="All Files"
-      subtitle={`${docs.length} loaded files`}
-      selectedIds={selected}
-      onToggle={onToggle}
-      onOpen={onOpen}
-    />
-  );
-  return (
-    <Stack spacing={2}>
-      {!flat && scope.scope_type !== "collection" && (
-        <BrowseBreadcrumbs items={parents} onNavigate={openFolder} />
-      )}
-      <BrowseGrid
-        context={flat || scope.scope_type === "collection" ? "files" : "folder"}
-        key={`${flat}:${scope.scope_type}:${path}:${scope.collection_id || ""}`}
-        files={files}
-        folders={
-          flat || scope.scope_type === "collection"
-            ? []
-            : immediateFolders(
-                folders.map((f) => folder(normalizeFolderPath(f.path))),
-                folder(path),
-              )
-        }
-        view={view}
-        onChangeView={setView}
-        onOpenFolder={(f) => openFolder(f.folder_id)}
-        onOpenFile={onOpen}
-        selectedIds={selected}
-        onToggleFile={onToggle}
-      />
-    </Stack>
-  );
+  return <BrowseExplorer loading={loading} key={path} currentFolder={folder(path)} breadcrumbs={parents} onNavigate={openFolder}
+    context="folder" files={files} folders={immediateFolders(folders.map(f => folder(normalizeFolderPath(f.path))), folder(path))}
+    view={view} onChangeView={value => { const next = new URLSearchParams(params); next.set("view", value); setParams(next, { replace: true }); }}
+    onOpenFolder={f => openFolder(f.folder_id)} onOpenFile={onOpen} selectedIds={selected} onToggleFile={onToggle} />;
 }

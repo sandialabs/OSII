@@ -4,7 +4,7 @@ import { ScopeOverviewPanel } from "../../../components/discovery/ScopeOverviewP
 
 export function LibraryOverviewPage() {
   return <Stack spacing={2}>
-    <Stack direction="row" justifyContent="space-between" alignItems="center"><Typography variant="h4" fontWeight={750}>Analyze Library</Typography><Button component={Link} to="/tools" variant="outlined">All tools</Button></Stack>
+    <Stack direction="row" justifyContent="space-between" alignItems="center"><Typography variant="h4" fontWeight={750}>Analyze Library</Typography><Button component={Link} to="/tools" variant="outlined">Toolbox</Button></Stack>
     <Typography color="text.secondary">Explore your library’s formats, dates, processing coverage, and topics.</Typography>
     <ScopeOverviewPanel scope={{ scope_type: "root" }} />
   </Stack>;

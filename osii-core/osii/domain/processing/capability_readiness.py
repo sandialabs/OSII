@@ -84,7 +84,7 @@ def _processor_origin(
         tool_id = str(registration["id"])
         saved = tool_id in saved_tools
         return {
-            "label": "Configured processor" if saved else "Optional Toolbox service",
+            "label": "Configured processor" if saved else "Optional processor service",
             "description": "Separately deployed Processor API service." if saved else "Development registration supplied by OSII; availability depends on starting this optional service.",
             "implementation": "Service descriptor at " + endpoint + "/v1/descriptor" if saved else "osii-core/osii/configuration.py: builtin_tools_config",
             "configuration_file": str(tools_path()),

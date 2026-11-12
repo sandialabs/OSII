@@ -12,7 +12,7 @@ For bare-metal development, install Tesseract on the host before `make dev` or
 
 This service intentionally has no OpenCV contour detection or region tuning.
 The optional **Tesseract OCR with OpenCV regions** processor remains in
-`osii-toolbox/osii-tesseract` for experiments that need bounding boxes.
+`osii-processor-modules/osii-tesseract` for experiments that need bounding boxes.
 
 Endpoints: `/health`, `/v1/descriptor`, `/v1/extract`, `/docs`, `/redoc`, and
 `/openapi.json`.

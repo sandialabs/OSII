@@ -77,7 +77,7 @@ OSII Core owns the complete grounded-answer pipeline under `osii/rag`:
 
 The FastAPI `/api/chat` route is a thin transport adapter over this pipeline.
 The dashboard calls that route; there is no separate RAG service or RAG image.
-Reranking is an optional bounded step in Core RAG, not a Toolbox processor kind.
+Reranking is an optional bounded step in Core RAG, not a processor kind.
 Its implementation lives with the RAG strategy or a RAG endpoint adapter. Core
 keeps ownership of scope, candidate evidence, provenance, and final citations.
 See the [RAG authoring contract](../extending/rag-strategies.md).
@@ -98,9 +98,9 @@ canonical persistence. See the shared product direction below.
   addressable and containerizable despite being grouped with their owner
 - `osii-dashboard`: browser application
 - `osii-mcp`: agent-facing adapter
-- `osii-toolbox`: swappable OCR, dataset, and model
+- `osii-processor-modules`: swappable OCR, dataset, and model
   implementations with independent dependencies and container builds; see
-  [Toolbox deployment](../operations/publishing-images.md)
+  [Processor deployment](../operations/publishing-images.md)
 - `osii-demo-notebooks`: paired Python/Jupytext demonstrations for the public
   Core and Processor SDK interfaces
 
@@ -160,7 +160,7 @@ unrelated repository:
 | Shared topic mathematics | `osii-core/osii/domain/topic_projection.py` | PostgreSQL or local index loading |
 | Topic map and response types | `src/features/topics/components/DocumentEmbeddingMap.tsx`, `src/features/topics/types.ts` in the dashboard | API hooks, permissions, and navigation |
 | Intake planning, job controls, document representation contracts | Core domain and API; shared dashboard feature components | Persistence and authenticated capabilities |
-| Optional extractors, embedders, synthesizers, enrichers | `osii-toolbox/<tool>/` | Independently deployed Processor API service |
+| Optional extractors, embedders, synthesizers, enrichers | `osii-processor-modules/<tool>/` | Independently deployed Processor API service |
 
 Portable changes are isolated commits applied to both branches, with identical
 shared source and contract tests. Dependency locks and composition adapters are
@@ -196,7 +196,7 @@ and paid profiles never silently fall back to one another.
 
 | Role | Target model | Development route |
 | --- | --- | --- |
-| Lightweight embeddings | `sentence-transformers/all-MiniLM-L6-v2` (384 dimensions) | Explicit Toolbox embedder or compatible model gateway |
+| Lightweight embeddings | `sentence-transformers/all-MiniLM-L6-v2` (384 dimensions) | Explicit processor embedder or compatible model gateway |
 | Comparison embeddings | `sentence-transformers/all-mpnet-base-v2` (768 dimensions) | Same contract, separately selected profile |
 | Unmetered chat | Corporate `gemma4` deployment | Corporate-compatible endpoint; an explicitly selected OpenRouter Gemma 4 free variant can exercise the public development path |
 | Metered chat | `openai/gpt-4.1-mini` | OpenRouter now, corporate endpoint when available |
@@ -210,11 +210,11 @@ before claiming model equivalence. Public free variants can have different
 capacity and quotas. Do not try to host a large Gemma model inside the existing
 4 GiB application Droplet.
 
-Toolbox contains implementations of the four processor kinds: extractor,
+Processor modules contain implementations of the four processor kinds: extractor,
 synthesizer, enricher, and embedder. Custom RAG steps, including reranking, belong
-in Core RAG rather than Toolbox. Core owns orchestration,
+in Core RAG rather than processor modules. Core owns orchestration,
 validation, identity, provenance, and commits. The baseline local hashing embedder
-is lexical hashing, not MiniLM. A sentence-transformer Toolbox service should
+is lexical hashing, not MiniLM. A sentence-transformer processor service should
 have an explicit model allowlist, isolated dependencies/model cache, bounded
 batches, and the existing `/v1/embed` contract. Frameworks must not create a
 second authoritative document store or bypass the Processor API to browse files.
@@ -314,7 +314,7 @@ Delivery order and acceptance:
    PostgreSQL job/item state; stage logical changes; pause/resume/cancel/retry;
    isolated re-embedding generations with atomic activation. Test lease recovery,
    partial failure, role checks, and unchanged originals.
-3. **Toolbox/model and OCR parity:** profile-based routing for the exact embedding
+3. **Processor/model and OCR parity:** profile-based routing for the exact embedding
    models and Gemma/GPT choices; deploy the selected Tesseract service; persist
    both representations; share the PDF overlay/representation UI. Test geometry,
    source hashes, provenance, and representation-specific search.
@@ -353,7 +353,7 @@ boundaries and remaining work are:
 | Processing controls | Pause, resume, cancel and retry controls | Durable leases, file checkpoints, pause/resume/cancel/retry and live logs | Shared ProcessingActivity; server controls finish the current file before releasing the worker. Completed files are skipped on resume/retry. |
 | Document inspection | Detailed file page and extraction representations | Shared PDF.js source/split panes, preserved extraction history and representation selection; saved artifact panes | Shared document tabs, SplitFileView, grounded text, OCR regions, ExtractionVersions and artifact renderer. Hosted text editing and extraction promotion remain separate future work. |
 | RAG experiments | Opt-in profiles and comparisons in Chat | Baseline grounded chat | Portable strategy code exists; authenticated PostgreSQL composition and shared experiment controls still need hosted integration. |
-| Synthesis and enrichment | Configured methods and Toolbox routing | Staged per-document synthesis/enrichment, model-free baselines and explicitly connected Toolbox Processor API services | Shared storage-independent SDK processors, synthesis prompts, method/config controls and output cards. Core commits outputs/provenance to PostgreSQL; aggregate scope planning remains separate. No fifth Toolbox kind. |
+| Synthesis and enrichment | Configured methods and processor routing | Staged per-document synthesis/enrichment, model-free baselines and explicitly connected Processor API services | Shared storage-independent SDK processors, synthesis prompts, method/config controls and output cards. Core commits outputs/provenance to PostgreSQL; aggregate scope planning remains separate. No fifth Toolbox kind. |
 
 Migrate these workflows in that order through Core adapters, preserving local
 behavior. A frontend control is not considered ported until the hosted Core API,
@@ -377,5 +377,5 @@ Local's gateway remains profile/filesystem-backed; the hosted gateway uses
 short-lived PostgreSQL grants bound to a live job lease and explicit selected
 models. Grant routes authenticate their bearer grant independently of browser
 sessions; they expose no corpus/store access. Provider credentials remain inside
-Core. This is a persistence adapter, not another Toolbox component or a new
+Core. This is a persistence adapter, not another processor component or a new
 processor API.

@@ -36,7 +36,7 @@ language model. Every index records provider, model, dimension, and
 normalization metadata. Switching vector spaces requires rebuilding.
 
 The experimental OpenCV/Tesseract region extractor and
-tabular processors live in `osii-toolbox/` in
+tabular processors live in `osii-processor-modules/` in
 this repository. Their dependencies remain separate from Core's lockfile and
 default host runtime. Use the per-tool Python source commands and register the
 running Processor API endpoint in Setup. Container builds and component export
