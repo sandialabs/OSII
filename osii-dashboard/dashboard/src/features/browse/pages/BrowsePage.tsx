@@ -1,15 +1,6 @@
 // src/features/browse/pages/BrowsePage.tsx
-import { useMemo, useState } from "react";
-import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
-  Alert,
-  CircularProgress,
-  Stack,
-  Typography,
-} from "@mui/material";
-import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
+import { useMemo } from "react";
+import { Alert, CircularProgress, Stack, Typography } from "@mui/material";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
@@ -17,12 +8,7 @@ import { listFolderScopes } from "../../../api/scopes";
 import type { FolderScopeDescriptor } from "../../../api/types";
 import { useScopeSummaries } from "../../../hooks/useScopeSummaries";
 import { toFileCardModel } from "../../../domain/files";
-import { BrowseBreadcrumbs } from "../components/BrowseBreadcrumbs";
-import { BrowseGrid } from "../components/BrowseGrid";
-import {
-  BrowseDetailsPane,
-  type BrowseSelection,
-} from "../components/BrowseDetailsPane";
+import { BrowseExplorer } from "../components/BrowseExplorer";
 import { buildFileRoute } from "../../../utils/routes";
 import { useBrowsingScope } from "../../../app/providers/BrowsingScopeProvider";
 import { immediateFiles, immediateFolders, normalizeFolderPath } from "../contents";
@@ -68,7 +54,6 @@ export function BrowsePage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { setFolderScope } = useBrowsingScope();
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const view = searchParams.get("view") === "icons" ? "icons" : "list";
 
   const folderQuery = useQuery({
@@ -110,13 +95,8 @@ export function BrowsePage() {
     [summariesQuery.data?.summaries, currentFolder?.path],
   );
 
-  const selection: BrowseSelection = currentFolder
-    ? { kind: "folder", folder: currentFolder }
-    : { kind: "none" };
-
   const handleOpenFolder = (folder: FolderScopeDescriptor) => {
     setFolderScope(folder);
-    setDetailsOpen(false);
 
     const next = new URLSearchParams(searchParams);
     next.set("folder_id", folder.folder_id);
@@ -140,61 +120,10 @@ export function BrowsePage() {
     return <Alert severity="info">No folder root is available.</Alert>;
   }
 
-  return (
-    <Stack spacing={1.75}>
-      <Stack spacing={0.35}>
-        <Typography variant="h5" fontWeight={700}>
-          Browse
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Open a folder to see its contents. Only files in the current folder appear here.
-        </Typography>
-      </Stack>
-
-      <BrowseBreadcrumbs
-        items={breadcrumbs}
-        onNavigate={(folderId: string) => {
-          const folder = getFolderById(scopes, folderId);
-          if (folder) {
-            handleOpenFolder(folder);
-          }
-        }}
-      />
-
-        <Stack spacing={1.5} sx={{ minWidth: 0, width: "100%" }}>
-          {summariesQuery.isLoading ? (
-            <Stack direction="row" spacing={2} alignItems="center">
-              <CircularProgress size={24} />
-              <Typography>Loading folder contents…</Typography>
-            </Stack>
-          ) : summariesQuery.isError ? (
-            <Alert severity="error">
-              Failed to load folder contents.
-              {summariesQuery.error instanceof Error ? ` ${summariesQuery.error.message}` : ""}
-            </Alert>
-          ) : (
-            <BrowseGrid
-              key={currentFolder.folder_id}
-              folders={childFolders}
-              files={fileCards}
-              view={view}
-              onChangeView={(nextView) => {
-                const next = new URLSearchParams(searchParams);
-                next.set("view", nextView);
-                setSearchParams(next, { replace: true });
-              }}
-              onOpenFolder={handleOpenFolder}
-              onOpenFile={(fileId: string) => navigate(buildFileRoute({ fileId }))}
-            />
-          )}
-        </Stack>
-
-      <Accordion expanded={detailsOpen} onChange={(_, expanded) => setDetailsOpen(expanded)} variant="outlined" disableGutters slotProps={{ transition: { unmountOnExit: true } }}>
-        <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
-          <Typography variant="body2">Folder details & synthesis</Typography>
-        </AccordionSummary>
-        <AccordionDetails><BrowseDetailsPane selection={selection} /></AccordionDetails>
-      </Accordion>
-    </Stack>
-  );
+  return <BrowseExplorer key={currentFolder.folder_id} currentFolder={currentFolder} breadcrumbs={breadcrumbs}
+    onNavigate={id => { const folder = getFolderById(scopes, id); if (folder) handleOpenFolder(folder); }}
+    folders={childFolders} files={fileCards} view={view}
+    loading={summariesQuery.isLoading} error={summariesQuery.isError ? "Failed to load folder contents." : undefined}
+    onChangeView={nextView => { const next = new URLSearchParams(searchParams); next.set("view", nextView); setSearchParams(next, { replace: true }); }}
+    onOpenFolder={handleOpenFolder} onOpenFile={fileId => navigate(buildFileRoute({ fileId }))} />;
 }

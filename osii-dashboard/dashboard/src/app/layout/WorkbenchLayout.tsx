@@ -22,7 +22,7 @@ export type NavigationItem = {
 };
 const groups: { id: NavigationGroup; label: string }[] = [
   { id: "documents", label: "Library" },
-  { id: "tools", label: "Tools" },
+  { id: "tools", label: "Toolbox" },
   { id: "start", label: "Add & process" },
   { id: "setup", label: "Configuration" },
 ];
