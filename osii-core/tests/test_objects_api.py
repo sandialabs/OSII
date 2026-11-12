@@ -65,3 +65,22 @@ def test_get_object_syntheses(client, sample_osii_object):
     data = response.json()
     assert data["file_id"] == file_id
     assert "syntheses" in data
+
+
+def test_creation_time_is_saved_when_available_without_unix_ctime_fallback(temp_osii_root, monkeypatch):
+    from datetime import UTC, datetime
+    from pathlib import Path
+    from types import SimpleNamespace
+    from osii.domain.read.docs import get_doc_meta
+    from osii.domain.storage.objects import iso_birthtime_utc, write_meta_toml
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "stat", lambda _: SimpleNamespace(st_ctime=100))
+        assert iso_birthtime_utc(Path("source.pdf")) is None
+        patch.setattr(Path, "stat", lambda _: SimpleNamespace(st_birthtime=200, st_ctime=100))
+        birthtime = iso_birthtime_utc(Path("source.pdf"))
+        assert birthtime == datetime.fromtimestamp(200, UTC).isoformat()
+    write_meta_toml(temp_osii_root, "sha256-creation", "source.pdf", "source.pdf",
+                    "application/pdf", 100, "2026-05-21T00:00:00Z", "creation",
+                    birthtime_utc=birthtime)
+    assert get_doc_meta(temp_osii_root, "sha256-creation")["file"]["birthtime_utc"] == birthtime

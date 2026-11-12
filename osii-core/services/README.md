@@ -12,4 +12,4 @@ exported into a separate repository. None writes `.osii`; Core sends bounded
 requests and commits validated results.
 
 Optional OCR, dataset-specific, experimental, and heavyweight model services
-belong in [`../../osii-toolbox/`](../../osii-toolbox/README.md) instead.
+belong in [`../../osii-processor-modules/`](../../osii-processor-modules/README.md) instead.

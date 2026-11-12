@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import urllib.error
@@ -13,9 +14,9 @@ from typing import Any
 
 from osii.configuration import (
     configured_tools,
-    load_models_config,
     model_connection,
     tool_for_processor,
+    resolve_tool_models,
 )
 from osii.model_gateway_tokens import issue_model_gateway_token
 
@@ -25,17 +26,20 @@ from osii.processor_sdk import (
     EmbeddingRequest,
     ExtractionRequest,
     ProcessorClient,
+    ProcessorDescriptor,
     ProcessorClientError,
     ScopeInput,
     SynthesisRequest,
 )
 
-from osii.domain.artifacts.enrichment_artifacts import (
-    write_scope_enrichment_variant,
-)
 from osii.enrichment.common import collect_scope_texts
 from osii.domain.artifacts.text_representations import get_preferred_text_representation
 from osii.domain.read.docs import get_doc_meta
+from osii.domain.read.sidecar import SidecarLibraryReader
+from osii.domain.storage.commits import (InputRevision, ProcessingCommit, ScopeInputRevision,
+    ScopeProcessingCommit, CommitConflict, text_digest)
+from osii.domain.read.contracts import ReadScope
+from osii.domain.storage.sidecar_commits import SidecarProcessingCommitter
 from osii.extraction.base import ExtractionArtifact, ExtractionSegment, ExtractionState
 from osii.extraction.common import (
     build_result_dict,
@@ -45,12 +49,50 @@ from osii.extraction.common import (
     persist_segment,
     update_provenance,
 )
-from osii.synthesis.common import write_synth_text
-from osii.domain.artifacts.synth_artifacts import (
-    write_collection_synthesis_variant,
-    write_folder_synthesis_variant,
-    write_root_synthesis_variant,
-)
+from osii.processor_sdk.document_metadata import DocumentMetadata
+
+
+def _commit_input(root: Path, file_id: str) -> InputRevision:
+    from osii.enrichment.common import frozen_object_text
+    frozen = frozen_object_text(root, file_id)
+    if frozen and frozen.get("source_sha256"):
+        return InputRevision(file_id,
+            "edited" if frozen.get("representation") == "edited" else frozen.get("extraction_id") or "canonical",
+            frozen["source_sha256"])
+    return InputRevision.capture(SidecarLibraryReader(root), file_id)
+
+
+def _commit_scope_input(root: Path, scope: dict, texts: list[dict]) -> ScopeInputRevision:
+    from osii.domain.artifacts.products import current_product_provenance
+    from osii.domain.scopes.membership import list_scope_file_ids
+    context = current_product_provenance()
+    if "processing_revision" in context:
+        revision = ScopeInputRevision.from_dict(context["processing_revision"])
+    elif "member_ids" in context and context.get("inputs"):
+        # Compatibility for already queued, bounded input snapshots.
+        revision = ScopeInputRevision(tuple(sorted(context["member_ids"])), tuple(sorted((
+            InputRevision(row["file_id"], "edited" if row.get("representation") == "edited" else row.get("extraction_id") or "canonical",
+                row["source_sha256"]) for row in context["inputs"]), key=lambda row: row.file_id)))
+    else:
+        revision = ScopeInputRevision.capture(SidecarLibraryReader(root), list_scope_file_ids(root, scope))
+    inputs = {row.file_id: row for row in revision.inputs}
+    for document in texts:
+        expected = inputs.get(document["file_id"])
+        if expected is None or expected.text_sha256 != (document.get("source_sha256") or text_digest(document["text"])):
+            raise CommitConflict("Scope input text changed while staging the request")
+    return revision
+
+
+def _commit_context(request_id: str, file_id: str, kind: str) -> tuple[str, dict]:
+    from osii.domain.artifacts.products import current_product_provenance
+    context = current_product_provenance()
+    operation = f"{context['run_id']}:{file_id}:{kind}" if context.get("run_id") else request_id
+    return operation, context
+
+
+def _commit_descriptor(descriptor: dict) -> ProcessorDescriptor:
+    return ProcessorDescriptor.model_validate({key: value for key, value in descriptor.items()
+        if key in ProcessorDescriptor.model_fields})
 
 
 def configured_processor_urls() -> list[str]:
@@ -105,31 +147,11 @@ def _model_context(
     if not requirements:
         return None
     configured = tool_for_processor(processor_name, osii_root)
-    tool_id, tool = configured if configured else (processor_name, {})
-    access = tool.get("model_access") or {}
-    if access.get("mode", "gateway") == "none":
-        required = [name for name, value in requirements.items() if value == "required"]
-        if required:
-            raise RuntimeError(
-                f"{processor_name} requires {', '.join(required)} model access, but the tool is configured as self-contained."
-            )
-        return None
-    bindings = dict(access.get("bindings") or {})
-    defaults = load_models_config(osii_root).get("defaults", {})
-    for capability, requirement in requirements.items():
-        alias = str(bindings.get(capability) or defaults.get(capability) or "")
-        if not alias:
-            if requirement == "required":
-                raise RuntimeError(
-                    f"Choose a {capability} model connection for {processor_name} in Setup."
-                )
-            continue
-        connection = model_connection(alias, osii_root)
-        if connection is None or capability not in connection.get("capabilities", []):
-            raise RuntimeError(
-                f"Model connection {alias!r} is unavailable or does not support {capability}."
-            )
-        bindings[capability] = alias
+    tool_id = configured[0] if configured else processor_name
+    from osii.domain.tool_actions import frozen_bindings
+    bindings = frozen_bindings(processor_name)
+    if bindings is None:
+        bindings = resolve_tool_models(processor_name, requirements, osii_root)
     if not bindings:
         return None
     return {
@@ -140,6 +162,7 @@ def _model_context(
             tool_id=tool_id,
             job_id=request_id,
             bindings=bindings,
+            connection_fingerprints={cap: hashlib.sha256(json.dumps(model_connection(alias, osii_root), sort_keys=True).encode()).hexdigest() for cap, alias in bindings.items()},
         ),
         "bindings": bindings,
     }
@@ -186,11 +209,13 @@ def discover_remote_processors(*, include_errors: bool = False) -> list[dict[str
     discovered = []
     for base_url in configured_processor_urls():
         try:
-            descriptor = _request_json(f"{base_url}/v1/descriptor", timeout=5.0)
+            descriptor = ProcessorDescriptor.model_validate(
+                _request_json(f"{base_url}/v1/descriptor", timeout=5.0)
+            ).model_dump(mode="json")
             descriptor["base_url"] = base_url
             descriptor["remote"] = True
             discovered.append(descriptor)
-        except RuntimeError as exc:
+        except (RuntimeError, ValueError, TypeError) as exc:
             if include_errors:
                 discovered.append({"base_url": base_url, "remote": True, "error": str(exc)})
     return discovered
@@ -367,14 +392,20 @@ class RemoteSynthesizer:
         expert_context: str | None = None,
         synthesizer_config: dict | None = None,
     ) -> dict:
-        preferred = get_preferred_text_representation(osii_store, file_id)
-        expert_context = resolve_expert_context(
+        from osii.enrichment.common import frozen_object_text
+        from osii.domain.tool_actions import frozen_expert_context
+        preferred = frozen_object_text(osii_store, file_id)
+        if preferred is None:
+            preferred = get_preferred_text_representation(osii_store, file_id)
+        frozen, context = frozen_expert_context(self.name)
+        expert_context = context if frozen else resolve_expert_context(
             osii_store, {"scope_type": "object", "file_id": file_id}, expert_context
         )
         meta = get_doc_meta(osii_store, file_id) or {}
         file_meta = meta.get("file", {})
         if preferred is None:
             raise RuntimeError(f"No preferred text is available for {file_id}.")
+        input_revision = _commit_input(osii_store, file_id)
         request_id = str(uuid.uuid4())
         model_context = _model_context(
             processor_name=self.name,
@@ -383,7 +414,7 @@ class RemoteSynthesizer:
             osii_root=osii_store,
         )
         try:
-            response = self._client.synthesize(SynthesisRequest(
+            request = SynthesisRequest(
                 request_id=request_id,
                 scope=ScopeInput(
                     scope_type="object",
@@ -399,34 +430,21 @@ class RemoteSynthesizer:
                 expert_context=expert_context,
                 config=synthesizer_config or {},
                 model_context=model_context,
-            ))
+            )
+            response = self._client.synthesize(request)
         finally:
             _revoke_model_context(model_context)
         if response.request_id != request_id:
             raise RuntimeError("Synthesizer returned a mismatched request_id.")
-        path = write_synth_text(
-            osii_store=osii_store,
-            file_id=file_id,
-            text=response.markdown,
-            synthesizer_name=self.name,
-            synthesizer_version=self.version,
-            config={
-                **(synthesizer_config or {}),
-                "processor_url": self.base_url,
-                "expert_context": expert_context,
-                # Processor API citations have optional grounding fields. TOML
-                # cannot encode None, so provenance records only supplied data.
-                "citations": [
-                    item.model_dump(mode="json", exclude_none=True)
-                    for item in response.citations
-                ],
-            },
-            expert_context_used=bool(expert_context),
-        )
+        if response.metadata.get("document_metadata"):
+            response.metadata["document_metadata"] = DocumentMetadata.model_validate(response.metadata["document_metadata"]).model_dump(mode="json", exclude_none=True)
+        operation, provenance = _commit_context(request_id, file_id, "synthesis")
+        saved = SidecarProcessingCommitter(osii_store).commit(ProcessingCommit(operation, file_id,
+            request, response, _commit_descriptor(self._descriptor), input_revision=input_revision,
+            provenance={**provenance, "processor_url": self.base_url}))
         return {
             "file_id": file_id,
-            "synthesis_rel": path.relative_to(osii_store).as_posix(),
-            "provenance_rel": f"objects/{file_id}/provenance.toml",
+            **saved.result,
             "error": None,
         }
 
@@ -445,6 +463,7 @@ class RemoteSynthesizer:
             raise ValueError("Aggregate synthesis scope must be folder, collection, or root.")
         texts, _ = collect_scope_texts(osii_store, scope)
         scope_id = str(scope.get("folder_id") or scope.get("collection_id") or "root")
+        input_revision = _commit_scope_input(osii_store, scope, texts)
         request_id = str(uuid.uuid4())
         model_context = _model_context(
             processor_name=self.name,
@@ -453,7 +472,7 @@ class RemoteSynthesizer:
             osii_root=osii_store,
         )
         try:
-            response = self._client.synthesize(SynthesisRequest(
+            request = SynthesisRequest(
                 request_id=request_id,
                 scope=ScopeInput(
                     scope_type=scope_type,
@@ -469,27 +488,17 @@ class RemoteSynthesizer:
                 expert_context=expert_context,
                 config=synthesizer_config or {},
                 model_context=model_context,
-            ))
+            )
+            response = self._client.synthesize(request)
         finally:
             _revoke_model_context(model_context)
         if response.request_id != request_id:
             raise RuntimeError("Synthesizer returned a mismatched request_id.")
-        metadata = {
-            "processor": self.name,
-            "version": self.version,
-            "processor_url": self.base_url,
-            "citations": [item.model_dump(mode="json") for item in response.citations],
-            **response.metadata,
-            "expert_context_supplied": bool(expert_context),
-            "expert_context": expert_context,
-        }
-        if scope_type == "folder":
-            result = write_folder_synthesis_variant(osii_store, scope_id, method=self.name, text=response.markdown, metadata=metadata)
-        elif scope_type == "collection":
-            result = write_collection_synthesis_variant(osii_store, scope_id, method=self.name, text=response.markdown, metadata=metadata)
-        else:
-            result = write_root_synthesis_variant(osii_store, method=self.name, text=response.markdown, metadata=metadata)
-        return {"ok": True, "result": result, "error": None}
+        operation, provenance = _commit_context(request_id, f"{scope_type}:{scope_id}", "synthesis")
+        saved = SidecarProcessingCommitter(osii_store).commit(ScopeProcessingCommit(operation,
+            ReadScope(scope_type, scope_id), request, response, _commit_descriptor(self._descriptor), input_revision,
+            provenance={**provenance, "processor_url": self.base_url}))
+        return {"ok": True, "result": saved.result, "error": None}
 
 
 class ProcessorEmbeddingClient:
@@ -563,7 +572,9 @@ class RemoteEnricher:
         enricher_config: dict | None = None,
     ) -> dict:
         texts, _ = collect_scope_texts(osii_store, scope)
-        expert_context = resolve_expert_context(osii_store, scope, expert_context)
+        from osii.domain.tool_actions import frozen_expert_context
+        frozen, context = frozen_expert_context(self.name)
+        expert_context = context if frozen else resolve_expert_context(osii_store, scope, expert_context)
         scope_type = (scope.get("scope_type") or scope.get("type") or "").strip().lower()
         scope_id = (
             scope.get("file_id")
@@ -594,6 +605,8 @@ class RemoteEnricher:
         }
 
         request_id = str(uuid.uuid4())
+        input_revision = _commit_input(osii_store, str(scope_id)) if scope_type == "object" else None
+        scope_revision = _commit_scope_input(osii_store, scope, texts) if scope_type != "object" else None
         model_context = _model_context(
             processor_name=self.name,
             descriptor=self._descriptor,
@@ -614,47 +627,30 @@ class RemoteEnricher:
             )
         finally:
             _revoke_model_context(model_context)
-        artifacts = response.get("artifacts") or []
-        if not artifacts:
-            raise RuntimeError(f"Remote enricher '{self.name}' returned no artifacts")
-
-        results = []
-        kind_counts: dict[str, int] = {}
-        for artifact in artifacts:
-            artifact_kind = str(artifact.get("kind") or "enrichment")
-            kind_counts[artifact_kind] = kind_counts.get(artifact_kind, 0) + 1
-        for artifact in artifacts:
-            payload = artifact.get("standard_data")
-            if payload is None:
-                payload = artifact.get("json_data")
-            if payload is None:
-                payload = {"text": artifact.get("text")}
-            kind = artifact.get("kind") or "enrichment"
-            metadata = {
-                **(response.get("metadata") or {}),
-                **(artifact.get("metadata") or {}),
-                "artifact_id": artifact.get("id"),
-                "expert_context_supplied": bool(expert_context),
-                "expert_context": expert_context,
-                "method": self.name,
-                "version": self.version,
-                "processor_url": self.base_url,
-            }
-            results.append(
-                write_scope_enrichment_variant(
-                    osii_store,
-                    scope,
-                    kind=kind,
-                    method=(
-                        self.name
-                        if kind_counts[str(kind)] == 1
-                        else f"{self.name}.{artifact.get('id') or len(results) + 1}"
-                    ),
-                    payload=payload,
-                    metadata=metadata,
-                )
-            )
-
+        from osii.processor_sdk import EnrichmentResponse
+        if len(json.dumps(response)) > 8_000_000:
+            raise ValueError("Processor returned more than 8 MB of enrichment output")
+        validated = EnrichmentResponse.model_validate(response)
+        if validated.request_id != request_id or validated.processor.name != self.name:
+            raise ValueError("Processor returned a response for a different request or tool")
+        if scope_type == "object":
+            from osii.processor_sdk import EnrichmentRequest
+            request = EnrichmentRequest(request_id=request_id, scope=ScopeInput.model_validate(processor_input["scope"]),
+                expert_context=expert_context, config=enricher_config or {})
+            operation, provenance = _commit_context(request_id, str(scope_id), "enrichment")
+            saved = SidecarProcessingCommitter(osii_store).commit(ProcessingCommit(operation, str(scope_id), request,
+                validated, _commit_descriptor(self._descriptor), input_revision=input_revision,
+                provenance={**provenance, "processor_url": self.base_url}))
+            results = saved.result["artifacts"]
+            return {"ok": True, "result": results[0], "artifacts": results, "error": None}
+        from osii.processor_sdk import EnrichmentRequest
+        request = EnrichmentRequest(request_id=request_id, scope=ScopeInput.model_validate(processor_input["scope"]),
+            expert_context=expert_context, config=enricher_config or {})
+        operation, provenance = _commit_context(request_id, f"{scope_type}:{scope_id}", "enrichment")
+        saved = SidecarProcessingCommitter(osii_store).commit(ScopeProcessingCommit(operation,
+            ReadScope(scope_type, str(scope_id)), request, validated, _commit_descriptor(self._descriptor), scope_revision,
+            provenance={**provenance, "processor_url": self.base_url}))
+        results = saved.result["artifacts"]
         return {
             "ok": True,
             "result": results[0],

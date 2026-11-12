@@ -53,7 +53,7 @@ from osii.processor_sdk import (
 def repository_root() -> Path:
     """Find the checkout from Jupyter, an IDE, or a terminal."""
     for candidate in (Path.cwd(), *Path.cwd().parents):
-        if (candidate / "osii-core").is_dir() and (candidate / "osii-toolbox").is_dir():
+        if (candidate / "osii-core").is_dir() and (candidate / "osii-processor-modules").is_dir():
             return candidate
     raise RuntimeError("Open this notebook from inside an OSII repository checkout.")
 

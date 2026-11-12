@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from osii.domain.artifacts.scope_artifacts import get_scope_artifact_summary
 from osii.domain.read.catalog import load_folders_catalog
@@ -6,6 +6,7 @@ from osii.domain.scopes.collections import list_collections
 from osii.domain.scopes.descriptors import describe_scope
 from osii.domain.scopes.membership import list_scope_file_ids
 from osii.domain.scopes.summaries import get_scope_object_summaries
+from osii.domain.scopes.overview import get_scope_overview
 
 router = APIRouter(prefix="/api/scopes", tags=["scopes"])
 
@@ -77,6 +78,14 @@ async def scope_summaries_route(request: Request, payload: dict):
         return get_scope_object_summaries(osii_root, payload.get("scope") or payload)
     except ValueError as exc:
         return {"error": str(exc)}
+
+
+@router.post("/overview")
+def scope_overview_route(request: Request, payload: dict):
+    try:
+        return get_scope_overview(request.app.state.osii_root.resolve(), payload.get("scope") or payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/artifacts")

@@ -2,7 +2,7 @@ import fnmatch
 import os
 import re
 import uuid
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 
@@ -19,10 +19,19 @@ from osii.domain.processing.capability_readiness import intake_capability_readin
 from osii.domain.processing.reconcile import reconcile_osii_with_source
 from osii.domain.processing.reconcile_apply import apply_source_path_reconciliation
 from osii.domain.processing.pathing import display_rel, path_within
-from osii.domain.processing.source_access import source_access_summary
+from osii.domain.processing.source_access import resolve_intake_path, source_access_summary
 from osii.domain.catalog_db import rebuild_catalog
 
 router = APIRouter(prefix="/api", tags=["intake"])
+
+
+@router.get("/intake/defaults")
+def default_intake_settings():
+    from osii.domain.processing.defaults import intake_defaults
+    try:
+        return intake_defaults()
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 def _safe_upload_name(filename: str | None) -> str:
@@ -31,27 +40,25 @@ def _safe_upload_name(filename: str | None) -> str:
     return safe or "upload.bin"
 
 
-def normalize_user_path(raw: str | None) -> Path | None:
-    if not raw:
-        return None
-    cleaned = str(raw).strip().strip('"').strip("'")
-    if not cleaned:
-        return None
-    return Path(cleaned).expanduser()
-
-
-def safe_resolve_user_path(raw: str | None, fallback: Path) -> Path:
-    p = normalize_user_path(raw)
-    if p is None:
-        return fallback.resolve()
+def resolve_requested_path(request: Request, raw: str | None) -> Path:
     try:
-        return p.resolve()
-    except Exception:
-        return fallback.resolve()
+        return resolve_intake_path(
+            raw,
+            request.app.state.shared_volume_root,
+            request.app.state.upload_originals_root,
+            filesystem_mode=getattr(request.app.state, "filesystem_mode", "local"),
+            host_root=getattr(request.app.state, "shared_volume_host_path", ""),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"Cannot open this location: {exc}") from exc
 
 
 @router.get("/intake/readiness")
-async def intake_readiness(request: Request):
+def intake_readiness(request: Request):
     osii_root = request.app.state.osii_root.resolve()
     payload = intake_capability_readiness(osii_root)
     payload["source"] = source_access_summary(
@@ -71,14 +78,24 @@ def rescan_sources(request: Request, payload: dict):
     # The filesystem is canonical; make sure a stale/empty derived catalog
     # cannot hide objects from the hash comparison.
     rebuild_catalog(osii_root)
-    result = reconcile_osii_with_source(
-        osii_root=osii_root,
-        data_root=shared_root,
-        relpath_root=data_volume_root,
-        include_patterns=[],
-        exclude_patterns=[],
-        show_hidden=bool(payload.get("show_hidden", False)),
-    )
+    try:
+        result = reconcile_osii_with_source(
+            osii_root=osii_root,
+            data_root=shared_root,
+            relpath_root=data_volume_root,
+            include_patterns=[],
+            exclude_patterns=[],
+            show_hidden=bool(payload.get("show_hidden", False)),
+        )
+    except OSError as exc:
+        raise HTTPException(
+            status_code=403 if isinstance(exc, PermissionError) else 503,
+            detail=(
+                f"Cannot finish scanning documents at {shared_root}: {exc}. "
+                "Reconnect the shared drive or restore read permission, then retry. "
+                "Stored source paths and statuses have not been changed."
+            ),
+        ) from exc
     if bool(payload.get("apply", False)):
         result["applied"] = apply_source_path_reconciliation(
             reconcile_result=result,
@@ -90,8 +107,77 @@ def rescan_sources(request: Request, payload: dict):
     return result
 
 
+@router.get("/browse/roots")
+def browse_roots(request: Request):
+    """Navigation shortcuts only; never enumerate a mount or directory."""
+    if getattr(request.app.state, "filesystem_mode", "local") == "mounted":
+        return {
+            "items": [
+                str(request.app.state.shared_volume_root),
+                str(request.app.state.upload_originals_root),
+            ]
+        }
+    roots = [str(Path.home()), str(request.app.state.shared_volume_root)]
+    if os.name == "nt":
+        import ctypes
+
+        mask = ctypes.windll.kernel32.GetLogicalDrives()
+        roots.extend(f"{chr(65 + i)}:/" for i in range(26) if mask & (1 << i))
+    else:
+        import sys
+
+        roots.extend(["/", "/Volumes" if sys.platform == "darwin" else "/mnt"])
+    return {"items": list(dict.fromkeys(roots))}
+
+
+def _browsers(request):
+    from osii.domain.processing.directory_browse import DirectoryBrowsers
+
+    if not hasattr(request.app.state, "directory_browsers"):
+        request.app.state.directory_browsers = DirectoryBrowsers()
+        request.app.add_event_handler(
+            "shutdown", request.app.state.directory_browsers.close_all
+        )
+    return request.app.state.directory_browsers
+
+
+@router.get("/browse/page")
+async def browse_page(
+    request: Request,
+    path: str | None = None,
+    cursor: str | None = None,
+    limit: int = Query(100, ge=1, le=200),
+    show_hidden: bool = False,
+):
+    browsers = _browsers(request)
+    try:
+        token = cursor or browsers.open(
+            path,
+            request.app.state.shared_volume_root,
+            request.app.state.upload_originals_root,
+            getattr(request.app.state, "filesystem_mode", "local"),
+            getattr(request.app.state, "shared_volume_host_path", ""),
+            show_hidden,
+        )
+        result = await browsers.page(token, limit, request.is_disconnected)
+    except KeyError as exc:
+        raise HTTPException(410, str(exc.args[0])) from exc
+    except (TimeoutError, InterruptedError) as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except (ValueError, OSError, EOFError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if "error" in result:
+        raise HTTPException(result["status"], result["error"])
+    return result
+
+
+@router.delete("/browse/page/{cursor}")
+async def close_browse(request: Request, cursor: str):
+    _browsers(request).close(cursor)
+    return {"closed": True}
+
 @router.get("/browse")
-async def browse(
+def browse(
     request: Request,
     path: str | None = Query(default=None),
     include_patterns: str = Query(default=""),
@@ -103,15 +189,15 @@ async def browse(
     osii_root = request.app.state.osii_root.resolve()
     data_volume_root = shared_root.parent.resolve()
 
-    current = safe_resolve_user_path(path, shared_root)
-    if not path_within(shared_root, current):
-        current = shared_root
+    current = resolve_requested_path(request, path)
+    if not current.is_dir():
+        raise HTTPException(status_code=422, detail=f"Choose a folder, not a file: {current}")
 
     entries = []
     try:
         children = sorted(current.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
-    except Exception:
-        children = []
+    except OSError as exc:
+        raise HTTPException(status_code=403, detail=f"OSII cannot read this folder: {current}. {exc}") from exc
 
     include_list = parse_patterns(include_patterns)
     exclude_list = parse_patterns(exclude_patterns)
@@ -172,15 +258,37 @@ async def browse(
             }
         )
 
+    filesystem_mode = getattr(request.app.state, "filesystem_mode", "local")
+    host_root = getattr(request.app.state, "shared_volume_host_path", "")
+    host_path = str(current)
+    if host_root and path_within(shared_root, current):
+        host = PureWindowsPath(host_root) if PureWindowsPath(host_root).drive else Path(host_root)
+        host_path = str(host.joinpath(*current.relative_to(shared_root).parts))
+    parent_path = str(current.parent) if current.parent != current else None
+    if filesystem_mode == "mounted" and current in (shared_root, upload_root):
+        parent_path = None
     return {
         "current_path": str(current),
         "display_path": display_rel(current, shared_root, upload_root),
+        "folder_name": current.name or str(current),
+        "parent_path": parent_path,
+        "filesystem_mode": filesystem_mode,
+        "host_path": host_path,
         "entries": entries,
     }
 
 
 @router.post("/resolve")
-async def resolve_queue(request: Request, payload: dict):
+def resolve_queue(request: Request, payload: dict):
+    if payload.get("inventory_selection_id") is not None:
+        from osii.volume.staging import staged_bundle, selection_preview, selection_id
+        try:
+            return selection_preview(
+                staged_bundle(request.app.state.osii_root, selection_id(payload["inventory_selection_id"])),
+                payload.get("extractor_overrides"), payload,
+            )
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
     shared_root = request.app.state.shared_volume_root.resolve()
     upload_root = request.app.state.upload_originals_root.resolve()
 
@@ -203,7 +311,7 @@ async def resolve_queue(request: Request, payload: dict):
 
     queue_items = []
     for raw in queue_paths:
-        p = safe_resolve_user_path(raw, shared_root)
+        p = resolve_requested_path(request, raw)
         if p.exists():
             queue_items.append(
                 {
@@ -214,23 +322,34 @@ async def resolve_queue(request: Request, payload: dict):
                 }
             )
 
-    resolved_files, preview = expand_queue_to_files(
-        queue_items=queue_items,
-        include_subfolders=include_subfolders,
-        include_patterns=include_patterns,
-        exclude_patterns=exclude_patterns,
-        show_hidden=show_hidden,
-        max_files=max_files_int,
-        max_total_size=max_total_size,
-        shared_root=shared_root,
-        upload_root=upload_root,
-    )
+    try:
+        resolved_files, preview = expand_queue_to_files(
+            queue_items=queue_items,
+            include_subfolders=include_subfolders,
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+            show_hidden=show_hidden,
+            max_files=max_files_int,
+            max_total_size=max_total_size,
+            shared_root=shared_root,
+            upload_root=upload_root,
+            excluded_paths=payload.get("excluded_paths", []),
+        )
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail=(
+            f"Could not finish listing this folder ({type(exc).__name__}). "
+            "Check share access, choose a narrower folder, or use File inventory for resumable discovery."
+        )) from exc
+    if getattr(request.app.state, "filesystem_mode", "local") == "mounted":
+        for file in preview["available_files"]:
+            resolve_requested_path(request, file["path"])
     add_processed_counts(preview, resolved_files, shared_root.parent, request.app.state.osii_root)
     add_extractor_plan(preview, resolved_files, extractor_overrides)
     add_processing_plan(
         preview,
         resolved_files,
         request.app.state.osii_root,
+        data_volume_root=shared_root.parent,
         run_extraction=bool(payload.get("run_extraction", True)),
         extract_mode=str(payload.get("extract_mode") or "missing"),
         synthesize=bool(payload.get("synthesizer_name")),
@@ -238,12 +357,13 @@ async def resolve_queue(request: Request, payload: dict):
         enrich=bool(payload.get("enricher_name")),
     )
 
+    displays = {item["path"]: item["display"] for item in preview["available_files"]}
     return {
         "queue_items": queue_items,
         "resolved_files": [
             {
                 "path": str(p),
-                "display": display_rel(p, shared_root, upload_root),
+                "display": displays[str(p)],
             }
             for p in resolved_files
         ],

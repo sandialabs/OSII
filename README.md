@@ -1,141 +1,67 @@
-# OSII
+# OSII — local
 
-> **Keep the evidence. Grow the intelligence.**
+> Keep the evidence. Grow the intelligence.
 
-OSII (the On-Store Intelligence Index) turns a folder of documents and datasets
-into a library you can browse, search, enrich, and ask questions about. It runs
-locally, works without an AI model, and can use approved AI services when they
-are available.
+OSII (the On-Store Intelligence Index) turns documents and datasets into a
+library you can browse, search, enrich, and ask questions about. The `main`
+branch is OSII-local: a standalone application for working with files on your
+computer or a shared drive mounted on it.
+It runs without user accounts or a login; OSII-server provides hosted user access.
 
-Your original files stay where they are: **OSII does not alter them.** It keeps
-extracted content, provenance, and rebuildable search data in a neighboring
-`.osii` sidecar. You can inspect, move, or rebuild that sidecar without changing
-the source material.
+The source material is the evidence. OSII keeps originals unchanged and saves
+extracted content and provenance in portable `.osii` sidecars by default. An
+[optional PostgreSQL backend](docs/reference/local-storage.md) supports the same
+local Workbench, with explicit, non-destructive one-way import. Search indexes
+are rebuildable, processors are replaceable, and model interpretations remain
+traceable to their sources. Basic extraction and keyword search work without
+an AI model.
 
-## What happens when you use OSII Launcher
+## What you can do
 
-Open the launcher and choose a folder of documents. It checks that OSII can
-read that folder, helps you connect to the image registry, and lets you select
-optional tools. When you press **Start OSII**, it starts a local stack; you can
-then open the dashboard from the launcher. You can return to the same library
-later without rebuilding the app or repeating the setup.
+- Choose files directly or discover shared-drive metadata with resumable scans,
+  then select a bounded set to process.
+- Extract text, add OCR alongside it, and inspect text or mathematical Markdown
+  with source locations.
+- Browse files and collections, search by keywords or document meaning, and ask
+  grounded questions with an optional model connection.
+- Edit summaries, metadata, wikis, and other derived products with revision
+  history; run replaceable analysis tools.
+- Explore related documents with the experimental Topic Explorer.
+- Compare experimental RAG strategies and inspect their evidence in Chat.
+- Extend processing and frontend tools through documented interfaces.
+- Write editable research reports with passage references, bibliography drafts,
+  reviewable revisions, and Markdown or Mathpix exports.
 
-The launcher handles the workstation; OSII handles the knowledge. Your files
-remain untouched and are mounted read-only. OSII extracts text and tables,
-records where each result came from, and writes derived artifacts to a separate
-`.osii` sidecar. Search indexes can be rebuilt from those artifacts. The
-dashboard lets you inspect the results, search, and ask grounded questions.
-An AI model is optional, not a prerequisite for understanding your files.
+## Get started
 
-```text
-Choose a folder in Launcher
-         |
-         +--> original files (read-only)
-         |
-         +--> OSII's .osii sidecar (derived content + provenance)
-                         |
-                         +--> dashboard, Python, REST, MCP, and custom tools
-```
-
-This design reflects four ideas:
-
-- **Grounding before generation.** A model may help interpret material, but
-  it is not the source of truth.
-- **Canonical files before indexes.** Search indexes and caches make OSII
-  fast; they can be rebuilt from inspectable artifacts.
-- **Replaceable computation.** You can add or swap extractors, synthesizers,
-  embedders, and enrichers without changing your originals.
-- **One shared vocabulary.** People, scripts, the dashboard, REST clients,
-  and agents use the same objects, scopes, artifacts, and provenance.
-
-## Start here: choose your path
-
-| Path | Best for |
-| --- | --- |
-| [Desktop app: build the launcher](#desktop-app-build-the-launcher) | The primary graphical path for choosing a library, optional tools, and a pinned container version. |
-| [Bare-metal demo](#bare-metal-demo) | Learning OSII or changing Python and dashboard code without building containers. |
-| [Direct containers](#direct-containers) | Building and testing the packaged stack yourself. |
-
-### Desktop app: build the launcher
-
-Build the launcher once, then open the resulting app whenever you want to use
-OSII. It needs Podman, a Compose provider, and accessible OSII images at a
-pinned tag. **Building the launcher does not build the images.** From
-`osii-launcher/`, after installing its [development
-prerequisites](osii-launcher/README.md#development):
+Install **uv**, **Node.js 22.18+**, and **make** on macOS/Linux. Copy
+`.env.example` to `.env`, set `OSII_SOURCE_DIR` to an existing folder, and run:
 
 ```bash
-npm ci
-npm run tauri -- build
+make dev
 ```
 
-The [launcher guide](osii-launcher/README.md) explains image defaults and where
-to find the built app. Configure model connections later in dashboard
-**Setup**; model keys do not belong in the launcher.
-For a disconnected workstation, [export the container images to an offline
-collection](docs/operations/publishing-images.md#carry-images-to-an-airgapped-workstation)
-on a connected computer, then load them locally before starting OSII.
-
-### Bare-metal demo
-
-For the shortest source-based introduction, install [uv](https://docs.astral.sh/uv/)
-and Node.js/npm, then run the demo from the repository root. OSII requests its
-tested Python 3.12 runtime and manages the application environment for you.
-No container runtime or model download is needed for this path.
-
-```bash
-# macOS/Linux (requires make)
-make demo
-```
+On Windows, install uv and Node.js and run:
 
 ```powershell
-# Windows PowerShell
-.\scripts\osii.ps1 demo
+.\scripts\osii.ps1 dev
 ```
 
-Keep that terminal open and visit the [dashboard](http://localhost:5173).
-In **Intake**, process the included example files; then explore **Files**,
-**Search**, and **Collections**. Stop with Ctrl+C. To run against your own
-files later, use `make dev` or `.\scripts\osii.ps1 dev` and follow the
-[host-Python runbook](docs/operations/runbook-development.md#host-python-development).
+Open [the dashboard](http://localhost:5173), process your files, and explore the
+library. Processor modules start automatically and are available in **Setup**.
+Set individual `OSII_ENABLE_…` switches in `.env` to omit modules.
+Keep the terminal open; **Ctrl+C** stops OSII. For sample files, use
+`make demo` (Windows: `.\scripts\osii.ps1 demo`). Install Tesseract for OCR;
+Apache Tika and its Java runtime are prepared automatically on first startup;
+configure optional model connections in **Setup**. The
+[Banyan processor module](osii-processor-modules/banyan/README.md) uses its
+own local Nemotron endpoint configuration. Keep credentials outside Git.
+Choose an Intake preset for selected files; the startup guide covers provider
+profiles and configurable processing defaults.
 
-### Direct containers
-
-Use `make build` and `make run` from the repository root on macOS/Linux, or
-the [equivalent PowerShell commands](docs/operations/runbook-development.md#direct-compose-development)
-on Windows. The [Compose runbook](docs/operations/runbook-development.md#direct-compose-development)
-covers the container `.env`, Podman setup, and architecture checks. The
-[deployment chooser](docs/operations/runbooks.md) covers other operating tasks.
-
-## Where to go next
-
-| If you want to… | Read… |
-| --- | --- |
-| Learn the architecture through small examples | [Python demonstration series](osii-demo-notebooks/README.md) |
-| Process one file and inspect its artifacts | [Single-file walkthrough](docs/tutorials/single-file.md) |
-| Understand Core, processors, and clients | [Architecture](docs/concepts/architecture.md) |
-| Add your own extractor, synthesizer, embedder, or enricher | [Extend OSII](docs/extending/index.md) |
-| Use shared drives or configure models | [Shared drives](docs/operations/shared-drives.md) · [Model connections](docs/reference/model-providers.md) |
-| Find an operating procedure | [Deployment runbooks](docs/operations/runbooks.md) |
-| Find a REST route or schema | [REST API overview](docs/reference/api/index.md) · [OpenAPI schema](osii-core/docs/api/openapi.yaml) |
-
-## How this repository is organized
-
-The boundaries are intentional; you do not need to learn them all to use OSII.
-
-- **`osii-core/`** owns the `.osii` sidecar, scopes, retrieval, API, worker,
-  and grounded chat. Its `osii.processor_sdk` is the public contract for
-  custom processors.
-- **`osii-core/services/`** contains the guaranteed baseline processors.
-- **`osii-dashboard/`** and **`osii-mcp/`** are human and agent clients of Core.
-- **`osii-launcher/`** owns workstation-level Podman, image, folder, profile,
-  and application-lifecycle workflows.
-- **`osii-toolbox/`** contains optional processors whose dependencies do not
-  belong in Core.
-- **`osii-demo-notebooks/`**, **`docs/`**, and **`scripts/`** support learning,
-  reference, and cross-platform operation.
-
-OSII is a research project and a working implementation of grounded,
-extensible knowledge infrastructure. It makes interpretations inspectable—not
-authoritative merely because a model produced them. When in doubt, return to
-the source material and its provenance.
+See the [startup guide](docs/operations/runbook-development.md) for setup and
+troubleshooting, [architecture](docs/concepts/architecture.md) for the design,
+and [extension guides](docs/extending/index.md) for processors and frontend tools.
+Use the `osii-server` branch for an authenticated library shared by a team;
+`archive/workstation-deployment-2026-11-03` preserves earlier workstation
+packaging workflows.

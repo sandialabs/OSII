@@ -34,6 +34,7 @@ export async function runObjectSynthesis(
 export async function runEnrichmentJob(payload: {
   enricher_name: string;
   scope: ScopeDescribeRequest;
+  model_bindings?: Record<string, string>;
   enricher_config?: Record<string, unknown>;
 }): Promise<EnrichmentJobResponse> {
   return apiJson<EnrichmentJobResponse>("/api/enrichment-jobs/run", {

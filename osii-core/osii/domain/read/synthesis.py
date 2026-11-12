@@ -6,9 +6,9 @@ from osii.domain.storage.store import object_dir, object_synth_path, object_synt
 
 def get_synth_text(osii_store: Path, file_id: str) -> str | None:
     path = object_synth_path(osii_store, file_id)
-    if not path.exists():
-        return None
-    return path.read_text(encoding="utf-8")
+    from osii.domain.artifacts.products import read_product
+    data = read_product(path)["data"]
+    return data["text"] if data is not None else None
 
 
 def get_synth_toml(osii_store: Path, file_id: str) -> dict | None:
@@ -33,3 +33,21 @@ def list_syntheses(osii_store: Path, file_id: str) -> list[dict]:
             "scope": "object",
         }
     ]
+
+
+def get_suggested_metadata(osii_store: Path, file_id: str) -> dict:
+    """Current derived suggestions; old extraction outputs never label new text."""
+    from osii.domain.artifacts.artifact_staleness import get_artifact_staleness
+    from osii.domain.storage.store import provenance_path
+    from osii.domain.document_metadata import synthesis_labels
+    try:
+        from osii.domain.document_metadata import read_manual_metadata
+        _, manual = read_manual_metadata(osii_store, file_id)
+        if manual is not None:
+            return synthesis_labels({"document_metadata": manual})
+        if (get_artifact_staleness(osii_store, file_id) or {}).get("stale", {}).get("syntheses"):
+            return {}
+        provenance = tomllib.loads(provenance_path(osii_store, file_id).read_text(encoding="utf-8"))
+        return synthesis_labels(provenance.get("synthesis", {}).get("config", {}))
+    except (OSError, ValueError, TypeError):
+        return {}

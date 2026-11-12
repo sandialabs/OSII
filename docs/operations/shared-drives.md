@@ -14,21 +14,21 @@ separate writable runtime directory on the workstation.
 Connect the share in Windows first. Then use a mapped drive:
 
 ```powershell
-.\scripts\osii.ps1 dev-shared `
+.\scripts\osii.ps1 dev `
   -SourceDir "S:\Team Documents"
 ```
 
 Or use its UNC path directly:
 
 ```powershell
-.\scripts\osii.ps1 dev-shared `
+.\scripts\osii.ps1 dev `
   -SourceDir '\\server\share\Team Documents'
 ```
 
 Choose a distinct local artifact location when desired:
 
 ```powershell
-.\scripts\osii.ps1 dev-shared `
+.\scripts\osii.ps1 dev `
   -SourceDir '\\server\share\Team Documents' `
   -RuntimeDir "D:\OSII\team-documents"
 ```
@@ -44,13 +44,11 @@ Mount or connect the share through the operating system first. Then pass its
 mounted folder:
 
 ```bash
-make dev-shared SHARED_DRIVE_PATH="/Volumes/Team Documents"
+OSII_SOURCE_DIR="/Volumes/Team Documents" OSII_SOURCE_KIND=shared make dev
 ```
 
 ```bash
-make dev-shared \
-  SHARED_DRIVE_PATH="/mnt/team-documents" \
-  SHARED_DRIVE_DATA="./osii-data/team-documents"
+OSII_SOURCE_DIR="/mnt/team-documents" OSII_RUNTIME_DIR="./osii-data/team-documents" OSII_SOURCE_KIND=shared make dev
 ```
 
 Do not put a Samba username or password in these commands. The first path is
@@ -70,28 +68,11 @@ new processing and explains which source needs attention. Existing canonical
 artifacts remain local and usable after the source reconnects. Use **Rescan
 source paths** if files were reorganized on the share.
 
-## Packaged Podman deployment
+## Deployment status
 
-The host share must already be mounted and visible to Podman. Start the normal
-packaged stack with that host path:
-
-```bash
-make run-shared SHARED_DRIVE_PATH="/mnt/team-documents"
-```
-
-```powershell
-.\scripts\osii.ps1 run-shared -SourceDir '\\server\share\Team Documents'
-```
-
-Compose mounts the source read-only at `/data/source`; canonical `.osii` state
-stays in the managed `osii-data` volume. On macOS and Windows, Podman runs in a
-Linux virtual machine, so the chosen host folder must also be shared with that
-machine. When that is difficult, use the bare-metal `dev-shared` workflow—it
-does not add a second filesystem boundary.
-
-OSII does not start a Samba server, mount a remote share, or accept share
-credentials. Managed deployments should mount shares through their platform
-and expose only the intended document root to the OSII containers.
+Workstation container deployments are archived on
+`archive/workstation-deployment-2026-11-03`. Use the host workflow above.
+OSII does not mount shares or accept share credentials.
 
 ## Current scope
 

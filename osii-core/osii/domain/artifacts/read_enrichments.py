@@ -9,7 +9,9 @@ from osii.domain.storage.store import (
     object_enrichments_dir,
     root_enrichments_dir,
 )
+from osii.domain.artifacts.products import read_product, delete_product, validate_scope
 from osii.domain.scopes.scopes import normalize_scope_type
+from osii.domain.read.sidecar import SidecarLibraryReader
 
 
 def _bundle_files(path: Path, rel_prefix: str) -> list[dict]:
@@ -45,7 +47,17 @@ def _list_enrichment_dir(path: Path, rel_prefix: str) -> list[dict]:
 
     items = []
 
-    for child in sorted(path.iterdir(), key=lambda p: p.name.lower()):
+    children = {child.name: child for child in path.iterdir()}
+    # A committed wiki is discoverable even if the compatibility JSON could not
+    # be repaired after interruption. The manifest is the commit point.
+    for manifest_path in (path / ".history").glob("*/manifest.json"):
+        manifest = _read_json_if_exists(manifest_path)
+        name = manifest.get("filename") if isinstance(manifest, dict) else None
+        if name and Path(name).name == name and manifest.get("current"):
+            children.setdefault(name, path / name)
+    for child in sorted(children.values(), key=lambda p: p.name.lower()):
+        if child.name.startswith("."):
+            continue
         if child.is_dir():
             items.append(
                 {
@@ -62,7 +74,7 @@ def _list_enrichment_dir(path: Path, rel_prefix: str) -> list[dict]:
                 "relpath": f"{rel_prefix}/{child.name}",
             }
             if child.suffix == ".json" and not child.name.endswith(".meta.json"):
-                payload = _read_json_if_exists(child)
+                payload = read_product(child)["data"]
                 if isinstance(payload, dict):
                     artifact_type = payload.get("artifact_type")
                     title = payload.get("title")
@@ -76,6 +88,7 @@ def _list_enrichment_dir(path: Path, rel_prefix: str) -> list[dict]:
 
 
 def list_scope_enrichments(osii_root: Path, scope: dict) -> list[dict]:
+    scope = validate_scope(scope)
     scope_type = normalize_scope_type(scope.get("scope_type") or scope.get("type"))
 
     if scope_type == "object":
@@ -118,10 +131,13 @@ def _read_json_if_exists(path: Path):
 
 
 def get_object_enrichment_payload(osii_root: Path, file_id: str, filename: str) -> dict | None:
-    path = object_enrichments_dir(osii_root, file_id) / filename
-    data = _read_json_if_exists(path)
-    if data is None:
+    reader = SidecarLibraryReader(osii_root, product_reader=read_product)
+    # Existing HTTP responses retain their full-payload behavior; new callers
+    # get the reader's bounded default unless they opt out explicitly.
+    artifact = reader.get_artifact(file_id, f"enrichments/{filename}", max_bytes=None)
+    if artifact is None:
         return None
+    data = json.loads(artifact.data)
 
     return {
         "file_id": file_id,
@@ -132,6 +148,7 @@ def get_object_enrichment_payload(osii_root: Path, file_id: str, filename: str) 
 
 
 def get_scope_enrichment_payload(osii_root: Path, scope: dict, filename: str) -> dict | None:
+    scope = validate_scope(scope)
     scope_type = normalize_scope_type(scope.get("scope_type") or scope.get("type"))
     if Path(filename).name != filename:
         raise ValueError("filename must not contain a path")
@@ -155,7 +172,12 @@ def get_scope_enrichment_payload(osii_root: Path, scope: dict, filename: str) ->
     else:
         raise ValueError(f"Unsupported scope type: {scope_type}")
 
-    data = _read_json_if_exists(base_dir / filename)
+    if scope_type == "object":
+        artifact = SidecarLibraryReader(osii_root, product_reader=read_product).get_artifact(
+            scope_id, f"enrichments/{filename}", max_bytes=None)
+        data = json.loads(artifact.data) if artifact else None
+    else:
+        data = read_product(base_dir / filename)["data"]
     if data is None:
         return None
     return {
@@ -176,7 +198,7 @@ def delete_scope_enrichment(osii_root: Path, scope: dict, filename: str) -> dict
         return None
     data_path = osii_root / existing["relpath"]
     metadata_path = data_path.with_name(f"{data_path.stem}.meta.json")
-    data_path.unlink()
+    delete_product(osii_root, data_path)
     metadata_deleted = False
     if metadata_path.is_file():
         metadata_path.unlink()

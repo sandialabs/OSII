@@ -1,0 +1,29 @@
+schema_version = 1
+id = "tika-adapter"
+extras = []
+
+[[processors]]
+id = "tika"
+processor_id = "tika"
+kind = "extractor"
+display_name = "Apache Tika"
+description = "Extracts document text with managed Apache Tika or a configured external server."
+command = [
+    "-m",
+    "uvicorn",
+    "tika_adapter.main:app",
+]
+port = 8102
+port_env = "OSII_TIKA_ADAPTER_PORT"
+aliases = [
+    "tika_catchall",
+]
+readiness_path = "/upstream-health"
+readiness_config = [
+    "tika_endpoint",
+]
+
+[processors.capabilities]
+file_extensions = [
+    "*",
+]

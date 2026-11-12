@@ -1,3 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
+import { apiJson } from "../../../api/client";
+import type { DocumentMetadata } from "../../../api/documentMetadata";
 // src/features/files/components/FileHeader.tsx
 import { Chip, Stack, Typography } from "@mui/material";
 
@@ -8,14 +11,17 @@ type FileHeaderProps = {
 };
 
 export function FileHeader({ file }: FileHeaderProps) {
+  const metadata = useQuery({ queryKey: ["objects", file.fileId, "metadata"], queryFn: () => apiJson<{ document_metadata?: DocumentMetadata | null }>(`/api/objects/${encodeURIComponent(file.fileId)}/metadata`) });
+  const record = metadata.data?.document_metadata;
+  const title = record?.descriptive_title?.value || record?.title?.value;
   return (
     <Stack spacing={1}>
       <Stack spacing={0.25}>
         <Typography variant="h5" fontWeight={700}>
-          {file.filename}
+          {title || file.filename}
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          {file.sourceRelpath}
+          {title ? `${file.filename} · ${file.sourceRelpath}` : file.sourceRelpath}
         </Typography>
       </Stack>
 
@@ -24,9 +30,6 @@ export function FileHeader({ file }: FileHeaderProps) {
         <Chip label={`${file.textCount} text items`} size="small" variant="outlined" />
         <Chip label={`${file.imageCount} image items`} size="small" variant="outlined" />
         {file.hasSynthesis ? <Chip label="Has synthesis" size="small" /> : null}
-        {file.supportsMarkdownRender ? (
-          <Chip label="Markdown-capable" size="small" variant="outlined" />
-        ) : null}
         {file.sensitivityLabels.map((label) => (
           <Chip key={`sensitivity-${label}`} label={label} size="small" color="warning" />
         ))}

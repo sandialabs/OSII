@@ -5,10 +5,12 @@ from osii.domain.artifacts.extraction_variants import (
     list_extraction_artifacts,
     list_extraction_variants,
     promote_extraction_variant,
+    read_extraction_text,
 )
 from osii.domain.catalog_db import upsert_document
 from osii.domain.processing.pathing import path_within
 from osii.domain.read.docs import get_doc_meta
+from osii.domain.read.sidecar import SidecarLibraryReader
 from osii.domain.storage.ids import compute_file_id
 
 router = APIRouter(prefix="/api/objects", tags=["extraction-variants"])
@@ -35,6 +37,24 @@ def get_extraction_artifacts(request: Request, file_id: str, variant_id: str):
     return {"file_id": file_id, "variant_id": variant_id, "artifacts": artifacts}
 
 
+@router.get("/{file_id}/extractions/{variant_id}/texts")
+def get_extraction_text(request: Request, file_id: str, variant_id: str):
+    if variant_id == "canonical":
+        record = SidecarLibraryReader(request.app.state.osii_root.resolve()).get_representation(file_id, "canonical")
+        if record is None:
+            raise HTTPException(404, "Canonical extracted text not found")
+        return {"file_id": file_id, "extraction_id": "canonical", "text": record.text,
+                "segments": [{"id": segment.segment_id, "kind": "text", "path": "text.txt",
+                              "span": {"char_start": segment.char_start, "char_end": segment.char_end},
+                              "source_origin": segment.source_origin} for segment in record.segments]}
+    try:
+        return read_extraction_text(
+            request.app.state.osii_root.resolve(), file_id, variant_id
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 def _current_source_path(request: Request, file_id: str) -> Path:
     osii_root = request.app.state.osii_root.resolve()
     meta = get_doc_meta(osii_root, file_id)
@@ -43,14 +63,21 @@ def _current_source_path(request: Request, file_id: str) -> Path:
 
     source_relpath = str((meta.get("file") or {}).get("source_relpath") or "").strip()
     if not source_relpath:
-        raise HTTPException(status_code=409, detail="object has no recorded source path")
+        raise HTTPException(
+            status_code=409, detail="object has no recorded source path"
+        )
 
     shared_root = request.app.state.shared_volume_root.resolve()
     upload_root = request.app.state.upload_originals_root.resolve()
     data_volume_root = shared_root.parent.resolve()
     source_path = (data_volume_root / source_relpath).resolve()
-    if not (path_within(shared_root, source_path) or path_within(upload_root, source_path)):
-        raise HTTPException(status_code=409, detail="recorded source path is outside the configured source locations")
+    if not (
+        path_within(shared_root, source_path) or path_within(upload_root, source_path)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="recorded source path is outside the configured source locations",
+        )
     if not source_path.is_file():
         raise HTTPException(
             status_code=409,
@@ -70,7 +97,7 @@ async def queue_extraction(request: Request, file_id: str, payload: dict):
     extractor_name = str(payload.get("extractor_name") or "").strip()
     if not extractor_name:
         raise HTTPException(status_code=422, detail="extractor_name is required")
-    extraction_policy = str(payload.get("extraction_policy") or "make_primary").strip()
+    extraction_policy = str(payload.get("extraction_policy") or "save_variant").strip()
     if extraction_policy not in {"make_primary", "save_variant"}:
         raise HTTPException(
             status_code=422,
@@ -110,3 +137,66 @@ def make_extraction_primary(request: Request, file_id: str, variant_id: str):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     upsert_document(osii_root, file_id)
     return result
+
+
+@router.post("/{file_id}/extractions/{variant_id}/editable-copy")
+def copy_extraction_product(
+    request: Request, file_id: str, variant_id: str, payload: dict
+):
+    """Curate a derived copy; the extractor's original evidence stays immutable."""
+    import hashlib
+    from osii.domain.artifacts.products import (
+        product_path,
+        publish_product,
+        read_product,
+        product_provenance,
+    )
+
+    root = request.app.state.osii_root.resolve()
+    artifact_id = payload.get("artifact_id")
+    try:
+        if artifact_id is None:
+            source = read_extraction_text(root, file_id, variant_id)
+            data = {
+                "artifact_type": "text",
+                "title": "Corrected extraction",
+                "text": source["text"],
+            }
+        else:
+            artifacts = list_extraction_artifacts(root, file_id, variant_id)
+            artifact = next(
+                (item for item in artifacts if item["id"] == artifact_id), None
+            )
+            if not artifact or artifact["data"] is None:
+                raise ValueError(
+                    "Choose an extraction product with an inline JSON preview"
+                )
+            data = artifact["data"]
+        suffix = hashlib.sha256(f"{variant_id}:{artifact_id}".encode()).hexdigest()[:20]
+        filename = f"extraction-copy--{suffix}.json"
+        scope = {"scope_type": "object", "file_id": file_id}
+        path = product_path(root, scope, filename)
+        if read_product(path)["data"] is None:
+            with product_provenance(
+                {
+                    "input_extraction_id": variant_id,
+                    "source_artifact_id": artifact_id,
+                    "file_id": file_id,
+                }
+            ):
+                try:
+                    publish_product(
+                        root,
+                        path,
+                        data,
+                        origin="human",
+                        expected=None,
+                        check_expected=True,
+                    )
+                except FileExistsError:
+                    pass  # Another editor created the same copy; never overwrite it.
+        return {"scope": scope, "filename": filename, "family": "enrichment"}
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

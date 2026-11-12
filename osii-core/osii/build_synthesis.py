@@ -1,3 +1,4 @@
+from osii.domain.artifacts.products import write_text_product
 import argparse
 from pathlib import Path
 
@@ -119,7 +120,7 @@ def main():
         if root_folder_id:
             root_text = get_folder_synthesis_text(osii_root, root_folder_id)
             if root_text:
-                root_synth_path(osii_root).write_text(root_text, encoding="utf-8")
+                write_text_product(osii_root, root_synth_path(osii_root), root_text)
                 root_count = 1
 
     print("")

@@ -1,5 +1,9 @@
 // src/features/chat/components/ChatPanel.tsx
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { compareRag, getRagProfiles } from "../../../api/chat";
+import { RagProfileControls, RagRunDetails, RagComparisonPanel } from "./RagExperiments";
+import type { RagComparison, RagTrace } from "../types";
 import {
   Alert,
   Box,
@@ -48,6 +52,8 @@ type DisplayChatMessage = ChatMessage & {
   citations?: ChatCitation[];
   provider?: string;
   fallbackUsed?: boolean;
+  model?: string | null;
+  experiment?: RagTrace | null;
 };
 
 function scopeLabel(scope: ScopeDescribeRequest): string {
@@ -134,6 +140,23 @@ export function ChatPanel({ scope }: ChatPanelProps) {
   const chatMutation = useChat();
   const recentPrompts = useActivityHistory("chat_prompt");
 
+  const [profileId, setProfileId] = useState("default");
+  const [comparisonIds, setComparisonIds] = useState(["lexical-v1", "hybrid-v1"]);
+  const [comparison, setComparison] = useState<RagComparison | null>(null);
+  const [comparisonError, setComparisonError] = useState("");
+  const profilesQuery = useQuery({ queryKey: ["rag-profiles"], queryFn: getRagProfiles });
+  const comparisonMutation = useMutation({ mutationFn: compareRag });
+  const epoch = useRef(0);
+  const scopeKey = JSON.stringify(scope);
+  const busy = chatMutation.isPending || comparisonMutation.isPending;
+
+  useEffect(() => {
+    epoch.current += 1;
+    setHistory([]); setComparison(null); setComparisonError("");
+    chatMutation.reset(); comparisonMutation.reset();
+    return () => { epoch.current += 1; };
+  }, [scopeKey]);
+
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<DisplayChatMessage[]>([]);
 
@@ -147,10 +170,8 @@ export function ChatPanel({ scope }: ChatPanelProps) {
     if (!query) return;
     recentPrompts.add({ text: query, scope });
 
-    const requestHistory: ChatMessage[] = history.map((message) => ({
-      role: message.role,
-      content: message.content,
-    }));
+    const requestHistory = boundedHistory();
+    const requestEpoch = epoch.current;
 
     const nextHistory: DisplayChatMessage[] = [
       ...history,
@@ -165,8 +186,9 @@ export function ChatPanel({ scope }: ChatPanelProps) {
         query,
         scope,
         history: requestHistory,
+        profile_id: profileId,
       });
-
+      if (requestEpoch !== epoch.current) return;
       setHistory([
         ...nextHistory,
         {
@@ -175,9 +197,12 @@ export function ChatPanel({ scope }: ChatPanelProps) {
           citations: response.citations,
           provider: response.provider,
           fallbackUsed: response.fallback_used,
+          model: response.model,
+          experiment: response.experiment,
         },
       ]);
     } catch (error) {
+      if (requestEpoch !== epoch.current) return;
       setHistory([
         ...nextHistory,
         {
@@ -189,6 +214,31 @@ export function ChatPanel({ scope }: ChatPanelProps) {
         },
       ]);
     }
+  };
+
+  function boundedHistory(): ChatMessage[] {
+    const turns = history.map(({ role, content }) => ({ role, content })).slice(-12);
+    while (turns.reduce((sum, turn) => sum + turn.content.length, 0) > 12000) turns.shift();
+    return turns;
+  }
+
+  const handleCompare = async () => {
+    const requestEpoch = epoch.current;
+    setComparison(null); setComparisonError("");
+    try {
+      const result = await comparisonMutation.mutateAsync({ query: input.trim(), scope,
+        history: boundedHistory(), profile_ids: comparisonIds });
+      if (requestEpoch === epoch.current) setComparison(result);
+    } catch (error) {
+      if (requestEpoch === epoch.current) setComparisonError((error as Error).message);
+    }
+  };
+
+  const downloadComparison = () => {
+    if (!comparison) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(comparison, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a"); link.href = url; link.download = "osii-rag-comparison.json"; link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
   const latestAssistantMessage = [...history]
@@ -269,10 +319,17 @@ export function ChatPanel({ scope }: ChatPanelProps) {
               </Typography>
             </Stack>
 
+            {profilesQuery.data && <RagProfileControls catalog={profilesQuery.data} selected={profileId}
+              onSelect={value => { epoch.current += 1; setProfileId(value); setHistory([]); setComparison(null); setComparisonError(""); chatMutation.reset(); }}
+              comparison={comparisonIds} onComparison={setComparisonIds} busy={busy}
+              onCompare={() => void handleCompare()} canCompare={Boolean(input.trim())} />}
+            {profilesQuery.error && <Alert severity="info">RAG experiment controls are unavailable: {profilesQuery.error.message}</Alert>}
+
             <TextField
               fullWidth
               multiline
               minRows={3}
+              inputProps={{ maxLength: 4000 }}
               label="Question"
               value={input}
               onChange={(event) => setInput(event.target.value)}
@@ -288,7 +345,7 @@ export function ChatPanel({ scope }: ChatPanelProps) {
               variant="contained"
               endIcon={<SendOutlinedIcon />}
               onClick={() => void handleSend()}
-              disabled={chatMutation.isPending || !input.trim()}
+              disabled={busy || !input.trim()}
               sx={{ alignSelf: "flex-start" }}
             >
               Send
@@ -296,6 +353,10 @@ export function ChatPanel({ scope }: ChatPanelProps) {
           </Stack>
         </CardContent>
       </Card>
+
+      {comparisonMutation.isPending && <Typography>Comparing selected modes…</Typography>}
+      {comparisonError && <Alert severity="error">{comparisonError}</Alert>}
+      {comparison && profilesQuery.data && <RagComparisonPanel value={comparison} catalog={profilesQuery.data} onDownload={downloadComparison} />}
 
       <ScopeSuggestions scope={scope} mode="questions" onSelect={setInput} />
 
@@ -321,6 +382,7 @@ export function ChatPanel({ scope }: ChatPanelProps) {
                     {message.role === "user" ? "You" : `Assistant · ${message.provider ?? "unknown provider"}${message.fallbackUsed ? " (fallback)" : ""}`}
                   </Typography>
 
+                  {message.experiment && <RagRunDetails trace={message.experiment} />}
                   {message.role === "assistant" ? (
                     <Box
                       sx={{

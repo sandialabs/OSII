@@ -38,18 +38,22 @@ class CollectionFirstNSynthesizer(BaseCollectionSynthesizer):
 
         state = CollectionSynthesisState()
 
-        file_ids = list_collection_documents(osii_store, collection_id)
-        parts = []
-
-        for file_id in file_ids:
-            synth = get_synth_text(osii_store, file_id)
-            if synth:
-                parts.append(synth)
-                continue
-
-            text_path = object_text_path(osii_store, file_id)
-            if text_path.exists():
-                parts.append(text_path.read_text(encoding="utf-8"))
+        from osii.enrichment.common import collect_scope_texts, has_frozen_scope_inputs
+        if has_frozen_scope_inputs(osii_store, {"scope_type": "collection", "collection_id": collection_id}):
+            documents, _ = collect_scope_texts(osii_store, {"scope_type": "collection", "collection_id": collection_id})
+            file_ids = [item["file_id"] for item in documents]
+            parts = [item["text"] for item in documents]
+        else:
+            file_ids = list_collection_documents(osii_store, collection_id)
+            parts = []
+            for file_id in file_ids:
+                synth = get_synth_text(osii_store, file_id)
+                if synth:
+                    parts.append(synth)
+                    continue
+                text_path = object_text_path(osii_store, file_id)
+                if text_path.exists():
+                    parts.append(text_path.read_text(encoding="utf-8"))
 
         state.member_objects_seen = len(file_ids)
         combined = "\n\n".join(parts).strip()

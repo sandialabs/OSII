@@ -1,3 +1,4 @@
+import { MathpixText } from "../../../components/text/MathpixText";
 // src/features/files/components/GroundedSegmentEditor.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -35,6 +36,7 @@ type GroundedSegmentEditorProps = {
   fontSizePx?: number;
   searchResetToken?: number;
   compact?: boolean;
+  readOnly?: boolean;
 };
 
 type EditableSegment = {
@@ -94,8 +96,9 @@ export function GroundedSegmentEditor({
   fontSizePx = 15,
   searchResetToken = 0,
   compact = false,
+  readOnly = false,
 }: GroundedSegmentEditorProps) {
-  const editedQuery = useEditedObjectText(fileId, true);
+  const editedQuery = useEditedObjectText(fileId, !readOnly);
   const saveMutation = useSaveEditedObjectText(fileId);
   const deleteMutation = useDeleteEditedObjectText(fileId);
 
@@ -105,6 +108,9 @@ export function GroundedSegmentEditor({
   );
 
   const [draftSegments, setDraftSegments] = useState<EditableSegment[]>([]);
+  const [rendered, setRendered] = useState(true);
+  const [segmentPage, setSegmentPage] = useState(0);
+  const segmentPageSize = 20;
   const [isEditing, setIsEditing] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchInput, setSearchInput] = useState("");
@@ -114,7 +120,7 @@ export function GroundedSegmentEditor({
   const segmentRefs = useRef<Record<string, HTMLElement | null>>({});
   useEffect(() => {
     const editedById = new Map(
-      (editedQuery.data?.segments ?? []).map((segment) => [segment.id, segment.text]),
+      (!readOnly ? editedQuery.data?.segments ?? [] : []).map((segment) => [segment.id, segment.text]),
     );
 
     const next = baseSegments.map((segment) => ({
@@ -123,7 +129,8 @@ export function GroundedSegmentEditor({
     }));
 
     setDraftSegments(next);
-  }, [baseSegments, editedQuery.data?.segments]);
+    setSegmentPage(0);
+  }, [baseSegments, editedQuery.data?.segments, readOnly]);
 
   const matchingSegments = useMemo(() => {
     const needle = submittedSearch.trim().toLowerCase();
@@ -153,6 +160,8 @@ export function GroundedSegmentEditor({
     const targetId = activeSearchSegmentId || activeSegmentId;
     if (!targetId) return;
 
+    const targetIndex = draftSegments.findIndex(segment => segment.id === targetId);
+    if (targetIndex >= 0 && Math.floor(targetIndex / segmentPageSize) !== segmentPage) { setSegmentPage(Math.floor(targetIndex / segmentPageSize)); return; }
     const node = segmentRefs.current[targetId];
     if (node) {
       node.scrollIntoView({
@@ -160,7 +169,7 @@ export function GroundedSegmentEditor({
         behavior: "smooth",
       });
     }
-  }, [activeSegmentId, activeSearchSegmentId]);
+  }, [activeSegmentId, activeSearchSegmentId, segmentPage, draftSegments]);
 
   useEffect(() => {
     if (!activeSearchSegmentId) return;
@@ -198,7 +207,7 @@ export function GroundedSegmentEditor({
     setIsEditing(false);
   };
 
-  const hasEditedText = Boolean(editedQuery.data?.exists);
+  const hasEditedText = !readOnly && Boolean(editedQuery.data?.exists);
 
   const goToPreviousMatch = () => {
     if (matchingSegments.length === 0) return;
@@ -254,7 +263,8 @@ export function GroundedSegmentEditor({
             <SearchOutlinedIcon fontSize="small" />
           </IconButton>
 
-          {!isEditing ? (
+          {!isEditing && <Button size="small" onClick={() => setRendered(value => !value)}>{rendered ? "Plain text" : "Mathpix Markdown"}</Button>}
+          {!readOnly && (!isEditing ? (
             <Button
               size="small"
               variant="outlined"
@@ -282,9 +292,9 @@ export function GroundedSegmentEditor({
                 Cancel
               </Button>
             </>
-          )}
+          ))}
 
-          <Button
+          {!readOnly && <Button
             size="small"
             variant="outlined"
             color="warning"
@@ -293,7 +303,7 @@ export function GroundedSegmentEditor({
             disabled={!hasEditedText || deleteMutation.isPending}
           >
             Restore
-          </Button>
+          </Button>}
         </Stack>
       </Stack>
 
@@ -395,6 +405,7 @@ export function GroundedSegmentEditor({
         </Alert>
       ) : null}
 
+      {draftSegments.length > segmentPageSize ? <Stack direction="row" spacing={1} alignItems="center"><Button disabled={segmentPage === 0} onClick={() => setSegmentPage(value => value - 1)}>Previous segments</Button><Typography variant="caption">{segmentPage * segmentPageSize + 1}–{Math.min(draftSegments.length, (segmentPage + 1) * segmentPageSize)} of {draftSegments.length}</Typography><Button disabled={(segmentPage + 1) * segmentPageSize >= draftSegments.length} onClick={() => setSegmentPage(value => value + 1)}>Next segments</Button></Stack> : null}
       <Card sx={{ minWidth: 0 }}>
         <CardContent sx={{ p: 0 }}>
           <Box
@@ -412,7 +423,7 @@ export function GroundedSegmentEditor({
                   No grounded text segments are available for this file.
                 </Typography>
               ) : (
-                draftSegments.map((segment) => {
+                draftSegments.slice(segmentPage * segmentPageSize, (segmentPage + 1) * segmentPageSize).map((segment) => {
                   const isExternallyActive = activeSegmentId === segment.id;
                   const isSearchActive = activeSearchSegmentId === segment.id;
                   const isActive = isExternallyActive || isSearchActive;
@@ -504,6 +515,7 @@ export function GroundedSegmentEditor({
                           />
                         ) : (
                           <Typography
+                            component="div"
                             variant="body2"
                             sx={{
                               whiteSpace: "pre-wrap",
@@ -513,7 +525,7 @@ export function GroundedSegmentEditor({
                               lineHeight: 1.6,
                             }}
                           >
-                            {segment.text || "No text available for this segment."}
+                            <MathpixText text={segment.text || "No text available for this segment."} controls={false} mode={rendered ? "rendered" : "plain"} />
                           </Typography>
                         )}
                       </Stack>

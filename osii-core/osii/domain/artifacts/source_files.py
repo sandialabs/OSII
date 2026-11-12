@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from osii.domain.read.docs import get_doc_meta
+from osii.domain.storage.ids import compute_file_id
 
 
 def _existing_file_within(root: Path, relative_path: str) -> Path | None:
@@ -60,5 +61,16 @@ def get_source_file_path(
     candidate_upload = _resolve_from_root(upload_root, source_relpath)
     if candidate_upload is not None:
         return candidate_upload
+
+    # Intake records the explicitly selected location as a local hint. It does
+    # not replace the portable identity, and must still match the document hash.
+    source_hint = (meta.get("meta", {}) or {}).get("source_path")
+    if source_hint:
+        candidate = Path(source_hint)
+        try:
+            if candidate.is_file() and compute_file_id(candidate) == file_id:
+                return candidate
+        except OSError:
+            pass
 
     return None

@@ -3,25 +3,30 @@ import os
 from pathlib import Path
 from osii.expert_context import resolve_expert_context
 import sqlite3
+import threading
+from time import monotonic
 
 from fastapi import APIRouter, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
+from osii.api.intake_routes import resolve_requested_path
 
 from osii.domain.processing.capability_readiness import embedding_readiness
 from osii.domain.catalog_db import rebuild_catalog, upsert_document
-from osii.domain.scopes.collections import add_documents_to_collection, create_collection
-from osii.domain.artifacts.extraction_variants import extract_document_variant
+from osii.domain.scopes.collections import add_documents_to_collection, create_collection, get_collection
+from osii.domain.artifacts.extraction_variants import extract_document_variant, read_extraction_text
 from osii.domain.artifacts.text_representations import get_preferred_text_representation
 from osii.domain.processing.intake import (
     add_extractor_plan,
-    add_processing_plan,
     add_processed_counts,
     expand_queue_to_files,
     parse_patterns,
 )
 from osii.domain.processing.jobs import (
     append_log,
+    honor_run_control as _honor_run_control,
     control_run,
     create_run_record,
+    configure_job_store,
     enqueue_run,
     get_run,
     list_queue_jobs,
@@ -37,7 +42,7 @@ from osii.domain.storage.folders import folder_stats, get_or_create_folder_id, w
 from osii.domain.storage.synth import write_folder_synth_text
 from osii.domain.storage.ids import compute_file_id
 from osii.domain.storage.store import ensure_osii_store_layout
-from osii.domain.processing.pathing import display_rel, path_within
+from osii.domain.processing.pathing import display_rel, path_within, source_relpath
 from osii.domain.processor_settings import merged_processor_settings
 from osii.domain.processing.extractor_selection import extractor_routes_path
 from osii.extraction.dispatcher import dispatch_extract
@@ -52,6 +57,7 @@ from osii.synthesis.file.firstn import FirstNSynthesizer
 from osii.synthesis.file.recursive import RecursiveSynthesizer
 
 router = APIRouter(prefix="/api", tags=["runs"])
+_STAGING_LOCK = threading.Lock()
 
 
 def _finish_item_timing(item: dict, started: datetime) -> None:
@@ -59,54 +65,6 @@ def _finish_item_timing(item: dict, started: datetime) -> None:
     item["finished_at"] = finished.isoformat()
     item["duration_seconds"] = round(max(0.0, (finished - started).total_seconds()), 3)
 
-
-def _honor_run_control(run_id: str) -> bool:
-    """Stop safely between files when the API requested pause or cancellation."""
-    run = get_run(run_id)
-    if run is None:
-        return True
-    queue_status = queue_status_for_run(run_id)
-    control_state = (
-        "pause_requested" if queue_status == "pause_requested"
-        else "cancel_requested" if queue_status == "cancel_requested"
-        else run.get("control_state")
-    )
-    if control_state == "pause_requested":
-        run["status"] = "paused"
-        run["control_state"] = "paused"
-        save_run(run)
-        append_log(run_id, "Run paused after the current file completed.")
-        return True
-    if control_state == "cancel_requested":
-        run["status"] = "cancelled"
-        run["control_state"] = "cancelled"
-        run["finished_at"] = datetime.now(UTC).isoformat()
-        for item in run.get("items", []):
-            if item.get("status") in {"pending", "running"}:
-                item["status"] = "cancelled"
-        save_run(run)
-        append_log(run_id, "Run cancelled after the current file completed.")
-        return True
-    return False
-
-
-def normalize_user_path(raw: str | None) -> Path | None:
-    if not raw:
-        return None
-    cleaned = str(raw).strip().strip('"').strip("'")
-    if not cleaned:
-        return None
-    return Path(cleaned).expanduser()
-
-
-def safe_resolve_user_path(raw: str | None, fallback: Path) -> Path:
-    p = normalize_user_path(raw)
-    if p is None:
-        return fallback.resolve()
-    try:
-        return p.resolve()
-    except Exception:
-        return fallback.resolve()
 
 
 def load_parser_routes(config_path: Path) -> list[dict]:
@@ -139,7 +97,11 @@ class FallbackSynthesizer:
         failures: list[str] = []
         for name in self.names:
             try:
-                return _get_one_synthesizer(name).synthesize(**kwargs)
+                result = _get_one_synthesizer(name).synthesize(**kwargs)
+                if failures:
+                    result["fallback_failures"] = list(failures)
+                    result["actual_synthesizer"] = name
+                return result
             except Exception as exc:
                 failures.append(f"{name}: {exc}")
         raise RuntimeError("All synthesis providers failed: " + "; ".join(failures))
@@ -174,19 +136,33 @@ def build_folder_artifacts(
     shared_root: Path,
     osii_store: Path,
     root_folder_id: str,
+    upload_root: Path | None = None,
+    source_roots: list[Path] | None = None,
 ) -> tuple[int, int]:
     folders_to_docs: dict[str, list[Path]] = {}
     folders_to_subfolders: dict[str, set[Path]] = {}
-    all_folders: set[Path] = set()
+    all_folders: set[Path] = {shared_root.resolve()}
+    boundaries: set[Path] = set()
 
     for file_path in resolved_files:
         parent = file_path.parent.resolve()
         all_folders.add(parent)
+        roots = [shared_root, *(source_roots or [])]
+        if upload_root is not None:
+            roots.append(upload_root)
+        matching_roots = [root.resolve() for root in roots if path_within(root, file_path)]
+        if path_within(shared_root, file_path):
+            boundary = shared_root.resolve()
+        elif upload_root is not None and path_within(upload_root, file_path):
+            boundary = upload_root.resolve()
+        else:
+            boundary = max(matching_roots, key=lambda root: len(root.parts)) if matching_roots else parent
+        boundaries.add(boundary)
 
         cursor = parent
         while True:
             all_folders.add(cursor)
-            if cursor == shared_root.resolve():
+            if cursor == boundary:
                 break
             if cursor.parent == cursor:
                 break
@@ -205,10 +181,18 @@ def build_folder_artifacts(
         parent = folder.parent.resolve()
         if str(parent) in folders_to_subfolders:
             folders_to_subfolders[str(parent)].add(folder)
+    for boundary in boundaries:
+        if not path_within(shared_root, boundary):
+            folders_to_subfolders[str(shared_root.resolve())].add(boundary)
+
+    def folder_path(folder: Path) -> str:
+        if path_within(shared_root, folder):
+            return relpath_under(shared_root, folder)
+        return source_relpath(folder, data_volume_root)
 
     folder_id_map: dict[str, str] = {}
     for folder in sorted(all_folders):
-        relpath = relpath_under(shared_root, folder)
+        relpath = folder_path(folder)
         if folder == shared_root.resolve():
             folder_id_map[str(folder)] = root_folder_id
         else:
@@ -216,7 +200,7 @@ def build_folder_artifacts(
 
     for folder in sorted(all_folders):
         folder_id = folder_id_map[str(folder)]
-        relpath = relpath_under(shared_root, folder)
+        relpath = folder_path(folder)
         path_hint = relpath
 
         direct_docs = folders_to_docs[str(folder)]
@@ -226,7 +210,7 @@ def build_folder_artifacts(
         for doc in sorted(direct_docs, key=lambda p: p.name.lower()):
             docs_payload.append(
                 {
-                    "source_relpath": relpath_under(data_volume_root, doc),
+                    "source_relpath": source_relpath(doc, data_volume_root),
                     "file_id": compute_file_id(doc),
                 }
             )
@@ -236,7 +220,7 @@ def build_folder_artifacts(
             subfolders_payload.append(
                 {
                     "folder_id": folder_id_map[str(sub)],
-                    "path_hint": relpath_under(shared_root, sub),
+                    "path_hint": folder_path(sub),
                 }
             )
 
@@ -289,11 +273,13 @@ def run_worker(
     workflow: str = "intake",
     run_extraction: bool = True,
     extract_mode: str = "always",
-    extraction_policy: str = "make_primary",
+    extraction_policy: str = "auto",
     enricher_name: str | None = None,
     enricher_config: dict | None = None,
     collection_id: str | None = None,
+    staging: dict | None = None,
 ) -> None:
+    attempt_started = monotonic()
     try:
         ensure_osii_store_layout(osii_store)
         parser_routes = load_parser_routes(parser_routes_path)
@@ -345,6 +331,7 @@ def run_worker(
                 osii_root=osii_store,
                 shared_root=shared_root,
                 upload_root=upload_root,
+                staging=staging,
             )
             run = get_run(run_id)
             if run is None:
@@ -355,6 +342,12 @@ def run_worker(
             append_log(run_id, f"Run manifest saved: {manifest_path.name}")
 
         for index, src in enumerate(resolved_files):
+            if staging and monotonic() - attempt_started >= staging["max_seconds"]:
+                run = get_run(run_id)
+                run.update(status="paused", control_state="paused")
+                save_run(run)
+                append_log(run_id, "Batch time budget reached between files; resume to continue with the frozen selection.")
+                return
             if _honor_run_control(run_id):
                 return
             run = get_run(run_id)
@@ -383,12 +376,28 @@ def run_worker(
             save_run(run)
 
             try:
+                if staging:
+                    from osii.volume.staging import validate_member
+                    validate_member(staging, staging["members"][index])
                 file_id = compute_file_id(src)
+                if staging:
+                    validate_member(staging, staging["members"][index])
                 document_context = resolve_expert_context(
                     osii_store, {"scope_type": "object", "file_id": file_id}, context
                 )
                 existing_text = get_preferred_text_representation(osii_store, file_id)
-                should_extract = run_extraction and (extract_mode == "reprocess" or existing_text is None)
+                item = run["items"][index]
+                kept_extraction = False
+                if existing_text and item.get("file_id") == file_id and item.get("retry_extraction_id"):
+                    try:
+                        # A successful secondary OCR is complete too: retrying a
+                        # summary must not rerun it or replace the current primary.
+                        read_extraction_text(osii_store, file_id, item["retry_extraction_id"])
+                    except (OSError, ValueError):
+                        pass
+                    else:
+                        kept_extraction = True
+                should_extract = run_extraction and not kept_extraction and (extract_mode == "reprocess" or existing_text is None)
                 extract_result = None
                 if should_extract:
                     extraction_failures: list[str] = []
@@ -409,8 +418,9 @@ def run_worker(
                                     extractor_name,
                                     {},
                                 ),
-                                make_primary=extraction_policy == "make_primary",
+                                make_primary=None if extraction_policy == "auto" else extraction_policy == "make_primary",
                                 dispatcher=dispatch_extract,
+                                operation_id=f"{run_id}:{file_id}:extraction:{extractor_name}",
                             )
                             break
                         except Exception as exc:
@@ -427,6 +437,8 @@ def run_worker(
                         f"Extraction variant {extract_result['variant_id']} saved"
                         + (" and made primary." if extract_result["made_primary"] else "."),
                     )
+                elif kept_extraction:
+                    append_log(run_id, f"Retry: kept completed extraction for {src.name}.")
                 elif run_extraction:
                     append_log(run_id, f"Skipped extraction for {src.name}; a primary extraction already exists.")
                 elif existing_text is None:
@@ -437,8 +449,9 @@ def run_worker(
                     return
 
                 run["items"][index]["file_id"] = file_id
-                run["items"][index]["extraction_variant_id"] = extract_result.get("variant_id") if extract_result else None
+                run["items"][index]["extraction_variant_id"] = extract_result.get("variant_id") if extract_result else item.get("retry_extraction_id") if kept_extraction else None
                 run["items"][index]["extract_error"] = extract_result.get("error") if extract_result else None
+                save_run(run)
 
                 synthesis_result = None
                 synthesis_error = None
@@ -446,7 +459,7 @@ def run_worker(
                 enrichment_error = None
 
                 if synthesizer_name:
-                    if should_extract and extraction_policy != "make_primary":
+                    if should_extract and extraction_policy == "save_variant":
                         raise RuntimeError("Downstream processing requires the new extraction to be made primary.")
                     append_log(run_id, f"Running synthesizer '{synthesizer_name}' for {src.name}")
                     try:
@@ -457,13 +470,15 @@ def run_worker(
                             expert_context=document_context,
                             synthesizer_config=synthesizer_config or {},
                         )
+                        if synthesis_result.get("fallback_failures"):
+                            append_log(run_id, f"Synthesis used fallback {synthesis_result['actual_synthesizer']}; earlier failures: {'; '.join(synthesis_result['fallback_failures'])}")
                         append_log(run_id, f"synthesis complete: {src.name}")
                     except Exception as exc:
                         synthesis_error = str(exc)
                         append_log(run_id, f"synthesis error: {src.name} -> {exc}")
 
                 if enricher_name:
-                    if should_extract and extraction_policy != "make_primary":
+                    if should_extract and extraction_policy == "save_variant":
                         raise RuntimeError("Downstream processing requires the new extraction to be made primary.")
                     append_log(run_id, f"Running enricher '{enricher_name}' for {src.name}")
                     try:
@@ -482,7 +497,13 @@ def run_worker(
                 if run is None:
                     return
 
+                if staging:
+                    validate_member(staging, staging["members"][index])
+                    from osii.volume.store import VolumeStore
+                    VolumeStore(Path(staging["database"])).link_sidecar(staging["members"][index], file_id, run_id)
+
                 errors = [item for item in [extract_result.get("error") if extract_result else None, synthesis_error, enrichment_error] if item]
+                run["items"][index].pop("retry_extraction_id", None)
                 run["items"][index]["status"] = "partial" if errors else "done"
                 run["items"][index]["osii"] = extract_result["osii_rel"] if extract_result else f"objects/{file_id}"
                 run["items"][index]["synthesis"] = synthesis_result["synthesis_rel"] if synthesis_result else None
@@ -507,7 +528,8 @@ def run_worker(
                     return
 
                 try:
-                    run["items"][index]["file_id"] = compute_file_id(src)
+                    if not staging:
+                        run["items"][index]["file_id"] = compute_file_id(src)
                 except Exception:
                     pass
 
@@ -522,13 +544,15 @@ def run_worker(
         if _honor_run_control(run_id):
             return
 
-        if workflow == "intake":
+        if workflow == "intake" and not staging:
             top_level_doc_count, top_level_subfolder_count = build_folder_artifacts(
                 resolved_files=resolved_files,
                 data_volume_root=data_volume_root,
                 shared_root=shared_root,
                 osii_store=osii_store,
                 root_folder_id=root_folder_id,
+                upload_root=upload_root,
+                source_roots=[Path(item["path"]) for item in queue_items if item.get("kind") == "folder"],
             )
             append_log(run_id, "Folder manifests and synthesis updated.")
             write_collection_synthesis(
@@ -569,10 +593,43 @@ def run_worker(
 
 @router.post("/runs")
 async def start_run(request: Request, payload: dict):
-    shared_root = request.app.state.shared_volume_root.resolve()
+    if payload.get("inventory_selection_id") is not None:
+        return await run_in_threadpool(_start_staged_run, request, payload)
+    return await run_in_threadpool(_start_run, request, payload)
+
+
+def _start_staged_run(request: Request, payload: dict):
+    # Serialize local handoffs across the two durable stores. A stable run/job ID
+    # also recovers the gap if the API exits between their commits.
+    with _STAGING_LOCK:
+        return _start_run(request, payload)
+
+
+def _start_run(request: Request, payload: dict):
+    staging = None
+    staged_run_id = None
+    if payload.get("inventory_selection_id") is not None:
+        configure_job_store(request.app.state.osii_root)
+        from osii.volume.staging import staged_bundle, selection_id as validate_selection_id
+        from osii.volume.store import VolumeStore, database_path
+        try:
+            store = VolumeStore(database_path(request.app.state.osii_root))
+            selection_id = validate_selection_id(payload["inventory_selection_id"])
+            store.selection(selection_id)
+            staged_run_id = store.handoff(selection_id, payload)
+            existing = get_run(staged_run_id)
+            if existing and queue_status_for_run(staged_run_id) is not None:
+                return {**existing, "run_id": existing["id"], "resolved_count": existing["total"]}
+            staging = staged_bundle(request.app.state.osii_root, selection_id)
+            staging["max_seconds"] = int(payload.get("max_processing_seconds", 3600))
+            if not 1 <= staging["max_seconds"] <= 86400:
+                raise ValueError("Processing time budget must be between 1 and 86,400 seconds")
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    shared_root = request.app.state.shared_volume_root if staging else request.app.state.shared_volume_root.resolve()
     upload_root = request.app.state.upload_originals_root.resolve()
     osii_store = request.app.state.osii_root.resolve()
-    data_volume_root = shared_root.parent.resolve()
+    data_volume_root = shared_root.parent if staging else shared_root.parent.resolve()
 
     queue_paths = payload.get("queue_paths", [])
     include_subfolders = bool(payload.get("include_subfolders", True))
@@ -602,9 +659,9 @@ async def start_run(request: Request, payload: dict):
     extract_mode = str(payload.get("extract_mode") or ("missing" if workflow == "intake" else "reprocess")).strip().lower()
     if extract_mode not in {"missing", "reprocess"}:
         raise HTTPException(status_code=422, detail="extract_mode must be 'missing' or 'reprocess'")
-    extraction_policy = str(payload.get("extraction_policy") or "make_primary").strip().lower()
-    if extraction_policy not in {"make_primary", "save_variant"}:
-        raise HTTPException(status_code=422, detail="extraction_policy must be 'make_primary' or 'save_variant'")
+    extraction_policy = str(payload.get("extraction_policy") or "auto").strip().lower()
+    if extraction_policy not in {"auto", "make_primary", "save_variant"}:
+        raise HTTPException(status_code=422, detail="extraction_policy must be 'auto', 'make_primary', or 'save_variant'")
     synthesizer_name = payload.get("synthesizer_name") or None
     synthesizer_config = merged_processor_settings(
         osii_store,
@@ -641,54 +698,61 @@ async def start_run(request: Request, payload: dict):
     max_files_int = int(max_files) if max_files not in (None, "") else None
     max_total_size = int(float(max_total_size_mb) * 1024 * 1024) if max_total_size_mb not in (None, "") else None
 
-    queue_items = []
-    for raw in queue_paths:
-        p = safe_resolve_user_path(raw, shared_root)
-        if p.exists():
-            queue_items.append(
-                {
-                    "path": str(p),
-                    "display": display_rel(p, shared_root, upload_root),
-                    "kind": "folder" if p.is_dir() else "file",
-                    "source": "shared" if path_within(shared_root, p) else "upload",
-                }
-            )
+    if staging:
+        if workflow != "intake":
+            raise HTTPException(status_code=422, detail="Frozen discovery selections enter the Intake workflow")
+        from osii.volume.staging import member_path, selection_preview
+        resolved_files = [member_path(member) for member in staging["members"]]
+        queue_items = [{"path": member["root"], "display": member["root"], "kind": "folder", "source": "shared"}
+                       for member in {m["source_id"]: m for m in staging["members"]}.values()]
+        preview = selection_preview(staging, extractor_overrides, payload)["preview"]
+    else:
+        queue_items = []
+        for raw in queue_paths:
+            p = resolve_requested_path(request, raw)
+            if p.exists():
+                queue_items.append(
+                    {
+                        "path": str(p),
+                        "display": display_rel(p, shared_root, upload_root),
+                        "kind": "folder" if p.is_dir() else "file",
+                        "source": "shared" if path_within(shared_root, p) else "upload",
+                    }
+                )
 
-    resolved_files, preview = expand_queue_to_files(
-        queue_items=queue_items,
-        include_subfolders=include_subfolders,
-        include_patterns=include_patterns,
-        exclude_patterns=exclude_patterns,
-        show_hidden=show_hidden,
-        max_files=max_files_int,
-        max_total_size=max_total_size,
-        shared_root=shared_root,
-        upload_root=upload_root,
-    )
-    add_processed_counts(preview, resolved_files, data_volume_root, osii_store)
-    add_extractor_plan(preview, resolved_files, extractor_overrides)
-    add_processing_plan(
-        preview,
-        resolved_files,
-        osii_store,
-        run_extraction=run_extraction,
-        extract_mode=extract_mode,
-        synthesize=bool(synthesizer_name),
-        embed=build_embeddings,
-        enrich=bool(enricher_name),
-    )
+        resolved_files, preview = expand_queue_to_files(
+            queue_items=queue_items,
+            include_subfolders=include_subfolders,
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+            show_hidden=show_hidden,
+            max_files=max_files_int,
+            max_total_size=max_total_size,
+            shared_root=shared_root,
+            upload_root=upload_root,
+            excluded_paths=payload.get("excluded_paths", []),
+        )
+        if getattr(request.app.state, "filesystem_mode", "local") == "mounted":
+            for file in preview["available_files"]:
+                resolve_requested_path(request, file["path"])
+        add_processed_counts(preview, resolved_files, data_volume_root, osii_store)
+        add_extractor_plan(preview, resolved_files, extractor_overrides)
+        # Intake review computes the detailed plan through /api/resolve. Starting
+        # the durable run must not reread every original just to repeat that plan;
+        # hashing and extraction belong to the worker. Folder I/O runs in FastAPI's
+        # thread pool so a slow shared drive cannot block health and activity reads.
 
-    if workflow == "library" and not run_extraction:
-        resolved_files = [
-            path
-            for path in resolved_files
-            if get_preferred_text_representation(osii_store, compute_file_id(path)) is not None
-        ]
-    if workflow == "library":
-        unique_files: dict[str, Path] = {}
-        for path in resolved_files:
-            unique_files.setdefault(compute_file_id(path), path)
-        resolved_files = list(unique_files.values())
+        if workflow == "library" and not run_extraction:
+            resolved_files = [
+                path
+                for path in resolved_files
+                if get_preferred_text_representation(osii_store, compute_file_id(path)) is not None
+            ]
+        if workflow == "library":
+            unique_files: dict[str, Path] = {}
+            for path in resolved_files:
+                unique_files.setdefault(compute_file_id(path), path)
+            resolved_files = list(unique_files.values())
     if not resolved_files:
         raise HTTPException(status_code=409, detail="No eligible documents matched this processing plan.")
 
@@ -718,7 +782,9 @@ async def start_run(request: Request, payload: dict):
                 ),
             )
 
-    if collection_name is not None:
+    if staging and existing and existing.get("collection_id"):
+        collection = get_collection(osii_store, existing["collection_id"])
+    if collection_name is not None and collection is None:
         try:
             collection = create_collection(
                 osii_store,
@@ -736,7 +802,10 @@ async def start_run(request: Request, payload: dict):
         shared_root,
         upload_root,
         osii_root=osii_store,
+        run_id=staged_run_id,
+        displays={str(member_path(m)): m["path"] for m in staging["members"]} if staging else None,
     )
+    run["inventory_selection_id"] = staging["selection_id"] if staging else None
     run["workflow"] = workflow
     run["expert_context"] = context or None
     run["collection_id"] = collection["id"] if collection else None
@@ -757,6 +826,12 @@ async def start_run(request: Request, payload: dict):
 
     parser_routes_path = extractor_routes_path()
     shared_root_host_path = getattr(request.app.state, "shared_volume_host_path", "")
+
+    if staged_run_id:
+        run["status"] = "queued"
+        run["control_state"] = "running"
+        run["queue_job_id"] = staged_run_id
+        save_run(run)
 
     queue_job = enqueue_run(
         run["id"],
@@ -789,12 +864,15 @@ async def start_run(request: Request, payload: dict):
             "enricher_name": enricher_name,
             "enricher_config": enricher_config,
             "collection_id": collection["id"] if collection else None,
+            "staging": staging,
         },
+        job_id=staged_run_id,
     )
-    run["status"] = "queued"
-    run["control_state"] = "running"
-    run["queue_job_id"] = queue_job["id"]
-    save_run(run)
+    if not staging:
+        run["status"] = "queued"
+        run["control_state"] = "running"
+        run["queue_job_id"] = queue_job["id"]
+        save_run(run)
 
     return {
         "id": run["id"],
@@ -831,7 +909,7 @@ async def recover_run_queue():
 async def get_run_status(run_id: str):
     job = get_run(run_id)
     if job is None:
-        return {"error": f"Run not found: {run_id}"}
+        raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
     return job
 
 

@@ -26,12 +26,30 @@ deployment/
 └── secrets.env      # API keys; never returned by the API
 ```
 
-For `make dev`, the profile is named `development`: on macOS its path is
-`~/Library/Application Support/org.osii.launcher/profiles/development/deployment`,
-on Windows `%APPDATA%\org.osii.launcher\profiles\development\deployment`, and
-on Linux `${XDG_DATA_HOME:-~/.local/share}/org.osii.launcher/profiles/development/deployment`.
-Set `OSII_CONFIG_DIR` to use a different directory. The selected source may be
-on a read-only shared drive; all three configuration files remain local.
+For `make dev` or `.\scripts\osii.ps1 dev`, the profile is named `development`
+and configuration defaults to the checkout's ignored `osii-data/config/`
+directory (`OSII_RUNTIME_DIR/config/` if a runtime directory is explicitly set).
+On first start with an empty default directory, previous development settings
+from the launcher's application-data location are copied here; the originals
+are left untouched. Existing checkout settings are never overwritten.
+Set `OSII_CONFIG_DIR` to select a different location. Installed launchers still
+use their writable profile workspace: a signed application installation is
+not an appropriate place for mutable configuration or credentials.
+The selected source may be on a read-only shared drive; configuration stays local.
+
+Setup offers **Corporate endpoint** alongside OpenAI-compatible and Ollama.
+The corporate choice is a named preset for the same OpenAI-compatible protocol;
+enter your organization's base URL, model names, and key. No corporate address
+is built into OSII. Configure corporate certificate trust in the startup
+environment, not by disabling TLS checks.
+
+Each processing-method entry identifies whether it is bundled Core code, an
+optional service, a configured processor, or a model connection. **Copy path**
+copies the effective TOML location; **Implementation and configuration source**
+shows the code or endpoint setting behind the entry. Apache Tika is a separate
+Apache service supplied by the optional Compose `ocr` profile. Nemotron is an
+older PDF compatibility adapter, shown only when `NEMOTRON_BASE_URL` or an
+extraction rule explicitly selects it; OSII does not bundle its model.
 
 `models.toml` names reusable connections such as `base`, `mid`, `top`, and
 `minilm`. `tools.toml` binds a processor capability to one of those aliases.
@@ -195,7 +213,7 @@ prompts and bounds through Processor API descriptors. Saved defaults apply to
 Intake, file actions, and direct enrichment jobs; an explicit request
 configuration overrides them.
 
-## Model Gateway for Toolbox processors
+## Model Gateway for processors
 
 The bridge also exposes the ordinary OpenAI client surface at
 `/v1/chat/completions`, `/v1/embeddings`, and `/v1/models`. Core supplies each

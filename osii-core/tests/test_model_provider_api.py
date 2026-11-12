@@ -29,6 +29,29 @@ class FakeResponse:
         return False
 
 
+def test_catalog_uses_api_ids_and_preserves_display_labels():
+    from osii.api.model_provider_routes import _model_details
+    models = _model_details({"data": [{"id": "vendor/exact-api-id", "name": "Human readable name", "architecture": {"output_modalities": ["text"]}}]})
+    assert models[0]["name"] == "vendor/exact-api-id"
+    assert models[0]["display_name"] == "Human readable name"
+    assert models[0]["capabilities"] == ["chat"]
+
+
+def test_discover_entered_endpoint_before_saving(client, monkeypatch):
+    from osii.configuration import load_models_config
+    before = load_models_config()
+    calls = []
+    monkeypatch.setattr("requests.get", lambda url, **kw: calls.append((url, kw)) or FakeResponse(
+        payload={"data": [{"id": "published-model", "name": "Readable name"}]}))
+    response = client.post("/api/admin/model-providers/discover", json={
+        "type": "openai", "base_url": "https://new.test/v1", "api_key": "synthetic-key"})
+    assert response.status_code == 200
+    assert response.json()["models"][0] == {"id": "published-model", "name": "Readable name", "capabilities": []}
+    assert response.json()["generation_tested"] is False
+    assert load_models_config() == before
+    assert calls[0][0] == "https://new.test/v1/models"
+
+
 def test_default_ollama_provider_uses_small_us_models(client):
     payload = client.get("/api/admin/model-providers").json()
     embedder = next(item for item in payload["providers"] if item["id"] == "minilm")
@@ -37,6 +60,33 @@ def test_default_ollama_provider_uses_small_us_models(client):
     assert embedder["embedding_model"] == "all-minilm"
     assert language["chat_model"] == "llama3.2:1b"
     assert {item["model"] for item in payload["ollama_recommendations"]} == {"all-minilm", "llama3.2:1b"}
+
+
+def test_corporate_preset_roundtrips_without_a_new_protocol(client):
+    response = client.put("/api/admin/model-providers/corporate-endpoint", json={
+        "type": "openai", "preset": "corporate",
+        "base_url": "https://models.example.test/v1", "enabled": True,
+        "chat_model": "chat-v1", "embedding_model": "embed-v1",
+        "credential_env": "OSII_CORPORATE_API_KEY",
+    })
+    assert response.status_code == 200
+    providers = client.get("/api/admin/model-providers").json()["providers"]
+    saved = next(item for item in providers if item["id"] == "corporate-endpoint")
+    assert saved["preset"] == "corporate"
+    assert saved["type"] == "openai"
+    assert saved["chat_model"] == "chat-v1"
+    assert saved["embedding_model"] == "embed-v1"
+    config = (Path(os.environ["OSII_CONFIG_DIR"]) / "models.toml").read_text()
+    assert 'type = "openai-compatible"' in config
+    assert 'preset = "corporate"' in config
+    assert str(Path(os.environ["OSII_CONFIG_DIR"]) / "secrets.env") in saved["credential_help"]
+
+
+def test_corporate_preset_rejects_incompatible_transport(client):
+    response = client.put("/api/admin/model-providers/corporate-endpoint", json={
+        "type": "ollama", "preset": "corporate", "base_url": "http://localhost:11434",
+    })
+    assert response.status_code == 422
 
 
 def test_explicitly_disabling_model_providers_restores_local_baselines(client, temp_osii_root):
@@ -192,6 +242,48 @@ def test_openai_environment_exposes_generic_runtime_defaults(client, monkeypatch
     assert provider["embedding_model"] == "embed-v1"
     assert provider["chat_model"] == "chat-v1"
     assert provider["credential_present"] is True
+    assert provider["default_chat"] is True
+    assert provider["default_embedding"] is True
+    assert selected_processor("embedder") == "openai.embedder"
+    assert selected_processor("synthesizer") == "openai.synthesizer"
+    assert provider["credential_writable"] is False
+    assert "OPENAI_API_KEY" in provider["credential_help"]
+    assert "restart" in provider["credential_help"]
+    assert "alias-key" not in str(payload)
+
+    blocked = client.put("/api/admin/model-providers/openai-compatible/credential",
+                         json={"api_key": "replacement"})
+    assert blocked.status_code == 409
+    assert "OPENAI_API_KEY" in blocked.json()["detail"]
+    assert "alias-key" not in blocked.text
+
+
+def test_environment_suggestion_does_not_claim_to_override_saved_defaults(client, monkeypatch):
+    client.get("/api/admin/model-providers")  # Save the initial local profile.
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://models.example.test/v1")
+    monkeypatch.setenv("OPENAI_CHAT_MODEL", "chat-v1")
+    monkeypatch.setenv("OPENAI_EMBEDDING_MODEL", "embed-v1")
+    providers = client.get("/api/admin/model-providers").json()["providers"]
+    suggestion = next(item for item in providers if item["id"] == "openai-compatible")
+    assert suggestion["default_chat"] is False
+    assert suggestion["default_embedding"] is False
+    assert selected_processor("synthesizer") == "ollama.synthesizer"
+
+
+def test_new_external_default_accepts_setup_key_when_environment_key_is_empty(client, monkeypatch):
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://models.example.test/v1")
+    monkeypatch.setenv("OPENAI_CHAT_MODEL", "chat-v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.delenv("OPENAI_API_KEY_FILE", raising=False)
+    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
+    providers = client.get("/api/admin/model-providers").json()["providers"]
+    provider = next(item for item in providers if item["id"] == "openai-compatible")
+    assert provider["credential_writable"] is True
+    saved = client.put("/api/admin/model-providers/openai-compatible/credential",
+                       json={"api_key": "local-key"})
+    assert saved.status_code == 200
+    assert saved.json()["credential_source"] == "repo_env"
+    assert "local-key" not in saved.text
 
 
 def test_openai_environment_accepts_container_secret_file(client, monkeypatch, tmp_path):
@@ -206,6 +298,13 @@ def test_openai_environment_accepts_container_secret_file(client, monkeypatch, t
 
     assert provider["credential_present"] is True
     assert "mounted-secret" not in str(payload)
+    assert provider["credential_source"] == "secret_file"
+    assert provider["credential_writable"] is False
+    assert "OPENAI_API_KEY_FILE" in provider["credential_help"]
+    blocked = client.put("/api/admin/model-providers/openai-compatible/credential",
+                         json={"api_key": "replacement"})
+    assert blocked.status_code == 409
+    assert "OPENAI_API_KEY_FILE" in blocked.json()["detail"]
 
 
 def test_openai_health_validates_selected_embedding_model(client, monkeypatch):

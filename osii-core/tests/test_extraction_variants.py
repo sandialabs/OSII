@@ -225,3 +225,36 @@ def test_library_plan_skips_documents_without_extraction(
     )
     assert queued.status_code == 200
     assert queued.json()["resolved_count"] == 1
+
+
+def test_auto_keeps_text_layer_when_adding_another_method(client, temp_data_root, temp_osii_root):
+    from osii.extraction.common import init_doc_context, initialize_bundle, persist_segment, update_provenance, build_result_dict
+    from osii.extraction.base import ExtractionSegment, ExtractionState
+    source = temp_data_root / "sample.txt"
+    source.write_text("Original PDF text")
+    def dispatcher(*, extractor_name, source_path, data_volume_root, osii_store, **kwargs):
+        context = init_doc_context(source_path, data_volume_root)
+        initialize_bundle(osii_store=osii_store, doc_ctx=context)
+        text = "Original PDF text" if extractor_name == "text-layer" else "Supplemental OCR"
+        origin = {"page": 2, "bbox": [0.1, 0.2, 0.7, 0.4], "confidence": 0.91, "coordinate_space": "normalized-page", "custom_instrument": "retained"}
+        persist_segment(osii_store=osii_store, doc_ctx=context, segment=ExtractionSegment(seg=1, type="text", text=text, source_origin=origin))
+        update_provenance(osii_store=osii_store, doc_ctx=context, extractor_name=extractor_name, extractor_version="1", status="done", tools={}, config={}, state=ExtractionState())
+        return build_result_dict(context)
+    args = dict(source_path=source, data_volume_root=temp_data_root.parent, osii_root=temp_osii_root, dispatcher=dispatcher)
+    first = extract_document_variant(extractor_name="text-layer", **args)
+    ocr = extract_document_variant(extractor_name="ocr", **args)
+    assert first["made_primary"] is True and ocr["made_primary"] is False
+    state = list_extraction_variants(temp_osii_root, first["file_id"])
+    assert state["primary_id"] == first["variant_id"]
+    assert (temp_osii_root / "objects" / first["file_id"] / "text.txt").read_text() == "Original PDF text"
+    saved = client.get(f"/api/objects/{first['file_id']}/extractions/{ocr['variant_id']}/texts")
+    assert saved.status_code == 200
+    assert saved.json()["text"] == "Supplemental OCR"
+    assert saved.json()["segments"][0]["source_origin"]["custom_instrument"] == "retained"
+    assert saved.json()["segments"][0]["source_origin"]["confidence"] == 0.91
+    assert client.get(f"/api/objects/{first['file_id']}/extractions/missing/texts").status_code == 404
+    from osii.domain.processing.jobs import get_run
+    queued = client.post(f"/api/objects/{first['file_id']}/extractions", json={"extractor_name": "native_text"}).json()
+    assert get_run(queued["run_id"])["operations"]["extraction_policy"] == "save_variant"
+    rerun = extract_document_variant(extractor_name="text-layer", **args)
+    assert rerun["made_primary"]

@@ -1,3 +1,4 @@
+import { pageBoundingRegions } from "../../../domain/textGrounding";
 // src/features/files/components/FileSourcePanel.tsx
 import { useEffect, useState } from "react";
 import {
@@ -18,7 +19,7 @@ import ChevronRightOutlinedIcon from "@mui/icons-material/ChevronRightOutlined";
 
 import { usePdfDocument } from "../../../hooks/usePdfDocument";
 import type { ManifestRecord } from "../../../api/types";
-import { PdfPageViewer, type PdfBoundingRegion } from "./PdfPageViewer";
+import { PdfPageViewer, BoundingRegionOverlay } from "./PdfPageViewer";
 import { getObjectSourceUrl } from "../../../api/source";
 
 type FileSourcePanelProps = {
@@ -29,43 +30,6 @@ type FileSourcePanelProps = {
   compact?: boolean;
   segments?: ManifestRecord[];
 };
-
-function normalizedPageRegions(
-  segments: ManifestRecord[],
-  page: number,
-): PdfBoundingRegion[] {
-  return segments
-    .filter((segment) => segment.source_origin?.page === page)
-    .flatMap((segment) => {
-      const rawRegions = Array.isArray(segment.regions)
-        ? segment.regions
-        : Array.isArray(segment.source_origin?.regions)
-          ? segment.source_origin.regions
-          : [];
-      return rawRegions.flatMap((value) => {
-        if (!value || typeof value !== "object") return [];
-        const region = value as Record<string, unknown>;
-        const bbox = region.bbox;
-        if (
-          !Array.isArray(bbox)
-          || bbox.length !== 4
-          || !bbox.every((coordinate) => (
-            typeof coordinate === "number"
-            && Number.isFinite(coordinate)
-            && coordinate >= 0
-            && coordinate <= 1
-          ))
-        ) {
-          return [];
-        }
-        return [{
-          bbox: bbox as [number, number, number, number],
-          text: typeof region.text === "string" ? region.text : null,
-          confidence: typeof region.confidence === "number" ? region.confidence : null,
-        }];
-      });
-    });
-}
 
 export function FileSourcePanel({
   fileId,
@@ -88,6 +52,8 @@ export function FileSourcePanel({
       />
     );
   }
+
+  if (mime?.startsWith("image/")) return <ImageSourcePanel sourceUrl={sourceUrl} segments={segments} />;
 
   return (
     <Stack spacing={1.25}>
@@ -155,7 +121,7 @@ function PdfSourcePanel({
 
   const pageCount = pdf.numPages;
   const currentPage = Math.min(Math.max(page ?? 1, 1), pageCount);
-  const regions = normalizedPageRegions(segments, currentPage);
+  const regions = pageBoundingRegions(segments, currentPage);
 
   const handleJumpToPage = () => {
     const parsed = Number(pageInput);
@@ -281,4 +247,25 @@ function PdfSourcePanel({
       </Box>
     </Stack>
   );
+}
+
+function ImageSourcePanel({ sourceUrl, segments }: { sourceUrl: string; segments: ManifestRecord[] }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [sourceUrl]);
+  const [boxes, setBoxes] = useState(true);
+  const regions = pageBoundingRegions(segments, 1);
+  return <Stack spacing={1}>
+    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+      <Typography fontWeight={600}>Source image</Typography>
+      <Button component="a" href={sourceUrl} target="_blank" rel="noreferrer">Open original</Button>
+      {regions.length > 0 && <FormControlLabel label="OCR boxes" control={<Switch size="small" checked={boxes} onChange={event => setBoxes(event.target.checked)} />} />}
+    </Stack>
+    {failed ? <Alert severity="info">This image format cannot be previewed here. Open the original file.</Alert> : <Box sx={{ overflow: "auto", maxHeight: "68vh" }}>
+      <Box sx={{ position: "relative", width: 760, maxWidth: "100%", lineHeight: 0 }}>
+        <img src={sourceUrl} alt="Original source" onError={() => setFailed(true)} style={{ display: "block", width: "100%", height: "auto" }} />
+        <BoundingRegionOverlay regions={boxes ? regions : []} />
+      </Box>
+    </Box>}
+    <Typography variant="caption" color="text.secondary">{regions.length ? `${regions.length} source regions · hover for recognized text and confidence` : "This text version has no region geometry."}</Typography>
+  </Stack>;
 }

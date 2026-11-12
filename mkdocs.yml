@@ -27,11 +27,20 @@ markdown_extensions:
 
 nav:
   - Start here: index.md
+  - Four processor APIs:
+      - Start here — Python and HTTP: reference/processor-api/index.md
+      - Extractor — read the source: reference/processor-api/extraction.md
+      - Synthesizer — explain the evidence: reference/processor-api/synthesis.md
+      - Embedder — represent text: reference/processor-api/embedding.md
+      - Enricher — add knowledge: reference/processor-api/enrichment.md
+      - Canonical outputs: reference/processor-api/canonical-outputs.md
+      - Standard artifacts: reference/processor-api/standard-artifacts.md
   - Install and use:
       - What are you trying to do?: operations/runbooks.md
-      - Mac and Windows launchers: operations/runbook-desktop.md
-      - Development paths: operations/runbook-development.md
-      - Releases and rollback: operations/runbook-releases.md
+      - Start from source: operations/runbook-development.md
+      - Optional local PostgreSQL: reference/local-storage.md
+      - File inventory: operations/large-volumes.md
+      - Model endpoints: operations/model-endpoints.md
       - Python walkthrough: tutorials/python-demonstrations.md
       - Single-file walkthrough: tutorials/single-file.md
       - Generate an LLM wiki: tutorials/llm-wiki.md
@@ -40,6 +49,9 @@ nav:
       - CLI cheat sheet: reference/cli.md
   - Understand OSII:
       - Architecture: concepts/architecture.md
+      - Workbench tools decision: concepts/adr-workbench-tools.md
+      - Inventory database decision: concepts/adr-volume-store.md
+      - Incremental embeddings decision: concepts/adr-incremental-embeddings.md
       - Extraction: concepts/extraction.md
       - Tables and tabular extraction: concepts/tabular-extraction.md
       - Collections and enrichments: concepts/collections-and-enrichments.md
@@ -47,20 +59,21 @@ nav:
       - Synthesis: concepts/synthesis.md
       - Untrusted content: concepts/untrusted-content.md
       - Retrieval chunking: concepts/retrieval-chunking.md
+      - Agent traces research: concepts/agent-traces-research.md
       - Store structure: reference/osii-store.md
       - Rebuildable catalog: reference/catalog.md
+      - Shared library reads: reference/library-reads.md
+      - Shared processing commits: reference/processing-commits.md
+      - Shared authoring and collections: reference/library-authoring.md
+      - Shared retrieval and jobs: reference/retrieval-jobs.md
+      - Storage boundaries and implementation plan: concepts/adr-storage-boundaries.md
   - Extend OSII:
       - Choose an extension: extending/index.md
+      - Discoverable processor modules: extending/processor-modules.md
+      - Frontend tools and topic explorer: extending/frontend-tools.md
       - Hello table enricher: extending/hello-enricher.md
       - Processor development: extending/processor-development.md
-      - Processor API v1:
-          - Overview: reference/processor-api/index.md
-          - Extraction: reference/processor-api/extraction.md
-          - Synthesis: reference/processor-api/synthesis.md
-          - Embedding: reference/processor-api/embedding.md
-          - Enrichment: reference/processor-api/enrichment.md
-          - Canonical outputs: reference/processor-api/canonical-outputs.md
-          - Standard artifacts: reference/processor-api/standard-artifacts.md
+      - RAG strategies and reranking: extending/rag-strategies.md
   - Operate offline:
       - Local-first operation: operations/local-first.md
       - Shared drives and Samba: operations/shared-drives.md
@@ -68,9 +81,8 @@ nav:
       - Guaranteed local processors: operations/local-processors.md
       - Extractor routing: reference/extractor-routing.md
       - Sensitive data and transfer: operations/sensitive-data.md
-      - Export components: operations/component-export.md
-      - Publish images to Quay: operations/publishing-images.md
-      - Public and corporate releases: operations/corporate-deployment.md
+  - Planning:
+      - Corporate hosted service: planning/hosted-service.md
   - API and formats:
       - REST API:
           - Overview: reference/api/index.md

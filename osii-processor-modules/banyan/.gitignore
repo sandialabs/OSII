@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Vim stuff
+*.swp
+*.swo
+
+# Egg stuff
+*.egg
+*.egg-info/
+
+# Environment
+venvs
+
+plans/
+
+.ai_logs/
+.opencode/
+.envrc
+.env
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.examples
+plans/
+/build

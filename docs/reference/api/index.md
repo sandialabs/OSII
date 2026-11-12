@@ -35,6 +35,12 @@ Compatibility read routes under `/api/osii/...` still exist, but new integration
 
 ## Base assumptions
 
+These filesystem locations describe the default sidecar backend. The optional
+[local PostgreSQL composition](../local-storage.md) preserves the Workbench route
+families but saves library records and processing jobs in PostgreSQL. Runtime
+reports `storage_backend`; initialization/import remain explicit CLI commands.
+This is still the standalone API without hosted login, not an authentication bypass.
+
 By default the application commonly runs on:
 
 ```text
@@ -130,6 +136,10 @@ in the JSON response.
 
 - `GET /api/intake/readiness`
 - `GET /api/browse`
+- `GET /api/browse/roots` (navigation shortcuts without directory enumeration)
+- `GET /api/browse/page?path=...&limit=100` (isolated, nonrecursive directory page)
+- `GET /api/browse/page?cursor=...&limit=100` (continue the same directory iterator)
+- `DELETE /api/browse/page/{cursor}` (release a browser cursor)
 - `POST /api/resolve`
 - `GET /api/extractors`
 - `GET /api/synthesizers`
@@ -143,6 +153,52 @@ in the JSON response.
 - `POST /api/embeddings/build`
 - `GET /api/embeddings/build/{job_id}`
 - `GET /api/embeddings/meta`
+
+`POST /api/resolve` supplies the detailed processing plan for Intake review.
+`POST /api/runs` queues the selected paths with a lightweight preview instead
+of rereading every original to repeat that plan. The worker owns content hashes
+and extraction; slow source-folder access during queueing does not block API
+health or Queue & activity requests. Completed Intake/library runs with failed
+or partially processed files also accept `retry`: successful files stay complete,
+failed files return to pending, and the same durable job is requeued. Successful
+extraction versions on partial files are retained when their content identity
+still matches. Recovered files are included when embedding membership is rebuilt;
+existing chunk/vector checkpoints are preserved. Retrying an
+embedding failure retains its existing embedding-only behavior. Fully successful
+and cancelled runs remain terminal.
+
+### Bounded file discovery and selection
+
+The new directory browser leaves legacy `GET /api/browse` behavior unchanged.
+Pages return `current_path`, `parent_path`, `entries`, `has_more`, and an opaque
+`cursor` (null when exhausted). Entries have `name`, `path`, `type`,
+`size_bytes`, and an optional access `error`; unavailable entries and symbolic
+links are not selectable. `limit` is 1–200 inspected entries, including hidden
+entries, so an empty page may still have a continuation cursor. Pages use native
+directory order, not a global sort. No catalog scan, recursion, or content read
+occurs. Cursors are ephemeral, expire after 45 seconds idle, and are not stable
+snapshots of a changing directory. `410` requests reopening an expired cursor;
+`503` reports a timeout/cancelled read. Disconnecting an in-flight request or
+explicitly deleting its cursor stops its isolated reader. Eight browsers may be
+open at once; a new request is rejected rather than evicting another user's cursor.
+A kernel-blocked filesystem call can still need OS/mount recovery.
+
+`POST /api/volume/selections` retains filter-based selection and adds optional
+`entry_ids` (1–10,000 IDs). Explicit selection requires `filters.source_id`, cannot
+use sampling, and must fit the requested file/byte limits. Every distinct ID must
+be eligible and observed in the latest scan of that source; otherwise the request
+fails atomically with `422`. Unknown IDs, wrong-source IDs, and unavailable files
+are not silently dropped. Unfinished discovery requires `allow_partial: true`.
+Successful selections remain immutable as discovery continues.
+
+`GET /api/volume/runs` retains its default ascending cursor contract. Optional
+`recent=true` returns descending IDs, `before=<id>` loads older history, and
+`active_only=true` restricts results to queued/running/paused work. `kind=scan`
+(or a processing stage) filters jobs before pagination. Scan IDs belong
+to the inventory API; they are not interchangeable with Core processing run IDs.
+Scan responses include `issue_code: "identity_changed"` when a failed directory
+identified a different registered root, allowing contextual recovery without a
+filesystem probe during status polling.
 
 ### Setup and local administration
 
@@ -929,6 +985,10 @@ These include:
 
 - `GET /api/intake/readiness`
 - `GET /api/browse`
+- `GET /api/browse/roots` (navigation shortcuts without directory enumeration)
+- `GET /api/browse/page?path=...&limit=100` (isolated, nonrecursive directory page)
+- `GET /api/browse/page?cursor=...&limit=100` (continue the same directory iterator)
+- `DELETE /api/browse/page/{cursor}` (release a browser cursor)
 - `POST /api/resolve`
 - `GET /api/extractors`
 - `GET /api/synthesizers`
@@ -994,3 +1054,87 @@ Use this overview together with:
 - `openapi.yaml`
 
 The Markdown documents explain behavior and conventions. The OpenAPI document should define exact schemas, parameters, and response contracts.
+
+
+## Research reports
+
+Open **Research reports** in Tools, select a collection or document, and describe
+its audience, question, structure, and desired level of detail. The brief accepts
+up to 60,000 characters. A configured chat model writes a Markdown report;
+without one, OSII creates clearly labelled extractive research notes. An empty
+scope prompts you to process its documents first.
+
+Click any source marker to inspect the exact excerpt alongside the report.
+**Open passage in document** opens its preserved text representation, page (when
+known), and character range. Source identity includes a SHA-256 fingerprint of
+the full extracted text; the document viewer checks that fingerprint when opening
+a report reference and flags changed text. Bibliographic entries use available metadata and simple
+title/year heuristics; they are best guesses and remain editable. Citation checks
+verify reference identity and location, not the model's interpretation.
+
+Use **Edit text** to change prose or bibliography details. **Make it better**
+proposes a revision against the report's original scope and brief. Review the
+removed and added lines, accept or reject individual changes, or choose
+**Accept all**. Pending changes never enter the report or its exports. Editing
+and new generation pause during review. **Undo / restore** restores the previous
+draft after a generation or completed revision.
+
+Drafts are retained in the current browser tab's session storage (separately per
+hosted account), not saved as canonical library artifacts. Export `.md` for normal
+Markdown or `.mmd` for LaTeX/Mathpix Markdown. Both preserve equations, clickable
+absolute OSII links, bibliography, coverage warnings, and exact excerpt/fingerprint
+notes. Document links require access to the same running OSII library; evidence
+notes can be read without it. Mathpix rendering uses the existing local renderer;
+no Mathpix account or external conversion is required.
+
+`POST /api/research/report` accepts:
+
+```json
+{
+  "scope": {"scope_type": "collection", "collection_id": "collection-id"},
+  "prompt": "Compare the findings and discuss the limitations.",
+  "format": "markdown"
+}
+```
+
+For a revision, also send `current_markdown`, `improvement`, and the `sources`
+returned with the report. Core re-reads those sources and ignores client-supplied
+paths and links. A changed/deleted extraction or out-of-scope reference returns
+409; an empty scope or invalid request returns 422; unusable model output or
+unknown references returns 502. The hosted endpoint requires authentication,
+collection visibility, CSRF protection, and the shared writing budget.
+
+Reports currently sample the first 24 documents in source-path order, selecting
+an introduction and a lexical prompt-matched passage per document (up to 1,400
+characters each). Revisions retain previously verified excerpts, with a maximum
+of 64 passages. This is bounded evidence sampling, not exhaustive literature
+review. The response exposes `documents_in_scope`, `documents_sampled`, source
+snapshots, writing provider/model, format, and coverage warnings. Narrow large
+collections for fuller coverage. Core rechecks text fingerprints after writing
+and rejects changed evidence rather than silently attaching stale locations.
+
+### Extraction routing setup
+
+`GET /api/extractor-routes` returns `routes` and the active `path` to
+`tools.toml`. `PUT /api/extractor-routes` preserves other tool configuration and
+validates primary and fallback file-type compatibility.
+
+`POST /api/extractor-routes/import` accepts `{"toml": "..."}` (up to 1 MiB)
+and returns `ok`, `routes`, `errors`, and `warnings`. It accepts
+`[[routes.extractor]]` or legacy `[[routes]]` tables and never saves; clients
+review the returned draft before using PUT.
+
+Processor administration records expose `resolved_models` and `model_error`
+for per-service model assignment. Missing bindings inherit enabled compatible
+library defaults; explicit disabled or missing bindings report a setup error.
+
+### Apache Tika toolbox configuration
+
+Save the upstream address with `PUT /api/admin/processor-settings/tika` and
+`{"config": {"tika_endpoint": "http://your-tika:9998", "chunk_chars": 4000}}`.
+Both `tika` and `tika_catchall` intake routes use these saved settings. The
+adapter exposes the standard `/v1/descriptor` and `/v1/extract` endpoints;
+`/health` checks the wrapper and `/upstream-health?tika_endpoint=...` checks
+Apache Tika. The normal development stack prepares and manages Apache Tika
+automatically; `OSII_TIKA_MANAGED=false` selects an externally managed runtime. See the
+[Apache Tika adapter guide](../extractor-routing.md#apache-tika-processor-module).

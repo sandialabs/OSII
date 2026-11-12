@@ -1,3 +1,5 @@
+import { ScopeBatchResults, type BatchProgress } from "./ScopeBatchResults";
+import { MathpixText } from "../../../components/text/MathpixText";
 import {
   Alert,
   Box,
@@ -19,11 +21,7 @@ import {
 } from "@mui/material";
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import ViewColumnOutlinedIcon from "@mui/icons-material/ViewColumnOutlined";
-import { useEffect, useMemo, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type {
   StandardEnrichmentArtifact,
@@ -42,9 +40,7 @@ function displayValue(value: unknown): string {
 
 function isStandardArtifact(value: unknown): value is StandardEnrichmentArtifact {
   if (!value || typeof value !== "object") return false;
-  return ["table", "knowledge_graph", "entity_list", "wiki_markdown"].includes(
-    String((value as { artifact_type?: unknown }).artifact_type),
-  );
+  return Object.prototype.hasOwnProperty.call(artifactRenderers, String((value as { artifact_type?: unknown }).artifact_type));
 }
 
 type SortDirection = "asc" | "desc";
@@ -304,14 +300,24 @@ function KnowledgeGraphView({ artifact }: { artifact: StandardKnowledgeGraphArti
 function WikiView({ artifact }: { artifact: StandardWikiMarkdownArtifact }) {
   return (
     <Box className="markdown-body" sx={{ maxHeight: 640, overflowY: "auto", pr: 1, "& table": { borderCollapse: "collapse" }, "& td, & th": { border: "1px solid", borderColor: "divider", p: 1 } }}>
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-        {artifact.markdown}
-      </ReactMarkdown>
+      <MathpixText text={artifact.markdown} />
     </Box>
   );
 }
 
-export function EnrichmentArtifactView({ data }: { data: unknown }) {
+// A new visualization registers once here; a new method using an existing
+// product format needs no renderer or route changes.
+const artifactRenderers: Record<StandardEnrichmentArtifact["artifact_type"], (data: StandardEnrichmentArtifact) => ReactNode> = {
+  table: data => <TableView artifact={data as StandardTableArtifact} />,
+  entity_list: data => <EntityListView artifact={data as StandardEntityListArtifact} />,
+  knowledge_graph: data => <KnowledgeGraphView artifact={data as StandardKnowledgeGraphArtifact} />,
+  wiki_markdown: data => <WikiView artifact={data as StandardWikiMarkdownArtifact} />,
+};
+
+export function EnrichmentArtifactView({ data, showTitle = true }: { data: unknown; showTitle?: boolean }) {
+  if (data && typeof data === "object" && "artifact_type" in data && data.artifact_type === "scope_batch_run" && "run_id" in data && typeof data.run_id === "string") {
+    return <ScopeBatchResults runId={data.run_id} taskId={"task_id" in data && typeof data.task_id === "string" ? data.task_id : undefined} title={"title" in data && typeof data.title === "string" ? data.title : "Whole-scope results"} progress={data as unknown as BatchProgress} />;
+  }
   if (!isStandardArtifact(data)) {
     return (
       <Alert severity="info">
@@ -325,14 +331,11 @@ export function EnrichmentArtifactView({ data }: { data: unknown }) {
 
   return (
     <Stack spacing={1.5}>
-      <Typography variant="h6">{data.title}</Typography>
+      {showTitle && <Typography variant="h6">{data.title}</Typography>}
       {"description" in data && data.description ? (
         <Typography color="text.secondary">{data.description}</Typography>
       ) : null}
-      {data.artifact_type === "table" ? <TableView artifact={data} /> : null}
-      {data.artifact_type === "entity_list" ? <EntityListView artifact={data} /> : null}
-      {data.artifact_type === "knowledge_graph" ? <KnowledgeGraphView artifact={data} /> : null}
-      {data.artifact_type === "wiki_markdown" ? <WikiView artifact={data} /> : null}
+      {artifactRenderers[data.artifact_type](data)}
     </Stack>
   );
 }

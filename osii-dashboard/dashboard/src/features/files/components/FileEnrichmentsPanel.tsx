@@ -1,5 +1,6 @@
 // src/features/files/components/FileEnrichmentsPanel.tsx
 import {
+  Accordion, AccordionDetails, AccordionSummary,
   Alert,
   Button,
   Card,
@@ -7,14 +8,15 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
 import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
 
 import { getArtifactUrl } from "../../../api/artifacts";
 import type { EnrichmentListEntryFile } from "../../../api/types";
 import { useObjectEnrichmentPayload } from "../../../hooks/useObjectEnrichmentPayload";
 import { useScopeEnrichments } from "../../../hooks/useScopeEnrichments";
-import { EnrichmentArtifactView } from "./EnrichmentArtifactView";
-import { ExampleEnrichmentActions } from "./ExampleEnrichmentActions";
+import { DerivedProductEditor } from "./DerivedProductEditor";
+import { ToolActionPanel } from "./ToolActionPanel";
 
 type FileEnrichmentsPanelProps = {
   fileId: string;
@@ -27,7 +29,7 @@ function EnrichmentFileCard({
   fileId: string;
   entry: EnrichmentListEntryFile;
 }) {
-  const canPreview = entry.name.endsWith(".json") && !entry.name.endsWith(".meta.json");
+  const canPreview = /\.(json|txt|md)$/i.test(entry.name) && !entry.name.endsWith(".meta.json");
   const payload = useObjectEnrichmentPayload(fileId, entry.name, canPreview);
 
   return (
@@ -52,7 +54,7 @@ function EnrichmentFileCard({
           {canPreview && payload.isError ? (
             <Alert severity="warning">The artifact could not be rendered.</Alert>
           ) : null}
-          {canPreview && payload.data ? <EnrichmentArtifactView data={payload.data.data} /> : null}
+          {canPreview && payload.data ? <DerivedProductEditor scope={{ scope_type: "object", file_id: fileId }} filename={entry.name} /> : null}
         </Stack>
       </CardContent>
     </Card>
@@ -86,7 +88,7 @@ export function FileEnrichmentsPanel({ fileId }: FileEnrichmentsPanelProps) {
 
   return (
     <Stack spacing={2}>
-      <ExampleEnrichmentActions scope={{ scope_type: "object", file_id: fileId }} />
+      <ToolActionPanel scope={{ scope_type: "object", file_id: fileId }} />
       {enrichments.length === 0 ? (
         <Alert severity="info">No other enrichments are available for this file.</Alert>
       ) : null}
@@ -112,19 +114,8 @@ export function FileEnrichmentsPanel({ fileId }: FileEnrichmentsPanelProps) {
                 <Typography variant="body2" color="text.secondary">
                   Bundle files:
                 </Typography>
-                {entry.files.map((file) => (
-                  <Button
-                    key={file.relpath}
-                    variant="outlined"
-                    startIcon={<OpenInNewOutlinedIcon />}
-                    component="a"
-                    href={getArtifactUrl(file.relpath)}
-                    target="_blank"
-                    rel="noreferrer"
-                    sx={{ alignSelf: "flex-start" }}
-                  >
-                    {file.name}
-                  </Button>
+                {entry.files.filter(file => !file.is_dir && !file.name.startsWith(".")).map((file) => (
+                  /\.(json|txt|md)$/i.test(file.name) && !file.name.endsWith(".meta.json") ? <Accordion key={file.relpath} variant="outlined" disableGutters><AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}><Typography>{file.name}</Typography></AccordionSummary><AccordionDetails><DerivedProductEditor scope={{ scope_type: "object", file_id: fileId }} filename={`${entry.name}/${file.name}`} /></AccordionDetails></Accordion> : <Button key={file.relpath} variant="outlined" startIcon={<OpenInNewOutlinedIcon />} component="a" href={getArtifactUrl(file.relpath)} target="_blank" rel="noreferrer" sx={{ alignSelf: "flex-start" }}>{file.name}</Button>
                 ))}
               </Stack>
             </Stack>

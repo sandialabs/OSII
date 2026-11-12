@@ -83,6 +83,16 @@ def test_catalog_rebuild_and_cursor_pagination(temp_osii_root):
     assert verify_catalog(temp_osii_root)["ok"] is True
 
 
+def test_duplicate_legacy_folder_paths_rebuild_without_deleting_manifests(temp_osii_root):
+    first = write_folder_manifest(temp_osii_root, "old-root", "", [], [], None, None)
+    newest = write_folder_manifest(temp_osii_root, "new-root", "", [], [], None, None)
+    result = rebuild_catalog(temp_osii_root)
+    assert result["counts"]["folders"] == 1
+    assert catalog_db.list_folders(temp_osii_root)[0]["folder_id"] == "new-root"
+    assert first.exists() and newest.exists()
+    assert verify_catalog(temp_osii_root)["ok"] is True
+
+
 def test_corrupt_catalog_is_quarantined_and_rebuilt(temp_osii_root):
     path = catalog_path(temp_osii_root)
     path.write_bytes(b"not sqlite")
@@ -102,3 +112,23 @@ def test_legacy_collection_database_migrates_to_canonical_files(temp_osii_root):
     assert (temp_osii_root / "collections" / "col-old" / "collection.toml").exists()
     assert json.loads((temp_osii_root / "collections" / "col-old" / "members.jsonl").read_text())["file_id"] == "file-a"
     assert list_collections(temp_osii_root)[0]["document_count"] == 1
+
+
+def test_content_revisions_can_share_a_source_path_after_cache_upgrade(temp_osii_root):
+    manifest = write_folder_manifest(temp_osii_root, "root", "", [
+        {"source_relpath": "report.pdf", "file_id": "old-content"},
+    ], [], None, None)
+    rebuild_catalog(temp_osii_root)
+    with sqlite3.connect(catalog_path(temp_osii_root)) as conn:
+        conn.execute("UPDATE catalog_meta SET value='3' WHERE key='schema_version'")
+    write_folder_manifest(temp_osii_root, "root", "", [
+        {"source_relpath": "report.pdf", "file_id": "old-content"},
+        {"source_relpath": "report.pdf", "file_id": "new-content"},
+    ], [], None, None)
+    assert catalog_db.upsert_document(temp_osii_root, "new-content")
+    page = list_documents(temp_osii_root, limit=1)
+    second = list_documents(temp_osii_root, limit=1, cursor=page["next_cursor"])
+    assert page["total"] == 2
+    assert {page["items"][0]["file_id"], second["items"][0]["file_id"]} == {"old-content", "new-content"}
+    assert manifest.exists()
+    assert rebuild_catalog(temp_osii_root)["counts"]["documents"] == 2

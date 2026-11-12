@@ -11,7 +11,82 @@ from osii.domain.catalog_db import list_semantic_indexes
 from osii.domain.model_provider_config import processor_model, selected_processor
 from osii.indexing.common import embeddings_meta_path
 from osii.processors.remote import discover_remote_processors
-from osii.configuration import configured_tools
+from osii.configuration import configured_tools, load_models_config, load_tools_config, model_connection, models_path, tools_path
+from osii.domain.env_credentials import resolve_env_value
+from osii.domain.processing.extractor_selection import load_extractor_routes
+
+
+CORE_SERVICES = {
+    "local.native-text": "local-extractor",
+    "local.tesseract-page-ocr": "local-tesseract",
+    "local.extractive-preview": "local-synthesizer",
+    "local.hashing": "local-embedder",
+    "local.stats-keywords": "local-enricher",
+}
+CORE_IMPLEMENTATIONS = {
+    "native_text": "osii-core/osii/extraction/native_text_extractor.py",
+    "stats_keywords": "osii-core/osii/enrichment/stats_keywords.py",
+    "noun_adjective_ngrams": "osii-core/osii/enrichment/linguistic_examples.py",
+    "entity_candidates": "osii-core/osii/enrichment/linguistic_examples.py",
+}
+
+
+def _processor_origin(
+    item: dict[str, Any], registrations: list[dict[str, Any]], saved_tools: dict[str, Any],
+) -> dict[str, str]:
+    """Explain implementation and configuration separately from availability."""
+    identifier = str(item["id"])
+    if identifier in CORE_SERVICES or identifier in CORE_IMPLEMENTATIONS:
+        implementation = CORE_IMPLEMENTATIONS.get(identifier) or f"osii-core/services/{CORE_SERVICES[identifier]}"
+        return {
+            "label": "Bundled Core",
+            "description": "OSII's own local implementation; no external model required.",
+            "implementation": implementation,
+            "configuration_file": str(tools_path()),
+            "configuration_key": "routes / processor_settings",
+        }
+    if identifier == "pdf_default":
+        return {
+            "label": "Configured legacy adapter",
+            "description": "An older model-backed PDF integration, not a bundled Nemotron model or a default service.",
+            "implementation": "osii-core/osii/extraction/banyan_extractor.py",
+            "endpoint_source": "NEMOTRON_BASE_URL (startup environment)",
+            "configuration_file": str(tools_path()),
+            "configuration_key": "routes.extractor / processor_settings.pdf_default",
+        }
+    if identifier.startswith(("ollama.", "openai.")):
+        return {
+            "label": "Model connection",
+            "description": "OSII's bundled bridge calls a separately hosted model; the model is not included in Core.",
+            "implementation": "osii-core/services/model-provider-bridge",
+            "configuration_file": str(models_path()),
+            "configuration_key": "models / defaults",
+        }
+    if identifier == "embedding":
+        return {
+            "label": "External embedding endpoint",
+            "description": "Embedding API selected through startup settings, not a bundled model.",
+            "endpoint_source": "OSII_EMBEDDING_BASE_URL / OSII_MODEL_BASE_URL and EMBEDDING_MODEL",
+        }
+    endpoint = str(item.get("base_url") or "").rstrip("/")
+    for registration in registrations:
+        if registration["base_url"] != endpoint or not endpoint:
+            continue
+        tool_id = str(registration["id"])
+        saved = tool_id in saved_tools
+        return {
+            "label": "Configured processor" if saved else "Processor module",
+            "description": "Separately deployed Processor API service." if saved else "Development registration supplied by OSII; availability depends on starting this optional service.",
+            "implementation": registration.get("implementation") or ("Service descriptor at " + endpoint + "/v1/descriptor" if saved else "osii-core/osii/configuration.py: builtin_tools_config"),
+            "manifest": registration.get("manifest_path"),
+            "configuration_file": str(tools_path()),
+            "configuration_key": f"tools.{tool_id} (saved override)" if not saved else f"tools.{tool_id}",
+        }
+    return {
+        "label": "External endpoint",
+        "description": "Discovered from a configured endpoint; this service is not identified as a bundled Core component.",
+        "endpoint_source": "OSII_PROCESSORS (startup environment) or legacy endpoint registration",
+    }
 
 
 def _service_probe(url: str, *, timeout: float = 3.0) -> tuple[bool, str]:
@@ -111,7 +186,7 @@ def _embedding_probe(osii_root: Path | None = None) -> dict[str, Any]:
                 "provider": provider,
                 "dimensions": dimensions,
                 "base_url": descriptor.get("base_url"),
-                "bundled": selected.startswith("local."),
+                "bundled": selected in CORE_SERVICES,
                 "lexical": selected == "local.hashing",
             }
     base_url = (
@@ -179,6 +254,37 @@ def embedding_readiness(osii_root: Path | None = None) -> dict[str, Any]:
     return _embedding_probe(osii_root)
 
 
+def language_model_readiness(osii_root: Path) -> dict[str, Any]:
+    """Check the selected chat model's listing without issuing a paid generation."""
+    alias = str(load_models_config(osii_root).get("defaults", {}).get("chat") or "")
+    connection = model_connection(alias, osii_root) if alias else None
+    result: dict[str, Any] = {"available": False, "connection": alias, "model": "", "detail": "Choose a default language connection in Setup."}
+    if not connection or "chat" not in connection.get("capabilities", []):
+        return result
+    model = str(connection.get("model") or "").strip()
+    base_url = str(connection.get("base_url") or "").rstrip("/")
+    result.update({"model": model, "base_url": base_url})
+    if not model or not base_url:
+        result["detail"] = "The default language connection needs a URL and model name."
+        return result
+    ollama = connection.get("type") == "ollama-local"
+    key, _ = resolve_env_value(str(connection.get("api_key_env") or ""))
+    try:
+        response = requests.get(
+            f"{base_url}/api/tags" if ollama else f"{base_url}/models",
+            headers={"Authorization": f"Bearer {key}"} if key else {}, timeout=(3, 5),
+        )
+        response.raise_for_status()
+        payload = response.json()
+        rows = payload.get("models" if ollama else "data") or []
+        names = [str(row.get("model") or row.get("name") or "") if ollama else str(row.get("id") or "") for row in rows if isinstance(row, dict)]
+        available = any(_model_name_matches(name, model) if ollama else name == model for name in names)
+        result.update({"available": available, "detail": f"Model {model!r} is listed by the endpoint. Generation has not been tested." if available else f"Model {model!r} is not listed by this endpoint. Check its name and your access permissions."})
+    except (requests.RequestException, ValueError, AttributeError) as exc:
+        result["detail"] = f"Language connection check failed: {exc}"
+    return result
+
+
 def _registered_endpoints(osii_root: Path) -> list[dict[str, Any]]:
     records = []
     for tool_id, tool in configured_tools(osii_root).items():
@@ -195,14 +301,12 @@ def _registered_endpoints(osii_root: Path) -> list[dict[str, Any]]:
                 "base_url": endpoint,
                 "enabled": bool(tool.get("enabled", True)),
                 "model_access": tool.get("model_access") or {"mode": "none"},
+                **{key: tool[key] for key in ("manifest_path", "implementation", "aliases", "description", "capabilities", "config_schema", "readiness_path", "readiness_config") if key in tool},
             })
     return records
 
 
 def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
-    tika_url = os.getenv("TIKA_URL", "http://localhost:9998").rstrip("/")
-    tika_available, tika_detail = _service_probe(f"{tika_url}/version")
-
     nemotron_url = os.getenv("NEMOTRON_BASE_URL", "").strip().rstrip("/")
     if nemotron_url:
         nemotron_available, nemotron_detail = _service_probe(
@@ -212,54 +316,50 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
         nemotron_available = False
         nemotron_detail = "NEMOTRON_BASE_URL is not configured."
 
-    extractors = [
-        {
-            "id": "tika",
-            "aliases": ["tika", "tika_catchall"],
-            "display_name": "Apache Tika",
-            "description": "General text extraction for PDFs, Office files, and catch-all formats.",
-            "available": tika_available,
-            "detail": tika_detail,
-            "bundled": True,
-        },
-        {
-            "id": "pdf_default",
-            "aliases": [
-                "pdf_default",
-                "banyan",
-                "banyan_ingest",
-                "banyan-extract",
-            ],
-            "display_name": "Nemotron PDF parser",
-            "description": "Model-backed page parsing for PDFs.",
-            "available": nemotron_available,
-            "detail": nemotron_detail,
-            "bundled": False,
-            "config_schema": {
-                "type": "object",
-                "properties": {
-                    "temperature": {
-                        "type": "number",
-                        "title": "VLM temperature",
-                        "description": "Controls sampling for the Nemotron page parser.",
-                        "minimum": 0,
-                        "maximum": 2,
-                        "default": 0,
+    extractors = []
+    nemotron_aliases = {"pdf_default", "banyan", "banyan_ingest", "banyan-extract"}
+    configured_extractors = {
+        name
+        for route in load_extractor_routes()
+        for name in [route.get("extractor"), *(route.get("fallbacks") or [])]
+    }
+    if nemotron_url or configured_extractors & nemotron_aliases:
+        extractors.append(
+            {
+                "id": "pdf_default",
+                "aliases": sorted(nemotron_aliases),
+                "display_name": "Nemotron PDF parser",
+                "description": "Model-backed page parsing for PDFs.",
+                "available": nemotron_available,
+                "detail": nemotron_detail,
+                "bundled": False,
+                "base_url": nemotron_url,
+                "config_schema": {
+                    "type": "object",
+                    "properties": {
+                        "temperature": {
+                            "type": "number",
+                            "title": "VLM temperature",
+                            "description": "Controls sampling for the Nemotron page parser.",
+                            "minimum": 0,
+                            "maximum": 2,
+                            "default": 0,
+                        },
+                        "page_limit": {
+                            "type": "integer",
+                            "title": "Page limit",
+                            "description": "Optional demo/debug limit. Leave blank to process every page.",
+                            "minimum": 1,
+                        },
                     },
-                    "page_limit": {
-                        "type": "integer",
-                        "title": "Page limit",
-                        "description": "Optional demo/debug limit. Leave blank to process every page.",
-                        "minimum": 1,
-                    },
+                    "additionalProperties": False,
                 },
-                "additionalProperties": False,
-            },
-        },
-    ]
+            }
+        )
 
+    registrations = _registered_endpoints(osii_root)
     external = []
-    for endpoint in _registered_endpoints(osii_root):
+    for endpoint in registrations:
         if not endpoint.get("enabled"):
             continue
         base_url = str(endpoint.get("base_url") or "").rstrip("/")
@@ -281,6 +381,12 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
         if kind not in remote_by_kind:
             continue
         name = str(descriptor.get("name", descriptor.get("base_url")))
+        expected = next((record for record in registrations if record.get("manifest_path") and record["base_url"] == descriptor.get("base_url") and record.get("enabled")), None)
+        if expected and (name != expected["processor_id"] or kind != expected["kind"]):
+            remote_by_kind[expected["kind"]].append({**expected, "id": expected["processor_id"],
+                "available": False, "bundled": False,
+                "detail": f"Processor descriptor does not match manifest: expected {expected['processor_id']} ({expected['kind']}), received {name} ({kind})."})
+            continue
         model = (
             processor_model(name, kind, osii_root=osii_root)
             if kind in {"embedder", "synthesizer"}
@@ -300,11 +406,32 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
                 if not descriptor.get("error")
                 else descriptor["error"],
                 "base_url": descriptor.get("base_url"),
-                "bundled": str(descriptor.get("name", "")).startswith("local."),
+                "bundled": name in CORE_SERVICES,
                 "descriptor": descriptor if not descriptor.get("error") else None,
                 **({"model": model} if model else {}),
             }
         )
+
+    # A module can declare a deeper readiness check than adapter liveness.
+    from urllib.parse import urlencode
+    from osii.domain.processor_settings import processor_settings
+    for registration in registrations:
+        kind = registration.get("kind")
+        if not registration.get("enabled") or kind not in remote_by_kind:
+            continue
+        name = registration.get("processor_id")
+        item = next((item for item in remote_by_kind[kind] if item["id"] == name), None)
+        if item is None:
+            item = {**registration, "id": name, "available": False,
+                "detail": "Processor descriptor unavailable. Start this module from Setup or make dev.", "bundled": False}
+            remote_by_kind[kind].append(item)
+        item["aliases"] = registration.get("aliases", [])
+        readiness_path = registration.get("readiness_path")
+        if item["available"] and readiness_path:
+            settings = processor_settings(osii_root, name)
+            query = urlencode({key: settings[key] for key in registration.get("readiness_config", []) if key in settings})
+            url = registration["base_url"] + readiness_path + ("?" + query if query else "")
+            item["available"], item["detail"] = _service_probe(url)
 
     for kind in ("synthesizer", "embedder"):
         for item in remote_by_kind[kind]:
@@ -400,7 +527,7 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
             item for item in compatibility_enrichers if item["id"] != "stats_keywords"
         ]
 
-    return {
+    result = {
         "defaults": {
             "extractor": os.getenv("OSII_DEFAULT_EXTRACTOR", "native_text"),
             "synthesizer": selected_processor("synthesizer", osii_root=osii_root),
@@ -412,5 +539,11 @@ def intake_capability_readiness(osii_root: Path) -> dict[str, Any]:
         "embedders": embedders,
         "enrichers": remote_by_kind["enricher"] + compatibility_enrichers,
         "external": external,
+        "language_model": language_model_readiness(osii_root),
         "semantic_indexes": list_semantic_indexes(osii_root),
     }
+    saved_tools = load_tools_config(osii_root).get("tools", {})
+    for group in ("extractors", "synthesizers", "embedders", "enrichers", "external"):
+        for item in result[group]:
+            item["origin"] = _processor_origin(item, registrations, saved_tools)
+    return result

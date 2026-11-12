@@ -16,6 +16,10 @@ def ensure_object_synth_dir(osii_store: Path, file_id: str) -> Path:
 
 
 def read_concatenated_text(osii_store: Path, file_id: str) -> tuple[str, int]:
+    from osii.enrichment.common import frozen_object_text
+    frozen = frozen_object_text(osii_store, file_id)
+    if frozen is not None:
+        return frozen.get("native_text", frozen["text"]), frozen.get("text_record_count", 1)
     records = list_text_records(osii_store, file_id)
     texts = []
 
@@ -55,7 +59,8 @@ def write_synth_text(
 ) -> Path:
     ensure_object_synth_dir(osii_store, file_id)
     path = object_synth_text_path(osii_store, file_id)
-    path.write_text(text, encoding="utf-8")
+    from osii.domain.artifacts.products import write_text_product
+    write_text_product(osii_store, path, text)
     clear_artifacts_stale(osii_store, file_id, "syntheses")
 
     if synthesizer_name and synthesizer_version:

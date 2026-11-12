@@ -17,6 +17,8 @@ export type ObjectDeletionPreview = {
   active_jobs: Array<{ id: string; run_id: string; status: string }>;
   history_run_ids: string[];
   indexes_rebuild_required: boolean;
+  storage_backend?: "sidecar" | "postgres";
+  data_copy_note?: string;
 };
 
 export function previewObjectDeletion(fileId: string, mode: DeletionMode) {

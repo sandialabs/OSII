@@ -9,6 +9,7 @@ import type {
   ScopeMembersResponse,
   ScopeSummariesRequest,
   ScopeSummariesResponse,
+  ScopeOverview,
 } from "./types";
 
 export async function getRootScope(): Promise<ScopeMembersResponse> {
@@ -39,6 +40,10 @@ export async function getScopeSummaries(
     method: "POST",
     json: request,
   });
+}
+
+export async function getScopeOverview(scope: ScopeDescribeRequest): Promise<ScopeOverview> {
+  return apiJson<ScopeOverview>("/api/scopes/overview", { method: "POST", json: { scope } });
 }
 
 export async function getScopeArtifacts(

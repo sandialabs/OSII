@@ -5,6 +5,8 @@ import sqlite3
 import threading
 import time
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -14,14 +16,32 @@ from .pathing import display_rel
 RUNS: dict[str, dict] = {}
 RUNS_LOCK = threading.Lock()
 _STATE_DB: Path | None = None
+_STORE_OVERRIDE = ContextVar('osii_job_store', default=None)
+
+
+def _store_path():
+    return _STORE_OVERRIDE.get() or _STATE_DB
+
+
+@contextmanager
+def using_job_store(root: Path):
+    """Bind an explicit local store without changing the process default."""
+    token = _STORE_OVERRIDE.set(root.resolve() / 'state' / 'jobs.sqlite3')
+    try:
+        yield
+    finally:
+        _STORE_OVERRIDE.reset(token)
 
 
 def configure_job_store(osii_root: Path) -> Path:
     """Configure the durable operational-state store for this process."""
     global _STATE_DB
     state_dir = osii_root.resolve() / "state"
+    if _STORE_OVERRIDE.get() is not None and _STORE_OVERRIDE.get() != state_dir / 'jobs.sqlite3':
+        raise ValueError('Requested job store differs from the explicit store context')
     state_dir.mkdir(parents=True, exist_ok=True)
-    _STATE_DB = state_dir / "jobs.sqlite3"
+    if _STORE_OVERRIDE.get() is None:
+        _STATE_DB = state_dir / "jobs.sqlite3"
     with _connection() as conn:
         conn.executescript(
             """
@@ -44,6 +64,7 @@ def configure_job_store(osii_root: Path) -> Path:
             );
             CREATE INDEX IF NOT EXISTS idx_queue_jobs_status_created
               ON queue_jobs(status, created_at);
+            CREATE TABLE IF NOT EXISTS run_aliases (alias TEXT PRIMARY KEY, run_id TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS workers (
                 id TEXT PRIMARY KEY,
                 started_at TEXT NOT NULL,
@@ -59,13 +80,13 @@ def configure_job_store(osii_root: Path) -> Path:
             conn.execute("ALTER TABLE queue_jobs ADD COLUMN worker_id TEXT")
         if "heartbeat_at" not in columns:
             conn.execute("ALTER TABLE queue_jobs ADD COLUMN heartbeat_at TEXT")
-    return _STATE_DB
+    return _store_path()
 
 
 def _connection() -> sqlite3.Connection:
-    if _STATE_DB is None:
+    if _store_path() is None:
         raise RuntimeError("Job store is not configured. Call configure_job_store first.")
-    conn = sqlite3.connect(_STATE_DB, timeout=30)
+    conn = sqlite3.connect(_store_path(), timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -75,7 +96,7 @@ def _now() -> str:
 
 
 def save_run(run: dict) -> None:
-    if _STATE_DB is None:
+    if _store_path() is None:
         return
     with _connection() as conn:
         conn.execute(
@@ -106,15 +127,18 @@ def create_run_record(
     upload_root: Path,
     *,
     osii_root: Path | None = None,
+    run_id: str | None = None,
+    displays: dict[str, str] | None = None,
 ) -> dict:
     if osii_root is not None:
         configure_job_store(osii_root)
 
-    run_id = uuid.uuid4().hex
+    run_id = run_id or uuid.uuid4().hex
     items = [
         {
             "path": str(p),
-            "display": display_rel(p, shared_root, upload_root),
+            "display": (displays[str(p)] if displays is not None
+                        else display_rel(p, shared_root, upload_root)),
             "status": "pending",
             "artifact": None,
             "datacard": None,
@@ -137,13 +161,16 @@ def create_run_record(
         "error": None,
     }
     with RUNS_LOCK:
+        existing = _load_run(run_id)
+        if existing is not None:
+            return existing
         RUNS[run_id] = run
         save_run(run)
     return run
 
 
 def _load_run(run_id: str) -> dict | None:
-    if _STATE_DB is None:
+    if _store_path() is None:
         return None
     with _connection() as conn:
         row = conn.execute("SELECT data_json FROM runs WHERE id = ?", (run_id,)).fetchone()
@@ -151,7 +178,7 @@ def _load_run(run_id: str) -> dict | None:
 
 
 def _latest_queue_state(run_id: str) -> dict | None:
-    if _STATE_DB is None:
+    if _store_path() is None:
         return None
     with _connection() as conn:
         row = conn.execute(
@@ -212,7 +239,7 @@ def get_run(run_id: str) -> dict | None:
 
 
 def list_runs(*, limit: int = 100) -> list[dict]:
-    if _STATE_DB is None:
+    if _store_path() is None:
         return []
     with _connection() as conn:
         rows = conn.execute(
@@ -224,16 +251,24 @@ def list_runs(*, limit: int = 100) -> list[dict]:
     ]
 
 
-def enqueue_run(run_id: str, payload: dict[str, Any]) -> dict:
-    job_id = uuid.uuid4().hex
+def enqueue_run(run_id: str, payload: dict[str, Any], *, job_id: str | None = None, alias: str | None = None) -> dict:
+    job_id = job_id or uuid.uuid4().hex
     now = _now()
     with _connection() as conn:
         conn.execute(
-            """INSERT INTO queue_jobs(id, run_id, payload_json, status, created_at)
+            """INSERT OR IGNORE INTO queue_jobs(id, run_id, payload_json, status, created_at)
                VALUES (?, ?, ?, 'queued', ?)""",
             (job_id, run_id, json.dumps(payload), now),
         )
+        if alias:
+            conn.execute("INSERT INTO run_aliases VALUES(?, ?) ON CONFLICT(alias) DO UPDATE SET run_id=excluded.run_id", (alias, run_id))
     return {"id": job_id, "run_id": run_id, "status": "queued", "created_at": now}
+
+
+def resolve_run_alias(alias: str) -> str | None:
+    with _connection() as conn:
+        row = conn.execute("SELECT run_id FROM run_aliases WHERE alias=?", (alias,)).fetchone()
+    return row["run_id"] if row else None
 
 
 def register_worker(worker_id: str) -> None:
@@ -262,7 +297,7 @@ def unregister_worker(worker_id: str) -> None:
 
 
 def worker_status(*, stale_after_seconds: float = 15.0) -> dict[str, Any]:
-    if _STATE_DB is None:
+    if _store_path() is None:
         return {
             "available": False,
             "detail": "The processing job store is not configured.",
@@ -486,7 +521,14 @@ def control_run(run_id: str, action: str) -> dict:
     run = get_run(run_id)
     if run is None:
         raise KeyError("run not found")
-    if run.get("status") in {"done", "cancelled"}:
+    embedding_retry = action == "retry" and run.get("indexing_status") == "error" and (
+        run.get("file_processing_status") == "done" or run.get("status") == "done"
+    )
+    file_retry = not embedding_retry and action == "retry" and run.get("workflow") in {"intake", "library"} and any(
+        item.get("path") and item.get("status") in {"error", "partial"}
+        for item in run.get("items", [])
+    )
+    if run.get("status") == "cancelled" or (run.get("status") == "done" and not (embedding_retry or file_retry)):
         raise ValueError(f"cannot {action} a {run.get('status')} run")
     if run.get("status") == "error" and action != "retry":
         raise ValueError("a failed run can be retried; it does not need cancellation")
@@ -501,8 +543,24 @@ def control_run(run_id: str, action: str) -> dict:
 
         queue_status = str(row["status"])
         if action == "retry":
-            if queue_status != "error" or run.get("status") != "error":
+            if not ((embedding_retry or file_retry) and queue_status in {"done", "error"}) and (
+                queue_status != "error" or run.get("status") != "error"
+            ):
                 raise ValueError("only a failed run can be retried")
+            if file_retry:
+                # Recovered files may acquire IDs that were absent from the first
+                # embedding pass. Recompute membership, retaining vector checkpoints.
+                run.pop("indexing_file_ids", None)
+                run["file_processing_status"] = "pending"
+                run["error_phase"] = None
+                if run.get("operations", {}).get("embed"):
+                    run["indexing_status"] = "pending"
+                    run["indexing_error"] = None
+            if embedding_retry:
+                # Older workers left failed embedding phases marked done. Their
+                # original-file results are still complete and must be retained.
+                run["error_phase"] = "embedding"
+                run["file_processing_status"] = "done"
             conn.execute(
                 """
                 UPDATE queue_jobs
@@ -517,7 +575,9 @@ def control_run(run_id: str, action: str) -> dict:
             run["error"] = None
             run["finished_at"] = None
             for item in run.get("items", []):
-                if item.get("status") == "error":
+                if (item.get("status") == "error" or (file_retry and item.get("status") == "partial")) and run.get("error_phase") != "embedding":
+                    if file_retry and item.get("status") == "partial" and item.get("extraction_variant_id") and not item.get("extract_error"):
+                        item["retry_extraction_id"] = item["extraction_variant_id"]
                     item["status"] = "pending"
                     item["error"] = None
                     item["started_at"] = None
@@ -526,7 +586,7 @@ def control_run(run_id: str, action: str) -> dict:
             run["completed"] = sum(
                 1
                 for item in run.get("items", [])
-                if item.get("status") in {"done", "partial"}
+                if item.get("status") in ({"done", "partial", "error"} if run.get("error_phase") == "embedding" else {"done", "partial"})
             )
         elif action == "pause":
             if queue_status == "paused":
@@ -583,7 +643,7 @@ def control_run(run_id: str, action: str) -> dict:
 
 
 def list_queue_jobs(*, limit: int = 100) -> list[dict]:
-    if _STATE_DB is None:
+    if _store_path() is None:
         return []
     with _connection() as conn:
         rows = conn.execute(
@@ -605,7 +665,7 @@ def list_queue_jobs(*, limit: int = 100) -> list[dict]:
 
 def find_active_jobs_for_paths(paths: list[str]) -> list[dict]:
     """Return queued/running jobs that still reference one of the source paths."""
-    if _STATE_DB is None or not paths:
+    if _store_path() is None or not paths:
         return []
     normalized = {str(path).replace("\\", "/") for path in paths if path}
     matches: list[dict] = []
@@ -626,7 +686,7 @@ def find_active_jobs_for_paths(paths: list[str]) -> list[dict]:
 
 def find_job_history_for_paths(paths: list[str]) -> list[str]:
     """Return completed or failed run IDs whose records mention a source path."""
-    if _STATE_DB is None or not paths:
+    if _store_path() is None or not paths:
         return []
     normalized = {str(path).replace("\\", "/") for path in paths if path}
     with _connection() as conn:
@@ -640,13 +700,60 @@ def find_job_history_for_paths(paths: list[str]) -> list[str]:
 
 def purge_job_history(run_ids: list[str]) -> int:
     """Remove operational history for runs disclosed by a deletion preview."""
-    if _STATE_DB is None or not run_ids:
+    if _store_path() is None or not run_ids:
         return 0
     placeholders = ",".join("?" for _ in run_ids)
     with _connection() as conn:
         conn.execute(f"DELETE FROM queue_jobs WHERE run_id IN ({placeholders})", run_ids)
+        conn.execute(f"DELETE FROM run_aliases WHERE run_id IN ({placeholders})", run_ids)
         cursor = conn.execute(f"DELETE FROM runs WHERE id IN ({placeholders})", run_ids)
     with RUNS_LOCK:
         for run_id in run_ids:
             RUNS.pop(run_id, None)
     return int(cursor.rowcount)
+
+
+def honor_run_control(run_id: str) -> bool:
+    """Stop safely between files when the API requested pause or cancellation."""
+    run = get_run(run_id)
+    if run is None:
+        return True
+    queue_status = queue_status_for_run(run_id)
+    control_state = (
+        "pause_requested" if queue_status == "pause_requested"
+        else "cancel_requested" if queue_status == "cancel_requested"
+        else run.get("control_state")
+    )
+    if control_state == "pause_requested":
+        run["status"] = "paused"
+        run["control_state"] = "paused"
+        save_run(run)
+        append_log(run_id, "Run paused after the current operation completed.")
+        return True
+    if control_state == "cancel_requested":
+        run["status"] = "cancelled"
+        run["control_state"] = "cancelled"
+        run["finished_at"] = datetime.now(UTC).isoformat()
+        for item in run.get("items", []):
+            if item.get("status") in {"pending", "running"}:
+                item["status"] = "cancelled"
+        save_run(run)
+        append_log(run_id, "Run cancelled after the current operation completed.")
+        return True
+    return False
+
+
+def queue_job_write(job_id: str, worker_id: str):
+    """Fence short batch-file publications against queue ownership recovery."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def owned():
+        with _connection() as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            row = connection.execute('SELECT worker_id,status FROM queue_jobs WHERE id=?', (job_id,)).fetchone()
+            if row is None or row['worker_id'] != worker_id or row['status'] not in {'running','pause_requested','cancel_requested'}:
+                raise ValueError('Worker no longer owns this scope-tool run')
+            yield
+            connection.commit()
+    return owned()

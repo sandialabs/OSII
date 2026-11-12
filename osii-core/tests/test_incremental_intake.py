@@ -10,6 +10,47 @@ from osii.domain.scopes.membership import list_scope_file_ids
 from osii.domain.storage.ids import compute_file_id
 
 
+def test_mixed_source_folders_and_uploads_have_distinct_bounded_folder_paths(
+    temp_data_root, temp_upload_root, temp_osii_root, tmp_path,
+):
+    import tomllib
+    from osii.domain.catalog_db import list_folders, rebuild_catalog
+    from osii.domain.processing.pathing import source_relpath
+    from osii.domain.storage.folders import get_or_create_folder_id
+
+    nested = temp_data_root / "reports" / "nested"
+    external = tmp_path / "research" / "papers"
+    nested.mkdir(parents=True)
+    external.mkdir(parents=True)
+    files = [nested / "report.txt", external / "report.txt", temp_upload_root / "report.txt"]
+    for index, path in enumerate(files):
+        path.write_text(f"document {index}", encoding="utf-8")
+
+    for _ in range(2):
+        runs_routes.build_folder_artifacts(
+            resolved_files=files,
+            data_volume_root=temp_data_root.parent,
+            shared_root=temp_data_root,
+            upload_root=temp_upload_root,
+            source_roots=[nested, external],
+            osii_store=temp_osii_root,
+            root_folder_id=get_or_create_folder_id(temp_osii_root, ""),
+        )
+        rebuild_catalog(temp_osii_root)  # Previously UNIQUE constraint failed: folders.path.
+    paths = [item["path"] for item in list_folders(temp_osii_root)]
+    assert set(paths) == {
+        "", "reports", "reports/nested", "uploaded_data",
+        source_relpath(external, temp_data_root.parent),
+    }
+    manifests = list((temp_osii_root / "folders").glob("folder-*.toml"))
+    assert len(manifests) == len(paths)
+    root = next(tomllib.loads(path.read_text())["subfolders"] for path in manifests
+                if tomllib.loads(path.read_text())["node"]["path_hint"] == "")
+    assert {item["path_hint"] for item in root} == {
+        "reports", "uploaded_data", source_relpath(external, temp_data_root.parent),
+    }
+
+
 def test_completed_document_is_browsable_while_next_document_runs(
     temp_data_root: Path,
     temp_osii_root: Path,

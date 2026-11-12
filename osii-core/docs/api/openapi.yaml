@@ -48,6 +48,173 @@ tags:
     description: Direct enrichment initiation over supported scopes
 
 paths:
+  /api/browse/roots:
+    get:
+      tags: [discovery]
+      summary: Get local navigation shortcuts without enumerating directories
+      responses:
+        '200':
+          description: Home, configured source, mounted-drive navigation roots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: {type: string}
+  /api/browse/page:
+    get:
+      tags: [discovery]
+      summary: Browse one bounded nonrecursive directory page
+      description: |
+        Inspects at most limit entries in native directory order, including hidden
+        entries. No content reads or catalog scans. A cursor continues the same
+        iterator and expires after 45 seconds idle; it is not a directory snapshot.
+        An in-flight disconnected request terminates its isolated reader. Reads
+        time out after 15 seconds; OS-level blocked I/O may need mount recovery.
+      parameters:
+        - in: query
+          name: path
+          schema: {type: string}
+        - in: query
+          name: cursor
+          description: Opaque continuation token; takes precedence over path
+          schema: {type: string}
+        - in: query
+          name: limit
+          schema: {type: integer, minimum: 1, maximum: 200, default: 100}
+        - in: query
+          name: show_hidden
+          schema: {type: boolean, default: false}
+      responses:
+        '200':
+          description: A page; an empty page may still have a cursor
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [current_path, parent_path, entries, cursor, has_more]
+                properties:
+                  current_path: {type: string}
+                  parent_path: {type: [string, 'null']}
+                  cursor: {type: [string, 'null']}
+                  has_more: {type: boolean}
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: {type: string}
+                        path: {type: string}
+                        type: {type: string, enum: [folder, file, link, unavailable]}
+                        size_bytes: {type: [integer, 'null']}
+                        error: {type: string}
+        '410':
+          description: Cursor expired; reopen the folder
+        '503':
+          description: Directory read timed out or was cancelled
+        default:
+          $ref: '#/components/responses/GenericError'
+  /api/browse/page/{cursor}:
+    delete:
+      tags: [discovery]
+      summary: Close an ephemeral directory browser
+      parameters:
+        - in: path
+          name: cursor
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Cursor released, including already-expired cursors
+  /api/volume/selections:
+    post:
+      tags: [runs]
+      summary: Freeze a bounded metadata-only file selection
+      description: |
+        Filter selection remains compatible. Explicit entry_ids require one
+        filters.source_id and sample=false. All distinct IDs must be eligible
+        latest-scan files and fit both budgets, or creation fails atomically.
+        Unfinished discovery requires allow_partial=true. Later discoveries never
+        change membership. No original content is read while selecting.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                filters:
+                  type: object
+                  description: Existing inventory filters; explicit IDs require source_id
+                  properties:
+                    source_id: {type: integer}
+                  additionalProperties: true
+                entry_ids:
+                  type: [array, 'null']
+                  minItems: 1
+                  maxItems: 10000
+                  items: {type: integer}
+                max_files: {type: integer, minimum: 1, maximum: 1000000, default: 100}
+                max_bytes: {type: integer, minimum: 1, default: 1073741824}
+                allow_partial: {type: boolean, default: false}
+                sample: {type: boolean, default: false}
+                seed: {type: string, default: osii}
+                per_stratum: {type: integer, minimum: 1, maximum: 100, default: 2}
+      responses:
+        '200':
+          description: Immutable selection metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: integer}
+                  count: {type: integer}
+                  bytes: {type: integer}
+                  request: {type: string, description: JSON-encoded selection rules}
+                  coverage: {type: string, description: JSON-encoded scan coverage}
+                  created: {type: number}
+        default:
+          $ref: '#/components/responses/GenericError'
+  /api/volume/runs:
+    get:
+      tags: [runs]
+      summary: List durable inventory jobs
+      parameters:
+        - in: query
+          name: cursor
+          schema: {type: integer, minimum: 0, default: 0}
+        - in: query
+          name: limit
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+        - in: query
+          name: recent
+          description: Descending order; default remains ascending IDs
+          schema: {type: boolean, default: false}
+        - in: query
+          name: before
+          schema: {type: integer, minimum: 1}
+        - in: query
+          name: active_only
+          description: Queued, running, and paused jobs only
+          schema: {type: boolean, default: false}
+        - in: query
+          name: kind
+          schema: {type: string, enum: [scan, extract, ocr, synthesize, enrich]}
+      responses:
+        '200':
+          description: Inventory jobs; IDs are separate from Core processing run IDs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: {type: object}
+
   /api/scopes/root:
     get:
       tags:
@@ -635,7 +802,8 @@ paths:
       tags:
         - collections
       summary: Remove an object member from a collection
-      description: Success/no-op style removal. If the collection exists but the file is not a current member, the response reports `removed: false`.
+      description: |
+        Success/no-op style removal. If the collection exists but the file is not a current member, the response reports `removed: false`.
       operationId: removeCollectionMember
       parameters:
         - $ref: '#/components/parameters/CollectionIdPathParam'
@@ -2322,7 +2490,7 @@ components:
           type: string
           example: root-folder
       additionalProperties: false
-        EditedTextSegment:
+    EditedTextSegment:
       type: object
       required:
         - id

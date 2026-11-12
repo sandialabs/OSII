@@ -116,6 +116,38 @@ export type ScopeSummariesResponse = {
   summaries: ObjectSummary[];
 };
 
+export type ScopeOverview = {
+  permissions?: { run: boolean };
+  scope: ScopeDescribeRequest;
+  file_count: number;
+  size_known_count: number;
+  total_size_bytes: number;
+  average_size_bytes: number | null;
+  missing_metadata_count: number;
+  file_types: Array<{ label: string; count: number }>;
+  dates: Record<"created" | "modified", {
+    recorded_count: number;
+    missing_count: number;
+    earliest: string | null;
+    latest: string | null;
+    buckets: Array<{ label: string; count: number }>;
+  }>;
+  processing: {
+    text_count: number;
+    synthesis_count: number;
+    enrichment_count: number;
+    indexed_count: number;
+    semantic_index: {
+      status: "ready" | "missing" | "incompatible" | "invalid";
+      detail: string;
+      model?: string;
+      provider?: string;
+      dimensions?: number;
+    };
+  };
+  warnings: string[];
+};
+
 export type ObjectSummariesRequest = {
   file_ids: string[];
 };
@@ -203,10 +235,12 @@ export type EnrichmentBundleFileEntry = {
 };
 
 export type EnrichmentListEntryFile = {
+  can_edit?: boolean;
+  current_revision?: string;
   name: string;
   kind: "file";
   relpath: string;
-  artifact_type?: "table" | "knowledge_graph" | "entity_list" | "wiki_markdown";
+  artifact_type?: "table" | "knowledge_graph" | "entity_list" | "wiki_markdown" | "scope_batch_run";
   title?: string;
 };
 
@@ -534,6 +568,10 @@ export type QueueBrowseEntry = {
 export type QueueBrowseResponse = {
   current_path: string;
   display_path: string;
+  folder_name?: string;
+  host_path?: string;
+  parent_path?: string | null;
+  filesystem_mode?: "local" | "mounted";
   entries: QueueBrowseEntry[];
 };
 
@@ -548,6 +586,7 @@ export type IntakePreview = {
   total_size: number;
   total_size_human: string;
   sample: Array<{ path: string; display: string }>;
+  available_files?: Array<{ path: string; display: string; size_bytes: number }>;
   extractor_plan: Array<{
     extension: string;
     extractor: string;
@@ -557,6 +596,8 @@ export type IntakePreview = {
   }>;
   stopped_reason?: string | null;
   processing_plan?: {
+    estimated?: boolean;
+    note?: string;
     matched_count: number;
     unique_document_count: number;
     extracted_count: number;
@@ -581,6 +622,15 @@ export type CapabilityReadiness = {
   available: boolean;
   detail: string;
   bundled: boolean;
+  origin?: {
+    label: string;
+    description: string;
+    implementation?: string;
+    manifest?: string | null;
+    endpoint_source?: string;
+    configuration_file?: string;
+    configuration_key?: string;
+  };
   model?: string;
   base_url?: string;
   lexical?: boolean;
@@ -593,6 +643,7 @@ export type CapabilityReadiness = {
   descriptor?: {
     config_schema?: ProcessorConfigSchema;
     capabilities?: {
+      file_extensions?: string[];
       output_kinds?: string[];
       scope_types?: string[];
       [key: string]: unknown;
@@ -620,6 +671,13 @@ export type ProcessorConfigSchema = {
 };
 
 export type IntakeReadiness = {
+  language_model?: {
+    available: boolean;
+    connection: string;
+    model: string;
+    detail: string;
+    base_url?: string;
+  };
   defaults: {
     extractor: string;
     synthesizer: string;
@@ -669,6 +727,7 @@ export type IntakeResolveResponse = {
 };
 
 export type ProcessingRun = {
+  batch_progress?: BatchProgress;
   id: string;
   status: "pending" | "queued" | "running" | "done" | "error" | string;
   control_state?: "running" | "pause_requested" | "paused" | "cancel_requested" | "cancelled" | string;
@@ -677,7 +736,12 @@ export type ProcessingRun = {
   finished_at?: string | null;
   completed?: number;
   total?: number;
-  workflow?: "intake" | "library";
+  workflow?: "intake" | "library" | "tool";
+  tool_id?: string;
+  tool_label?: string;
+  scope?: ScopeDescribeRequest;
+  model_targets?: Record<string, { alias: string; model: string; endpoint_type?: string }>;
+  input_summary?: { member_ids: string[]; text_chars: number; truncated_documents: number };
   expert_context?: string | null;
   operations?: {
     extract?: boolean;
@@ -692,12 +756,25 @@ export type ProcessingRun = {
     } | null;
     enrich?: string | null;
   };
+  embedding_model?: string;
   indexing_status?: string;
   indexing_error?: string | null;
+  error_phase?: string | null;
+  embedding_target?: { provider: string; model: string };
+  indexing_progress?: {
+    total_documents: number;
+    completed_documents: number;
+    embedded_chunks: number;
+    reused_chunks: number;
+    failures: Record<string, string>;
+  };
   items?: Array<{
+    file_id?: string;
     display: string;
     status: string;
     error?: string | null;
+    current_step?: string;
+    steps?: Record<string, string>;
     extractor?: string | null;
     extraction_variant_id?: string | null;
     started_at?: string | null;
@@ -726,6 +803,8 @@ export type ProcessingRunsResponse = {
 };
 
 export type ProcessorEndpoint = {
+  resolved_models?: Record<string, string>;
+  model_error?: string | null;
   id: string;
   processor_id?: string;
   display_name: string;
@@ -744,6 +823,7 @@ export type ProcessorEndpoint = {
 export type ModelProvider = {
   id: string;
   type: "ollama" | "openai";
+  preset?: "corporate";
   base_url: string;
   enabled: boolean;
   priority: number;
@@ -755,8 +835,9 @@ export type ModelProvider = {
   default_embedding?: boolean;
   credential_required?: boolean;
   credential_present?: boolean;
-  credential_source?: "environment" | "repo_env" | null;
+  credential_source?: "environment" | "secret_file" | "repo_env" | null;
   credential_writable?: boolean;
+  credential_help?: string;
   implicit?: boolean;
 };
 
@@ -804,6 +885,8 @@ export type SetupSummary = {
 
 export type OllamaModelDetail = {
   name: string;
+  display_name?: string;
+  capabilities?: string[];
   size?: number | null;
   digest?: string | null;
   modified_at?: string | null;
@@ -848,6 +931,7 @@ export type ExtractorRoute = {
 };
 
 export type ExtractorRoutesResponse = {
+  path?: string;
   routes: ExtractorRoute[];
 };
 
@@ -970,12 +1054,16 @@ export type ChatCitation = {
 };
 
 export type ChatRequest = {
+  profile_id?: string;
   query: string;
   scope: ScopeDescribeRequest;
   history: ChatMessage[];
 };
 
 export type ChatResponse = {
+  profile_id: string;
+  model: string | null;
+  experiment: import("../features/chat/types").RagTrace | null;
   answer: string;
   citations: ChatCitation[];
   provider: string;
@@ -1027,4 +1115,11 @@ export type SearchScopedResponse = {
   scope: Record<string, unknown>;
   group_by: SearchGroupBy;
   results: SearchScopedResult[];
+};
+
+export type BatchProgress = {
+  documents: number; documents_with_text: number; documents_without_text: number;
+  text_characters: number; map_batches: number; completed_batches: number;
+  completed_documents: number; processed_characters: number; reduce_batches: number;
+  reduction: string; phase: string;
 };

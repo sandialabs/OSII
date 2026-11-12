@@ -41,6 +41,7 @@ class StatsKeywordsEnricher(BaseEnricher):
         *,
         osii_store: Path,
         scope: dict,
+        expert_context: str | None = None,
         enricher_config: dict | None = None,
     ) -> dict:
         enricher_config = enricher_config or {}

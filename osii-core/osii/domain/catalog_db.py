@@ -13,7 +13,7 @@ import tomllib
 from typing import Any
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def utc_now() -> str:
@@ -55,7 +55,7 @@ def create_schema(conn: sqlite3.Connection) -> None:
         );
         CREATE TABLE IF NOT EXISTS documents (
             file_id TEXT PRIMARY KEY,
-            source_relpath TEXT NOT NULL UNIQUE,
+            source_relpath TEXT NOT NULL,
             filename TEXT NOT NULL,
             mime TEXT,
             suffix TEXT,
@@ -239,10 +239,10 @@ def upsert_document(osii_root: Path, file_id: str) -> bool:
 
 
 def _scan_folders(osii_root: Path) -> list[dict[str, Any]]:
-    folders: list[dict[str, Any]] = []
+    folders: dict[str, dict[str, Any]] = {}
     directory = osii_root / "folders"
     if not directory.exists():
-        return folders
+        return []
     for path in sorted(directory.glob("folder-*.toml")):
         if path.name.endswith((".overview.toml", ".synth.toml")):
             continue
@@ -252,15 +252,19 @@ def _scan_folders(osii_root: Path) -> list[dict[str, Any]]:
         relpath = _normalize(node.get("path_hint"))
         if not folder_id:
             continue
-        folders.append(
-            {
-                "folder_id": str(folder_id),
-                "path": relpath,
-                "parent_path": str(Path(relpath).parent).replace("\\", "/") if relpath else None,
-                "indexed_utc": node.get("indexed_utc") or "",
-            }
-        )
-    return folders
+        folder = {
+            "folder_id": str(folder_id),
+            "path": relpath,
+            "parent_path": str(Path(relpath).parent).replace("\\", "/") if relpath else None,
+            "indexed_utc": node.get("indexed_utc") or "",
+        }
+        # Older upload runs could write multiple manifests for the same path.
+        # The catalog is derived: retain the newest entry without deleting any
+        # canonical manifests or the artifacts attached to their folder IDs.
+        previous = folders.get(relpath)
+        if previous is None or (folder["indexed_utc"], folder["folder_id"]) > (previous["indexed_utc"], previous["folder_id"]):
+            folders[relpath] = folder
+    return list(folders.values())
 
 
 def _scan_collections(osii_root: Path) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
@@ -383,7 +387,8 @@ def _scan_extraction_variants(osii_root: Path) -> list[dict[str, Any]]:
 
 def _scan_indexes(osii_root: Path) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    for path in (osii_root / "embeddings").rglob("segments.meta.toml") if (osii_root / "embeddings").exists() else []:
+    from osii.domain.storage.embedding_snapshot import active_index_metadata
+    for path in active_index_metadata(osii_root):
         data = _read_toml(path) or {}
         meta = data.get("embeddings", data.get("index", {}))
         provider = str(meta.get("provider_id") or meta.get("provider") or meta.get("embedder") or "unknown")
@@ -435,6 +440,20 @@ def _populate(conn: sqlite3.Connection, osii_root: Path) -> None:
             :dimensions, :normalized, :semantic, :chunking_json, :relpath, :created_utc, :compatible)""",
             index,
         )
+
+
+def refresh_semantic_indexes(osii_root: Path) -> None:
+    """Refresh published index records without scanning document sidecars."""
+    if not catalog_path(osii_root).exists():
+        return  # A first normal catalog read will discover the published index.
+    records = _scan_indexes(osii_root)
+    with closing(connect_catalog(osii_root)) as conn:
+        with conn:
+            conn.execute("DELETE FROM semantic_indexes")
+            for index in records:
+                conn.execute(
+                    """INSERT INTO semantic_indexes VALUES (:index_id, :provider_id, :endpoint_type, :model, :model_digest,
+                    :dimensions, :normalized, :semantic, :chunking_json, :relpath, :created_utc, :compatible)""", index)
 
 
 def rebuild_catalog(osii_root: Path) -> dict[str, Any]:

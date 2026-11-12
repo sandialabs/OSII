@@ -1,16 +1,18 @@
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from osii.api.collection_synthesis_routes import router as collection_synthesis_router
 from osii.api.catalog_routes import router as catalog_router
 from osii.api.chat_routes import router as chat_router
+from osii.api.research_routes import router as research_router
 from osii.api.collections_routes import router as collections_router
 from osii.api.embedding_routes import router as embedding_router
 from osii.api.enrichment_jobs_routes import router as enrichment_jobs_router
-from osii.api.enrichments_routes import router as enrichments_router
+from osii.api.enrichments_routes import router as enrichments_router, products_router
 from osii.api.extractor_routes import router as extractor_router
 from osii.api.extraction_variants_routes import router as extraction_variants_router
 from osii.api.folder_synthesizer_routes import router as folder_synthesizer_router
@@ -31,24 +33,62 @@ from osii.api.setup_routes import router as setup_router
 from osii.api.runs_routes import router as runs_router
 from osii.api.scopes_routes import router as scopes_router
 from osii.api.search_routes import router as search_router
+from osii.api.topics_routes import router as topics_router
 from osii.api.synthesis_routes import router as synthesis_router
 from osii.api.synthesizer_routes import router as synthesizer_router
 from osii.api.text_routes import router as text_router
 from osii.domain.processing.jobs import configure_job_store
 from osii.domain.catalog_db import ensure_catalog
+from osii.rag.strategies.http_reranker import create_reranker
+from osii.volume.api import create_app as create_inventory_app
+from osii.volume.store import database_path
+from osii.domain.storage.backend import BackendSettings, LibraryBackend
+
+storage_settings = BackendSettings.from_environment()
+
+
+inventory_app = create_inventory_app(api_prefix="")
+
+
+@asynccontextmanager
+async def lifespan(application):
+    if storage_settings.kind == "postgres":
+        from osii.domain.storage.postgres_library import PostgresLibrary
+        from osii.domain.processing.postgres_workflow import PostgresWorkflow
+        application.state.library_backend = LibraryBackend(application.state.osii_root, storage_settings)
+        application.state.postgres_library = PostgresLibrary(application.state.library_backend)
+        application.state.postgres_workflow = PostgresWorkflow(application.state.postgres_library)
+    inventory_app.state.volume_store.path = database_path(application.state.osii_root)
+    application.state.inventory_store=inventory_app.state.volume_store
+    if storage_settings.kind == "postgres":
+        inventory_app.state.volume_store.processing_links=lambda connection:application.state.postgres_library.inventory_links(connection,inventory_app.state.volume_store.path)
+    inventory_app.state.source_root = application.state.shared_volume_root
+    async with inventory_app.router.lifespan_context(inventory_app):
+        try:
+            yield
+        finally:
+            browsers = getattr(application.state, "directory_browsers", None)
+            if browsers is not None:
+                browsers.close_all()
+            backend = getattr(application.state, "library_backend", None)
+            if backend is not None:
+                backend.close()
 
 app = FastAPI(
     title="OSII Backend",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
+    lifespan=lifespan,
     )
+app.state.rag_reranker = create_reranker()
 
 app.state.shared_volume_root = Path(
     os.getenv("SHARED_VOLUME_ROOT", "./data_volume/my_data")
 ).resolve()
 app.state.shared_volume_host_path = os.getenv("SHARED_VOLUME_HOST_PATH", "").strip()
 app.state.source_kind = os.getenv("OSII_SOURCE_KIND", "auto").strip().lower() or "auto"
+app.state.filesystem_mode = os.getenv("OSII_FILESYSTEM_MODE", "local").strip().lower()
 
 app.state.osii_root = Path(
     os.getenv("OSII_ROOT", "./data_volume/.osii")
@@ -59,46 +99,123 @@ app.state.upload_originals_root = Path(
     os.getenv("UPLOAD_ORIGINALS_ROOT", "./data_volume/uploaded_data")
 ).resolve()
 app.state.upload_originals_root.mkdir(parents=True, exist_ok=True)
-configure_job_store(app.state.osii_root)
-ensure_catalog(app.state.osii_root)
+if storage_settings.kind == "sidecar":
+    configure_job_store(app.state.osii_root)
+    ensure_catalog(app.state.osii_root)
 
-app.include_router(intake_router)
-app.include_router(runs_router)
-app.include_router(osii_router)
-app.include_router(osii_read_router)
-app.include_router(extractor_routes_router)
-app.include_router(extractors_router)
-app.include_router(preview_router)
-app.include_router(extractor_router)
-app.include_router(extraction_variants_router)
-app.include_router(synthesizer_router)
-app.include_router(folder_synthesizer_router)
-app.include_router(embedding_router)
-app.include_router(search_router)
-app.include_router(scopes_router)
-app.include_router(objects_router)
-app.include_router(packages_router)
-app.include_router(keyword_sets_router)
-app.include_router(collections_router)
-app.include_router(collection_synthesis_router)
-app.include_router(catalog_router)
-app.include_router(enrichments_router)
-app.include_router(text_router)
-app.include_router(synthesis_router)
-app.include_router(enrichment_jobs_router)
-app.include_router(processors_router)
-app.include_router(processor_admin_router)
-app.include_router(processor_settings_router)
-app.include_router(model_provider_router)
-app.include_router(setup_router)
-app.include_router(chat_router)
+if storage_settings.kind == "postgres":
+    from osii.api.postgres_routes import router as postgres_router
+    from osii.api.postgres_routes import readiness as postgres_readiness
+    from osii.api.intake_routes import browse_roots, browse_page, close_browse, upload_files, default_intake_settings
+    from osii.domain.storage.authoring import AuthoringConflict
+    from osii.domain.storage.commits import CommitConflict
+    from fastapi.responses import JSONResponse
+    from sqlalchemy.exc import SQLAlchemyError
+
+    app.include_router(postgres_router)
+    app.state.intake_readiness=postgres_readiness
+    # These are source discovery/configuration operations, not library writes.
+    app.add_api_route("/api/browse/roots", browse_roots, methods=["GET"])
+    app.add_api_route("/api/browse/page", browse_page, methods=["GET"])
+    app.add_api_route("/api/browse/page/{cursor}", close_browse, methods=["DELETE"])
+    app.add_api_route("/api/uploads", upload_files, methods=["POST"])
+    app.add_api_route("/api/intake/defaults", default_intake_settings, methods=["GET"])
+
+    @app.exception_handler(AuthoringConflict)
+    @app.exception_handler(CommitConflict)
+    async def storage_conflict(request, exc):
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(KeyError)
+    async def missing_record(request, exc):
+        return JSONResponse(status_code=404, content={"detail": str(exc.args[0])})
+
+    @app.exception_handler(ValueError)
+    async def invalid_operation(request, exc):
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+    from osii.rag.strategies import StrategyError
+    app.add_exception_handler(StrategyError,invalid_operation)
+
+    @app.exception_handler(SQLAlchemyError)
+    async def unavailable_database(request, exc):
+        return JSONResponse(status_code=503, content={"detail": "The selected PostgreSQL library is unavailable. No sidecar fallback was used."})
+
+    from osii.rag.local_experiments import CorpusChanged
+    from osii.domain.research import EvidenceChanged, ReportGenerationError
+    from osii.rag.service import RagGenerationError, RagRetrievalError
+
+    @app.exception_handler(CorpusChanged)
+    @app.exception_handler(EvidenceChanged)
+    async def evidence_changed(request,exc):
+        return JSONResponse(status_code=409,content={"detail":str(exc)})
+
+    @app.exception_handler(ReportGenerationError)
+    @app.exception_handler(RagGenerationError)
+    @app.exception_handler(RagRetrievalError)
+    async def model_unavailable(request,exc):
+        return JSONResponse(status_code=502,content={"detail":"The configured model could not complete this operation. Your saved data has not been changed."})
+
+    for configuration_router in (extractor_router, extractors_router, synthesizer_router,
+            folder_synthesizer_router, processors_router, processor_admin_router,
+            processor_settings_router, model_provider_router, setup_router):
+        app.include_router(configuration_router)
+
+else:
+    # All existing filesystem workflows stay on their original routes.
+    app.include_router(intake_router)
+    app.include_router(runs_router)
+    app.include_router(osii_router)
+    app.include_router(osii_read_router)
+    app.include_router(extractor_routes_router)
+    app.include_router(extractors_router)
+    app.include_router(preview_router)
+    app.include_router(extractor_router)
+    app.include_router(extraction_variants_router)
+    app.include_router(synthesizer_router)
+    app.include_router(folder_synthesizer_router)
+    app.include_router(embedding_router)
+    app.include_router(search_router)
+    app.include_router(topics_router)
+    app.include_router(scopes_router)
+    app.include_router(objects_router)
+    app.include_router(packages_router)
+    app.include_router(keyword_sets_router)
+    app.include_router(collections_router)
+    app.include_router(collection_synthesis_router)
+    app.include_router(catalog_router)
+    app.include_router(enrichments_router)
+    app.include_router(products_router)
+    app.include_router(text_router)
+    app.include_router(synthesis_router)
+    app.include_router(enrichment_jobs_router)
+    app.include_router(processors_router)
+    app.include_router(processor_admin_router)
+    app.include_router(processor_settings_router)
+    app.include_router(model_provider_router)
+    app.include_router(setup_router)
+    app.include_router(chat_router)
+    app.include_router(research_router)
+app.mount("/api/volume", inventory_app)
 
 @app.get("/health")
 async def health():
+    if storage_settings.kind == "postgres":
+        app.state.postgres_library.query("SELECT 1")
     return {"status": "ok"}
 
+
+@app.get("/api/runtime")
+async def runtime():
+    return {"storage_mode": "local", "user_authentication": False,
+            "storage_backend": storage_settings.kind,
+            "capabilities": ["metadata_inventory", storage_settings.kind + "_processing"]}
+
 @app.get("/artifact/{file_path:path}", name="download_artifact")
-async def download_artifact(file_path: str):
+async def download_artifact(file_path: str, request: Request):
+    if storage_settings.kind == "postgres":
+        from osii.api.postgres_routes import artifact_response
+        return artifact_response(request, file_path)
     target = (app.state.osii_root / file_path).resolve()
     osii_root = app.state.osii_root.resolve()
 
@@ -116,3 +233,12 @@ async def download_artifact(file_path: str):
 @app.get("/")
 async def root():
     return {"message": "AI Ready Ingest OSII Core Backend"}
+
+
+@app.get("/api/workbench/home")
+def workbench_home(request: Request):
+    if storage_settings.kind == "postgres":
+        from osii.api.postgres_routes import home
+        return home(request)
+    from osii.domain.workbench_local import local_home
+    return local_home(request.app.state.osii_root.resolve())

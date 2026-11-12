@@ -4,9 +4,23 @@ Processors receive the resolved text explicitly; they never read these files.
 Context belongs to one exact scope, with no implicit hierarchy inheritance.
 """
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from osii.domain.storage.atomic import atomic_write_text
+
+
+_FROZEN_CONTEXT = ContextVar("scope_expert_context", default=None)
+
+
+@contextmanager
+def frozen_scope_context(root: Path, scope: dict, text: str | None):
+    token = _FROZEN_CONTEXT.set((str(root.resolve()), scope, text))
+    try:
+        yield
+    finally:
+        _FROZEN_CONTEXT.reset(token)
 
 
 def expert_context_path(osii_root: Path, scope: dict) -> Path:
@@ -59,6 +73,9 @@ def resolve_expert_context(osii_root: Path, scope: dict, supplied: str | None) -
     Omitting context during OCR must not erase guidance needed by a later VLM.
     Use save_expert_context(..., "") to deliberately clear it instead.
     """
+    frozen = _FROZEN_CONTEXT.get()
+    if frozen and frozen[:2] == (str(osii_root.resolve()), scope):
+        return frozen[2]
     if supplied is not None and not isinstance(supplied, str):
         raise ValueError("Expert context must be text or null.")
     if supplied and supplied.strip():

@@ -6,7 +6,27 @@ OSII Dashboard is a local browser-based workbench for exploring personal or proj
 
 The dashboard is intentionally modular. It is a standalone frontend that talks to an existing OSII backend API, so it can be used when you want a rich browser experience without forcing every OSII workflow to go through a UI.
 
-In packaged OSII, the **launcher** chooses the source folder, image release, and optional services, then starts the library. **Setup** in the dashboard is optional: it manages model connections and processing rules, not deployment. **Intake** selects files, processing steps, and starts a reviewed run. Informational source and service status is shown as context; controls that require a decision stay in the corresponding step. Local development uses `make dev` or `scripts/osii.ps1 dev` in place of the launcher.
+Start the application with `make dev` (Windows: `scripts/osii.ps1 dev`).
+**Setup** manages model connections and processing rules. **Intake** selects
+files and processing steps and starts a reviewed run.
+
+In **Setup**, **Add LLM** opens one connection form, defaulting to an
+OpenAI-compatible endpoint. Ollama is an optional choice in the **Connection**
+dropdown, not a separate setup action. Existing saved connections remain editable.
+
+In **Intake**, paste a document folder and select **Use folder**, or use **Browse**.
+All matching files are included automatically, including subfolders by default.
+**Include patterns** and **Exclude patterns** are always visible beside the
+selection. Enter one wildcard per line; a blank include field includes all
+files, and exclusions take priority. File-type presets fill the include field.
+You can also uncheck individual files. **Add files from elsewhere** adds uploads without
+clearing the folder. Processing options start collapsed, with defaults selected.
+Starting a run queues a snapshot of the selection; it does not continuously
+watch the folder. Return to Intake to process newly added files.
+
+Select any folder readable by the OSII host process. Connect shared drives
+through the operating system first. Existing artifacts stay in OSII's
+separate data folder; originals stay in place.
 
 ---
 
@@ -14,6 +34,7 @@ In packaged OSII, the **launcher** chooses the source folder, image release, and
 
 - Browse documents across your indexed corpus
 - Search using semantic, lexical, or hybrid retrieval
+- Explore document embeddings in **Topic explorer**, select points to find related documents, and narrow exploration to folders or collections
 - Reuse or delete up to 20 recent browser-local searches and chat prompts; answers and results are never stored
 - Explore root or collection scopes through saved noun/adjective phrase suggestions
 - Open and inspect documents including source PDFs
@@ -184,6 +205,12 @@ Open that URL in your browser.
 ---
 
 ## Development notes
+
+For the frontend architecture review and a step-by-step extension guide, see
+[Extend the Workbench frontend](../docs/extending/frontend-tools.md). A single
+typed registry drives tool routes and sidebar entries; each tool loads on
+demand behind its own loading/error boundary. Topic explorer uses existing
+embeddings and shows guidance when the selected model has no complete index.
 
 ### API proxy
 

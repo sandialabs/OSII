@@ -247,3 +247,75 @@ They are not canonical extraction units.
 - chunk identifiers
 
 Downstream consumers should navigate and ground interactions using canonical identifiers and canonical text spans, not retrieval-only identifiers.
+
+
+## Editable products and revisions
+
+Saved summary text and JSON enrichment products share a revision API:
+
+| Route | Request / result |
+| --- | --- |
+| `POST /api/products/list` | Scope object → `products` with family, filename, title, artifact type |
+| `POST /api/products/revisions` | `{scope, family, filename}` → current revision ID, data, revisions, input state, library ID |
+| `PUT /api/products/revisions` | Address + `expected_revision` + `data` to edit, or `revision` to restore |
+
+`family` defaults to `enrichment` (a JSON, `.txt`, or `.md` filename, including a
+relative name inside a legacy bundle); `synthesis` selects a
+summary: `filename: "current"` for document/folder/library or a named `.txt`
+variant for any scope, including collections. Paths must remain inside the scope’s
+enrichment directory; traversal, hidden files, and internal `.meta.json` files are
+rejected. Summary/text data is
+`{artifact_type: "text", title: "Summary", text: "..."}`. Markdown files use the existing `wiki_markdown` wrapper and retain their raw
+`.md` compatibility view. Standard structured
+JSON products retain their artifact type and validate against the SDK schema.
+Writes use compare-and-swap; a stale expected revision returns `409`, invalid
+values return `400`. An edited product is limited to 5,000,000 serialized
+characters. Revisions retain original outputs and lineage. Regeneration after a
+human edit saves a candidate; restoring a revision is an explicit human choice.
+The existing `/api/enrichments/revisions` routes, including wiki `markdown`
+writes, remain compatible. No source file is rewritten by product edits.
+
+A portable `.history/<product-hash>/manifest.json` stores complete revisions and
+the active pointer atomically. JSON/summary files remain compatibility views.
+A worker restart can repair a lagging view; a new, external sidecar edit is
+retained as a human revision. Edits are interpretation, not proof that old
+citation spans still support every changed passage.
+
+### Document metadata
+
+Synthesis returns `metadata.document_metadata` using the shared SDK
+`DocumentMetadata` schema version 1. It contains nullable suggestions for
+`descriptive_title`, `title`, `author`, `date`, `agency`, and `document_type`.
+Each has `value`, optional `qualifier`, and optional exact-quote `evidence`.
+A descriptive title labels content; title records the printed/source title.
+Neither needs to equal the filename or each other. Blank means unknown.
+New fields are optional for older schema-1 clients. See the [synthesis
+spec](../processor-api/synthesis.md#suggested-document-metadata-and-long-inputs).
+
+`GET /api/objects/{file_id}/metadata` returns `{file_id, revision,
+document_metadata}`. Revision is null until a human overlay exists; the record
+otherwise comes from current synthesis suggestions or is null.
+
+`PUT /api/objects/{file_id}/metadata` accepts:
+
+```json
+{
+  "expected_revision": null,
+  "values": {
+    "descriptive_title": "Thermal drift experiment",
+    "title": "Report 123",
+    "author": "",
+    "date": "",
+    "agency": "National laboratory",
+    "document_type": "Technical report"
+  }
+}
+```
+
+This replaces the six human fields (omitted fields become unknown); values are
+strings up to 240 characters or null. First edit requires explicit null, later
+edits require the returned revision. Missing document is `404`, stale write
+`409`, invalid input `400`. The overlay is stored as
+`enrichments/document_metadata--manual.json` with `method: "human"`; it takes
+precedence for display without changing filesystem metadata or the AI record.
+Display title prefers descriptive title, then source title, then filename.

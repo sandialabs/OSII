@@ -30,7 +30,7 @@ site/
 # The root lock covers this monorepo. Isolated service test runs may generate
 # disposable nested locks; do not mistake them for release inputs.
 osii-core/services/*/uv.lock
-osii-toolbox/*/uv.lock
+osii-processor-modules/*/uv.lock
 
 # Node
 node_modules/
@@ -70,6 +70,7 @@ Thumbs.db
 *.swo
 
 # Local logs and generated reports
+/release/
 *.log
 coverage.xml
 repo_for_ai.txt

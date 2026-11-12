@@ -16,11 +16,13 @@ from osii.domain.model_provider_config import (
     DEFAULT_OLLAMA_EMBEDDING_MODEL,
 )
 from osii.domain.env_credentials import (
+    configured_env_file,
     local_config_writable,
     resolve_env_value,
     write_env_value,
 )
-from osii.configuration import load_models_config, save_models_config
+from osii.configuration import load_models_config, save_models_config, secrets_path
+from osii.model_catalog import discover_models
 
 
 router = APIRouter(prefix="/api/admin/model-providers", tags=["model-provider-administration"])
@@ -69,6 +71,7 @@ def _load(osii_root) -> list[dict[str, Any]]:
             "credential_env": str(connection.get("api_key_env") or ""),
             "default_chat": str(defaults.get("chat") or "") == str(alias),
             "default_embedding": str(defaults.get("embedding") or "") == str(alias),
+            **({"preset": connection["preset"]} if connection.get("preset") else {}),
         })
     by_id = {str(item["id"]): item for item in records}
     merged: list[dict[str, Any]] = []
@@ -79,7 +82,7 @@ def _load(osii_root) -> list[dict[str, Any]]:
             continue
         sibling_id = f"{identifier}-embedding"
         sibling = by_id.get(sibling_id)
-        if sibling and sibling.get("type") == record.get("type") and sibling.get("base_url") == record.get("base_url"):
+        if sibling and sibling.get("type") == record.get("type") and sibling.get("base_url") == record.get("base_url") and sibling.get("credential_env") == record.get("credential_env"):
             record = {
                 **record,
                 "embedding_model": sibling.get("embedding_model", ""),
@@ -97,7 +100,7 @@ def _load(osii_root) -> list[dict[str, Any]]:
 def _with_runtime_defaults(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     result = list(records)
     if not any(item.get("type") == "ollama" for item in result):
-        result.append({"id": "ollama-local", "type": "ollama", "base_url": os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/"), "enabled": True, "priority": 100, "embedding_model": os.getenv("OLLAMA_EMBEDDING_MODEL", "").strip() or DEFAULT_OLLAMA_EMBEDDING_MODEL, "synthesis_model": os.getenv("OLLAMA_SYNTHESIS_MODEL", "").strip() or DEFAULT_OLLAMA_CHAT_MODEL, "chat_model": os.getenv("OLLAMA_CHAT_MODEL", "").strip() or DEFAULT_OLLAMA_CHAT_MODEL, "credential_env": "", "default_chat": True, "default_embedding": True, "implicit": True})
+        result.append({"id": "ollama-local", "type": "ollama", "base_url": os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/"), "enabled": True, "priority": 100, "embedding_model": os.getenv("OLLAMA_EMBEDDING_MODEL", "").strip() or DEFAULT_OLLAMA_EMBEDDING_MODEL, "synthesis_model": os.getenv("OLLAMA_SYNTHESIS_MODEL", "").strip() or DEFAULT_OLLAMA_CHAT_MODEL, "chat_model": os.getenv("OLLAMA_CHAT_MODEL", "").strip() or DEFAULT_OLLAMA_CHAT_MODEL, "credential_env": "", "default_chat": False, "default_embedding": False, "implicit": True})
     openai_configured = bool(os.getenv("OPENAI_BASE_URL", "").strip())
     if openai_configured and not any(item.get("type") == "openai" for item in result):
         result.append({
@@ -107,11 +110,12 @@ def _with_runtime_defaults(records: list[dict[str, Any]]) -> list[dict[str, Any]
             "enabled": True,
             "priority": 10,
             "embedding_model": os.getenv("OPENAI_EMBEDDING_MODEL", "").strip(),
-            "synthesis_model": os.getenv("OPENAI_SYNTHESIS_MODEL", "").strip(),
+            "synthesis_model": os.getenv("OPENAI_SYNTHESIS_MODEL", "").strip() or os.getenv("OPENAI_CHAT_MODEL", "").strip(),
             "chat_model": os.getenv("OPENAI_CHAT_MODEL", "").strip(),
             "credential_env": "OPENAI_API_KEY",
-            "default_chat": True,
-            "default_embedding": bool(os.getenv("OPENAI_EMBEDDING_MODEL", "").strip()),
+            # An environment suggestion must not claim to replace a saved choice.
+            "default_chat": False,
+            "default_embedding": False,
             "implicit": True,
         })
     return result
@@ -135,6 +139,8 @@ def _save(osii_root, records: list[dict[str, Any]]) -> None:
             "priority": int(record.get("priority", 100)),
         }
         credential_env = str(record.get("credential_env") or "").strip()
+        if record.get("preset"):
+            common["preset"] = record["preset"]
         if credential_env:
             common["api_key_env"] = credential_env
         language = str(record.get("chat_model") or record.get("synthesis_model") or "").strip()
@@ -179,6 +185,9 @@ def _validate(payload: dict[str, Any], provider_id: str | None = None) -> dict[s
     provider_type = str(payload.get("type") or "").strip().lower()
     if provider_type not in VALID_TYPES:
         raise HTTPException(status_code=422, detail=f"type must be one of {sorted(VALID_TYPES)}")
+    preset = str(payload.get("preset") or "").strip()
+    if preset not in {"", "corporate"} or (preset == "corporate" and provider_type != "openai"):
+        raise HTTPException(status_code=422, detail="The corporate preset requires an OpenAI-compatible endpoint")
     base_url = str(payload.get("base_url") or "").strip().rstrip("/")
     if not base_url.startswith(("http://", "https://")):
         raise HTTPException(status_code=422, detail="base_url must start with http:// or https://")
@@ -188,6 +197,7 @@ def _validate(payload: dict[str, Any], provider_id: str | None = None) -> dict[s
     return {
         "id": identifier,
         "type": provider_type,
+        **({"preset": preset} if preset else {}),
         "base_url": base_url,
         "enabled": bool(payload.get("enabled", False)),
         "priority": int(payload.get("priority", 100)),
@@ -200,6 +210,19 @@ def _validate(payload: dict[str, Any], provider_id: str | None = None) -> dict[s
     }
 
 
+def _credential_help(name: str, source: str | None) -> str:
+    if source == "environment":
+        return (
+            f"OSII is using {name} from its startup environment (which can include root .env). "
+            "This is not a connection-test result. Update that value and restart OSII, "
+            f"or remove {name} from root .env and your shell, then restart to save a key here."
+        )
+    if source == "secret_file":
+        return f"OSII is using the secret file configured by {name}_FILE. Update that file to change the key."
+    path = configured_env_file() or secrets_path()
+    return f"Saved locally in {path}; never stored in .osii or sent to processor modules."
+
+
 def _public(record: dict[str, Any]) -> dict[str, Any]:
     credential_env = record.get("credential_env") or ("" if record.get("type") == "ollama" else "OPENAI_API_KEY")
     credential, source = resolve_env_value(str(credential_env))
@@ -208,7 +231,8 @@ def _public(record: dict[str, Any]) -> dict[str, Any]:
         "credential_required": record.get("type") != "ollama",
         "credential_present": bool(credential),
         "credential_source": source,
-        "credential_writable": local_config_writable() and source != "environment",
+        "credential_writable": local_config_writable() and source not in {"environment", "secret_file"},
+        "credential_help": _credential_help(str(credential_env), source),
         "credential_value": None,
     }
 
@@ -256,11 +280,13 @@ def _model_details(payload: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             continue
         details = item.get("details") if isinstance(item.get("details"), dict) else {}
-        name = item.get("model") or item.get("name") or item.get("id")
+        name = item.get("model") or item.get("id") or item.get("name")
         if not name:
             continue
         result.append({
             "name": str(name),
+            "display_name": str(item.get("name") or name),
+            "capabilities": (["embedding"] if "embeddings" in (item.get("architecture") or {}).get("output_modalities", []) else ["chat"] if "text" in (item.get("architecture") or {}).get("output_modalities", []) else []),
             "size": item.get("size"),
             "digest": item.get("digest"),
             "modified_at": item.get("modified_at"),
@@ -401,6 +427,25 @@ def create_provider(request: Request, payload: dict):
     return {"provider": _public(record)}
 
 
+@router.post("/discover")
+def discover_provider(request: Request, payload: dict):
+    """Inspect an entered endpoint without saving it or invoking any model."""
+    base_url, key = payload.get("base_url", ""), payload.get("api_key", "")
+    protocol = payload.get("type", "openai")
+    if (not isinstance(base_url, str) or len(base_url) > 2000 or not isinstance(key, str)
+            or len(key) > 4096 or protocol not in {"openai", "ollama"}):
+        raise HTTPException(422, "Invalid model discovery settings")
+    if protocol == "openai" and not key and payload.get("provider_id"):
+        current = next((record for record in _load(request.app.state.osii_root.resolve())
+                        if record["id"] == payload["provider_id"]), None)
+        if current and current["base_url"] == base_url.rstrip("/") and current["type"] == protocol:
+            key = resolve_env_value(str(current.get("credential_env") or "OPENAI_API_KEY"))[0]
+    try:
+        return {"models": discover_models(base_url, key, protocol=protocol), "generation_tested": False}
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+
+
 @router.put("/{provider_id}")
 def update_provider(request: Request, provider_id: str, payload: dict):
     root = request.app.state.osii_root.resolve()
@@ -448,6 +493,10 @@ def provider_health(request: Request, provider_id: str):
         response.raise_for_status()
         payload = response.json()
         model_details = _model_details(payload)
+        if record["base_url"].rstrip("/") == "https://openrouter.ai/api/v1":
+            embedding_response = requests.get(f"{record['base_url']}/embeddings/models", headers=headers, timeout=(3, 8))
+            embedding_response.raise_for_status()
+            model_details.extend(_model_details(embedding_response.json()))
         names = [item["name"] for item in model_details]
         selected = {record.get("embedding_model"), record.get("synthesis_model"), record.get("chat_model")} - {"", None}
         missing = sorted(
@@ -475,8 +524,8 @@ def save_provider_credential(request: Request, provider_id: str, payload: dict):
         raise HTTPException(status_code=422, detail="Ollama does not use an API key")
     current_name = str(record.get("credential_env") or "OPENAI_API_KEY")
     _, current_source = resolve_env_value(current_name)
-    if current_source == "environment":
-        raise HTTPException(status_code=409, detail="This credential is managed by the process environment")
+    if current_source in {"environment", "secret_file"}:
+        raise HTTPException(status_code=409, detail=_credential_help(current_name, current_source))
     name = _saved_credential_name(record)
     value = str(payload.get("api_key") or "")
     if not value:
@@ -500,8 +549,8 @@ def delete_provider_credential(request: Request, provider_id: str):
         raise HTTPException(status_code=404, detail="model provider not found")
     current_name = str(record.get("credential_env") or "OPENAI_API_KEY")
     _, current_source = resolve_env_value(current_name)
-    if current_source == "environment":
-        raise HTTPException(status_code=409, detail="This credential is managed by the process environment")
+    if current_source in {"environment", "secret_file"}:
+        raise HTTPException(status_code=409, detail=_credential_help(current_name, current_source))
     name = _saved_credential_name(record)
     try:
         write_env_value(name, None)

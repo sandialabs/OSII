@@ -38,8 +38,8 @@ extensions = [".pdf"]
 
 [[routes.extractor]]
 name = "other-native"
-extractor = "local.native-text"
-fallbacks = ["tika"]
+extractor = "tika"
+fallbacks = []
 extensions = ["*"]
 ```
 
@@ -57,9 +57,7 @@ For a given file:
 5. if extraction fails, OSII tries each name in `fallbacks` from left to right
 6. if no route matches, fallback behavior should be explicit in configuration
 
-The dashboard editor lives under **Setup → Extraction routing**. Intake uses
-the saved policy automatically and does not maintain run-specific extractor
-overrides.
+The dashboard editor lives under **Setup → Extractors → Extraction routing defaults**. Intake uses the saved policy by default; an explicit reader choice can override it for a selected batch.
 
 In future grouped-input workflows, routing may evolve to select an extractor for a logical multi-file unit rather than an individual file.
 
@@ -102,8 +100,8 @@ extensions = [".pdf"]
 
 [[routes.extractor]]
 name = "other-native"
-extractor = "local.native-text"
-fallbacks = ["tika"]
+extractor = "tika"
+fallbacks = []
 extensions = ["*"]
 ```
 
@@ -188,3 +186,36 @@ Possible extensions:
 If that happens, preserve backward compatibility by:
 - keeping extension-based routes valid
 - adding optional fields instead of replacing the current schema
+
+## Setup controls and tool configuration
+
+The routing section displays the active `tools.toml` path. **Load TOML** accepts
+`[[routes.extractor]]` tables (or the older `[[routes]]` format), validates them,
+and stages a draft. **Save routes** changes only routing, preserving other tool
+settings. Invalid files leave saved configuration and the current draft intact.
+Primary and fallback readers must accept every extension in a rule. A reader
+with a limited extension list cannot be used for `*`. Processor API descriptors
+supply `capabilities.file_extensions`; dispatch also checks this before sending
+files. Unavailable services are gray but their saved routes remain inspectable.
+
+The question-mark button explains rule order, fallbacks, TOML loading, and how
+to add an extractor. Start with `osii-core/osii/extraction/` and `osii-processor-modules/`,
+then read [the extraction API](processor-api/extraction.md) to build a service
+that accepts bounded inputs and returns text with source locations.
+
+Model-backed tools such as Wiki have their **Writing model endpoint** selector
+in their own service row. Automatic uses the configured library default or an
+enabled compatible connection; the resolved alias is displayed. Explicit choices
+remain explicit. Endpoint health is shown by Model Connections; an automatic
+choice cannot guarantee a remote service will remain reachable during a run.
+
+## Apache Tika processor module
+
+`osii-processor-modules/tika-adapter` owns the HTTP integration and managed Java
+runtime. `make dev` prepares Apache Tika automatically. Existing `tika` and
+`tika_catchall` routes and settings remain compatible. Set `OSII_ENABLE_TIKA=false`
+in `.env` to omit it; set `OSII_TIKA_MANAGED=false` and configure an endpoint in
+Setup to use an externally managed server instead. Defaults are loopback 8102
+for the adapter and 9998 for Apache Tika. See the
+[startup guide](../operations/runbook-development.md#start-and-check) for caching,
+first-start network access, offline provisioning, and startup switches.

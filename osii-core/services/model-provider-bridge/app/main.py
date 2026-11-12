@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from osii.processors.synthesis import synthesize_bounded
+from osii.processors.document_metadata import metadata_prompt, parse_document_metadata
+
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -17,6 +21,12 @@ from app.env_credentials import resolve_secret
 from osii.processor_sdk import (
     Capability,
     Embedder,
+    Enricher,
+    EnrichmentRequest,
+    EnrichmentResponse,
+    Artifact,
+    TableArtifactData,
+    TableColumn,
     EmbeddingRequest,
     EmbeddingResponse,
     EmbeddingVector,
@@ -84,10 +94,10 @@ class ProviderHTTP:
             return headers
         configured = _configured_provider(self.provider, capability) or {}
         configured_env = str(configured.get("credential_env") or "").strip()
-        env_names = [
-            configured_env,
-            "OPENAI_API_KEY",
-            os.getenv("OSII_MODEL_API_KEY_ENV", "OSII_MODEL_API_KEY"),
+        # A selected connection owns its credentials. Never leak a shared key
+        # to another endpoint when its explicitly named key is absent.
+        env_names = [configured_env] if configured_env else [
+            "OPENAI_API_KEY", os.getenv("OSII_MODEL_API_KEY_ENV", "OSII_MODEL_API_KEY"),
         ]
         key = resolve_secret(*env_names)
         if key:
@@ -137,10 +147,7 @@ class ProviderHTTP:
 
 CLIENTS = {name: ProviderHTTP(name) for name in ("ollama", "openai")}
 _OLLAMA_MODEL_CACHE: tuple[float, list[dict[str, Any]]] = (0.0, [])
-DEFAULT_SYNTHESIS_INSTRUCTIONS = (
-    "Write a concise grounded Markdown synthesis. Cite source file IDs in square "
-    "brackets. Do not introduce facts absent from the sources."
-)
+from osii.processors.text import synthesis_prompt, chat_synthesizer_descriptor, model_synthesis_response
 
 
 def _ollama_model_digest(model: str) -> str | None:
@@ -247,68 +254,72 @@ class ProviderEmbedder(Embedder):
         )
 
 
-def _scope_prompt(request: SynthesisRequest) -> str:
-    sources = []
-    for document in request.scope.documents:
-        text = document.text or "\n\n".join(segment.text for segment in document.segments)
-        sources.append(f"SOURCE {document.file_id or document.filename}:\n{text}")
-    instructions = str(
-        request.config.get("instructions")
-        or DEFAULT_SYNTHESIS_INSTRUCTIONS
-    ).strip()
-    context = str(request.expert_context or "").strip()
-    guidance = f"\n\nADDITIONAL GUIDANCE:\n{context}" if context else ""
-    return f"{instructions}{guidance}\n\n" + "\n\n".join(sources)
-
+_scope_prompt = synthesis_prompt
 
 class ProviderSynthesizer(Synthesizer):
     def __init__(self, provider: str) -> None:
         self.provider = provider
-        self.descriptor = ProcessorDescriptor(
-            name=f"{provider}.synthesizer",
-            version="1.0.0",
-            display_name=f"{provider.title()} Synthesizer",
-            description=f"Processor API adapter for an explicitly selected {provider} chat model.",
-            kind=ProcessorKind.SYNTHESIZER,
-            capabilities=Capability(scope_types=["object", "folder", "collection", "root"], output_kinds=["wiki_markdown"]),
-            config_schema={
-                "type": "object",
-                "properties": {
-                    "instructions": {
-                        "type": "string", "title": "Synthesis prompt",
-                        "description": "Instructions placed before the grounded source material.",
-                        "default": DEFAULT_SYNTHESIS_INSTRUCTIONS, "format": "textarea",
-                    },
-                    "temperature": {
-                        "type": "number", "title": "Temperature",
-                        "description": "Lower values make synthesis more repeatable.",
-                        "minimum": 0, "maximum": 2, "default": 0.2,
-                    },
-                    "max_tokens": {
-                        "type": "integer", "title": "Maximum output tokens",
-                        "minimum": 256, "maximum": 4000, "default": 1200,
-                    },
-                },
-                "additionalProperties": False,
-            },
-        )
+        self.descriptor = chat_synthesizer_descriptor(provider)
 
     def synthesize(self, request: SynthesisRequest) -> SynthesisResponse:
         model = _model(self.provider, "synthesis", request.config)
-        messages = [{"role": "user", "content": _scope_prompt(request)}]
         max_tokens = max(256, min(int(request.config.get("max_tokens", 1200)), 4000))
         temperature = max(0.0, min(float(request.config.get("temperature", 0.2)), 2.0))
-        if self.provider == "ollama":
-            payload = CLIENTS[self.provider].request("POST", "/api/chat", payload={"model": model, "messages": messages, "stream": False, "options": {"num_predict": max_tokens, "temperature": temperature}}, timeout=180, capability="synthesis")
-            markdown = payload.get("message", {}).get("content", "")
-        else:
-            payload = CLIENTS[self.provider].request("POST", "/chat/completions", payload={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}, timeout=180, capability="synthesis")
-            choices = payload.get("choices") or []
-            markdown = choices[0].get("message", {}).get("content", "") if choices else ""
-        if not str(markdown).strip():
-            raise ValueError("Provider returned empty synthesis text.")
-        citations = [ProvenanceRef(file_id=doc.file_id) for doc in request.scope.documents if doc.file_id]
-        return SynthesisResponse(request_id=request.request_id, processor=self.descriptor, markdown=str(markdown).strip(), citations=citations, metadata={"provider": self.provider, "endpoint_type": "ollama-native" if self.provider == "ollama" else "openai-compatible", "model": model})
+        def complete(messages, *, metadata=False):
+            if self.provider == "ollama":
+                provider_payload = {"model": model, "messages": messages, "stream": False, "options": {"num_predict": max_tokens, "temperature": temperature}}
+                if metadata:
+                    from osii.processor_sdk import DocumentMetadata
+                    fields = ("descriptive_title", "title", "author", "date", "agency", "document_type")
+                    schema = DocumentMetadata.model_json_schema()
+                    schema["properties"] = {name: schema["properties"][name] for name in fields}
+                    schema["required"] = list(fields)
+                    provider_payload["format"] = schema
+                payload = CLIENTS[self.provider].request("POST", "/api/chat", payload=provider_payload, timeout=180, capability="synthesis")
+                markdown = payload.get("message", {}).get("content", "")
+            else:
+                payload = CLIENTS[self.provider].request("POST", "/chat/completions", payload={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}, timeout=180, capability="synthesis")
+                choices = payload.get("choices") or []
+                markdown = choices[0].get("message", {}).get("content", "") if choices else ""
+            return markdown, payload.get("usage", {})
+        response = synthesize_bounded(request, self.descriptor, model, complete, complete_metadata=lambda messages: complete(messages, metadata=True))
+        response.metadata.update(provider=self.provider, endpoint_type="ollama-native" if self.provider == "ollama" else "openai-compatible")
+        return response
+
+
+
+
+class DocumentMetadataEnricher(Enricher):
+    descriptor = ProcessorDescriptor(
+        name="core.document-metadata", version="1.0.0", display_name="Suggest document metadata",
+        description="Infer title, author and date from document text, with evidence for review.",
+        kind=ProcessorKind.ENRICHER,
+        capabilities=Capability(scope_types=["object"], output_kinds=["document_metadata"]),
+        model_requirements={"chat": "required"},
+    )
+
+    def enrich(self, request: EnrichmentRequest) -> EnrichmentResponse:
+        context = request.model_context
+        if not context or not context.bindings.get("chat"):
+            raise ValueError("Choose a chat model for metadata suggestions.")
+        if len(request.scope.documents) != 1:
+            raise ValueError("Choose one document for metadata suggestions.")
+        document = request.scope.documents[0]
+        text = document.text or ""
+        response = requests.post(context.gateway_url.rstrip("/") + "/chat/completions",
+            headers={"Authorization": "Bearer " + context.token},
+            json={"model": context.bindings["chat"], "messages": [{"role": "user", "content": metadata_prompt(text, "")}],
+                  "max_tokens": 1600, "temperature": 0}, timeout=180)
+        response.raise_for_status()
+        content = response.json()["choices"][0]["message"]["content"]
+        metadata = parse_document_metadata(content, text=text, model=context.bindings["chat"])
+        rows = [{"field": field, **metadata[field]} for field in ("descriptive_title", "title", "author", "date", "agency", "document_type")]
+        table = TableArtifactData(title="Metadata suggestions", columns=[TableColumn(key=key, label=label)
+            for key, label in [("field", "Field"), ("value", "Suggestion"), ("qualifier", "Context"), ("evidence", "Evidence")]],
+            rows=rows, row_provenance=[[ProvenanceRef(file_id=document.file_id)] for _ in rows])
+        return EnrichmentResponse(request_id=request.request_id, processor=self.descriptor,
+            artifacts=[Artifact(id="metadata", kind="document_metadata", media_type="application/json", standard_data=table,
+                                metadata={"document_metadata": metadata, "suggestions_only": True})])
 
 
 class ChatRequest(BaseModel):
@@ -329,6 +340,9 @@ for provider in ("ollama", "openai"):
     app.mount(f"/{provider}/embedder", create_processor_app(ProviderEmbedder(provider)))
 for provider in ("ollama", "openai"):
     app.mount(f"/{provider}/synthesizer", create_processor_app(ProviderSynthesizer(provider)))
+
+
+app.mount("/metadata", create_processor_app(DocumentMetadataEnricher()))
 
 
 @app.get("/health")
@@ -399,6 +413,9 @@ def _bound_connection(claims: dict[str, Any], capability: str, requested: str) -
     connection = model_connection(alias)
     if connection is None:
         raise HTTPException(status_code=503, detail=f"Model connection {alias!r} is unavailable")
+    expected = claims.get("connection_fingerprints", {}).get(capability)
+    if expected and hashlib.sha256(json.dumps(connection, sort_keys=True).encode()).hexdigest() != expected:
+        raise HTTPException(status_code=409, detail="This model changed since the job started. Start a new run.")
     if capability not in connection.get("capabilities", []):
         raise HTTPException(status_code=422, detail=f"Model connection {alias!r} does not support {capability}")
     return alias, connection

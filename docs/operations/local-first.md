@@ -9,7 +9,7 @@ credential, or model cache.
 | Synthesis | cited extractive Markdown preview | selected Ollama, OpenAI-compatible, or OpenAI-compatible chat model |
 | Embedding | none required; lexical hashing remains an advanced compatibility method | selected OpenAI-compatible, Ollama, or OpenAI-compatible embedding model |
 | Search | BM25 | provider/model-specific semantic FAISS index |
-| Enrichment | statistics and keywords table | optional Toolbox wiki enrichers; domain Processor API service |
+| Enrichment | statistics and keywords table | optional processor modules wiki enrichers; domain Processor API service |
 | Chat | grounded extractive answer | selected model provider |
 | Browse/API/MCP | local dashboard, backend, and MCP | same contracts |
 
@@ -29,6 +29,9 @@ make demo
 
 For your own files already placed in `osii-data/source`, use:
 
+Corporate developers should first [copy and review `.env` once](runbook-development.md#first-start-in-a-corporate-checkout).
+That checklist also explains model defaults and connecting optional processors.
+
 ```bash
 make dev
 ```
@@ -42,7 +45,7 @@ the lightweight provider bridge from editable source. The processors are the
 Python text-layer PDF/Office extractor, ordinary full-page Tesseract OCR, the
 no-AI cited source-excerpt preview, lexical token/word-pair hashing vectors,
 and deterministic document statistics/frequent keywords. Bare-metal Tesseract
-requires its native executable; the packaged baseline image contains it. The bridge makes no
+requires its native executable on the host. The bridge makes no
 generation request until that capability is used. Setup performs model
 discovery and, when an embedding model is selected, validates one real vector
 so a model that merely appears in `/models` is not incorrectly offered to
@@ -50,14 +53,9 @@ Intake.
 
 This is the complete guaranteed baseline. It does not silently install or
 launch optional system software. After the dashboard opens, use **Setup** to
-connect Ollama or another AI endpoint or to start Apache Tika.
+connect the team's model endpoint.
 
-For the packaged Podman stack, `make run DISABLE_CONTAINER_PROXIES=true` or
-`.\scripts\osii.ps1 run -DisableContainerProxies` starts in direct-network mode
-while retaining the image's corporate certificate trust. The normal commands
-inherit host proxy behavior. See [Corporate pilot images and Quay
-releases](publishing-images.md#keep-corporate-certificates-but-disable-inherited-proxies)
-for build commands and exact scope.
+Workstation container workflows are archived; use `make dev`.
 
 The host launcher starts the dashboard only after `http://127.0.0.1:8511/health`
 responds. This is especially important on Windows, where several simultaneous
@@ -76,8 +74,10 @@ Host Python 3.12 dependencies live in the ignored `osii-env/` directory. OSII us
 that visible name because current macOS Python releases can skip editable
 package path files beneath a hidden `.venv` directory.
 
-Normal `make dev` reads model connections from the platform application-data
-`profiles/development/deployment/models.toml` file. Add an OpenAI-compatible endpoint from **Setup**, or
+Normal `make dev` reads model connections from the checkout's ignored
+`osii-data/config/models.toml` file, unless a configuration or runtime directory
+is explicitly selected. Use **Setup → Add LLM** for an OpenAI-compatible
+endpoint, or choose Ollama in the connection dropdown to
 use a separately installed Ollama service. **OSII does not install or launch
 Ollama:** manage the separate application yourself when you use it, then open it or run `ollama serve`. In
 **Setup → Model connections**, OSII queries `/api/tags` and shows
@@ -151,15 +151,16 @@ recovery confusing. Container deployments report capability health but disable
 local lifecycle controls.
 
 For host development, **Setup → AI model connections** can save an API key in the
-platform application-data `profiles/development/deployment/secrets.env`. The file is plaintext and kept outside the repository; it
-must not be copied or shared. Only the key's environment-variable name enters
+checkout's ignored `osii-data/config/secrets.env`. The file is plaintext and
+must not be committed or shared. Installed launchers instead use their writable
+profile workspace. Only the key's environment-variable name enters
 `models.toml`; neither the key nor its name needs to enter `.osii`. The backend and model-provider bridge reread the file as needed.
 Process environment values take precedence, and file writes are disabled in
 container or administrator-managed deployments.
 
 The normal `local.tesseract-page-ocr` processor runs each complete page through
 Tesseract and is part of `osii-baseline-processors`. The separate
-**Tesseract OCR with OpenCV regions** experiment lives in `osii-toolbox/`; see
+**Tesseract OCR with OpenCV regions** experiment lives in `osii-processor-modules/`; see
 [image publishing](publishing-images.md). Run and register it explicitly when
 you need tunable contour detection and normalized region boxes for Source and
 Split View overlays. Its default host port is 8081 so it can run beside the
@@ -170,6 +171,46 @@ text side by side and wraps each pane's controls within its own column. On
 narrow screens, the panes stack so neither source content nor text is squeezed.
 
 ## Add and reprocess documents
+
+### Follow the setup and intake guide
+
+**Setup** and **Intake** share a six-checkpoint guide: choose a source folder,
+connect a document reader, validate an embedding model, connect a language
+model, read documents, and build a matching semantic index. Select a checkpoint
+or the **Next** action to reach the relevant settings or intake step. The guide
+tracks the whole recorded library, not only the currently selected files.
+
+A running endpoint alone is not enough. OSII tests an actual embedding vector
+and checks that the selected chat model is listed by its endpoint; the first
+chat request still tests generation. Changing the embedding model requires a
+matching index. Partial, stale, or incompatible vectors do not complete the
+index checkpoint. Summaries and enrichments are optional, not prerequisites
+for search and chat.
+
+You can deliberately choose **Use text-only intake** while setting up models.
+Source browsing and keyword search remain available, but that choice does not
+enable semantic search or AI-generated answers. Intake does not silently turn
+off selected AI processing when a model is unavailable. **Activity** shows file
+processing progress and a separate semantic-index phase.
+
+### Understand the collection at a glance
+
+The **Library** landing page and each named **Collection** show an overview:
+file count, recorded total and average source-file size, saved-text coverage,
+file formats, creation/modification timelines, and current semantic-index
+coverage. These statistics describe registered documents in OSII, not every
+unprocessed file in the source folder. Missing sizes are excluded from the
+average and explicitly counted.
+
+New intake records filesystem birth time when the operating system supplies
+it. That is not an authored document date, and copying a file can change it.
+Older or unsupported records remain missing; OSII does not substitute Unix
+`ctime` or intake time. Use **Last modified** when creation dates are missing.
+
+**Reveal topics** runs the existing bundled, model-free noun/adjective keyword
+enricher for this scope. Saved phrases are statistical clues, not verified
+themes; selecting one searches its sources. No model download or automatic
+AI summary is required.
 
 The Intake page separates **Add files**, **Process library**, and **Activity**.
 File-extension routing is intentionally not edited there; use **Setup →
@@ -232,7 +273,7 @@ only failed items and preserves files that already completed.
 ## Generate an LLM wiki
 
 LLM wiki generation is not implemented in Core. Start one or both optional
-wiki enrichers from `osii-toolbox`, register their Processor API endpoints in
+wiki enrichers from `osii-processor-modules`, register their Processor API endpoints in
 Setup, and assign a chat-model connection. Generate a wiki from a document,
 folder, collection, or the whole library. The operation runs in the background,
 records the processor and model provenance, and never substitutes the
@@ -271,34 +312,12 @@ size, and overlap. Both BM25 and vector search consume the same manifest, and
 search carries page/segment provenance into document navigation. See
 [retrieval chunking and overlap](../concepts/retrieval-chunking.md).
 
-## Optional containers
+## External services
 
-Use `make build && make run` to test locally built images; corporate pilot hosts
-set their approved image tag and use `make run` without a local build. See
-[Corporate pilot images and Quay releases](publishing-images.md).
-Ollama and the upstream OpenAI-compatible service remain separately managed endpoints.
-OSII images contain only their lightweight HTTP adapters, not private packages
-or model files.
-
-To add Apache Tika while the editable stack runs, select **Start** beside
-**Apache Tika** in Setup. OSII invokes its fixed Compose service and reports
-the actual Podman/Docker failure when the runtime or image is unavailable. The
-equivalent two-terminal workflow remains:
-
-```bash
-# Terminal 1
-make dev
-
-# Terminal 2
-podman-compose --profile ocr up -d tika
-```
-
-The existing `TIKA_URL` configuration lets the running host services detect it
-on port 9998.
-
-When a Podman registry must be contacted without verifiable TLS certificates,
-consult the registry administrator. OSII does not make insecure registry access
-part of its normal launch workflow.
+Use `make dev` for the application. Connect the team's model endpoint in Setup.
+Optional processors and Tika must already be running before registering their
+URLs. Workstation container orchestration is archived on
+`archive/workstation-deployment-2026-11-03`.
 
 ## Storage and disk diagnostics
 

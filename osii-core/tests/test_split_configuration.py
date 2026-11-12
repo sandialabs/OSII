@@ -3,6 +3,7 @@ import json
 import tomllib
 
 from osii.configuration import (
+    config_directory,
     configuration_status,
     configured_tools,
     load_models_config,
@@ -12,6 +13,25 @@ from osii.configuration import (
 )
 from osii.domain.processing.extractor_selection import load_extractor_routes
 from osii.domain.processor_settings import load_processor_settings
+
+
+def test_core_configuration_defaults_to_checkout_not_launcher_home(monkeypatch):
+    monkeypatch.delenv("OSII_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("OSII_RUNTIME_DIR", raising=False)
+    checkout = Path(__file__).resolve().parents[2]
+    assert config_directory() == checkout / "osii-data" / "config"
+
+
+def test_core_configuration_honors_explicit_runtime_directory(monkeypatch, tmp_path):
+    monkeypatch.delenv("OSII_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("OSII_RUNTIME_DIR", str(tmp_path / "runtime"))
+    assert config_directory() == tmp_path / "runtime" / "config"
+
+
+def test_configuration_status_reports_actual_secret_file_override(monkeypatch, tmp_path):
+    secret = tmp_path / "managed-secrets.env"
+    monkeypatch.setenv("OSII_ENV_FILE", str(secret))
+    assert configuration_status()["files"]["secrets"] == str(secret)
 
 
 class FakeDescriptorResponse:
@@ -85,6 +105,51 @@ def test_invalid_toml_retains_last_valid_generation_and_reports_line(monkeypatch
 
     assert retained["models"]["base"]["model"] == "llama3.2:1b"
     assert "line 2" in status["errors"]["models"]
+
+
+def test_external_defaults_seed_profile_once_without_persisting_credentials(monkeypatch):
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://models.example.test/api/v1/")
+    monkeypatch.setenv("OPENAI_CHAT_MODEL", "language-v1")
+    monkeypatch.setenv("OPENAI_EMBEDDING_MODEL", "embedding-v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "never-persist-this")
+    config = load_models_config()
+    assert config["defaults"] == {
+        "chat": "openai-compatible", "synthesis": "openai-compatible",
+        "embedding": "openai-compatible-embedding",
+    }
+    assert config["models"]["openai-compatible"]["model"] == "language-v1"
+    assert config["models"]["openai-compatible-embedding"]["model"] == "embedding-v1"
+    assert config["models"]["openai-compatible"]["base_url"] == "https://models.example.test/api/v1"
+    path = Path(configuration_status()["files"]["models"])
+    assert "never-persist-this" not in path.read_text(encoding="utf-8")
+    monkeypatch.setenv("OPENAI_CHAT_MODEL", "language-v2")
+    assert load_models_config()["models"]["openai-compatible"]["model"] == "language-v1"
+
+
+def test_separate_endpoints_seed_separate_local_connections(monkeypatch):
+    for kind, model in (("CHAT", "chat-model"), ("EMBEDDING", "embed-model")):
+        monkeypatch.setenv(f"OSII_{kind}_BASE_URL", f"https://{kind.lower()}.test/v1")
+        monkeypatch.setenv(f"OSII_{kind}_MODEL", model)
+        monkeypatch.setenv(f"OSII_{kind}_API_KEY", f"{kind}-secret")
+    config = load_models_config()
+    for kind in ("chat", "embedding"):
+        connection = config["models"][config["defaults"][kind]]
+        assert connection["base_url"] == f"https://{kind}.test/v1"
+        assert connection["api_key_env"] == f"OSII_{kind.upper()}_API_KEY"
+    assert "CHAT-secret" not in Path(configuration_status()["files"]["models"]).read_text()
+
+
+def test_provider_edits_preserve_distinct_keys_even_at_the_same_url(client):
+    save_models_config({"version": 1, "models": {
+        "custom": {"type": "openai-compatible", "base_url": "https://same.test/v1",
+                   "model": "chat", "capabilities": ["chat", "synthesis"], "api_key_env": "OSII_CHAT_API_KEY"},
+        "custom-embedding": {"type": "openai-compatible", "base_url": "https://same.test/v1",
+                   "model": "embed", "capabilities": ["embedding"], "api_key_env": "OSII_EMBEDDING_API_KEY"}},
+        "defaults": {"chat": "custom", "synthesis": "custom", "embedding": "custom-embedding"}})
+    providers = client.get("/api/admin/model-providers").json()["providers"]
+    assert {p["id"] for p in providers if p["type"] == "openai"} == {"custom", "custom-embedding"}
+    assert client.put("/api/admin/model-providers/custom", json={"chat_model": "updated-chat"}).status_code == 200
+    assert load_models_config()["models"]["custom-embedding"]["api_key_env"] == "OSII_EMBEDDING_API_KEY"
 
 
 def test_legacy_yaml_migrates_to_toml_without_overwriting_existing(tmp_path, monkeypatch):

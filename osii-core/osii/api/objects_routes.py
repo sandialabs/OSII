@@ -1,7 +1,10 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
-from osii.domain.artifacts.artifact_staleness import get_artifact_staleness, mark_artifacts_stale
+from osii.domain.artifacts.artifact_staleness import (
+    get_artifact_staleness,
+    mark_artifacts_stale,
+)
 from osii.domain.artifacts.edited_text import (
     delete_edited_text,
     get_edited_text,
@@ -13,13 +16,18 @@ from osii.domain.artifacts.object_summaries import get_object_summaries
 from osii.domain.artifacts.read_enrichments import list_scope_enrichments
 from osii.domain.artifacts.source_files import get_source_file_path
 from osii.domain.artifacts.text_representations import (
-    get_preferred_text_representation,
     list_text_representations,
 )
 from osii.domain.read.docs import get_doc_meta, get_doc_overview
+from osii.domain.read.sidecar import SidecarLibraryReader
 from osii.domain.read.manifest import list_manifest_records
 from osii.domain.read.segments import list_segments
-from osii.domain.read.synthesis import get_synth_text, get_synth_toml, list_syntheses
+from osii.domain.read.synthesis import (
+    get_synth_text,
+    get_synth_toml,
+    list_syntheses,
+    get_suggested_metadata,
+)
 from osii.domain.scopes.collections import list_collections_for_file
 from osii.domain.keywords.manual import get_manual_keywords, write_manual_keywords
 from osii.domain.governance import get_governance, write_governance
@@ -257,16 +265,17 @@ async def get_object_text_representations_route(request: Request, file_id: str):
 async def get_object_preferred_text(request: Request, file_id: str):
     osii_root = request.app.state.osii_root.resolve()
 
-    preferred = get_preferred_text_representation(osii_root, file_id)
+    reader = SidecarLibraryReader(osii_root)
+    preferred = reader.get_representation(file_id)
     if preferred is None:
         return {"error": "unknown file_id or text not found"}
 
     return {
         "file_id": file_id,
-        "representation": preferred["name"],
-        "kind": preferred["kind"],
-        "text": preferred["text"],
-        "path": preferred["path"],
+        "representation": "edited" if preferred.kind == "edited_text" else "canonical",
+        "kind": preferred.kind,
+        "text": preferred.text,
+        "path": reader.representation_path(file_id).relative_to(osii_root).as_posix(),
     }
 
 
@@ -276,6 +285,54 @@ async def get_object_syntheses(request: Request, file_id: str):
     return {
         "file_id": file_id,
         "current_text": get_synth_text(osii_root, file_id),
+        "document_metadata": get_suggested_metadata(osii_root, file_id).get(
+            "document_metadata"
+        ),
         "current_toml": get_synth_toml(osii_root, file_id),
         "syntheses": list_syntheses(osii_root, file_id),
     }
+
+
+@router.get("/{file_id}/metadata")
+def get_document_metadata(request: Request, file_id: str):
+    from osii.domain.document_metadata import read_manual_metadata
+
+    root = request.app.state.osii_root.resolve()
+    if get_doc_meta(root, file_id) is None:
+        raise HTTPException(status_code=404, detail="Unknown file_id")
+    revision, _ = read_manual_metadata(root, file_id)
+    return {
+        "file_id": file_id,
+        "revision": revision,
+        "document_metadata": get_suggested_metadata(root, file_id).get(
+            "document_metadata"
+        ),
+    }
+
+
+@router.put("/{file_id}/metadata")
+def put_document_metadata(request: Request, file_id: str, payload: dict):
+    from osii.domain.document_metadata import save_manual_metadata
+
+    if "expected_revision" not in payload or (
+        payload["expected_revision"] is not None
+        and not isinstance(payload["expected_revision"], str)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="expected_revision is required (null for the first edit)",
+        )
+    try:
+        revision, metadata = save_manual_metadata(
+            request.app.state.osii_root.resolve(),
+            file_id,
+            payload.get("values"),
+            payload["expected_revision"],
+        )
+        return {"file_id": file_id, "revision": revision, "document_metadata": metadata}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

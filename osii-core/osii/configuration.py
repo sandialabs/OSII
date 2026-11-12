@@ -6,7 +6,6 @@ import json
 import os
 from pathlib import Path
 import re
-import sys
 import tempfile
 import tomllib
 from typing import Any
@@ -25,16 +24,16 @@ _CONFIG_ERRORS: dict[Path, str] = {}
 
 
 def config_directory() -> Path:
+    """Use an explicit deployment workspace or keep source development in its checkout."""
     explicit = os.getenv("OSII_CONFIG_DIR", "").strip()
     if explicit:
         return Path(explicit).expanduser().resolve()
-    if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "org.osii.launcher" / "profiles" / "development" / "deployment"
-    if os.name == "nt":
-        root = Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming"))
-        return root / "org.osii.launcher" / "profiles" / "development" / "deployment"
-    root = Path(os.getenv("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return root / "org.osii.launcher" / "profiles" / "development" / "deployment"
+    checkout = Path(__file__).resolve().parents[2]
+    workspace = checkout if (checkout / "compose.yaml").is_file() else Path.cwd()
+    runtime = Path(os.getenv("OSII_RUNTIME_DIR", "osii-data")).expanduser()
+    if not runtime.is_absolute():
+        runtime = workspace / runtime
+    return (runtime / "config").resolve()
 
 
 def models_path() -> Path:
@@ -54,8 +53,9 @@ def active_profile() -> str:
 
 
 def default_models_config() -> dict[str, Any]:
+    """Seed a new profile from workstation defaults; saved profiles remain authoritative."""
     ollama_url = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_URL).rstrip("/")
-    return {
+    config: dict[str, Any] = {
         "version": CONFIG_VERSION,
         "models": {
             "base": {
@@ -75,43 +75,48 @@ def default_models_config() -> dict[str, Any]:
         },
         "defaults": {"chat": "base", "synthesis": "base", "embedding": "minilm"},
     }
+    from osii.model_endpoints import endpoint_from_environment
+
+    for capability, alias in (("chat", "openai-compatible"), ("embedding", "openai-compatible-embedding")):
+        endpoint = endpoint_from_environment(capability)
+        if not endpoint.base_url:
+            continue
+        model = endpoint.model
+        if capability == "chat" and not model:
+            model = os.getenv("OPENAI_SYNTHESIS_MODEL", "").strip()
+        capabilities = ["chat", "synthesis"] if capability == "chat" else ["embedding"]
+        config["models"][alias] = {
+            "type": "openai-compatible", "base_url": endpoint.base_url,
+            "api_key_env": endpoint.credential_env, "enabled": True, "priority": 10,
+            "model": model, "capabilities": capabilities if model else [],
+        }
+        if model:
+            for name in capabilities:
+                config["defaults"][name] = alias
+    return config
 
 
 def builtin_tools_config() -> dict[str, Any]:
-    return {
-        "version": CONFIG_VERSION,
-        "tools": {
-            "readable-llm-wiki": {
-                "enabled": True,
-                "processor_id": "toolbox.readable-wiki",
-                "display_name": "Readable LLM Wiki",
-                "kind": "enricher",
-                "runtime": {"mode": "external", "endpoint": "http://127.0.0.1:8099"},
-                "model_access": {"mode": "gateway", "bindings": {"chat": "top"}},
-            },
-            "concept-entity-llm-wiki": {
-                "enabled": True,
-                "processor_id": "toolbox.concept-entity-wiki",
-                "display_name": "Concept and Entity LLM Wiki",
-                "kind": "enricher",
-                "runtime": {"mode": "external", "endpoint": "http://127.0.0.1:8100"},
-                "model_access": {"mode": "gateway", "bindings": {"chat": "mid"}},
-            },
-            "tesseract-opencv": {
-                "enabled": True,
-                "processor_id": "toolbox.tesseract-opencv",
-                "display_name": "Tesseract OCR with OpenCV regions",
-                "kind": "extractor",
-                "aliases": ["toolchest.tesseract-opencv"],
-                "runtime": {"mode": "external", "endpoint": "http://127.0.0.1:8081"},
-                "model_access": {"mode": "none"},
-            },
+    """Core registrations plus metadata discovered from processor manifests."""
+    from osii.processor_modules import active_processors, modules_directory
+    tools = {
+        "document-metadata": {
+            "enabled": True, "processor_id": "core.document-metadata",
+            "runtime": {"endpoint": "http://127.0.0.1:8095/metadata"},
+            "model_access": {"mode": "gateway", "bindings": {}},
+            "model_requirements": {"chat": "required"},
         },
     }
+    for processor in active_processors(modules_directory(), os.environ):
+        if processor.registration_id in tools or processor.processor_id == "core.document-metadata":
+            from osii.processor_modules import ModuleManifestError
+            raise ModuleManifestError(f"{processor.manifest}: registration conflicts with a Core processor")
+        tools[processor.registration_id] = processor.registration(os.environ)
+    return {"version": CONFIG_VERSION, "tools": tools}
 
 
 def default_tools_config() -> dict[str, Any]:
-    """Only user changes are persisted; built-in optional registrations live in code."""
+    """Only user changes are persisted; module registrations come from manifests."""
     return {"version": CONFIG_VERSION}
 
 
@@ -376,7 +381,13 @@ def configured_tools(osii_root: Path | None = None, profile: str | None = None) 
     overrides = load_tools_config(osii_root).get("tools", {})
     tools = dict(builtin_tools_config()["tools"]) if (profile or active_profile()) == DEFAULT_PROFILE else {}
     if isinstance(overrides, dict):
-        tools.update(overrides)
+        tools.update({key: {**tools.get(key, {}), **value} if isinstance(value, dict) else value for key, value in overrides.items()})
+    # An explicit deployment opt-out also suppresses a saved registration with
+    # the same ID; do not erase the saved choices or their provenance.
+    from osii.processor_modules import discover_processors
+    for processor in discover_processors():
+        if not processor.is_enabled(os.environ):
+            tools.pop(processor.registration_id, None)
     return tools
 
 
@@ -392,7 +403,11 @@ def tool_for_processor(processor_id: str, osii_root: Path | None = None) -> tupl
 
 def configuration_status() -> dict[str, Any]:
     """Return paths and parse failures without exposing any secret values."""
-    files = {"models": models_path(), "tools": tools_path(), "secrets": secrets_path()}
+    secret_file = os.getenv("OSII_ENV_FILE", "").strip()
+    files = {
+        "models": models_path(), "tools": tools_path(),
+        "secrets": Path(secret_file).expanduser().resolve() if secret_file else secrets_path(),
+    }
     return {
         "directory": str(config_directory()),
         "active_profile": active_profile(),
@@ -407,3 +422,41 @@ def configuration_status() -> dict[str, Any]:
             default=0,
         ),
     }
+
+
+def resolve_tool_models(processor_id: str, requirements: dict[str, str], osii_root: Path,
+                        overrides: dict[str, str] | None = None) -> dict[str, str]:
+    """Resolve visible library defaults; preserve valid explicit tool choices."""
+    configured = tool_for_processor(processor_id, osii_root)
+    tool = configured[1] if configured else {}
+    access = tool.get("model_access") or {}
+    if access.get("mode", "gateway") == "none":
+        if "required" in requirements.values():
+            raise ValueError("This tool needs a model. Choose one in Setup.")
+        return {}
+    bindings = {**(access.get("bindings") or {}), **(overrides or {})}
+    configuration = load_models_config(osii_root)
+    defaults = configuration.get("defaults", {})
+    result = {}
+    legacy = {"toolbox.readable-wiki": "top", "toolbox.concept-entity-wiki": "mid"}
+    for capability, requirement in requirements.items():
+        alias = str(bindings.get(capability) or "")
+        # These shipped aliases were never guaranteed to exist. A real alias
+        # with this name remains an explicit user choice, including an error
+        # when its capabilities are unsuitable.
+        if alias == legacy.get(processor_id) and alias not in configuration.get("models", {}):
+            alias = ""
+        explicit = bool(alias)
+        alias = alias or str(defaults.get(capability) or "")
+        connection = model_connection(alias, osii_root) if alias else None
+        if not explicit and (connection is None or not connection.get("enabled", True) or capability not in connection.get("capabilities", [])):
+            alias = next((name for name in configuration.get("models", {})
+                          if (model_connection(name, osii_root) or {}).get("enabled", True)
+                          and capability in (model_connection(name, osii_root) or {}).get("capabilities", [])), "")
+            connection = model_connection(alias, osii_root) if alias else None
+        if connection is None or not connection.get("enabled", True) or capability not in connection.get("capabilities", []):
+            if requirement == "required" or explicit:
+                raise ValueError(f"Choose an enabled {capability} model for this tool in Setup.")
+            continue
+        result[capability] = alias
+    return result

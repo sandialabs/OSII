@@ -88,7 +88,14 @@ export function PdfPageViewer({
             background: "#fff",
           }}
         />
-        {regions.map((region, index) => {
+        <BoundingRegionOverlay regions={regions} />
+      </Box>
+    </Box>
+  );
+}
+
+export function BoundingRegionOverlay({ regions }: { regions: PdfBoundingRegion[] }) {
+  return <>{regions.map((region, index) => {
           const [x1, y1, x2, y2] = region.bbox;
           return (
             <Box
@@ -109,12 +116,9 @@ export function PdfPageViewer({
                 border: "2px solid rgba(220, 38, 38, 0.82)",
                 backgroundColor: "rgba(239, 68, 68, 0.08)",
                 boxSizing: "border-box",
-                pointerEvents: "none",
+                pointerEvents: "auto",
               }}
             />
           );
-        })}
-      </Box>
-    </Box>
-  );
+        })}</>;
 }

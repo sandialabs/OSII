@@ -1,9 +1,6 @@
 // src/features/collections/pages/CollectionPage.tsx
 import { useEffect, useState } from "react";
 import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Alert,
   Button,
   Dialog,
@@ -22,8 +19,6 @@ import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import ChatOutlinedIcon from "@mui/icons-material/ChatOutlined";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
-import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
-import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { useBrowsingScope } from "../../../app/providers/BrowsingScopeProvider";
@@ -36,6 +31,8 @@ import { CollectionFileGrid } from "../components/CollectionFileGrid";
 import { ScopeEnrichmentsPanel } from "../../files/components/ScopeEnrichmentsPanel";
 import { ScopeWikiPanel } from "../../files/components/ScopeWikiPanel";
 import { AddFilesToCollectionDialog } from "../components/AddFilesToCollectionDialog";
+import { ScopeSection } from "../../../components/discovery/ScopeSection";
+import { ScopeOverviewPanel } from "../../../components/discovery/ScopeOverviewPanel";
 
 export function CollectionPage() {
   const { collectionId } = useParams<{ collectionId: string }>();
@@ -55,11 +52,9 @@ export function CollectionPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [addFilesOpen, setAddFilesOpen] = useState(false);
-  const [enrichmentsOpen, setEnrichmentsOpen] = useState(false);
   const [enrichmentTab, setEnrichmentTab] = useState("wiki");
 
   useEffect(() => {
-    setEnrichmentsOpen(false);
     setEnrichmentTab("wiki");
   }, [collectionId]);
 
@@ -145,21 +140,22 @@ export function CollectionPage() {
           </Stack>
 
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Button variant="contained" onClick={() => navigate(`/research?collection_id=${encodeURIComponent(collectionId)}`)}>Write research report</Button>
             <Button
               variant="outlined"
               startIcon={<SearchOutlinedIcon />}
               onClick={handleSearchCollection}
             >
-              Search Collection
+              Search
             </Button>
             <Button
               variant="outlined"
               startIcon={<ChatOutlinedIcon />}
               onClick={handleChatCollection}
             >
-              Chat Collection
+              Chat
             </Button>
-            <Button variant="outlined" startIcon={<AddOutlinedIcon />} onClick={() => setAddFilesOpen(true)}>
+            <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setAddFilesOpen(true)}>
               Add Files
             </Button>
             <Button
@@ -168,7 +164,7 @@ export function CollectionPage() {
               component="a"
               href={`/api/collections/${encodeURIComponent(collectionId)}/export`}
             >
-              Export OSII Package
+              Export
             </Button>
             <Button
               variant="outlined"
@@ -188,33 +184,13 @@ export function CollectionPage() {
           </Stack>
         </Stack>
 
-        <Accordion
-          expanded={enrichmentsOpen}
-          onChange={(_, expanded) => setEnrichmentsOpen(expanded)}
-          variant="outlined"
-          disableGutters
-          slotProps={{ transition: { unmountOnExit: true } }}
-          sx={{ "&:before": { display: "none" } }}
-        >
-          <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />} aria-controls="collection-enrichments" id="collection-enrichments-heading">
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              <AutoAwesomeOutlinedIcon color="primary" />
-              <Stack>
-                <Typography fontWeight={700}>Enrichments</Typography>
-                <Typography variant="body2" color="text.secondary">Collection-wide wiki, keywords, tables, and other products</Typography>
-              </Stack>
-            </Stack>
-          </AccordionSummary>
-          <AccordionDetails>
+        <ScopeSection key={collectionId} id={`collection:${collectionId}:overview`} title="At a glance"><ScopeOverviewPanel scope={{ scope_type: "collection", collection_id: collectionId }} /></ScopeSection>
+
+        <ScopeSection key={`${collectionId}:products`} id={`collection:${collectionId}:products`} title="Wikis & products">
             <Stack spacing={2}>
-              <Typography variant="body2" color="text.secondary">
-                Use the extracted content of this collection together to create a collection-level product.
-                These actions do not add an enrichment to each individual file. Close this drawer to hide
-                the products; saved artifacts stay in OSII.
-              </Typography>
               <Tabs value={enrichmentTab} onChange={(_, value: string) => setEnrichmentTab(value)} aria-label="Collection enrichment views">
                 <Tab value="wiki" label="Wiki" id="collection-wiki-tab" aria-controls="collection-wiki-panel" />
-                <Tab value="artifacts" label="Other enrichments" id="collection-artifacts-tab" aria-controls="collection-artifacts-panel" />
+                <Tab value="artifacts" label="Other products" id="collection-artifacts-tab" aria-controls="collection-artifacts-panel" />
               </Tabs>
               {enrichmentTab === "wiki" ? (
                 <Stack role="tabpanel" id="collection-wiki-panel" aria-labelledby="collection-wiki-tab">
@@ -225,10 +201,8 @@ export function CollectionPage() {
                   <ScopeEnrichmentsPanel scope={{ scope_type: "collection", collection_id: collectionId }} />
                 </Stack>
               )}
-              <Button onClick={() => setEnrichmentsOpen(false)} sx={{ alignSelf: "flex-start" }}>Close enrichments</Button>
             </Stack>
-          </AccordionDetails>
-        </Accordion>
+        </ScopeSection>
         <Typography variant="h6" fontWeight={700}>Documents</Typography>
         <CollectionFileGrid collectionId={collectionId} />
       </Stack>

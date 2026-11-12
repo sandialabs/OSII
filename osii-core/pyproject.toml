@@ -26,11 +26,19 @@ dependencies = [
   "faiss-cpu",
   "numpy",
   "PyYAML>=6,<7",
+  "jsonschema>=4.23,<5",
 ]
 
 [project.optional-dependencies]
+postgres = [
+  "SQLAlchemy>=2.0,<3",
+  "psycopg[binary]>=3.2,<4",
+]
 openai = [
   "openai>=1,<3",
+]
+rag-haystack = [
+  "haystack-ai==3.4.1",
 ]
 dev = [
   "httpx>=0.27,<1",

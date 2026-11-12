@@ -1,94 +1,60 @@
-import threading
-from pathlib import Path
+"""HTTP adapters for the shared tool catalog and durable queue."""
 
-from fastapi import APIRouter, Request
-from osii.domain.processing.jobs import append_log, create_run_record, get_run
-from osii.domain.processor_settings import merged_processor_settings
-from osii.enrichment.registry import resolve_enricher
+from pydantic import BaseModel, Field
+
+from fastapi import APIRouter, HTTPException, Request
+from osii.domain.tool_actions import submit_tool, tool_catalog
 
 router = APIRouter(prefix="/api/enrichment-jobs", tags=["enrichment-jobs"])
 
 
-def _run_enrichment_job(
-    *,
-    run_id: str,
-    osii_root: Path,
-    scope: dict,
-    expert_context: str | None,
-    enricher_name: str,
-    enricher_config: dict,
-) -> None:
-    try:
-        run = get_run(run_id)
-        if run is None:
-            return
+@router.get("/tools")
+def tools(request: Request):
+    return tool_catalog(request.app.state.osii_root.resolve())
 
-        run["status"] = "running"
-        append_log(run_id, f"Starting enrichment using '{enricher_name}'")
 
-        enricher = resolve_enricher(enricher_name)
-        result = enricher.enrich(
-            osii_store=osii_root,
-            scope=scope,
-            expert_context=expert_context,
-            enricher_config=enricher_config,
-        )
-
-        run = get_run(run_id)
-        if run is None:
-            return
-
-        run["status"] = "done"
-        run["completed"] = 1
-        run["items"][0]["status"] = "done"
-        run["items"][0]["enrichment"] = result.get("result")
-        append_log(run_id, "Enrichment complete.")
-
-    except Exception as exc:
-        run = get_run(run_id)
-        if run is not None:
-            run["status"] = "error"
-            run["items"][0]["status"] = "error"
-            run["items"][0]["error"] = str(exc)
-        append_log(run_id, f"Enrichment failed: {exc}")
+class ToolSubmission(BaseModel):
+    enricher_name: str = Field(min_length=1, max_length=200)
+    scope: dict
+    expert_context: str | None = Field(default=None, max_length=20000)
+    enricher_config: dict = Field(default_factory=dict)
+    model_bindings: dict[str, str] = Field(default_factory=dict)
 
 
 @router.post("/run")
-async def run_enrichment(request: Request, payload: dict):
-    osii_root = request.app.state.osii_root.resolve()
+def run_enrichment(request: Request, payload: ToolSubmission):
+    try:
+        return submit_tool(request.app.state.osii_root.resolve(), payload.model_dump())
+    except (KeyError, ValueError, RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    enricher_name = (payload.get("enricher_name") or "").strip()
-    if not enricher_name:
-        return {"error": "enricher_name is required"}
 
-    scope = payload.get("scope") or {}
-    expert_context = payload.get("expert_context")
-    enricher_config = merged_processor_settings(
-        osii_root,
-        enricher_name,
-        payload.get("enricher_config"),
-    )
+@router.get("/runs/{run_id}/batches")
+def batch_details(run_id: str, request: Request, cursor: int = 0, limit: int = 20):
+    from osii.domain.processing.scope_batches_local import details
+    from osii.domain.processing.jobs import get_run
+    run=get_run(run_id)
+    if not run or not run.get('batch_progress'):
+        raise HTTPException(404,'Batch run not found')
+    try:return details(request.app.state.osii_root.resolve(),run_id,cursor,limit)
+    except (ValueError,FileNotFoundError):raise HTTPException(404,'Batch details not found') from None
 
-    run = create_run_record([osii_root], osii_root, osii_root, osii_root=osii_root)
-    run["items"][0]["display"] = str(scope)
 
-    thread = threading.Thread(
-        target=_run_enrichment_job,
-        kwargs={
-            "run_id": run["id"],
-            "osii_root": osii_root,
-            "scope": scope,
-            "expert_context": expert_context,
-            "enricher_name": enricher_name,
-            "enricher_config": enricher_config,
-        },
-        daemon=True,
-    )
-    thread.start()
+@router.get("/runs/{run_id}/batches/{batch_id}")
+def one_batch(run_id: str, batch_id: str, request: Request):
+    from osii.domain.processing.scope_batches_local import batch_result
+    from osii.domain.processing.jobs import get_run
+    run=get_run(run_id)
+    if not run or not run.get('batch_progress'):raise HTTPException(404,'Batch run not found')
+    try:return batch_result(request.app.state.osii_root.resolve(),run_id,batch_id)
+    except (ValueError,FileNotFoundError):raise HTTPException(404,'Batch result not found') from None
 
-    return {
-        "run_id": run["id"],
-        "status": run["status"],
-        "scope": scope,
-        "enricher_name": enricher_name,
-    }
+
+@router.get("/runs/{run_id}/sources")
+def run_sources(run_id: str, request: Request, cursor: int = 0, limit: int = 50, only_missing: bool = False):
+    from osii.domain.processing.scope_batches_local import source_details
+    from osii.domain.processing.jobs import get_run
+    run=get_run(run_id)
+    if not run or not run.get('batch_progress'):raise HTTPException(404,'Batch run not found')
+    try:return source_details(request.app.state.osii_root.resolve(),run_id,cursor,limit,only_missing)
+    except (ValueError,FileNotFoundError):raise HTTPException(404,'Source details not found') from None

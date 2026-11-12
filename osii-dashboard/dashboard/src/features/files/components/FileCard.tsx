@@ -22,6 +22,7 @@ type FileCardProps = {
   file: FileCardModel;
   onOpen: (fileId: string) => void;
   compact?: boolean;
+  showPath?: boolean;
 };
 
 export function formatFileSize(sizeBytes: number | null) {
@@ -109,7 +110,7 @@ function Thumbnail({
   );
 }
 
-export function FileCard({ file, onOpen, compact = false }: FileCardProps) {
+export function FileCard({ file, onOpen, compact = false, showPath = false }: FileCardProps) {
   const fileSize = formatFileSize(file.sizeBytes);
   const modifiedDate = formatModifiedDate(file.modifiedAt);
 
@@ -170,7 +171,7 @@ export function FileCard({ file, onOpen, compact = false }: FileCardProps) {
               {file.title}
             </Typography>
 
-            {!compact ? <Typography
+            {!compact || showPath ? <Typography
               variant="caption"
               color="text.secondary"
               sx={{

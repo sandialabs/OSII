@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Query, Request
 
-from osii.domain.services.search import dashboard_search
+from osii.domain.services.search import dashboard_search, retrieve_dashboard
+from osii.domain.storage.retrieval import RetrievalRequest
+from osii.domain.read.contracts import ReadScope
 from osii.search.common import search_segments
 
 router = APIRouter(prefix="/api", tags=["search"])
@@ -31,14 +33,11 @@ async def search_post(request: Request, payload: dict):
     group_by = payload.get("group_by")
 
     try:
-        retrieval_mode_used, results = dashboard_search(
-            osii_root,
-            query=query,
-            mode=mode,
-            top_k=top_k,
-            scope=scope,
-            group_by=group_by,
-        )
+        kind = scope.get("scope_type") or scope.get("type") or "root"
+        identity = scope.get({"object": "file_id", "folder": "folder_id", "collection": "collection_id"}.get(kind), "")
+        found = retrieve_dashboard(osii_root, RetrievalRequest(query, ReadScope(kind, identity),
+            mode, top_k, group_by=group_by), search=dashboard_search)
+        retrieval_mode_used, results = found.actual_mode, found.legacy_rows()
     except ValueError as exc:
         return {"error": str(exc)}
 

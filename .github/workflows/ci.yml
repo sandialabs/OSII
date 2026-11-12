@@ -1,47 +1,58 @@
 name: CI
-
 on:
   pull_request:
   push:
     branches: [main]
-    tags: ["v*"]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
-
+  cancel-in-progress: true
 jobs:
-  checks:
+  python:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - name: Corporate defaults must not enter public GitHub
-        run: |
-          if test -f corporate/osii.toml; then
-            echo "Corporate defaults belong only in the private GitLab repository."
-            exit 1
-          fi
       - uses: astral-sh/setup-uv@v10.1.0
-      - name: Core, SDK, and packaging tests
-        run: uv run --frozen --python 3.12 --package osii --extra dev python -m pytest osii-core/tests osii-core/processor-sdk/tests osii-toolbox/tests/test_packaging.py -q
-      - name: Isolated processor contracts
+      - name: Core and SDK
+        run: uv run --frozen --python 3.12 --package osii --extra dev python -m pytest osii-core/tests osii-core/processor-sdk/tests -q
+      - name: Isolated PostgreSQL read-contract database
+        run: |
+          sudo systemctl start postgresql
+          sudo -u postgres psql -c "CREATE ROLE osii_read_test LOGIN PASSWORD 'osii-read-test-only';"
+          sudo -u postgres createdb -O osii_read_test osii_reads_test
+      - name: Shared sidecar and PostgreSQL read contracts
+        env:
+          OSII_READ_TEST_DATABASE_URL: postgresql+psycopg://osii_read_test:osii-read-test-only@localhost:5432/osii_reads_test
+        run: uv run --frozen --python 3.12 --package osii --extra postgres --extra dev python -m pytest --noconftest osii-core/tests/test_library_reads.py osii-core/tests/test_processing_commits.py osii-core/tests/test_library_authoring.py osii-core/tests/test_retrieval_jobs.py osii-core/tests/test_text_authoring.py osii-core/tests/test_local_postgres.py -q
+      - name: Shared RAG strategies
+        run: uv run --frozen --python 3.12 --package osii --extra rag-haystack --extra dev python -m pytest osii-core/rag-tests osii-core/tests/test_rag_experiments_api.py -q
+      - name: MCP
+        run: uv run --frozen --python 3.12 --package osii-mcp --extra dev python -m pytest osii-mcp/tests -q
+      - name: Processor contracts
         run: |
           for service in local-extractor local-tesseract local-synthesizer local-embedder local-enricher model-provider-bridge; do
             uv run --isolated --no-project --python 3.12 --with-editable osii-core \
               --with-editable "osii-core/services/$service" --with pytest \
-              --with 'httpx>=0.27,<1' python -m pytest "osii-core/services/$service/tests" -q
+              --with 'httpx>=0.27,<1' python -m pytest "osii-core/services/$service/tests" -q || exit $?
           done
           uv run --isolated --no-project --python 3.12 --with pytest \
             --with 'uvicorn[standard]>=0.35,<1' python -m pytest \
             osii-core/services/baseline-processors/tests -q
-      - name: Documentation links and strict build
+      - name: Banyan processor module
+        run: >-
+          uv run --project osii-processor-modules/banyan --extra osii
+          --with pytest --with 'httpx>=0.27,<1'
+          python -m pytest osii-processor-modules/banyan/tests/unit/test_osii_extractor.py
+          -q --api-test-mode=mock
+      - name: Managed Tika processor module
+        run: >-
+          uv run --project osii-processor-modules/tika-adapter --extra dev
+          python -m pytest osii-processor-modules/tika-adapter/tests -q
+      - name: Documentation
         run: make docs
-
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -51,67 +62,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: |
-            osii-dashboard/dashboard/package-lock.json
-            osii-launcher/package-lock.json
+          cache-dependency-path: osii-dashboard/dashboard/package-lock.json
       - name: Dashboard
         working-directory: osii-dashboard/dashboard
         run: npm ci && npm test --if-present && npm run build
-      - name: Launcher frontend
-        working-directory: osii-launcher
-        run: npm ci && npm test && npm run build
-
-  # Platform/package checks are reserved for tags and manual runs.
-  installation:
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.1.0
-      - run: uv run --no-project --python 3.12 --with build python scripts/check_python_distribution.py
-      - if: runner.os == 'Windows'
-        shell: pwsh
-        run: .\scripts\osii.ps1 dev -DryRun
-
-  # Public publishing is opt-in; corporate publication is GitLab's job.
-  package:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [checks, frontend, installation]
-    runs-on: ubuntu-latest
-    outputs:
-      publish: ${{ steps.plan.outputs.publish }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.1.0
-      - id: plan
-        run: |
-          uv run --no-project --python 3.12 python scripts/corporate_release.py version
-          if uv run --no-project --python 3.12 python scripts/release_plan.py needs-package; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          fi
-      - if: steps.plan.outputs.publish == 'true'
-        run: uv build osii-core --out-dir dist
-      - uses: actions/upload-artifact@v7
-        if: steps.plan.outputs.publish == 'true'
-        with:
-          name: python-distributions
-          path: dist/*
-
-  pypi:
-    if: startsWith(github.ref, 'refs/tags/v') && vars.OSII_PUBLISH_PYPI == 'true' && needs.package.outputs.publish == 'true'
-    needs: package
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: python-distributions
-          path: dist
-      - uses: pypa/gh-action-pypi-publish@release/v1

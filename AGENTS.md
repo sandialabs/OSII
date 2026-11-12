@@ -20,20 +20,37 @@ The agent's job is to execute the human's command—nothing more.
 - OSII is local-first. Preserve original source identity, extracted text,
   locations, scopes, provenance, and portable `.osii` sidecars. Catalogs,
   indexes, caches, and model output are derived and rebuildable.
+- OSII-local has no user authentication, accounts, roles, or login screen.
+  Hosted user authentication belongs exclusively to `osii-server`. Keep local
+  processes on loopback; processor/provider credentials and private internal
+  service tokens are separate from user authentication.
+- File metadata inventory is part of normal OSII-local, not a separate branch
+  or startup mode. `osii.volume` owns its separate canonical SQLite inventory
+  on local disk. Never rebuild, quarantine, or replace it as a sidecar catalog.
+  Metadata scanning must not read file contents, hash files, or invoke models.
 - The Core owns canonical persistence, RAG orchestration, and grounded chat.
   Processors receive explicit bounded requests and return typed output; they do
   not browse a corpus or write the canonical store.
+- Reuse the common browse, file, search, model-field, and topic components across
+  local and server; adapt API data at each product boundary instead of forking widgets.
 - Keep domain logic independent of transport, UI, launchers, and deployment.
   Keep side effects at the edges and make paths, scopes, processors, and
   configuration explicit.
 - The dashboard and MCP server are Core clients. Guaranteed baseline Processor
-  API hosts live under `osii-core/services/`. `osii-toolbox/` owns separately
-  deployable tools: only an explicitly designated bundled, default-swappable
-  service may appear in the default packaged Compose stack; every other Toolbox
-  processor is enabled only through explicit deployment configuration.
+  API hosts live under `osii-core/services/`. `osii-processor-modules/` owns separately
+  deployable processor modules. Reserve "Toolbox" for frontend tools. The host
+  development stack starts processor modules by default, with explicit per-module
+  opt-outs, using their independent environments.
+  Starting a tool does not select it for processing or invoke a model.
 - Treat `osii.processor_sdk` as the public boundary for external processors.
   Preserve standard artifact formats so people, the dashboard, and agents can
   inspect the same results.
+
+## Interface guidance
+
+- Keep screens concise. Put explanations behind accessible, labeled question-mark
+  buttons that open focused help dialogs. Prefer these to persistent paragraphs
+  or additional drawers. Keep essential state, errors, and actions visible.
 
 ## Implementation and documentation
 
@@ -45,51 +62,46 @@ The agent's job is to execute the human's command—nothing more.
 - Keep normal commands and documentation cross-platform: macOS development and
   Windows use are both supported. Keep `Makefile` and `scripts/osii.ps1`
   workflows equivalent.
+- Keep README.md a concise, durable introduction to OSII: its purpose, major
+  capabilities, and how to get started.
+- Update it when a change affects that information. Don’t add branch-specific
+  implementation details, task summaries, temporary status, or a running list
+  of changes.
+- Put detailed technical explanations in docs/, decisions in an architecture
+  decision record, and change history in the changelog or pull request
+  description, as appropriate.
+- Before finishing, review the README diff for relevance, duplication, and
+  clarity to a new reader.
 - Update relevant documentation only when the requested behavior or workflow
   changes. Keep examples and demonstrations small and inspectable; do not
   create new example material unless explicitly requested.
 
-## Container policy
+## Current delivery scope
 
-- Every OSII-authored builder and runtime stage must derive from the approved
-  RHEL/UBI image supplied through the shared `OSII_BASE_IMAGE`. Do not introduce
-  Fedora, Debian, Ubuntu, Alpine, or a service-specific base-image argument.
-- A missing RPM is not justification for changing distributions. Build missing
-  software from pinned, checksum-verified source artifacts on RHEL/UBI. If the
-  approved repositories and artifact sources cannot satisfy the build, stop
-  and report the dependency instead of silently choosing another base.
-- Corporate source downloads must work through the configured artifact mirror
-  and `OSII_CA_BUNDLE`. Install corporate trust before any package, source,
-  Python, Node, or model download.
-- Keep final runtime stages minimal and non-root. Published builds must use an
-  approved immutable RHEL/UBI base reference; the public development default
-  may use the designated UBI 9 tag.
-- Preserve the simple `make build` and `make run` interface. Keep Make and
-  PowerShell container workflows equivalent when container policy changes.
+- `main` is the standalone application, using sidecars by default with optional,
+  explicitly initialized PostgreSQL storage. Never auto-import or silently fall
+  back between stores. The canonical inventory SQLite stays independent.
+  `osii-server` is developed separately for hosted accounts and OpenShift. Keep
+  portable fixes isolated for transfer between the branches; never merge server
+  persistence or hosted startup into main implicitly.
 
-## Public and corporate delivery
-
-- Treat public GitHub as the portable development and validation repository.
-  Routine GitHub pushes run focused Linux/Python 3.12 and frontend checks;
-  reserve cross-platform installation checks for tags or manual runs, and do
-  not publish corporate images, installers, endpoints, or credentials there.
-- Treat corporate GitLab as the release authority. Import public changes on a
-  branch, preserve the corporate configuration layer, and merge through a
-  reviewed GitLab merge request before creating a protected `vX.Y.Z` tag.
-- Corporate tags build from approved mirrors and an immutable RHEL/UBI base,
-  publish or reuse verified AMD64/ARM64 images in corporate Quay, and attach
-  signed launcher installers to the GitLab Release. Publish a new internal
-  `osii` Python package only when Core/SDK changes.
-- Keep stack releases immutable. A component-only release may reuse a prior
-  package version and image digests; every new stack release still gets a
-  launcher pinned to its version. Never reuse a published tag.
-- Corporate Quay `:latest` is a separately approved alias of a tested
-  immutable release, never a build target or launcher default.
-- Preserve a simple non-developer path: install the signed launcher, choose a
-  source folder, pull tested images, and open the dashboard. Validate that path
-  on a clean workstation before announcing a release.
-- Keep `.github/workflows/ci.yml`, `.gitlab-ci.yml`, `release.toml`, and the
-  operations runbooks consistent when release behavior changes.
+- The supported startup path on main is `make dev` (Windows:
+  `.\\scripts\\osii.ps1 dev`). Keep automatic dependency setup, logs, health
+  checks, and Ctrl+C shutdown working. Do not add alternative startup menus.
+- Product direction is one shared OpenShift deployment, independent model capability
+  endpoints, and one shared database. This does not authorize an implicit
+  database migration or claim that hosted authentication is implemented.
+- Desktop installers, workstation catalogs, Compose, component splitting, and
+  image publishing are archived on `archive/workstation-deployment-2026-11-03`.
+  Do not reintroduce them without an explicit human request.
+- Preserve Core, dashboard, SDK, and processor boundaries while simplifying
+  delivery. Optional tools stay optional. Do not replace existing persistence
+  or delete user data as part of deployment cleanup.
+- Keep CI focused on product tests, dashboard builds, and documentation. Future
+  OpenShift delivery should target the shared service, not workstation installs.
+- If containers are introduced for the hosted service, use the shared approved
+  RHEL/UBI base, minimal non-root runtimes, pinned verified dependencies, and
+  corporate certificate/mirror support. Stop on unavailable approved dependencies.
 
 ## Validation and handoff
 
@@ -98,6 +110,15 @@ The agent's job is to execute the human's command—nothing more.
 - Do not read, edit, format, or rewrite `.ipynb` files unless the human names
   the notebook. Use paired `.py` sources; use
   `osii-demo-notebooks/manage_notebooks.py` for intentional conversions.
-- Do not stage, commit, push, or open a pull request unless explicitly asked.
-- For a code change, end with concise commands to commit and to run or inspect
-  the result, including required rebuild or restart steps.
+- Automatically stage and commit completed, validated task changes locally.
+  Use focused commits, preserve unrelated work, and do not ask the user to
+  copy-paste commit commands. This is standing authorization for local commits.
+- Automatically push completed, tested task changes after committing them to
+  the current branch on `origin` (the user's GitHub repository). This is standing
+  authorization to push; do not ask for confirmation or leave the push to the user.
+  Preserve unrelated work, use normal non-force pushes, and resolve any remote
+  divergence without discarding changes. Do not push to `upstream` or open a pull
+  request unless the user explicitly asks.
+- Report local commit hashes and relevant validation results. Include run or
+  inspection instructions when needed, including required rebuild or restart
+  steps.

@@ -1,3 +1,4 @@
+import { MathpixText } from "../../../components/text/MathpixText";
 // src/features/files/components/FileTextPanel.tsx
 import { useMemo, useState } from "react";
 import {
@@ -10,10 +11,6 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
 
 import { useObjectPreferredText } from "../../../hooks/useObjectPreferredText";
 import { useObjectTextSpanContext } from "../../../hooks/useObjectTextSpanContext";
@@ -22,19 +19,19 @@ type TextRenderMode = "raw" | "rendered";
 
 type FileTextPanelProps = {
   fileId: string;
-  supportsMarkdownRender: boolean;
+  textOverride?: string;
   charStart?: number | null;
   charEnd?: number | null;
 };
 
 export function FileTextPanel({
   fileId,
-  supportsMarkdownRender,
+  textOverride,
   charStart = null,
   charEnd = null,
 }: FileTextPanelProps) {
-  const [renderMode, setRenderMode] = useState<TextRenderMode>("raw");
-  const textQuery = useObjectPreferredText(fileId, true);
+  const [renderMode, setRenderMode] = useState<TextRenderMode>("rendered");
+  const textQuery = useObjectPreferredText(fileId, textOverride === undefined);
   const contextQuery = useObjectTextSpanContext(
     {
       fileId,
@@ -42,12 +39,12 @@ export function FileTextPanel({
       charEnd,
       contextChars: 180,
     },
-    charStart != null && charEnd != null,
+    textOverride === undefined && charStart != null && charEnd != null,
   );
 
-  const content = textQuery.data?.text ?? "";
+  const content = textOverride ?? textQuery.data?.text ?? "";
   const canRenderMarkdown =
-    supportsMarkdownRender && Boolean(content.trim());
+    Boolean(content.trim());
 
   const highlightedBlock = useMemo(() => {
     if (!contextQuery.data) {
@@ -61,15 +58,15 @@ export function FileTextPanel({
     };
   }, [contextQuery.data]);
 
-  if (textQuery.isLoading) {
+  if (textOverride === undefined && textQuery.isLoading) {
     return <Typography>Loading preferred text…</Typography>;
   }
 
-  if (textQuery.isError) {
+  if (textOverride === undefined && textQuery.isError) {
     return <Alert severity="warning">Failed to load preferred text.</Alert>;
   }
 
-  if (!textQuery.data || !content) {
+  if ((!textQuery.data && textOverride === undefined) || !content) {
     return (
       <Alert severity="info">
         No preferred text is available for this file.
@@ -89,10 +86,10 @@ export function FileTextPanel({
       >
         <Stack spacing={0.25}>
           <Typography variant="subtitle1" fontWeight={600}>
-            Preferred Text
+            {textOverride === undefined ? "Preferred text" : "Extracted text version"}
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            Representation: {preferredText.representation} · Kind: {preferredText.kind}
+            {textOverride === undefined ? `Representation: ${preferredText?.representation} · ${preferredText?.kind}` : "Saved extraction · read only"}
           </Typography>
         </Stack>
 
@@ -101,14 +98,14 @@ export function FileTextPanel({
             variant={renderMode === "raw" ? "contained" : "outlined"}
             onClick={() => setRenderMode("raw")}
           >
-            Raw
+            Plain text
           </Button>
           <Button
             variant={renderMode === "rendered" ? "contained" : "outlined"}
             onClick={() => setRenderMode("rendered")}
             disabled={!canRenderMarkdown}
           >
-            Rendered
+            Mathpix Markdown
           </Button>
         </ButtonGroup>
       </Stack>
@@ -171,41 +168,7 @@ export function FileTextPanel({
               py: 1.5,
             }}
           >
-            {renderMode === "rendered" && canRenderMarkdown ? (
-              <Box
-                sx={{
-                  "& p": { mt: 0, mb: 1.2 },
-                  "& pre": {
-                    overflowX: "auto",
-                    p: 1,
-                    borderRadius: 1,
-                    backgroundColor: "rgba(15,23,42,0.04)",
-                  },
-                  "& code": {
-                    fontFamily: 'Consolas, "Courier New", monospace',
-                  },
-                }}
-              >
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkMath]}
-                  rehypePlugins={[rehypeKatex]}
-                >
-                  {content}
-                </ReactMarkdown>
-              </Box>
-            ) : (
-              <Box
-                sx={{
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  fontFamily: 'Consolas, "Courier New", monospace',
-                  fontSize: "0.85rem",
-                  lineHeight: 1.55,
-                }}
-              >
-                {content}
-              </Box>
-            )}
+            <MathpixText text={content} controls={false} mode={renderMode === "rendered" ? "rendered" : "plain"} />
           </Box>
         </CardContent>
       </Card>

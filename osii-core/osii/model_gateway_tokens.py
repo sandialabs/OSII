@@ -31,6 +31,7 @@ def issue_model_gateway_token(
     bindings: dict[str, str],
     ttl_seconds: int = 900,
     max_requests: int = 64,
+    connection_fingerprints: dict[str, str] | None = None,
 ) -> str:
     now = int(time.time())
     claims = {
@@ -39,6 +40,7 @@ def issue_model_gateway_token(
         "tool": tool_id,
         "job": job_id,
         "bindings": bindings,
+        "connection_fingerprints": connection_fingerprints or {},
         "iat": now,
         "exp": now + ttl_seconds,
         "max_requests": max_requests,

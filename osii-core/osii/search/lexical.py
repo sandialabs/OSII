@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import pickle
 import re
 from pathlib import Path
@@ -21,6 +22,7 @@ from osii.indexing.chunking import (
 
 
 TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]{1,}")
+logger = logging.getLogger(__name__)
 
 
 def tokenize(text: str) -> list[str]:
@@ -66,12 +68,13 @@ def load_chunk_manifest(osii_root: Path) -> list[dict]:
             bad_lines.append((line_num, str(exc), raw[:300]))
 
     if bad_lines:
-        print("WARNING: malformed chunk manifest lines detected and skipped:")
+        # Logging keeps diagnostics off the MCP STDIO protocol stream without
+        # changing process-global stdout during concurrent tool calls.
+        logger.warning("Malformed chunk manifest lines detected and skipped:")
         for line_num, err, preview in bad_lines[:10]:
-            print(f"  line {line_num}: {err}")
-            print(f"    preview: {preview}")
+            logger.warning("line %s: %s; preview: %s", line_num, err, preview)
         if len(bad_lines) > 10:
-            print(f"  ... and {len(bad_lines) - 10} more")
+            logger.warning("... and %s more", len(bad_lines) - 10)
 
     if not rows:
         raise RuntimeError(f"No valid chunk rows found in chunk manifest: {path}")
@@ -146,11 +149,11 @@ def lexical_search_chunks(osii_root: Path, query: str, top_k: int = 10) -> list[
     if k <= 0:
         return []
 
-    scores, doc_ids = retriever.retrieve([query_tokens], k=k)
+    doc_ids, scores = retriever.retrieve([query_tokens], k=k)
 
     results = []
     for score, idx in zip(scores[0], doc_ids[0]):
-        if idx is None:
+        if idx is None or not float(score) > 0:
             continue
         idx = int(idx)
         if idx < 0 or idx >= len(rows):

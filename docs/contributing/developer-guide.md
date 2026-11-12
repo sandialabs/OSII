@@ -18,7 +18,7 @@ The main repository boundaries are:
 - `osii-core/services`: guaranteed local, independently addressable processor hosts;
 - `osii-dashboard/dashboard`: React and TypeScript user interface;
 - `osii-mcp`: agent-facing OSII tools;
-- `osii-toolbox`: optional processors with independent dependencies and images.
+- `osii-processor-modules`: optional processors with independent dependencies and images.
 
 ## Design invariants
 
@@ -62,7 +62,7 @@ shared renderer rather than processor-specific pages.
 From the repository root:
 
 OSII supports Python 3.11 through 3.13. The checked-in `.python-version`, host
-launcher, container builds, and examples use Python 3.12 so local and deployed
+startup script and examples use Python 3.12 so local and deployed
 behavior do not drift. Python 3.14 is not yet supported by the pinned
 FastAPI/Pydantic dependency set.
 
@@ -77,7 +77,7 @@ distribution and wheel and install into a temporary, clean environment:
 uv run --no-project --python 3.12 --with build python scripts/check_python_distribution.py
 ```
 
-CI runs this on Linux, macOS, and Windows with Python 3.12. Both
+Run this explicitly when checking standalone package installation. Both
 `osii.processor_sdk` and the compatibility imports `osii_processor_sdk` ship in
 one distribution. Processor services depend on `osii` and install Core's normal
 dependencies; package installation does not launch any services.

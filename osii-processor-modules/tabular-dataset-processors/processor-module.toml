@@ -1,0 +1,32 @@
+schema_version = 1
+id = "tabular-dataset-processors"
+extras = []
+
+[[processors]]
+id = "csv-extractor"
+processor_id = "toolchest.csv-table"
+kind = "extractor"
+display_name = "CSV table extractor"
+description = "Extracts CSV rows with source-line provenance."
+command = [
+    "run.py",
+    "extractor",
+]
+port = 8097
+
+[processors.capabilities]
+file_extensions = [
+    ".csv",
+]
+
+[[processors]]
+id = "collection-table"
+processor_id = "toolchest.collection-table"
+kind = "enricher"
+display_name = "Collection table enricher"
+description = "Combines compatible extracted tables within a selected scope."
+command = [
+    "run.py",
+    "enricher",
+]
+port = 8098

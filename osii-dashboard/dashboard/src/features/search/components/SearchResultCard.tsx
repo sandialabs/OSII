@@ -150,7 +150,11 @@ export function SearchResultCard({
               </Stack>
             </Stack>
 
-            <Divider />
+          </Stack>
+        </CardContent>
+      </CardActionArea>
+      <Divider />
+      <Box sx={{ p: 2 }}>
 
             <Stack
               direction={{ xs: "column", md: "row" }}
@@ -181,9 +185,7 @@ export function SearchResultCard({
                 Open Match
               </Button>
             </Stack>
-          </Stack>
-        </CardContent>
-      </CardActionArea>
+      </Box>
     </Card>
   );
 }

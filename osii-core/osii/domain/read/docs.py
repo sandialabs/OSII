@@ -1,5 +1,5 @@
 from pathlib import Path
-import tomllib
+from osii.domain.read.sidecar import SidecarLibraryReader
 
 from osii.domain.storage.store import object_dir
 from osii.domain.read.manifest import list_image_records, list_text_records
@@ -11,10 +11,8 @@ def get_doc_dir(osii_store: Path, file_id: str) -> Path:
 
 
 def get_doc_meta(osii_store: Path, file_id: str) -> dict | None:
-    path = get_doc_dir(osii_store, file_id) / "meta.toml"
-    if not path.exists():
-        return None
-    return tomllib.loads(path.read_text(encoding="utf-8"))
+    record = SidecarLibraryReader(osii_store).get_document(file_id)
+    return record.metadata if record else None
 
 
 def get_doc_overview(osii_store: Path, file_id: str) -> dict:

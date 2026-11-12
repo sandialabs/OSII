@@ -1,6 +1,7 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from typing import Literal
 
 
 class ScopeModel(BaseModel):
@@ -19,7 +20,8 @@ class ChatRequest(BaseModel):
     query: str = Field(min_length=1)
     scope: ScopeModel
     history: list[ChatTurn] = Field(default_factory=list)
-    top_k: int | None = None
+    top_k: int | None = Field(default=None, ge=1, le=50)
+    profile_id: str = Field(default="default", max_length=100)
 
 
 class CitationModel(BaseModel):
@@ -33,6 +35,7 @@ class CitationModel(BaseModel):
     char_start: int | None = None
     char_end: int | None = None
     source_origin: dict[str, Any] | None = None
+    representation: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -41,3 +44,35 @@ class ChatResponse(BaseModel):
     provider: str
     fallback_used: bool = False
     retrieval_mode: str
+    profile_id: str = "default"
+    model: str | None = None
+    experiment: dict[str, Any] | None = None
+
+
+class CompareRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=4000)
+    scope: ScopeModel
+    history: list[ChatTurn] = Field(default_factory=list, max_length=12)
+    profile_ids: list[str] = Field(default_factory=lambda: ["lexical-v1", "hybrid-v1"], min_length=2, max_length=3)
+
+    @field_validator("profile_ids")
+    @classmethod
+    def unique_profiles(cls, values):
+        if len(set(values)) != len(values):
+            raise ValueError("Choose distinct profiles")
+        return values
+
+
+class ComparedRun(BaseModel):
+    profile_id: str
+    status: Literal["ok", "error"]
+    response: ChatResponse | None = None
+    error: str | None = None
+
+
+class ComparisonResponse(BaseModel):
+    query: str
+    scope: ScopeModel
+    corpus_check: str
+    model: str
+    runs: list[ComparedRun]

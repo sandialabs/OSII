@@ -9,18 +9,25 @@ from osii.indexing.common import (
     embeddings_index_path,
     embeddings_mapping_path,
     get_embedding_model,
+    ensure_embeddings_dir,
 )
 
 
-def load_faiss_index(osii_root: Path):
-    path = embeddings_index_path(osii_root)
+def load_faiss_index(osii_root: Path, *, directory: Path | None = None):
+    path = (
+        directory / "segments.faiss" if directory else embeddings_index_path(osii_root)
+    )
     if not path.exists():
         raise RuntimeError(f"FAISS index not found: {path}")
     return faiss.read_index(str(path))
 
 
-def load_mapping(osii_root: Path) -> list[dict]:
-    path = embeddings_mapping_path(osii_root)
+def load_mapping(osii_root: Path, *, directory: Path | None = None) -> list[dict]:
+    path = (
+        directory / "segments.mapping.jsonl"
+        if directory
+        else embeddings_mapping_path(osii_root)
+    )
     if not path.exists():
         raise RuntimeError(f"Embeddings mapping not found: {path}")
 
@@ -42,9 +49,14 @@ def embed_query(text: str, model: str | None = None) -> np.ndarray:
     return vec
 
 
-def search_segments(osii_root: Path, query: str, top_k: int = 10, model: str | None = None) -> list[dict]:
-    index = load_faiss_index(osii_root)
-    mapping = load_mapping(osii_root)
+def search_segments(
+    osii_root: Path, query: str, top_k: int = 10, model: str | None = None
+) -> list[dict]:
+    from osii.domain.storage.embedding_snapshot import active_snapshot
+
+    directory = active_snapshot(ensure_embeddings_dir(osii_root, model=model))
+    index = load_faiss_index(osii_root, directory=directory)
+    mapping = load_mapping(osii_root, directory=directory)
 
     q = embed_query(query, model=model)
     scores, ids = index.search(q, top_k)

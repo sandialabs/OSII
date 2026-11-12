@@ -38,13 +38,11 @@ def test_configured_processor_urls_includes_enabled_admin_registry(tmp_path, mon
         encoding="utf-8",
     )
 
-    assert remote.configured_processor_urls() == [
-        "http://processor-a:8000",
-        "http://127.0.0.1:8099",
-        "http://127.0.0.1:8100",
-        "http://127.0.0.1:8081",
-        "http://custom:8000",
-    ]
+    assert set(remote.configured_processor_urls()) == {
+        "http://processor-a:8000", "http://127.0.0.1:8095/metadata",
+        "http://127.0.0.1:8099", "http://127.0.0.1:8100", "http://127.0.0.1:8081",
+        "http://127.0.0.1:8101", "http://127.0.0.1:8102", "http://127.0.0.1:8097", "http://127.0.0.1:8098", "http://custom:8000",
+    }
 
 
 def test_openai_provider_uses_standard_embedding_and_synthesis_adapters(tmp_path, monkeypatch):
@@ -59,13 +57,12 @@ def test_openai_provider_uses_standard_embedding_and_synthesis_adapters(tmp_path
 
     urls = remote.configured_processor_urls()
 
-    assert urls == [
-        "http://127.0.0.1:8099",
-        "http://127.0.0.1:8100",
-        "http://127.0.0.1:8081",
-        "http://model-bridge:8095/openai/embedder",
-        "http://model-bridge:8095/openai/synthesizer",
-    ]
+    assert set(urls) == {
+        "http://127.0.0.1:8095/metadata", "http://127.0.0.1:8099", "http://127.0.0.1:8100",
+        "http://127.0.0.1:8081", "http://127.0.0.1:8101", "http://127.0.0.1:8102",
+        "http://127.0.0.1:8097", "http://127.0.0.1:8098",
+        "http://model-bridge:8095/openai/embedder", "http://model-bridge:8095/openai/synthesizer",
+    }
     assert not any(url.endswith("/extractor") for url in urls)
 
 
@@ -108,6 +105,7 @@ def test_remote_synthesis_omits_absent_citation_fields_from_toml(
                 request_id=request.request_id,
                 processor=ProcessorDescriptor.model_validate(descriptor),
                 markdown="Grounded preview.",
+                metadata={"document_metadata":{"schema_version":1,"method":"text_llm", "model":"test", "title":{"value":"Detector Readings"},"author":{"value":None,"qualifier":"Unknown author"},"date":{"value":None}}},
                 citations=[ProvenanceRef(file_id=sample_osii_object["file_id"])],
             )
 
@@ -130,6 +128,10 @@ def test_remote_synthesis_omits_absent_citation_fields_from_toml(
         {"file_id": sample_osii_object["file_id"], "source_origin": {}}
     ]
     assert provenance["synthesis"]["config"]["expert_context"] == "Temperature readings are in kelvin."
+    from osii.domain.read.synthesis import get_suggested_metadata
+    saved=get_suggested_metadata(temp_osii_root,sample_osii_object["file_id"])
+    assert saved["document_title"] == "Detector Readings"
+    assert saved["document_metadata"]["author"]["value"] is None
 
 
 def test_remote_extractor_receives_saved_context_in_standard_field(tmp_path):
@@ -193,21 +195,21 @@ def test_remote_enricher_commits_multiple_standard_artifacts_by_kind(
             "metadata": {"model": "test-model", "provider": "test"},
             "artifacts": [
                 {
-                    "id": "concept-entity-wiki", "kind": "wiki",
+                    "id": "concept-entity-wiki", "kind": "wiki", "media_type": "application/json",
                     "standard_data": {
                         "artifact_type": "wiki_markdown", "title": "Wiki",
                         "markdown": "# Wiki", "citations": [],
                     },
                 },
                 {
-                    "id": "entities", "kind": "entities",
+                    "id": "entities", "kind": "entities", "media_type": "application/json",
                     "standard_data": {
                         "artifact_type": "entity_list", "title": "Entities",
                         "entities": [],
                     },
                 },
                 {
-                    "id": "concepts", "kind": "table",
+                    "id": "concepts", "kind": "table", "media_type": "application/json",
                     "standard_data": {
                         "artifact_type": "table", "title": "Concepts",
                         "columns": [], "rows": [], "row_provenance": [],
@@ -232,3 +234,22 @@ def test_remote_enricher_commits_multiple_standard_artifacts_by_kind(
     )
     assert metadata["model"] == "test-model"
     assert metadata["provider"] == "test"
+
+
+def test_invalid_descriptor_is_isolated_from_other_tools(monkeypatch):
+    monkeypatch.setattr(remote, "configured_processor_urls", lambda: ["http://invalid", "http://valid"])
+    descriptor = ProcessorDescriptor(name="test.valid", version="1", display_name="Valid", description="Test", kind=ProcessorKind.ENRICHER).model_dump(mode="json")
+    monkeypatch.setattr(remote, "_request_json", lambda url, **kwargs: {"capabilities": []} if "invalid" in url else descriptor)
+    assert [item["name"] for item in remote.discover_remote_processors()] == ["test.valid"]
+    assert remote.discover_remote_processors(include_errors=True)[0]["error"]
+
+
+def test_omitted_module_is_not_discovered(tmp_path, monkeypatch):
+    monkeypatch.setenv("OSII_ROOT", str(tmp_path))
+    monkeypatch.delenv("OSII_PROCESSORS", raising=False)
+    monkeypatch.setenv("OSII_ENABLE_TIKA", "false")
+    monkeypatch.setenv("OSII_ENABLE_BANYAN", "false")
+    urls = remote.configured_processor_urls()
+    assert "http://127.0.0.1:8102" not in urls
+    assert "http://127.0.0.1:8101" not in urls
+    assert "http://127.0.0.1:8099" in urls

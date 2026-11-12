@@ -161,10 +161,17 @@ page region or visually mapping table columns.
 
 ## Register and verify
 
-Use **Setup → Advanced & diagnostics → Register running processor** and paste
-only the service base URL. OSII reads the descriptor and shows its kind,
+Start the service, then use **Setup → Advanced & diagnostics → Custom Processor
+API services**. Paste only the service base URL and select **Discover and
+register**. OSII reads the descriptor and shows its kind,
 scopes, outputs, and model requirements. Choose a model connection when one is
 required. **Health** verifies liveness and **Descriptor** checks the contract.
+
+Registration persists in the active `tools.toml`; it does not launch the
+service or change extraction routes. For a new extractor, choose it under
+**Extractors → Extraction routing** and save the rules. Follow the
+[developer startup checklist](../operations/runbook-development.md#connect-an-optional-tool-or-your-own-processor)
+for the complete flow or `.env`-based discovery.
 
 External extractors, synthesizers, embedders, and enrichers use the same
 descriptor, settings, request, and core-owned commit flow.

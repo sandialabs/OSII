@@ -6,7 +6,7 @@ per container so it can be scaled, replaced, or exported independently.
 
 Available commands are `extractor`, `ocr`, `synthesizer`, `embedder`,
 `enricher`, and `model-bridge`. The `ocr` command is ordinary page-by-page
-Tesseract; it does not use the Toolbox processor's experimental OpenCV region
+Tesseract; it does not use the processor's experimental OpenCV region
 detection. For example:
 
 ```bash

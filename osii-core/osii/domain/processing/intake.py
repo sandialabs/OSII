@@ -1,15 +1,16 @@
 import fnmatch
 import json
+import os
+import stat
 from pathlib import Path
 
-from osii.domain.storage.ids import compute_file_id
 from osii.domain.storage.store import object_dir
 from osii.domain.artifacts.artifact_staleness import get_artifact_staleness
 from osii.indexing.common import embeddings_mapping_path
 from osii.domain.read.catalog import load_files_catalog
 
 from .extractor_selection import extractor_chain_for_path, load_extractor_routes
-from .pathing import display_rel, path_within
+from .pathing import display_rel, path_within, source_relpath as canonical_source_relpath
 
 
 def is_hidden(path: Path) -> bool:
@@ -55,16 +56,16 @@ def processed_source_relpaths(osii_root: Path) -> set[str]:
 
 
 def source_relpath(path: Path, data_volume_root: Path) -> str:
+    return canonical_source_relpath(path, data_volume_root).strip("/").lower()
+
+
+def _catalog_key(path: Path, data_volume_root: Path) -> str:
+    """Catalog key for a path that has already been resolved by discovery."""
     try:
-        return (
-            path.resolve()
-            .relative_to(data_volume_root.resolve())
-            .as_posix()
-            .strip("/")
-            .lower()
-        )
+        relative = path.relative_to(data_volume_root).as_posix()
     except ValueError:
-        return path.name.lower()
+        relative = "external/" + path.as_posix().replace(":", "").lstrip("/")
+    return relative.strip("/").lower()
 
 
 def is_source_processed(
@@ -85,7 +86,7 @@ def add_processed_counts(
     processed_count = sum(
         1
         for path in resolved_files
-        if is_source_processed(path, data_volume_root, processed_relpaths)
+        if _catalog_key(path, data_volume_root) in processed_relpaths
     )
     preview["processed_count"] = processed_count
     preview["unprocessed_count"] = len(resolved_files) - processed_count
@@ -97,27 +98,38 @@ def add_processing_plan(
     resolved_files: list[Path],
     osii_root: Path,
     *,
+    data_volume_root: Path,
     run_extraction: bool,
     extract_mode: str,
     synthesize: bool,
     embed: bool,
     enrich: bool,
 ) -> dict:
-    """Add a concise, non-mutating operation plan for Intake review."""
-    file_ids = [compute_file_id(path) for path in resolved_files]
+    """Estimate work from saved identities; preview never reads source bytes."""
+    catalog = {str(row["source_relpath"]).replace("\\", "/").strip("/").lower(): row["file_id"]
+               for row in load_files_catalog(osii_root) if row.get("file_id")}
+    file_ids = []
+    known_file_ids = set()
+    # expand_queue_to_files has already resolved paths. Do not resolve every
+    # component again over the network just to look up saved metadata.
+    for path in resolved_files:
+        file_id = catalog.get(_catalog_key(path, data_volume_root))
+        if file_id:
+            known_file_ids.add(file_id)
+        file_ids.append(file_id or f"unverified:{path}")
     unique_file_ids = set(file_ids)
     extracted = {
         file_id
-        for file_id in file_ids
+        for file_id in known_file_ids
         if (object_dir(osii_root, file_id) / "text.txt").is_file()
     }
     stale_by_file = {
         file_id: (get_artifact_staleness(osii_root, file_id) or {}).get("stale", {})
-        for file_id in file_ids
+        for file_id in known_file_ids
     }
     synthesized = {
         file_id
-        for file_id in file_ids
+        for file_id in known_file_ids
         if not stale_by_file[file_id].get("syntheses")
         and (
             (object_dir(osii_root, file_id) / "synth.txt").is_file()
@@ -126,20 +138,22 @@ def add_processing_plan(
     }
     enriched = {
         file_id
-        for file_id in file_ids
+        for file_id in known_file_ids
         if not stale_by_file[file_id].get("enrichments")
         and any((object_dir(osii_root, file_id) / "enrichments").glob("*"))
     }
     embedded: set[str] = set()
     try:
         mapping = embeddings_mapping_path(osii_root)
-        if mapping.is_file():
-            for line in mapping.read_text(encoding="utf-8").splitlines():
-                if line.strip():
-                    file_id = json.loads(line).get("file_id")
-                    if file_id:
-                        if not stale_by_file.get(str(file_id), {}).get("embeddings"):
-                            embedded.add(str(file_id))
+        if embed and known_file_ids and mapping.is_file():
+            with mapping.open(encoding="utf-8") as stream:
+                for line in stream:
+                    if line.strip():
+                        file_id = str(json.loads(line).get("file_id") or "")
+                        if file_id in known_file_ids and not stale_by_file.get(file_id, {}).get("embeddings"):
+                            embedded.add(file_id)
+                        if embedded == known_file_ids:
+                            break
     except (OSError, ValueError, json.JSONDecodeError):
         embedded = set()
 
@@ -178,6 +192,8 @@ def add_processing_plan(
         })
     missing_input = len(unique_file_ids - available_after_extraction)
     preview["processing_plan"] = {
+        "estimated": True,
+        "note": "Metadata estimate. Content identity, deduplication, and current artifacts are verified when processing starts.",
         "matched_count": len(file_ids),
         "unique_document_count": len(unique_file_ids),
         "extracted_count": len(extracted),
@@ -252,6 +268,33 @@ def serialize_queue_items(paths: list[Path], shared_root: Path, upload_root: Pat
     return items
 
 
+def _metadata_files(root: Path, recursive: bool, show_hidden: bool):
+    """Reuse DirEntry metadata instead of repeatedly resolving/statting paths."""
+    pending = [root]
+    while pending:
+        directory = pending.pop()
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if not show_hidden and entry.name.startswith("."):
+                    continue
+                path = directory / entry.name
+                if entry.is_symlink():
+                    # Keep the existing explicit file-link behavior. Mounted
+                    # mode still revalidates the resolved target at the API.
+                    if path.is_file():
+                        yield path, path.stat(), True
+                elif entry.is_dir(follow_symlinks=False):
+                    if recursive:
+                        pending.append(path)
+                else:
+                    try:
+                        info = entry.stat(follow_symlinks=False)
+                    except OSError:
+                        continue
+                    if stat.S_ISREG(info.st_mode):
+                        yield path, info, False
+
+
 def expand_queue_to_files(
     queue_items: list[dict],
     include_subfolders: bool,
@@ -262,53 +305,61 @@ def expand_queue_to_files(
     max_total_size: int | None,
     shared_root: Path,
     upload_root: Path,
+    excluded_paths: list[str] | None = None,
 ) -> tuple[list[Path], dict]:
     resolved_files: list[Path] = []
     seen = set()
     total_size = 0
     stopped_reason = None
+    omitted = {str(Path(path).resolve()) for path in (excluded_paths or [])}
+    available_files: list[dict] = []
+    shared_root = shared_root.resolve()
+    upload_root = upload_root.resolve()
+
+    def label(path: Path) -> str:
+        # These paths are already canonical; avoid repeated network realpath
+        # calls for every label and every root comparison.
+        if path.is_relative_to(shared_root):
+            return f"{shared_root.name}/{path.relative_to(shared_root).as_posix()}"
+        if path.is_relative_to(upload_root):
+            return f"Uploads/{path.relative_to(upload_root).as_posix()}"
+        return path.as_posix()
 
     for item in queue_items:
         p = Path(item["path"]).resolve()
         if not p.exists():
             continue
 
-        if p.is_file():
-            candidates = [p]
-        elif p.is_dir():
-            iterator = p.rglob("*") if include_subfolders else p.glob("*")
-            candidates = [c for c in iterator if c.is_file()]
+        directory = p.is_dir()
+        if directory:
+            candidates = sorted(_metadata_files(p, include_subfolders, show_hidden), key=lambda item: item[0].as_posix())
+        elif p.is_file():
+            candidates = [(p, p.stat(), False)]
         else:
             continue
 
-        for f in candidates:
-            try:
-                rel_hidden = f.relative_to(f.anchor) if f.is_absolute() else f
-            except Exception:
-                rel_hidden = f
+        for f, info, is_link in candidates:
+            rel_hidden = f.relative_to(p if directory else p.parent)
 
             if not show_hidden and is_hidden(rel_hidden):
                 continue
 
-            if path_within(shared_root, f):
-                rel = f.relative_to(shared_root).as_posix()
-            elif path_within(upload_root, f):
-                rel = f.relative_to(upload_root).as_posix()
-            else:
-                rel = f.name
+            rel = rel_hidden.as_posix()
 
             if include_patterns and not match_any(rel, include_patterns):
                 continue
             if exclude_patterns and excluded(rel, exclude_patterns):
                 continue
 
-            key = str(f.resolve()).lower()
+            key = str(f.resolve() if is_link else f)
             if key in seen:
                 continue
 
-            try:
-                size = f.stat().st_size
-            except Exception:
+            size = info.st_size
+
+            seen.add(key)
+            available_files.append({"path": key, "display": label(Path(key)), "size_bytes": size})
+            if key in omitted:
                 continue
 
             if max_files is not None and len(resolved_files) >= max_files:
@@ -318,10 +369,11 @@ def expand_queue_to_files(
                     "total_size": total_size,
                     "total_size_human": human_size(total_size),
                     "sample": [
-                        {"path": str(p), "display": display_rel(p, shared_root, upload_root)}
+                        {"path": str(p), "display": label(p)}
                         for p in resolved_files[:50]
                     ],
                     "stopped_reason": stopped_reason,
+                    "available_files": available_files,
                 }
 
             if max_total_size is not None and total_size + size > max_total_size:
@@ -331,14 +383,14 @@ def expand_queue_to_files(
                     "total_size": total_size,
                     "total_size_human": human_size(total_size),
                     "sample": [
-                        {"path": str(p), "display": display_rel(p, shared_root, upload_root)}
+                        {"path": str(p), "display": label(p)}
                         for p in resolved_files[:50]
                     ],
                     "stopped_reason": stopped_reason,
+                    "available_files": available_files,
                 }
 
-            seen.add(key)
-            resolved_files.append(f)
+            resolved_files.append(Path(key))
             total_size += size
 
     preview = {
@@ -346,9 +398,10 @@ def expand_queue_to_files(
         "total_size": total_size,
         "total_size_human": human_size(total_size),
         "sample": [
-            {"path": str(p), "display": display_rel(p, shared_root, upload_root)}
+            {"path": str(p), "display": label(p)}
             for p in resolved_files[:50]
         ],
         "stopped_reason": stopped_reason,
+        "available_files": available_files,
     }
     return resolved_files, preview

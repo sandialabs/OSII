@@ -1,3 +1,10 @@
+"""Deprecated import shim for the optional readable-wiki Processor API service.
+
+The wiki implementation lives in ``osii-processor-modules/llm-wiki-enrichers``. This
+module retains an old Python import without registering or implementing a wiki
+inside Core.
+"""
+
 from __future__ import annotations
 import json
 import re

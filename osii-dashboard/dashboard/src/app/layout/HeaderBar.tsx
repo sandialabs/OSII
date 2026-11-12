@@ -1,7 +1,22 @@
-// src/app/layout/HeaderBar.tsx
-import { AppBar, Box, Toolbar, Typography } from "@mui/material";
+import { Link } from "react-router-dom";
+import type { ReactNode } from "react";
+import {
+  AppBar,
+  Box,
+  IconButton,
+  Stack,
+  Toolbar,
+  Typography,
+} from "@mui/material";
+import MenuOutlined from "@mui/icons-material/MenuOutlined";
 
-export function HeaderBar() {
+export function HeaderBar({
+  actions,
+  onOpenNavigation,
+}: {
+  actions?: ReactNode;
+  onOpenNavigation?: () => void;
+}) {
   return (
     <AppBar
       position="sticky"
@@ -17,14 +32,28 @@ export function HeaderBar() {
         sx={{
           minHeight: "75px !important",
           px: 2.5,
+          gap: 1.5,
+          flexWrap: { xs: "wrap", sm: "nowrap" },
+          py: { xs: 1, sm: 0 },
         }}
       >
-        <Box>
-          <Typography
-            sx={{
+        {onOpenNavigation && (
+          <IconButton
+            color="inherit"
+            aria-label="Open navigation"
+            onClick={onOpenNavigation}
+            sx={{ display: { md: "none" } }}
+          >
+            <MenuOutlined />
+          </IconButton>
+        )}
+        <Box component="img" src="/corp-logo.png" alt="OSII magnifying glass" sx={{ width: 44, height: 44, flexShrink: 0 }} />
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography component={Link} to="/"
+            sx={{ textDecoration: "none",
               color: "#ffffff",
               fontWeight: 700,
-              fontSize: "1.7rem",
+              fontSize: { xs: "1.35rem", sm: "1.7rem" },
               lineHeight: 1.2,
             }}
           >
@@ -41,6 +70,11 @@ export function HeaderBar() {
             Grounded browsing, search, and AI-assisted analysis
           </Typography>
         </Box>
+        {actions && (
+          <Stack direction="row" spacing={0.5} sx={{ width: { xs: "100%", sm: "auto" }, justifyContent: "flex-end" }}>
+            {actions}
+          </Stack>
+        )}
       </Toolbar>
     </AppBar>
   );

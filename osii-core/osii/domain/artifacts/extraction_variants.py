@@ -212,6 +212,19 @@ def primary_extraction_dir(osii_root: Path, file_id: str) -> Path | None:
     return path if path.is_dir() else None
 
 
+def read_extraction_text(osii_root: Path, file_id: str, variant_id: str) -> dict:
+    state = list_extraction_variants(osii_root, file_id)
+    if not state or not any(item["id"] == variant_id for item in state["variants"]):
+        raise FileNotFoundError("Extraction version not found")
+    bundle = (extractions_dir(osii_root, file_id) / variant_id).resolve()
+    if not bundle.is_relative_to(extractions_dir(osii_root, file_id).resolve()):
+        raise FileNotFoundError("Extraction version not found")
+    text = (bundle / "text.txt").read_text(encoding="utf-8")
+    segments = [json.loads(line) for line in (bundle / "manifest.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    return {"file_id": file_id, "extraction_id": variant_id, "text": text,
+            "segments": [item for item in segments if item.get("kind") == "text"]}
+
+
 def promote_extraction_variant(osii_root: Path, file_id: str, variant_id: str) -> dict:
     _archive_legacy_primary(osii_root, file_id)
     index = _load_index(osii_root, file_id)
@@ -260,8 +273,9 @@ def extract_document_variant(
     osii_root: Path,
     expert_context: str | None = None,
     extractor_config: dict | None = None,
-    make_primary: bool = True,
+    make_primary: bool | None = None,
     dispatcher=None,
+    operation_id: str | None = None,
 ) -> dict:
     """Run an extractor in isolation, then atomically register its output."""
     if dispatcher is None:
@@ -269,7 +283,6 @@ def extract_document_variant(
         dispatcher = dispatch_extract
 
     file_id = compute_file_id(source_path)
-    _archive_legacy_primary(osii_root, file_id)
     scope = {"scope_type": "object", "file_id": file_id}
     expert_context = resolve_expert_context(osii_root, scope, expert_context)
     with tempfile.TemporaryDirectory(prefix="osii-extraction-") as temporary:
@@ -285,29 +298,50 @@ def extract_document_variant(
             extractor_config=extractor_config or {},
         )
         temporary_object = object_dir(temporary_root, file_id)
-        actual_object = object_dir(osii_root, file_id)
-        actual_object.mkdir(parents=True, exist_ok=True)
         temporary_meta = temporary_object / "meta.toml"
-        if temporary_meta.is_file():
-            atomic_write_text(actual_object / "meta.toml", temporary_meta.read_text(encoding="utf-8"))
-
-        extractor_actual, _, _ = _provenance_record(temporary_object)
-        variant_id = f"{_slug(extractor_actual)}-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
-        extraction_root = extractions_dir(osii_root, file_id)
-        staged = extraction_root / f".{variant_id}.tmp"
-        destination = extraction_root / variant_id
-        _copy_extraction_bundle(temporary_object, staged)
-        staged.replace(destination)
-
-    index = _load_index(osii_root, file_id)
-    record = _variant_record(destination, variant_id)
-    index["variants"].append(record)
-    _write_index(osii_root, file_id, index)
-    if make_primary or not index.get("primary_id"):
-        promote_extraction_variant(osii_root, file_id, variant_id)
-    return {
-        **result,
-        "variant_id": variant_id,
-        "made_primary": bool(make_primary or not index.get("primary_id")),
-        "extraction": record,
-    }
+        from osii.processor_sdk import (Artifact, DocumentInput, ExtractionRequest, ExtractionResponse,
+            ProcessorDescriptor, ProcessorKind, TextSegment)
+        from osii.domain.storage.commits import ProcessingCommit, SourceRecord
+        from osii.domain.storage.sidecar_commits import SidecarProcessingCommitter
+        import base64
+        meta = tomllib.loads(temporary_meta.read_text(encoding="utf-8"))
+        provenance = tomllib.loads((temporary_object / "provenance.toml").read_text(encoding="utf-8"))
+        if provenance.get("provenance", {}).get("status") not in {"done", "partial"}:
+            raise RuntimeError("Extractor did not finish a usable staged result")
+        extractor_actual, version, _ = _provenance_record(temporary_object)
+        descriptor = ProcessorDescriptor(name=extractor_actual, version=version,
+            display_name=extractor_actual, description="Core-staged extractor result", kind=ProcessorKind.EXTRACTOR)
+        text = (temporary_object / "text.txt").read_text(encoding="utf-8")
+        segments, artifacts = [], []
+        for line in (temporary_object / "manifest.jsonl").read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("kind") == "text":
+                span = row.get("span", {})
+                segments.append(TextSegment(id=str(row.get("source_origin", {}).get("processor_segment_id") or row["id"]),
+                    text=text[span["char_start"]:span["char_end"]], segment_type=row.get("type", "text"),
+                    source_origin=row.get("source_origin", {}), related_ids=row.get("related_ids", [])))
+            else:
+                path = (temporary_object / row["path"]).resolve()
+                if not path.is_relative_to(temporary_object.resolve()):
+                    raise ValueError("Staged artifact escapes its document")
+                artifacts.append(Artifact(id=row["id"], kind=row["kind"], media_type=row["type"],
+                    data_base64=base64.b64encode(path.read_bytes()).decode(), source_origin=row.get("source_origin", {})))
+        request_id = operation_id or str(uuid.uuid4())
+        request = ExtractionRequest(request_id=request_id, document=DocumentInput(file_id=file_id,
+            filename=source_path.name, media_type=meta["file"]["mime"]), config=extractor_config or {}, expert_context=expert_context)
+        response = ExtractionResponse(request_id=request_id, processor=descriptor, segments=segments, artifacts=artifacts,
+            warnings=provenance.get("errors", {}).get("warnings", []))
+        index = _load_index(osii_root, file_id)
+        previous = next((item for item in index["variants"] if item["id"] == index.get("primary_id")), None)
+        same_method = previous and previous.get("extractor", {}).get("name") == extractor_actual
+        promote = bool(make_primary) or not index.get("primary_id") or (make_primary is None and bool(same_method))
+        source = SourceRecord(file_id, meta["file"]["source_relpath"], source_path.name,
+            meta["file"]["mime"], meta["hash"]["sha256"], meta["file"]["size_bytes"],
+            {**meta.get("meta", {}), **{key: meta["file"][key] for key in ("mtime_utc", "birthtime_utc") if key in meta["file"]}})
+        saved = SidecarProcessingCommitter(osii_root).commit(ProcessingCommit(request_id, file_id, request, response,
+            descriptor, source=source, make_primary=bool(promote), text_separator="",
+            provenance={**provenance.get("config", {}), "expert_context": expert_context,
+                        "expert_context_supplied": bool(expert_context)}))
+        return {**result, **saved.result}

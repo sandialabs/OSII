@@ -29,9 +29,9 @@ failed experiment cannot leave expensive workers running.
 
 Start OSII, open **Setup**, and add an **OpenAI-compatible endpoint**. Enter
 the `/v1` base URL, served model name, and personal API key there. OSII stores
-the non-secret connection in the platform application-data `profiles/development/deployment/models.toml`
-file and the key in its adjacent `secrets.env`; neither file is part of
-a library or repository.
+the non-secret connection in `osii-data/config/models.toml` when using `make dev`
+and the key in its adjacent `secrets.env`. Both are ignored by Git and separate
+from `.osii` artifacts. Installed launchers use their writable profile workspace.
 
 The commercial profile makes the remote endpoint the preferred chat and
 synthesis provider. It deliberately uses OSII's local lexical embedder by
@@ -81,9 +81,8 @@ verify these stages in order:
    stop or delete the Runpod endpoint, revoke its API key, and remove the key
    from `.env` or the secret manager.
 
-For container parity, configure the same connection after `make build` and
-`make run`. The mounted application configuration remains outside the images
-and every `.osii` library.
+Use the same connection through `make dev`; keep credentials in ignored local
+configuration outside the `.osii` library.
 
 ## What this validates
 

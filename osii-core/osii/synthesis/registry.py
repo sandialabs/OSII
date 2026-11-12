@@ -22,3 +22,13 @@ def resolve_synthesizer(name: str):
         if s.name == name:
             return s
     raise RuntimeError(f"File synthesizer '{name}' is not supported.")
+
+
+def resolve_synthesis_method(name: str):
+    """Resolve the compatibility synthesis names without importing HTTP routes."""
+    if name == "firstN":
+        return FirstNSynthesizer()
+    if name == "recursive":
+        return RecursiveSynthesizer()
+    from osii.processors.remote import RemoteSynthesizer, resolve_remote_processor
+    return RemoteSynthesizer(resolve_remote_processor(name, "synthesizer"))

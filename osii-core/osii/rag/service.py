@@ -53,17 +53,19 @@ def _evidence(osii_root: Path, results: list[dict]) -> tuple[list[dict], list[Ci
     return evidence, citations
 
 
-def answer_question(osii_root: Path, request: ChatRequest) -> ChatResponse:
+def answer_question(osii_root: Path, request: ChatRequest, *, retriever=None) -> ChatResponse:
     settings = get_chat_settings(osii_root)
     scope = request.scope.model_dump()
     try:
-        retrieval_mode, results = dashboard_search(
-            osii_root,
-            query=request.query,
-            mode=settings.preferred_search_mode,
-            top_k=request.top_k or settings.chat_max_results,
-            scope=scope,
-        )
+        if retriever is None:
+            retrieval_mode, results = dashboard_search(
+                osii_root, query=request.query, mode=settings.preferred_search_mode,
+                top_k=request.top_k or settings.chat_max_results, scope=scope)
+        else:
+            from osii.domain.storage.retrieval import RetrievalRequest
+            found = retriever.retrieve(RetrievalRequest(request.query, retriever.scope(scope),
+                settings.preferred_search_mode, request.top_k or settings.chat_max_results))
+            retrieval_mode, results = found.actual_mode, found.legacy_rows()
     except (RuntimeError, ValueError) as exc:
         # A new OSII installation has no chunk manifest until its first run.
         if "No valid chunk rows found in chunk manifest" in str(exc):
