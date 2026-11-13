@@ -21,6 +21,7 @@ runtime. Add a `processor-module.toml` to declare launch and registration metada
 OSII discovers it and derives enable/port switches automatically. No central Python
 list or `.env.example` edit is required. Follow the
 [manifest authoring guide](processor-modules.md). **Toolbox** is the frontend collection of tools.
+Declare offline tests in `[tool.osii.ci]` in the module pyproject.
 Existing `toolbox.*` processor IDs remain stable for saved-route compatibility.
 
 ## Choose a processor kind

@@ -17,3 +17,8 @@ osii = { path = "../../osii-core", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["tika_adapter"]
+
+[tool.osii.ci]
+paths = ["tests"]
+extras = ["dev"]
+args = []

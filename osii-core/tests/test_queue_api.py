@@ -880,7 +880,7 @@ def test_browser_page_limits_inspection_even_with_only_hidden_entries(
             pass
 
     monkeypatch.setattr(
-        directory_browse, "resolve_intake_path", lambda *args, **kwargs: tmp_path
+        "osii.domain.processing.source_access.resolve_intake_path", lambda *args, **kwargs: tmp_path
     )
     monkeypatch.setattr(directory_browse.os, "scandir", lambda *args: Directory())
     connection = Connection()

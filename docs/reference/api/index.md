@@ -1128,7 +1128,7 @@ Processor administration records expose `resolved_models` and `model_error`
 for per-service model assignment. Missing bindings inherit enabled compatible
 library defaults; explicit disabled or missing bindings report a setup error.
 
-### Apache Tika toolbox configuration
+### Apache Tika processor module configuration
 
 Save the upstream address with `PUT /api/admin/processor-settings/tika` and
 `{"config": {"tika_endpoint": "http://your-tika:9998", "chunk_chars": 4000}}`.

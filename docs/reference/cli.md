@@ -300,7 +300,7 @@ python -m osii.enrich_scope `
 ```
 
 This requires the optional readable-wiki service to be running and registered;
-use `.\scripts\osii.ps1 toolbox-run -Tool llm-wikis` first.
+start the module using its README or enable it in the development launcher.
 
 ## Apply a rescan
 
