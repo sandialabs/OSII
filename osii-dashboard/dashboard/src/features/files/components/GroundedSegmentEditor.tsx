@@ -90,6 +90,16 @@ function buildBaseSegments(
     }));
 }
 
+function SegmentTextInput({ text, onChange }: { text: string; onChange: (text: string) => void }) {
+  const [page, setPage] = useState(0);
+  const size = 40000, count = Math.max(1, Math.ceil(text.length / size)), current = Math.min(page, count - 1);
+  const start = current * size, end = Math.min(text.length, start + size);
+  return <Stack spacing={1}>
+    {count > 1 && <Stack direction="row" spacing={1} alignItems="center"><Button size="small" disabled={current === 0} onClick={() => setPage(current - 1)}>Previous section</Button><Typography variant="caption">Section {current + 1} of {count}</Typography><Button size="small" disabled={current + 1 === count} onClick={() => setPage(current + 1)}>Next section</Button></Stack>}
+    <TextField fullWidth multiline rows={8} inputProps={{ "aria-label": "Edit segment text" }} value={text.slice(start, end)} onClick={event => event.stopPropagation()} onChange={event => onChange(text.slice(0, start) + event.target.value + text.slice(end))} />
+  </Stack>;
+}
+
 export function GroundedSegmentEditor({
   fileId,
   segments,
@@ -281,7 +291,7 @@ export function GroundedSegmentEditor({
             <SearchOutlinedIcon fontSize="small" />
           </IconButton>
 
-          {!isEditing && <Button size="small" onClick={() => setRendered(value => !value)}>{rendered ? "Plain text" : "Mathpix Markdown"}</Button>}
+          {!isEditing && <Button size="small" aria-pressed={rendered} aria-label="Render Markdown" onClick={() => setRendered(value => !value)}>{rendered ? "Markdown on" : "Markdown off"}</Button>}
           {!readOnly && (!isEditing ? (
             <Button
               size="small"
@@ -523,16 +533,7 @@ export function GroundedSegmentEditor({
                         </Stack>
 
                         {isEditing ? (
-                          <TextField
-                            fullWidth
-                            multiline
-                            minRows={3}
-                            value={segment.text}
-                            onClick={(event) => event.stopPropagation()}
-                            onChange={(event) =>
-                              handleChangeSegmentText(segment.id, event.target.value)
-                            }
-                          />
+                          <SegmentTextInput text={segment.text} onChange={value => handleChangeSegmentText(segment.id, value)} />
                         ) : (
                           <Typography
                             component="div"

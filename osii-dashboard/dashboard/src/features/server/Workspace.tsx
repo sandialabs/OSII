@@ -240,7 +240,7 @@ export function Workspace({
   const documentId = location.pathname.startsWith("/files/") ? decodeURIComponent(location.pathname.slice(7)) : null;
   useEffect(() => {
     let current = true; setSelected(null);
-    if (documentId) void api<Doc>(`/api/objects/${encodeURIComponent(documentId)}`).then(doc => { if (current) setSelected(doc); }).catch(fail);
+    if (documentId) void api<Doc>(`/api/objects/${encodeURIComponent(documentId)}?summary=true`).then(doc => { if (current) setSelected(doc); }).catch(fail);
     return () => { current = false; };
   }, [documentId]);
   const open = async (id: string) => { route(`/files/${encodeURIComponent(id)}`); };
@@ -517,17 +517,6 @@ export function Workspace({
           doc={selected}
           close={() => route("/files")}
           canEdit={user.role !== "reader"}
-          onProcess={
-            user.role === "admin"
-              ? () => {
-                  setProcessingPreset(null);
-                  setProcessingSection("process");
-                  setProcessingPaths([selected.source_relpath]);
-                  setSelected(null);
-                  navigate("processing");
-                }
-              : undefined
-          }
         />
       )}
     </WorkbenchLayout>

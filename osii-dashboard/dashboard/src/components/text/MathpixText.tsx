@@ -65,7 +65,7 @@ export function MathpixText({
             variant={selected === "rendered" ? "contained" : "outlined"}
             onClick={() => setView("rendered")}
           >
-            Mathpix Markdown
+            Markdown
           </Button>
           <Button
             variant={selected === "plain" ? "contained" : "outlined"}

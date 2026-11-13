@@ -322,7 +322,18 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
         return {"items": [{"folder_id": p, "path": p} for p in paths], "total": len(paths)}
 
     @app.get("/api/objects/{file_id}")
-    def document(file_id: str, account=Depends(require())):
+    def document(file_id: str, account=Depends(require()), summary: bool = False):
+        if summary:
+            from sqlalchemy import select
+            from osii.persistence.postgres import documents
+            with store.engine.connect() as connection:
+                record = connection.execute(select(
+                    documents.c.file_id, documents.c.filename,
+                    documents.c.source_relpath, documents.c.media_type,
+                ).where(documents.c.file_id == file_id, documents.c.active)).mappings().first()
+            if record is None:
+                raise HTTPException(404, "Document not found")
+            return dict(record)
         doc = store.document(file_id)
         if not doc:
             raise HTTPException(404, "Document not found")
@@ -771,5 +782,8 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
 
     from osii.server.text_routes import register_text_routes
     register_text_routes(app, store)
+
+    from osii.server.document_routes import register_document_routes
+    register_document_routes(app, store)
 
     return app

@@ -13,9 +13,11 @@ import MenuOutlined from "@mui/icons-material/MenuOutlined";
 export function HeaderBar({
   actions,
   onOpenNavigation,
+  navigationExpanded,
 }: {
   actions?: ReactNode;
   onOpenNavigation?: () => void;
+  navigationExpanded?: boolean;
 }) {
   return (
     <AppBar
@@ -40,9 +42,9 @@ export function HeaderBar({
         {onOpenNavigation && (
           <IconButton
             color="inherit"
-            aria-label="Open navigation"
+            aria-label="Toggle navigation"
+            aria-expanded={navigationExpanded}
             onClick={onOpenNavigation}
-            sx={{ display: { md: "none" } }}
           >
             <MenuOutlined />
           </IconButton>

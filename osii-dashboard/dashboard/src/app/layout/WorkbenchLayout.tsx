@@ -1,6 +1,6 @@
 import { useState, type ElementType, type ReactNode } from "react";
 import {
-  Box,
+  Box, useMediaQuery,
   Divider,
   Drawer,
   List,
@@ -99,7 +99,13 @@ export function WorkbenchLayout({
   actions?: ReactNode;
   footer?: ReactNode;
 }) {
+  const desktop = useMediaQuery("(min-width:900px)");
   const [open, setOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem("osii.navigation.collapsed") === "true"; } catch { return false; } });
+  const toggleNavigation = () => {
+    if (window.matchMedia("(min-width: 900px)").matches) setCollapsed(value => { try { localStorage.setItem("osii.navigation.collapsed", String(!value)); } catch { /* Storage can be disabled. */ } return !value; });
+    else setOpen(value => !value);
+  };
   const content = (
     <>
       <Box
@@ -131,7 +137,7 @@ export function WorkbenchLayout({
       <Box
         component="nav"
         aria-label="Main navigation"
-        sx={{ width: { md: 280 }, flexShrink: { md: 0 } }}
+        sx={{ width: { md: collapsed ? 0 : 280 }, flexShrink: { md: 0 } }}
       >
         <Drawer
           variant="temporary"
@@ -148,7 +154,7 @@ export function WorkbenchLayout({
         <Drawer
           variant="permanent"
           sx={{
-            display: { xs: "none", md: "block" },
+            display: { xs: "none", md: collapsed ? "none" : "block" },
             "& .MuiDrawer-paper": paper,
           }}
         >
@@ -156,7 +162,7 @@ export function WorkbenchLayout({
         </Drawer>
       </Box>
       <Box sx={{ flex: 1, minWidth: 0 }}>
-        <HeaderBar actions={actions} onOpenNavigation={() => setOpen(true)} />
+        <HeaderBar actions={actions} onOpenNavigation={toggleNavigation} navigationExpanded={desktop ? !collapsed : open} />
         <Box
           component="main"
           id="workbench-content"

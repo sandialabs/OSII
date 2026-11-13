@@ -144,3 +144,29 @@ failed publication, typed products, collection versions, annotations, private
 collection filtering, and scope invalidation. Hosted workflow tests separately
 check the existing editors and permissions against migrated tables. Tests use
 temporary sidecars and databases, never a user's documents or inventory.
+
+## Reading and correcting a document
+
+The navigation button in the header collapses the left menu and remembers the
+choice in this browser. Document pages use **Source**, **Split view**, and
+**Text**. In Split view, drag the divider or focus it and use the arrow keys;
+Home/End select the minimum/maximum width and double-click resets it. Small
+screens stack the panes.
+
+**Markdown on/off** changes how saved text is displayed. **Edit Text** edits the
+underlying text, so malformed OCR Markdown can be corrected without changing the
+source file. Text versions are inside **Text options**. Long segments are shown
+and edited in sections, preserving the rest of the text when a section is saved.
+
+**Saved data** opens the right panel for summaries, wiki pages, keywords,
+extraction products, text versions, and any linked cited passage. A summary gives
+a brief account of the document; a wiki organizes it as a reference by topic.
+These are saved outputs, not new processing runs. Open the **Toolbox** to run a
+tool. A cited passage is opened explicitly and limited to a scrollable excerpt.
+
+The shared `DocumentWorkspace` owns reading modes and the saved-data layout;
+local and server adapters supply their existing product APIs and permissions.
+Hosted navigation uses metadata-only catalogs and fetches saved bodies on demand.
+Inline hosted product previews are limited to 4 MiB; larger products remain
+stored and are available through the existing product/tool interfaces. No
+projection, embedding, OCR, or LLM request is made by opening the document.
