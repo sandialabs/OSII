@@ -844,7 +844,7 @@ def test_browse_roots_does_not_enumerate_directories(client, monkeypatch):
 def test_browser_page_limits_inspection_even_with_only_hidden_entries(
     tmp_path, monkeypatch
 ):
-    from osii.domain.processing import directory_browse
+    from osii.domain.processing import directory_browse, source_access
 
     inspected = []
 
@@ -880,7 +880,7 @@ def test_browser_page_limits_inspection_even_with_only_hidden_entries(
             pass
 
     monkeypatch.setattr(
-        directory_browse, "resolve_intake_path", lambda *args, **kwargs: tmp_path
+        source_access, "resolve_intake_path", lambda *args, **kwargs: tmp_path
     )
     monkeypatch.setattr(directory_browse.os, "scandir", lambda *args: Directory())
     connection = Connection()
