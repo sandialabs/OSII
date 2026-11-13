@@ -967,6 +967,8 @@ export type EditedTextStaleFlags = {
 };
 
 export type EditedTextReadResponse = {
+  revision?: string | null;
+  state_revision?: string;
   file_id: string;
   exists: boolean;
   representation: "edited";
@@ -974,6 +976,9 @@ export type EditedTextReadResponse = {
 };
 
 export type EditedTextWriteRequest = {
+  expected_revision?: string | null;
+  expected_state?: string;
+  expected_extraction_id?: string;
   segments: EditedTextSegment[];
 };
 

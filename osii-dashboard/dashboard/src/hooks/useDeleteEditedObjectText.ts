@@ -7,10 +7,12 @@ import type { EditedTextDeleteResponse } from "../api/types";
 export function useDeleteEditedObjectText(fileId: string) {
   const queryClient = useQueryClient();
 
-  return useMutation<EditedTextDeleteResponse, Error, void>({
-    mutationFn: () => deleteEditedObjectText(fileId),
+  return useMutation<EditedTextDeleteResponse, Error, { expected_revision?: string | null; expected_state?: string } | undefined>({
+    mutationFn: (version) => deleteEditedObjectText(fileId, version),
     onSuccess: async () => {
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["workbench-home"] }),
+        queryClient.invalidateQueries({ queryKey: ["scopes", "overview"] }),
         queryClient.invalidateQueries({ queryKey: ["objects", fileId, "edited-text"] }),
         queryClient.invalidateQueries({ queryKey: ["objects", fileId, "preferred-text"] }),
         queryClient.invalidateQueries({ queryKey: ["objects", fileId, "texts"] }),

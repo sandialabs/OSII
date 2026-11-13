@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 // src/features/files/components/SplitFileView.tsx
 import { Box } from "@mui/material";
 
@@ -8,6 +9,10 @@ import { GroundedSegmentEditor } from "./GroundedSegmentEditor";
 type SplitFileViewProps = {
   fileId: string;
   readOnly?: boolean;
+  textControls?: ReactNode;
+  expectedExtractionId?: string;
+  showEdits?: boolean;
+  onEditingChange?: (editing: boolean) => void;
   mime: string | null;
   canonicalText: string;
   segments: ManifestRecord[];
@@ -20,6 +25,10 @@ type SplitFileViewProps = {
 export function SplitFileView({
   fileId,
   readOnly = false,
+  textControls,
+  expectedExtractionId,
+  showEdits = false,
+  onEditingChange,
   mime,
   canonicalText,
   segments,
@@ -51,6 +60,10 @@ export function SplitFileView({
 
       <GroundedSegmentEditor
         readOnly={readOnly}
+        controls={textControls}
+        expectedExtractionId={expectedExtractionId}
+        showEdits={showEdits}
+        onEditingChange={onEditingChange}
         fileId={fileId}
         segments={segments}
         canonicalText={canonicalText}

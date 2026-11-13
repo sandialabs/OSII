@@ -15,6 +15,7 @@ class TextEdit:
     revision: str | None
     segments: tuple[dict, ...]
     text: str | None
+    state_revision: str | None = None
 
 
 class TextAuthoring(Protocol):
@@ -136,6 +137,14 @@ class SidecarTextAuthoring:
         return self.get(file_id)
 
 
+def text_state_revision(text, metadata):
+    """Changes on canonical replacement, edits and restores; unrelated metadata is ignored."""
+    history = metadata.get("edited_text_history", [])
+    return edit_revision({"canonical": metadata.get("primary_extraction_id") or hashlib.sha256(text.encode()).hexdigest(),
+                          "last_edit": history[-1]["id"] if history else None,
+                          "edit": (metadata.get("edited_representation") or {}).get("revision")})
+
+
 class PostgresTextAuthoring:
     def __init__(self, engine):
         self.engine = engine
@@ -145,19 +154,20 @@ class PostgresTextAuthoring:
 
         with self.engine.connect() as conn:
             row = conn.execute(
-                text("SELECT metadata FROM documents WHERE file_id=:id AND active"),
+                text("SELECT text,metadata FROM documents WHERE file_id=:id AND active"),
                 {"id": file_id},
             ).first()
         if row is None:
             raise KeyError("Document not found")
-        edited = row[0].get("edited_representation")
+        edited = row[1].get("edited_representation")
+        state = text_state_revision(row[0], row[1])
         return (
-            TextEdit(edited["revision"], tuple(edited["segments"]), edited["text"])
+            TextEdit(edited["revision"], tuple(edited["segments"]), edited["text"], state)
             if edited
-            else TextEdit(None, (), None)
+            else TextEdit(None, (), None, state)
         )
 
-    def save(self, file_id, segments, *, expected_revision):
+    def save(self, file_id, segments, *, expected_revision, expected_state=None, expected_extraction_id=None):
         from sqlalchemy import text
         from osii.domain.read.contracts import (
             RepresentationRecord,
@@ -180,6 +190,12 @@ class PostgresTextAuthoring:
             if row is None:
                 raise KeyError("Document not found")
             metadata = dict(row["metadata"])
+            if expected_state is not None and text_state_revision(row["text"], metadata) != expected_state:
+                raise AuthoringConflict("Text or extraction changed; reload before editing")
+            if expected_extraction_id is not None:
+                primary = metadata.get("primary_extraction_id") or conn.execute(text("SELECT id FROM extractions WHERE file_id=:id ORDER BY created_at DESC,id LIMIT 1"), {"id": file_id}).scalar()
+                if primary != expected_extraction_id:
+                    raise AuthoringConflict("Extraction changed; reload before editing")
             old = metadata.get("edited_representation")
             if (old or {}).get("revision") != expected_revision:
                 raise AuthoringConflict("Preferred text changed; reload before editing")
@@ -216,7 +232,7 @@ class PostgresTextAuthoring:
                     "segments": normalized,
                     "text": content,
                 }
-            metadata["stale"] = {"embeddings": True, "search_chunks": True}
+            metadata["stale"] = {"embeddings": True, "search_chunks": True, "syntheses": True, "enrichments": True}
             metadata["stale"]["search_chunks"] = False
             conn.execute(
                 text(
