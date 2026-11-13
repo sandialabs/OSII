@@ -4,15 +4,12 @@ import {
   Card,
   CardActionArea,
   CardContent,
-  Chip,
   Stack,
   Typography,
 } from "@mui/material";
 import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
-import NotesOutlinedIcon from "@mui/icons-material/NotesOutlined";
-import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 
 import type { FileCardModel } from "../../../domain/files";
 import { usePdfThumbnail } from "../../../hooks/usePdfThumbnail";
@@ -64,8 +61,8 @@ function Thumbnail({
     return (
       <Box
         sx={{
-          width: 104,
-          height: 104,
+          width: 80,
+          height: 80,
           borderRadius: 1.25,
           overflow: "hidden",
           border: (theme) => `1px solid ${theme.palette.divider}`,
@@ -90,8 +87,8 @@ function Thumbnail({
   return (
     <Box
       sx={{
-        width: 104,
-        height: 104,
+        width: 80,
+        height: 80,
         borderRadius: 1.25,
         border: (theme) => `1px solid ${theme.palette.divider}`,
         backgroundColor: "background.paper",
@@ -162,10 +159,10 @@ export function FileCard({ file, onOpen, compact = false, showPath = false }: Fi
               fontWeight={600}
               sx={{
                 display: "-webkit-box",
-                WebkitLineClamp: 2,
+                WebkitLineClamp: compact ? 1 : 2,
                 WebkitBoxOrient: "vertical",
                 overflow: "hidden",
-                minHeight: "2.6em",
+                minHeight: "1.3em",
               }}
             >
               {file.title}
@@ -193,25 +190,6 @@ export function FileCard({ file, onOpen, compact = false, showPath = false }: Fi
               </Typography>
             ) : null}
 
-            {!compact ? <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-              {file.hasSynthesis ? (
-                <Chip
-                  size="small"
-                  icon={<AutoAwesomeOutlinedIcon />}
-                  label="Synth"
-                  variant="outlined"
-                />
-              ) : null}
-
-              {file.hasPreferredText ? (
-                <Chip
-                  size="small"
-                  icon={<NotesOutlinedIcon />}
-                  label="Text"
-                  variant="outlined"
-                />
-              ) : null}
-            </Stack> : null}
           </Stack>
         </CardContent>
 

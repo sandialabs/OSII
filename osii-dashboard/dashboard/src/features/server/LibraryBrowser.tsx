@@ -91,7 +91,8 @@ export function LibraryBrowser({
   if (flat)
     return (
       <Stack spacing={2}>
-        <Stack direction="row" spacing={1}>
+        <FileGrid
+          toolbarActions={<>
           <Button variant="outlined" onClick={() => setSearchOpen(true)}>
             Search metadata{filtered ? " · filters active" : ""}
           </Button>
@@ -100,11 +101,8 @@ export function LibraryBrowser({
               Clear filters
             </Button>
           )}
-        </Stack>
-        <FileGrid
+        </>}
           files={result.files}
-          title="All Files"
-          subtitle={`${result.files.length} of ${docs.length} loaded files`}
           emptyMessage={
             result.error || "No files match these metadata filters."
           }

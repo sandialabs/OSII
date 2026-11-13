@@ -177,7 +177,7 @@ Syntheses / Wiki / Enrichments** tabs. PDF.js renders the authenticated PDF in a
 canvas, so the application can keep `frame-ancestors 'none'`. Extraction history
 preserves Processor SDK responses and their source/OCR regions in PostgreSQL.
 Selecting an older representation changes only the viewer. It does not promote
-that version into search. Hosted text editing and extraction promotion remain separate future work. The
+that version into search. Administrators and curators can edit preferred text on the document page; extraction promotion remains a separate future feature. The
 Syntheses, Wiki and Enrichments panes show saved responses with processor/model
 provenance and stale-input warnings.
 

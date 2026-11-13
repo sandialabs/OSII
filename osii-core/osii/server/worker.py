@@ -201,8 +201,6 @@ def process_derived_file(store, provider, extractor, settings, job, worker, inde
         from osii.domain.read.postgres import PostgresLibraryReader
         from osii.domain.storage.commits import text_digest
         input_revision = InputRevision.capture(PostgresLibraryReader(store.engine), fid)
-        if input_revision.text_sha256 != text_digest(doc["text"]):
-            raise IngestionError("Primary text changed; stage a new plan before embedding")
         current["current_step"] = "embedding"
         store.update_processing_item(job["id"], worker, index, current)
         rows = store.document_chunks(fid)

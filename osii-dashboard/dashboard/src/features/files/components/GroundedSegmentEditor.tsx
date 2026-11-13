@@ -1,5 +1,6 @@
+import { MathpixText } from "../../../components/text/MathpixText";
 // src/features/files/components/GroundedSegmentEditor.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Alert,
   Box,
@@ -36,6 +37,10 @@ type GroundedSegmentEditorProps = {
   searchResetToken?: number;
   compact?: boolean;
   readOnly?: boolean;
+  controls?: ReactNode;
+  expectedExtractionId?: string;
+  showEdits?: boolean;
+  onEditingChange?: (editing: boolean) => void;
 };
 
 type EditableSegment = {
@@ -96,8 +101,12 @@ export function GroundedSegmentEditor({
   searchResetToken = 0,
   compact = false,
   readOnly = false,
+  controls,
+  expectedExtractionId,
+  showEdits = false,
+  onEditingChange,
 }: GroundedSegmentEditorProps) {
-  const editedQuery = useEditedObjectText(fileId, !readOnly);
+  const editedQuery = useEditedObjectText(fileId, !readOnly || showEdits);
   const saveMutation = useSaveEditedObjectText(fileId);
   const deleteMutation = useDeleteEditedObjectText(fileId);
 
@@ -107,16 +116,28 @@ export function GroundedSegmentEditor({
   );
 
   const [draftSegments, setDraftSegments] = useState<EditableSegment[]>([]);
+  const [rendered, setRendered] = useState(true);
+  const [segmentPage, setSegmentPage] = useState(0);
+  const segmentPageSize = 20;
   const [isEditing, setIsEditing] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [submittedSearch, setSubmittedSearch] = useState("");
   const [activeMatchIndex, setActiveMatchIndex] = useState(0);
 
+  const editBase = useRef<{ expected_revision?: string | null; expected_state?: string; expected_extraction_id?: string }>({});
+  const version = () => ({ expected_revision: editedQuery.data?.revision ?? null, expected_state: editedQuery.data?.state_revision, expected_extraction_id: expectedExtractionId });
+  useEffect(() => {
+    onEditingChange?.(isEditing);
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    if (isEditing) window.addEventListener("beforeunload", warn);
+    return () => { window.removeEventListener("beforeunload", warn); onEditingChange?.(false); };
+  }, [isEditing, onEditingChange]);
   const segmentRefs = useRef<Record<string, HTMLElement | null>>({});
   useEffect(() => {
+    if (isEditing) return;
     const editedById = new Map(
-      (editedQuery.data?.segments ?? []).map((segment) => [segment.id, segment.text]),
+      ((!readOnly || showEdits) ? editedQuery.data?.segments ?? [] : []).map((segment) => [segment.id, segment.text]),
     );
 
     const next = baseSegments.map((segment) => ({
@@ -125,7 +146,8 @@ export function GroundedSegmentEditor({
     }));
 
     setDraftSegments(next);
-  }, [baseSegments, editedQuery.data?.segments]);
+    setSegmentPage(0);
+  }, [baseSegments, editedQuery.data?.segments, readOnly, showEdits, isEditing]);
 
   const matchingSegments = useMemo(() => {
     const needle = submittedSearch.trim().toLowerCase();
@@ -155,6 +177,8 @@ export function GroundedSegmentEditor({
     const targetId = activeSearchSegmentId || activeSegmentId;
     if (!targetId) return;
 
+    const targetIndex = draftSegments.findIndex(segment => segment.id === targetId);
+    if (targetIndex >= 0 && Math.floor(targetIndex / segmentPageSize) !== segmentPage) { setSegmentPage(Math.floor(targetIndex / segmentPageSize)); return; }
     const node = segmentRefs.current[targetId];
     if (node) {
       node.scrollIntoView({
@@ -162,7 +186,7 @@ export function GroundedSegmentEditor({
         behavior: "smooth",
       });
     }
-  }, [activeSegmentId, activeSearchSegmentId]);
+  }, [activeSegmentId, activeSearchSegmentId, segmentPage, draftSegments]);
 
   useEffect(() => {
     if (!activeSearchSegmentId) return;
@@ -185,7 +209,8 @@ export function GroundedSegmentEditor({
   };
 
   const handleSave = async () => {
-    await saveMutation.mutateAsync({
+    try { await saveMutation.mutateAsync({
+      ...editBase.current,
       segments: draftSegments.map((segment) => ({
         id: segment.id,
         text: segment.text,
@@ -193,14 +218,14 @@ export function GroundedSegmentEditor({
     });
 
     setIsEditing(false);
+    } catch { /* Keep the draft; mutation feedback explains the error. */ }
   };
 
   const handleResetEdited = async () => {
-    await deleteMutation.mutateAsync();
-    setIsEditing(false);
+    try { await deleteMutation.mutateAsync(version()); setIsEditing(false); } catch { /* Display mutation error. */ }
   };
 
-  const hasEditedText = Boolean(editedQuery.data?.exists);
+  const hasEditedText = (!readOnly || showEdits) && Boolean(editedQuery.data?.exists);
 
   const goToPreviousMatch = () => {
     if (matchingSegments.length === 0) return;
@@ -256,12 +281,14 @@ export function GroundedSegmentEditor({
             <SearchOutlinedIcon fontSize="small" />
           </IconButton>
 
+          {!isEditing && <Button size="small" onClick={() => setRendered(value => !value)}>{rendered ? "Plain text" : "Mathpix Markdown"}</Button>}
           {!readOnly && (!isEditing ? (
             <Button
               size="small"
               variant="outlined"
               startIcon={<EditOutlinedIcon />}
-              onClick={() => setIsEditing(true)}
+              onClick={() => { editBase.current = version(); setIsEditing(true); }}
+              disabled={editedQuery.isLoading || editedQuery.isError}
             >
               Edit Text
             </Button>
@@ -272,7 +299,7 @@ export function GroundedSegmentEditor({
                 variant="contained"
                 startIcon={<SaveOutlinedIcon />}
                 onClick={() => void handleSave()}
-                disabled={saveMutation.isPending}
+                disabled={saveMutation.isPending || editedQuery.isFetching || editedQuery.isError}
               >
                 Save
               </Button>
@@ -299,6 +326,7 @@ export function GroundedSegmentEditor({
         </Stack>
       </Stack>
 
+      {controls}
       {searchOpen ? (
         <Card>
           <CardContent sx={{ py: 1.25 }}>
@@ -377,7 +405,7 @@ export function GroundedSegmentEditor({
 
       {saveMutation.isSuccess ? (
         <Alert severity="warning">
-          Edited text saved. Embeddings and search chunks are stale and should be rebuilt.
+          Edited text saved. Review derived outputs and rebuild embeddings before semantic search. Keyword search uses the current saved text.
         </Alert>
       ) : null}
 
@@ -397,6 +425,7 @@ export function GroundedSegmentEditor({
         </Alert>
       ) : null}
 
+      {draftSegments.length > segmentPageSize ? <Stack direction="row" spacing={1} alignItems="center"><Button disabled={segmentPage === 0} onClick={() => setSegmentPage(value => value - 1)}>Previous segments</Button><Typography variant="caption">{segmentPage * segmentPageSize + 1}–{Math.min(draftSegments.length, (segmentPage + 1) * segmentPageSize)} of {draftSegments.length}</Typography><Button disabled={(segmentPage + 1) * segmentPageSize >= draftSegments.length} onClick={() => setSegmentPage(value => value + 1)}>Next segments</Button></Stack> : null}
       <Card sx={{ minWidth: 0 }}>
         <CardContent sx={{ p: 0 }}>
           <Box
@@ -414,7 +443,7 @@ export function GroundedSegmentEditor({
                   No grounded text segments are available for this file.
                 </Typography>
               ) : (
-                draftSegments.map((segment) => {
+                draftSegments.slice(segmentPage * segmentPageSize, (segmentPage + 1) * segmentPageSize).map((segment) => {
                   const isExternallyActive = activeSegmentId === segment.id;
                   const isSearchActive = activeSearchSegmentId === segment.id;
                   const isActive = isExternallyActive || isSearchActive;
@@ -506,6 +535,7 @@ export function GroundedSegmentEditor({
                           />
                         ) : (
                           <Typography
+                            component="div"
                             variant="body2"
                             sx={{
                               whiteSpace: "pre-wrap",
@@ -515,7 +545,7 @@ export function GroundedSegmentEditor({
                               lineHeight: 1.6,
                             }}
                           >
-                            {segment.text || "No text available for this segment."}
+                            <MathpixText text={segment.text || "No text available for this segment."} controls={false} mode={rendered ? "rendered" : "plain"} />
                           </Typography>
                         )}
                       </Stack>

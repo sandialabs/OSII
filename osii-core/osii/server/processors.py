@@ -191,24 +191,25 @@ def derived_outputs(store, settings, provider, job: dict, worker: str, index: in
     from osii.processor_sdk import DocumentInput, ScopeInput
     import hashlib
     payload = job['payload']
-    records = store.extraction_records(document['file_id'])
-    if not records or not document['text'].strip():
-        raise ProcessorError('No primary extracted text is available for synthesis/enrichment')
-    fingerprint = {'text_sha256': hashlib.sha256(document['text'].encode()).hexdigest(), 'extraction_id': records[0]['id']}
+    from osii.domain.read.postgres import PostgresLibraryReader
+    representation = PostgresLibraryReader(store.engine).get_representation(document['file_id'])
+    if not representation or not representation.text.strip():
+        raise ProcessorError('No preferred text is available for synthesis/enrichment')
+    fingerprint = {'text_sha256': hashlib.sha256(representation.text.encode()).hexdigest(), 'extraction_id': representation.representation_id}
     if item.get('processing_input') and item['processing_input'] != fingerprint:
         raise ProcessorError('Primary text changed since a completed step. Stage a new plan to keep outputs consistent.')
     item['processing_input'] = fingerprint
     scope = ScopeInput(scope_type='object', scope_id=document['file_id'], documents=[DocumentInput(
         file_id=document['file_id'], filename=document['filename'], media_type=document['media_type'],
-        text=document['text'], segments=records[0]['response'].get('segments', []),
-        metadata={'source_relpath': document['source_relpath'], 'extraction_id': records[0]['id']})])
+        text=representation.text, segments=[{'id':segment.segment_id, 'text':segment.text, 'source_origin':segment.source_origin} for segment in representation.segments],
+        metadata={'source_relpath': document['source_relpath'], 'extraction_id': representation.representation_id})])
     for kind, selection_key, request_type in [('synthesis', 'synthesizer', SynthesisRequest), ('enrichment', 'enricher', EnrichmentRequest)]:
         selection = payload.get(selection_key)
         if not selection:
             continue
         previous = store.processing_output(job['id'], index, kind)
         if previous:
-            if previous['payload'].get('input_extraction_id') != fingerprint['extraction_id']:
+            if previous['payload'].get('input_extraction_id') != fingerprint['extraction_id'] or previous['payload'].get('input_text_sha256',fingerprint['text_sha256']) != fingerprint['text_sha256']:
                 raise ProcessorError('Previously saved output used a different extraction. Stage a new plan.')
             item.setdefault('steps', {})[kind] = 'done'
             continue

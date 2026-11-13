@@ -489,3 +489,23 @@ Missing controllers fail closed. No shell, arbitrary service/unit name, provider
 key, or container-engine socket is exposed to the dashboard or Core. Stop/restart
 can interrupt an extraction; pause Intake before using them. OpenShift lifecycle
 control requires a separate deployment adapter and is not implicitly enabled.
+
+### Hosted document pages and text corrections
+
+Files open at `/files/{file_id}` as full document pages. Files uses compact cards
+without Text/Synth status badges; Browse owns its single explorer heading.
+In Split View the PDF is on the left and Grounded Text is on the right.
+**Text options** beside Grounded Text expands the extraction-representation
+selector. Historical extractions remain read-only and selecting one does not
+change the preferred search representation.
+
+Administrators and curators can **Edit Text**, **Save**, or **Restore** with the
+shared segment editor. PostgreSQL retains immutable extraction evidence and
+human edit history; the mounted source file is never written. Saved edits become
+preferred text, refresh lexical chunks immediately, and discard obsolete vectors.
+Rebuild embeddings for semantic retrieval. Derived outputs display stale status
+until they match current preferred text. Revision checks reject concurrent edits
+and extraction changes with HTTP 409; failed saves keep the editor draft.
+Readers can view corrections but cannot save or restore shared text. Hosted
+writes require CSRF protection and create audit events. These changes require no
+database migration.

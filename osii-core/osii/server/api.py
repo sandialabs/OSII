@@ -351,13 +351,15 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
 
     @app.get("/api/objects/{file_id}/artifacts")
     def artifact_list(file_id: str, account=Depends(require())):
-        document(file_id, account)
-        records = store.extraction_records(file_id)
-        primary_id = records[0]['id'] if records else None
+        preferred_text = reads.get_representation(file_id)
+        if preferred_text is None:
+            raise HTTPException(404, "Document not found")
+        primary_id = preferred_text.representation_id if preferred_text else None
+        fingerprint = hashlib.sha256(preferred_text.text.encode()).hexdigest() if preferred_text else None
         rows = reads.artifact_responses(file_id)
         for row in rows:
             if row['kind'] in {'synthesis', 'enrichment'}:
-                row['stale'] = row['payload'].get('input_extraction_id') != primary_id
+                row['stale'] = row['payload'].get('input_extraction_id') != primary_id or (row['payload'].get('input_text_sha256') is not None and row['payload']['input_text_sha256'] != fingerprint)
         return {"items": sorted(rows, key=lambda row: row['payload'].get('created_at', ''), reverse=True)}
 
     @app.get("/api/objects/{file_id}/metadata")
@@ -766,5 +768,8 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
 
     from osii.server.service_routes import register_service_routes
     register_service_routes(app, store)
+
+    from osii.server.text_routes import register_text_routes
+    register_text_routes(app, store)
 
     return app

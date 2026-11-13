@@ -10,7 +10,7 @@ import type { PickedFile } from "../../components/discovery/LocationBrowser";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import {
-  Alert,
+  Alert, Accordion, AccordionSummary, AccordionDetails,
   Button,
   MenuItem,
   Stack,
@@ -98,6 +98,7 @@ export function Workspace({
       user.role === "admin",
   );
   const pageFromHash = () => {
+    if (location.pathname.startsWith("/files/")) return "document";
     const hash = window.location.hash.slice(1);
     const id = (hash === "library" ? "files" : hash) || Object.keys(pagePaths).find(key => pagePaths[key] === location.pathname) || (location.pathname.startsWith("/admin/") ? "setup" : location.pathname.startsWith("/files/") ? "files" : "home");
     if (setupAliases[id] && user.role === "admin") return "setup";
@@ -179,7 +180,7 @@ export function Workspace({
         void api<{ results: Hit[]; channels_used: string[] }>("/api/search", "POST", { query: term, mode: "lexical", scope: selectedScope }).then(result => { setHits(result.results); setDetail(result.channels_used.join(" · ")); }).catch(fail).finally(() => setBusy(false));
       }
     }
-    if (location.pathname.startsWith("/files/")) void open(decodeURIComponent(location.pathname.slice(7)));
+
   }, [location.pathname, location.search, location.hash]);
   const refreshCollections = async () => {
     const result = await api<{ items: Collection[] }>("/api/collections");
@@ -236,13 +237,13 @@ export function Workspace({
       fail(e);
     }
   };
-  const open = async (id: string) => {
-    try {
-      setSelected(await api<Doc>(`/api/objects/${id}`));
-    } catch (e) {
-      fail(e);
-    }
-  };
+  const documentId = location.pathname.startsWith("/files/") ? decodeURIComponent(location.pathname.slice(7)) : null;
+  useEffect(() => {
+    let current = true; setSelected(null);
+    if (documentId) void api<Doc>(`/api/objects/${encodeURIComponent(documentId)}`).then(doc => { if (current) setSelected(doc); }).catch(fail);
+    return () => { current = false; };
+  }, [documentId]);
+  const open = async (id: string) => { route(`/files/${encodeURIComponent(id)}`); };
   const toggle = (id: string) =>
     setSelectedIds((current) => {
       const next = new Set(current);
@@ -286,7 +287,7 @@ export function Workspace({
         <WorkbenchNavigation
           availability={availability}
           items={availablePages}
-          selected={tab === "tools" ? "overview" : tab}
+          selected={documentId ? "files" : tab === "tools" ? "overview" : tab}
           onNavigate={(id) => {
             if (id === "files") changeScope(rootScope);
             navigate(id);
@@ -316,7 +317,8 @@ export function Workspace({
           </Alert>
         )}
         {tab === "home" && <WorkbenchHome setupPath="/setup" />}
-        {corpusPage && tab !== "browse" && (
+        {corpusPage && !["browse", "files"].includes(tab) && !location.pathname.startsWith("/files/") && (
+          <Accordion disableGutters elevation={0} variant="outlined"><AccordionSummary><Typography variant="body2">Scope: {scopeName}</Typography></AccordionSummary><AccordionDetails>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
             <TextField
               select
@@ -360,23 +362,11 @@ export function Workspace({
             <Button onClick={() => void refresh().catch(fail)}>
               Refresh library
             </Button>
-          </Stack>
+          </Stack></AccordionDetails></Accordion>
         )}
-        {(tab === "files" || tab === "browse") && (
+        {(tab === "files" || tab === "browse") && !location.pathname.startsWith("/files/") && (
           <>
-            <Typography variant="h5" fontWeight={700}>
-              {flat ? "Files" : "Browse"}
-            </Typography>
-            <Typography variant="subtitle2">{scopeName}</Typography>
-            <Typography color="text.secondary">
-              {total}{" "}
-              {scope.scope_type === "collection"
-                ? "documents in this collection"
-                : flat
-                  ? "files in this scope"
-                  : "files directly in this folder"}{" "}
-              · Select files to create your own collection.
-            </Typography>
+            {flat && <Stack direction="row" alignItems="center" spacing={2}><Typography variant="h5" fontWeight={700}>Files <Typography component="span" variant="body2" color="text.secondary">· {total}{scope.scope_type !== "root" ? ` · ${scopeName}` : ""}</Typography></Typography>{scope.scope_type !== "root" && <Button onClick={() => changeScope(rootScope)}>All files</Button>}</Stack>}
             <LibraryBrowser
               loading={catalogLoading}
               flat={flat}
@@ -521,11 +511,13 @@ export function Workspace({
         )}
         {tab === "users" && user.role === "admin" && <UserAdmin />}
       </Stack>
-      {selected && (
+      {documentId && !selected && !error && <Typography>Loading document…</Typography>}
+      {documentId && selected && (
         <DocumentView
           key={selected.file_id}
           doc={selected}
-          close={() => { setSelected(null); if (location.pathname.startsWith("/files/")) route("/"); }}
+          close={() => route("/files")}
+          canEdit={user.role !== "reader"}
           onProcess={
             user.role === "admin"
               ? () => {
