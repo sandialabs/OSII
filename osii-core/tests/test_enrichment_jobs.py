@@ -1,5 +1,6 @@
 from osii.domain.processing.jobs import claim_next_queue_job, configure_job_store, get_run
 from osii.worker import execute_job
+import json
 
 
 def test_enrichment_job_queues_then_saves(client, temp_osii_root, sample_osii_object):
@@ -12,4 +13,18 @@ def test_enrichment_job_queues_then_saves(client, temp_osii_root, sample_osii_ob
     execute_job(job)
     run = get_run(job["run_id"])
     assert run["status"] == "done"
-    assert run["items"][0]["enrichment"]["kind"] == "keywords"
+    assert run["items"][0]["status"] == "done"
+   
+    artifact_path = (
+        temp_osii_root
+        / "objects"
+        / sample_osii_object["file_id"]
+        / "enrichments"
+        / "keywords--stats_keywords.json"
+    )
+    assert artifact_path.is_file()
+   
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["artifact_type"] == "table"
+    assert artifact["title"] == "Keyword frequencies"
+    assert isinstance(artifact["rows"], list)    
