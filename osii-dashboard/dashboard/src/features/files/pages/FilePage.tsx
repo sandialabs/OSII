@@ -8,7 +8,7 @@ import {
   Alert,
   Button,
   MenuItem,
-  TextField,
+  TextField, Accordion, AccordionSummary, AccordionDetails, Typography,
   CircularProgress,
   Stack,
 } from "@mui/material";
@@ -19,22 +19,25 @@ import { useObjectPreferredText } from "../../../hooks/useObjectPreferredText";
 import { toFileDetailModel } from "../../../domain/files";
 import { findBestMatchingSegment } from "../../../domain/textGrounding";
 import { FileHeader } from "../components/FileHeader";
-import { FileTextPanel } from "../components/FileTextPanel";
+import { GroundedSegmentEditor } from "../components/GroundedSegmentEditor";
+import { DocumentWorkspace, type DocumentViewMode, type SavedDocumentPanel } from "../components/DocumentWorkspace";
+import { useScopeEnrichments } from "../../../hooks/useScopeEnrichments";
+import { DerivedProductEditor } from "../components/DerivedProductEditor";
+import { ExpandMore } from "@mui/icons-material";
 import { FileSourcePanel } from "../components/FileSourcePanel";
-import { FileSynthesesPanel } from "../components/FileSynthesesPanel";
+import { ExtractionArtifacts } from "../components/FileExtractionsPanel";
 import { FileEnrichmentsPanel } from "../components/FileEnrichmentsPanel";
-import { FileExtractionsPanel } from "../components/FileExtractionsPanel";
-import { ScopeWikiPanel } from "../components/ScopeWikiPanel";
+import { FileSynthesesPanel } from "../components/FileSynthesesPanel";
 import { FileActionBar } from "../components/FileActionBar";
 import { SplitFileView } from "../components/SplitFileView";
 
-import { FileDetailTabs, type FileTab } from "../components/FileDetailTabs";
+type FileTab = DocumentViewMode;
 
 export function FilePage() {
   const { fileId } = useParams<{ fileId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const requestedTab = searchParams.get("tab");
-  const [tab, setTab] = useState<FileTab>(["text", "source", "split", "extractions", "syntheses", "wiki", "enrichments"].includes(requestedTab ?? "") ? requestedTab as FileTab : "split");
+  const requestedTab = searchParams.get("view") || searchParams.get("tab");
+  const [tab, setTab] = useState<FileTab>(["text", "source", "split"].includes(requestedTab ?? "") ? requestedTab as FileTab : "split");
 
   const charStartValue = searchParams.get("char_start");
   const charEndValue = searchParams.get("char_end");
@@ -52,21 +55,26 @@ export function FilePage() {
     querySegmentId,
   );
 
+  const enrichments = useScopeEnrichments({scope_type:"object",file_id:fileId ?? ""},Boolean(fileId));
+  const savedProducts = useQuery({queryKey:["document-products",fileId],queryFn:()=>import("../../../api/client").then(({apiJson})=>apiJson<{products:{filename:string;family:string;title:string;artifact_type?:string}[]}>("/api/products/list",{method:"POST",json:{scope_type:"object",file_id:fileId}})),enabled:Boolean(fileId)});
   const objectQuery = useObject(fileId ?? "", Boolean(fileId));
   const textsQuery = useObjectTexts(fileId ?? "", Boolean(fileId));
   const preferredTextQuery = useObjectPreferredText(fileId ?? "", Boolean(fileId));
+  const [editing,setEditing]=useState(false);
   const extractionId = searchParams.get("extraction_id") ?? "";
   const versions = useQuery({ queryKey: ["objects", fileId, "extractions"], queryFn: () => getObjectExtractions(fileId!), enabled: Boolean(fileId) });
   const versionText = useQuery({ queryKey: ["objects", fileId, "extractions", extractionId, "texts"], queryFn: () => getExtractionText(fileId!, extractionId), enabled: Boolean(fileId && extractionId) });
   const visibleSegments = extractionId ? versionText.data?.segments ?? [] : textsQuery.data?.segments ?? [];
   const visibleText = extractionId ? versionText.data?.text ?? "" : preferredTextQuery.data?.text ?? "";
   useEffect(() => {
-    const value = searchParams.get("tab");
-    if (["text", "source", "split", "extractions", "syntheses", "wiki", "enrichments"].includes(value ?? "")) setTab(value as FileTab);
+    const value = searchParams.get("view") || searchParams.get("tab");
+    if (["text", "source", "split"].includes(value ?? "")) setTab(value as FileTab);
   }, [searchParams]);
   const inspectExtraction = (id: string) => {
+    if(editing && !window.confirm("Discard unsaved text edits?"))return;
+    setEditing(false);
     const next = new URLSearchParams(searchParams);
-    next.set("extraction_id", id); next.set("tab", "split");
+    next.set("extraction_id", id); next.set("view", "split"); next.delete("tab");
     for (const key of ["char_start", "char_end", "segment_id", "page"]) next.delete(key);
     setActivePage(1); setActiveSegmentId(null); setSearchParams(next); setTab("split");
   };
@@ -151,7 +159,7 @@ export function FilePage() {
     setActiveSegmentId(params.segmentId ?? null);
 
     const next = new URLSearchParams(searchParams);
-    next.set("page", String(nextPage));
+    next.set("page", String(nextPage)); next.set("view", "split"); next.delete("tab");
 
     if (params.segmentId) {
       next.set("segment_id", params.segmentId);
@@ -171,15 +179,7 @@ export function FilePage() {
     setSearchParams(next);
   };
 
-  return (
-    <Stack spacing={3}>
-      <FileHeader file={detail} />
-      <Button component="a" href={`/research?file_id=${encodeURIComponent(fileId)}`} sx={{ alignSelf: "start" }}>Write research report</Button>
-
-      <ReportPassage text={visibleText} loading={extractionId ? versionText.isLoading : preferredTextQuery.isLoading} />
-      <FileDetailTabs value={tab} onChange={value => { setTab(value); const next = new URLSearchParams(searchParams); next.set("tab", value); setSearchParams(next, { replace: true }); }} />
-
-      {["text", "source", "split"].includes(tab) && versions.data?.variants.length ? <TextField select size="small" label="Text version" slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }} value={extractionId} onChange={event => {
+  const textControls=<Accordion disableGutters variant="outlined" slotProps={{transition:{unmountOnExit:true}}}><AccordionSummary expandIcon={<ExpandMore/>}><Typography variant="body2">Text options</Typography></AccordionSummary><AccordionDetails>{versions.data?.variants.length ? <TextField select disabled={editing} size="small" label="Text version" slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }} value={extractionId} onChange={event => {
         const next = new URLSearchParams(searchParams);
         if (event.target.value) next.set("extraction_id", event.target.value); else next.delete("extraction_id");
         for (const key of ["char_start", "char_end", "segment_id"]) next.delete(key);
@@ -188,16 +188,22 @@ export function FilePage() {
         <MenuItem value="">Primary text / corrections</MenuItem>
         {extractionId === "canonical" && <MenuItem value="canonical">Canonical extracted text</MenuItem>}
         {versions.data.variants.map(item => <MenuItem key={item.id} value={item.id}>{item.extractor.name} · {new Date(item.created_utc).toLocaleString()}{item.primary ? " · Primary" : ""}</MenuItem>)}
-      </TextField> : null}
+      </TextField> : null}</AccordionDetails></Accordion>;
+  const panels:SavedDocumentPanel[]=[];
+  if(detail.hasSynthesis)panels.push({id:"summary",label:"Summary",description:"A short account of this document."});
+  const named=(enrichments.data?.enrichments ?? []).filter(entry=>entry.kind==="file"&&!entry.name.endsWith(".meta.json"));
+  for(const entry of named)panels.push({id:"saved:"+entry.name,label:entry.kind==="file"&&entry.artifact_type==="wiki_markdown"?"Wiki":(entry.kind==="file"?entry.title:undefined)||entry.name,description:entry.kind==="file"&&entry.artifact_type==="wiki_markdown"?"A structured reference organized by topic.":"Saved document data."});
+  for(const item of savedProducts.data?.products ?? [])if(!named.some(entry=>entry.name===item.filename))panels.push({id:"product:"+item.filename,label:item.title,description:item.family==="synthesis"?"A short account of the document.":"Saved document data."});
+  if(enrichments.data?.enrichments.some(entry=>entry.kind==="bundle"))panels.push({id:"enrichments",label:"Other saved data"});
+  if(versions.data?.variants.length)panels.push({id:"versions",label:"Text versions"});
+  panels.push({id:"details",label:"File details"});
+  if(searchParams.has("report_source"))panels.push({id:"citation",label:"Cited passage"});
+  return <DocumentWorkspace mode={tab} onMode={value=>{if(editing && !window.confirm("Discard unsaved text edits?"))return;setEditing(false);setTab(value);const next=new URLSearchParams(searchParams);next.set("view",value);next.delete("tab");setSearchParams(next,{replace:true});}}
+    header={<Typography fontWeight={700} sx={{overflowWrap:"anywhere"}}>{detail.filename}</Typography>}
+    panels={panels} initialPanel={searchParams.get("tab")==="extractions"?"versions":searchParams.get("tab")==="syntheses"?"summary":searchParams.get("tab")==="wiki"?panels.find(panel=>panel.label==="Wiki")?.id:searchParams.get("tab")==="enrichments"?panels.find(panel=>panel.id.startsWith("saved:")||panel.id==="enrichments")?.id:undefined} renderPanel={id=>id==="enrichments"?<FileEnrichmentsPanel fileId={fileId} showActions={false}/>:id==="citation"?<ReportPassage text={visibleText} loading={extractionId?versionText.isLoading:preferredTextQuery.isLoading}/>:id==="summary"?<FileSynthesesPanel fileId={fileId} showActions={false}/>:id==="details"?<Stack spacing={2}><FileHeader file={detail}/><FileActionBar fileId={fileId}/></Stack>:id==="versions"?<Stack spacing={1}>{versions.data?.variants.map(item=><Accordion key={item.id} disableGutters variant="outlined" slotProps={{transition:{unmountOnExit:true}}}><AccordionSummary expandIcon={<ExpandMore/>}><Typography variant="body2">{item.primary?"Current text":item.extractor.name}</Typography></AccordionSummary><AccordionDetails><Button onClick={()=>inspectExtraction(item.id)}>Read this text</Button><ExtractionArtifacts fileId={fileId} variantId={item.id}/></AccordionDetails></Accordion>)}</Stack>:id.startsWith("saved:")?<DerivedProductEditor scope={{scope_type:"object",file_id:fileId}} filename={id.slice(6)}/>:<DerivedProductEditor scope={{scope_type:"object",file_id:fileId}} filename={id.slice(8)} family={savedProducts.data?.products.find(item=>item.filename===id.slice(8))?.family as "synthesis"|"enrichment"}/> }>
+    <Stack spacing={1.5}>
       {extractionId && versionText.isError ? <Alert severity="error">This text version could not be loaded.</Alert> : null}
-      {tab === "text" && (
-        <FileTextPanel
-          fileId={fileId}
-          textOverride={extractionId ? visibleText : undefined}
-          charStart={Number.isFinite(charStart) ? charStart : null}
-          charEnd={Number.isFinite(charEnd) ? charEnd : null}
-        />
-      )}
+      {tab === "text" && <GroundedSegmentEditor key={extractionId||"primary"} fileId={fileId} readOnly={Boolean(extractionId)} canonicalText={visibleText} segments={visibleSegments} onEditingChange={setEditing} controls={textControls} onJumpToSource={handleJumpToSource} />}
 
       {tab === "source" && (
         <FileSourcePanel
@@ -224,8 +230,10 @@ export function FilePage() {
           <SplitFileView
             key={`${fileId}:${extractionId || "primary"}`}
             fileId={fileId}
+            textControls={textControls}
             mime={detail.mime}
             readOnly={Boolean(extractionId)}
+            onEditingChange={setEditing}
             canonicalText={visibleText}
             segments={visibleSegments}
             activeSegmentId={activeSegmentId}
@@ -236,20 +244,5 @@ export function FilePage() {
         )
       )}
 
-      {tab === "syntheses" && <FileSynthesesPanel fileId={fileId} />}
-
-      {tab === "extractions" && <FileExtractionsPanel fileId={fileId} onInspect={inspectExtraction} />}
-
-      {tab === "wiki" && (
-        <ScopeWikiPanel
-          scope={{ scope_type: "object", file_id: fileId }}
-          title={detail.filename}
-        />
-      )}
-
-      {tab === "enrichments" && <FileEnrichmentsPanel fileId={fileId} />}
-
-      <FileActionBar fileId={fileId} />
-    </Stack>
-  );
+    </Stack></DocumentWorkspace>;
 }

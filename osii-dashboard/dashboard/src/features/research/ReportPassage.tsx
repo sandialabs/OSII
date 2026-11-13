@@ -19,8 +19,17 @@ export function ReportPassage({ text, loading = false }: { text: string; loading
   }, [text, expected, loading]);
   if (!params.has("report_source")) return null;
   const start = Number(params.get("char_start")), end = Number(params.get("char_end"));
-  const excerpt = Number.isInteger(start) && Number.isInteger(end) && start >= 0 && end > start
-    ? Array.from(text).slice(start, Math.min(end, start + 1400)).join("") : "";
+  let excerpt = "";
+  if (Number.isSafeInteger(start) && Number.isSafeInteger(end) && start >= 0 && end > start) {
+    // Preserve Python code-point offsets without allocating an array for the document.
+    const stop = Math.min(end, start + 1400);
+    let index = 0;
+    for (const character of text) {
+      if (index >= stop) break;
+      if (index >= start) excerpt += character;
+      index++;
+    }
+  }
   return <Alert severity={matches === false ? "warning" : matches ? "success" : "info"}>
     <Typography variant="subtitle2">Cited passage · {params.get("report_source")}</Typography>
     {loading ? "Loading the cited extraction…" : <>

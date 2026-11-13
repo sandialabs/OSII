@@ -20,6 +20,7 @@ import { ToolActionPanel } from "./ToolActionPanel";
 
 type FileEnrichmentsPanelProps = {
   fileId: string;
+  showActions?: boolean;
 };
 
 function EnrichmentFileCard({
@@ -61,7 +62,7 @@ function EnrichmentFileCard({
   );
 }
 
-export function FileEnrichmentsPanel({ fileId }: FileEnrichmentsPanelProps) {
+export function FileEnrichmentsPanel({ fileId, showActions = true }: FileEnrichmentsPanelProps) {
   const { data, isLoading, isError, error } = useScopeEnrichments({
     scope_type: "object",
     file_id: fileId,
@@ -88,7 +89,7 @@ export function FileEnrichmentsPanel({ fileId }: FileEnrichmentsPanelProps) {
 
   return (
     <Stack spacing={2}>
-      <ToolActionPanel scope={{ scope_type: "object", file_id: fileId }} />
+      {showActions && <ToolActionPanel scope={{ scope_type: "object", file_id: fileId }} />}
       {enrichments.length === 0 ? (
         <Alert severity="info">No other enrichments are available for this file.</Alert>
       ) : null}

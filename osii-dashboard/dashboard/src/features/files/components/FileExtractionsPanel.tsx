@@ -11,7 +11,7 @@ import { ExtractionCopyEditor } from "./ExtractionCopyEditor";
 import { EnrichmentArtifactView } from "./EnrichmentArtifactView";
 
 
-function ExtractionArtifacts({ fileId, variantId }: { fileId: string; variantId: string }) {
+export function ExtractionArtifacts({ fileId, variantId }: { fileId: string; variantId: string }) {
   const artifacts = useQuery({
     queryKey: ["objects", fileId, "extractions", variantId, "artifacts"],
     queryFn: () => getObjectExtractionArtifacts(fileId, variantId),

@@ -24,13 +24,14 @@ import { useObjectSynthesisJob } from "../../../hooks/useObjectSynthesisJob";
 
 type FileSynthesesPanelProps = {
   fileId: string;
+  showActions?: boolean;
 };
 
-export function FileSynthesesPanel({ fileId }: FileSynthesesPanelProps) {
+export function FileSynthesesPanel({ fileId, showActions = true }: FileSynthesesPanelProps) {
   const synthesis = useObjectSyntheses(fileId);
   const variants = useQuery({ queryKey: ["products", "list", fileId], queryFn: () => apiJson<{ products: { family: string; filename: string; title: string }[] }>("/api/products/list", { method: "POST", json: { scope_type: "object", file_id: fileId } }) });
   const synthesisJob = useObjectSynthesisJob(fileId);
-  const readiness = useQuery({ queryKey: ["intake", "readiness"], queryFn: getIntakeReadiness });
+  const readiness = useQuery({ queryKey: ["intake", "readiness"], queryFn: getIntakeReadiness, enabled: showActions });
   const [synthesizerName, setSynthesizerName] = useState("");
   const synthesizerOptions = (readiness.data?.synthesizers ?? []).filter(
     (item) => item.available && !["firstN", "firstN_folder", "collection_firstn"].includes(item.id),
@@ -42,7 +43,7 @@ export function FileSynthesesPanel({ fileId }: FileSynthesesPanelProps) {
 
   return (
     <Stack spacing={2}>
-      <Card variant="outlined">
+      {showActions && <Card variant="outlined">
         <CardContent>
           <Stack spacing={1.5}>
             <Stack spacing={0.25}>
@@ -85,7 +86,7 @@ export function FileSynthesesPanel({ fileId }: FileSynthesesPanelProps) {
             ) : null}
           </Stack>
         </CardContent>
-      </Card>
+      </Card>}
 
       {synthesis.isLoading ? <Typography>Loading syntheses…</Typography> : null}
       {synthesis.isError ? (
