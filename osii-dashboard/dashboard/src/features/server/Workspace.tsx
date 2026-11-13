@@ -10,7 +10,7 @@ import type { PickedFile } from "../../components/discovery/LocationBrowser";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import {
-  Alert, Accordion, AccordionSummary, AccordionDetails,
+  Alert,
   Button,
   MenuItem,
   Stack,
@@ -318,7 +318,6 @@ export function Workspace({
         )}
         {tab === "home" && <WorkbenchHome setupPath="/setup" />}
         {corpusPage && !["browse", "files"].includes(tab) && !location.pathname.startsWith("/files/") && (
-          <Accordion disableGutters elevation={0} variant="outlined"><AccordionSummary><Typography variant="body2">Scope: {scopeName}</Typography></AccordionSummary><AccordionDetails>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
             <TextField
               select
@@ -362,7 +361,7 @@ export function Workspace({
             <Button onClick={() => void refresh().catch(fail)}>
               Refresh library
             </Button>
-          </Stack></AccordionDetails></Accordion>
+          </Stack>
         )}
         {(tab === "files" || tab === "browse") && !location.pathname.startsWith("/files/") && (
           <>
