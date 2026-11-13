@@ -52,7 +52,7 @@ The runner retains at most 24 passages and 24,000 evidence-text characters.
 Candidate reranking is bounded to 64,000 text characters. A 90-second cooperative
 deadline is checked between stages; it cannot interrupt an in-flight model
 request. Model adapters have their own HTTP timeouts. Reranking is optional and
-belongs in Core RAG, not Toolbox.
+belongs in Core RAG, not processor modules.
 
 Advanced chat decisions request structured JSON using a JSON Schema and still
 validate actions, budgets, and citation identities in Core. The selected endpoint

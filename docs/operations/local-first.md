@@ -9,7 +9,7 @@ credential, or model cache.
 | Synthesis | cited extractive Markdown preview | selected Ollama, OpenAI-compatible, or OpenAI-compatible chat model |
 | Embedding | none required; lexical hashing remains an advanced compatibility method | selected OpenAI-compatible, Ollama, or OpenAI-compatible embedding model |
 | Search | BM25 | provider/model-specific semantic FAISS index |
-| Enrichment | statistics and keywords table | optional Toolbox wiki enrichers; domain Processor API service |
+| Enrichment | statistics and keywords table | optional wiki processor modules; domain Processor API service |
 | Chat | grounded extractive answer | selected model provider |
 | Browse/API/MCP | local dashboard, backend, and MCP | same contracts |
 

@@ -15,6 +15,33 @@ import urllib.request
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "osii-core"))
+from osii.processor_modules import active_processors, modules_directory, enabled, ModuleManifestError
+
+
+def processor_modules(env: dict[str, str]):
+    """Server development opts in; hosted API never launches filesystem modules."""
+    if not enabled(env.get("OSII_START_PROCESSOR_MODULES", env.get("OSII_START_TOOLBOX", "false"))):
+        return []
+    return active_processors(modules_directory(env, ROOT), env)
+
+
+def module_command(processor, uv: str, env: dict[str, str]) -> list[str]:
+    return [uv, "run", "--python", "3.12", "--project", ".",
+        *[arg for extra in processor.extras for arg in ("--extra", extra)],
+        "python", *processor.command, "--host", "127.0.0.1", "--port", str(processor.resolved_port(env))]
+
+
+
+def service_environment(name: str, env: dict[str, str], modules) -> dict[str, str]:
+    result = dict(env)
+    if name not in {"API", "Worker"}:
+        result.pop("DATABASE_URL", None)
+        result.pop("OSII_STORAGE_BACKEND", None)
+    processor = next((row for row in modules if row.id == name), None)
+    if processor:
+        result["UV_PROJECT_ENVIRONMENT"] = str(processor.directory / "osii-env")
+    return result
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
@@ -133,6 +160,19 @@ def main() -> int:
             ("Extractor", python + ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8192"], ROOT / "osii-core/services/local-extractor"),
             ("Dashboard", [npm, "run", "dev", "--", "--host", "127.0.0.1", "--port", env["OSII_DASHBOARD_PORT"]], ROOT / "osii-dashboard/dashboard"),
         ]
+    try:
+        modules = [] if args.core_only else processor_modules(env)
+    except ModuleManifestError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    for processor in modules:
+        if processor.id in {name.lower() for name, _, _ in services}:
+            print(f"{processor.manifest}: processor service ID conflicts with a server service", file=sys.stderr)
+            return 1
+        services.append((processor.id, module_command(processor, uv, env), processor.directory))
+    urls = [value for value in env.get("OSII_PROCESSORS", "").split(",") if value]
+    urls.extend(f"http://127.0.0.1:{processor.resolved_port(env)}" for processor in modules)
+    env["OSII_PROCESSORS"] = ",".join(dict.fromkeys(urls))
     if args.dry_run:
         try:
             ensure_postgres(env, dry_run=True)
@@ -147,6 +187,15 @@ def main() -> int:
         if not args.core_only and not (ROOT / "osii-dashboard/dashboard/node_modules").is_dir():
             subprocess.run([npm, "ci"], cwd=ROOT / "osii-dashboard/dashboard", env=env, check=True)
     processes = []
+    if not args.skip_setup:
+        prepared = set()
+        for processor in modules:
+            if processor.directory in prepared:
+                continue
+            subprocess.run([uv, "sync", "--python", "3.12", "--project", ".",
+                *[arg for extra in processor.extras for arg in ("--extra", extra)]],
+                cwd=processor.directory, env=service_environment(processor.id, env, modules), check=True)
+            prepared.add(processor.directory)
     try:
         ensure_postgres(env)
         for name, command, cwd in services:
@@ -162,7 +211,7 @@ def main() -> int:
                 else:
                     raise RuntimeError("API readiness timed out")
             print("Starting " + name, flush=True)
-            processes.append(subprocess.Popen(command, cwd=cwd, env=env,
+            processes.append(subprocess.Popen(command, cwd=cwd, env=service_environment(name, env, modules),
                 start_new_session=os.name != "nt",
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0))
         print("OSII-server dashboard: http://localhost:" + env["OSII_DASHBOARD_PORT"], flush=True)

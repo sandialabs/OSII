@@ -208,7 +208,7 @@ Processor API services, one per line. Their `/v1/descriptor` must declare
 a unique processor name and one of the four SDK component kinds. Synthesis and
 enrichment methods must support object scope for per-file plans. Connections are
 admin-managed PostgreSQL settings; `OSII_PROCESSORS` supplies deployment defaults.
-This does not launch tools, install models or copy Toolbox code into Core. The
+This does not launch tools, install models or copy processor module code into Core. The
 current hosted planner runs each selected file separately; aggregate folder,
 collection and root synthesis/enrichment are not yet exposed by these plans.
 
@@ -235,7 +235,7 @@ PostgreSQL tables. Older staged plans may require re-staging after this adapter
 upgrade; existing documents, outputs and jobs are retained.
 
 
-## Optional native OCR and Toolbox health
+## Optional native OCR and processor health
 
 Administrators can open **Setup → Processing methods** for descriptors, readiness,
 and **Queue extraction/synthesis/enrichment** actions. Adding a URL registers

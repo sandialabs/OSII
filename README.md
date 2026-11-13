@@ -12,6 +12,10 @@ content retains its provenance, and answers link back to supporting passages.
 The service manages the shared library and permissions; replaceable processors and
 model services help interpret the material without becoming the source of truth.
 
+The **Toolbox** contains frontend workflows. Backend **processor modules**
+(Extractors, Synthesizers, Embedders, and Enrichers) live in
+`osii-processor-modules/` and use the shared Processor API.
+
 ## What you can do
 
 - Inventory mounted sources, review batches, and ingest documents with optional OCR.

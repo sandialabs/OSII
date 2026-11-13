@@ -8,6 +8,13 @@ An OSII processor is a small HTTP service that performs one specialized task.
 It receives a self-contained, validated request and returns grounded text or a
 standard artifact. It never writes directly to the OSII store.
 
+## Processor module layout
+
+Backend modules live under `osii-processor-modules/`. Add `processor-module.toml`
+and declare offline tests in the project's `pyproject.toml`; discovery needs no
+central Python or CI list edits. Follow the [manifest authoring guide](processor-modules.md).
+The Toolbox is the frontend collection of workflows, not the backend package tree.
+
 ## Choose a processor kind
 
 | You need to… | Kind | Typical input | Output |
@@ -33,8 +40,8 @@ enrichment. The exact output boundary is summarized in
 3. Give the processor a stable descriptor name and semantic version.
 4. Implement the one method for its processor kind.
 5. Test representative, redistributable examples locally.
-6. Package the service in a container.
-7. Paste its base URL under **Setup → Advanced & diagnostics → Register running processor**.
+6. Add a module manifest and offline test declaration; restart the development launcher.
+7. For hosted production, have an administrator register the independently deployed service in Setup.
 8. Use **Health** to test liveness and **Test** to validate the v1 contract.
 9. Run it against an ingested file and inspect the result in the dashboard.
 

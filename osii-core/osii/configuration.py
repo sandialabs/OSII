@@ -99,40 +99,15 @@ def default_models_config() -> dict[str, Any]:
 
 
 def builtin_tools_config() -> dict[str, Any]:
-    return {
-        "version": CONFIG_VERSION,
-        "tools": {
-            "readable-llm-wiki": {
-                "enabled": True,
-                "processor_id": "toolbox.readable-wiki",
-                "display_name": "Readable LLM Wiki",
-                "kind": "enricher",
-                "runtime": {"mode": "external", "endpoint": "http://127.0.0.1:8099"},
-                "model_access": {"mode": "gateway", "bindings": {"chat": "top"}},
-            },
-            "concept-entity-llm-wiki": {
-                "enabled": True,
-                "processor_id": "toolbox.concept-entity-wiki",
-                "display_name": "Concept and Entity LLM Wiki",
-                "kind": "enricher",
-                "runtime": {"mode": "external", "endpoint": "http://127.0.0.1:8100"},
-                "model_access": {"mode": "gateway", "bindings": {"chat": "mid"}},
-            },
-            "tesseract-opencv": {
-                "enabled": True,
-                "processor_id": "toolbox.tesseract-opencv",
-                "display_name": "Tesseract OCR with OpenCV regions",
-                "kind": "extractor",
-                "aliases": ["toolchest.tesseract-opencv"],
-                "runtime": {"mode": "external", "endpoint": "http://127.0.0.1:8081"},
-                "model_access": {"mode": "none"},
-            },
-        },
-    }
+    """Shared manifest metadata; hosted endpoint deployment remains explicit."""
+    from osii.processor_modules import active_processors
+    return {"version": CONFIG_VERSION, "tools": {
+        row.registration_id: row.registration(os.environ) for row in active_processors()
+    }}
 
 
 def default_tools_config() -> dict[str, Any]:
-    """Only user changes are persisted; built-in optional registrations live in code."""
+    """Only user changes are persisted; processor defaults come from manifests."""
     return {"version": CONFIG_VERSION}
 
 
@@ -397,7 +372,11 @@ def configured_tools(osii_root: Path | None = None, profile: str | None = None) 
     overrides = load_tools_config(osii_root).get("tools", {})
     tools = dict(builtin_tools_config()["tools"]) if (profile or active_profile()) == DEFAULT_PROFILE else {}
     if isinstance(overrides, dict):
-        tools.update(overrides)
+        tools.update({key: {**tools.get(key, {}), **value} if isinstance(value, dict) else value for key, value in overrides.items()})
+    from osii.processor_modules import discover_processors
+    for processor in discover_processors():
+        if not processor.is_enabled(os.environ):
+            tools.pop(processor.registration_id, None)
     return tools
 
 

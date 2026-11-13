@@ -16,6 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.1.0
+      - name: Extension layout and naming
+        run: python3 scripts/check_extensions.py
       - name: Isolated PostgreSQL test database
         run: |
           sudo systemctl start postgresql
@@ -43,6 +45,8 @@ jobs:
           uv run --isolated --no-project --python 3.12 --with pytest \
             --with 'uvicorn[standard]>=0.35,<1' python -m pytest \
             osii-core/services/baseline-processors/tests -q
+      - name: Discovered processor module contracts
+        run: python3 scripts/check_extensions.py --test
       - name: Documentation
         run: make docs
   frontend:

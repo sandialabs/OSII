@@ -1,6 +1,6 @@
 # LLM wiki enrichers
 
-This optional Toolbox package contains two different Processor API enrichers.
+This optional processor modules package contains two different Processor API enrichers.
 They are intentionally not part of OSII Core:
 
 - **Readable LLM wiki** (`toolbox.readable-wiki`, port 8099) creates the

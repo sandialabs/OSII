@@ -2,11 +2,11 @@
 
 Use this guide for custom retrieval, query decomposition, reranking, context
 selection, or iterative question answering. These extend **Core RAG**, not the
-Toolbox. Start in OSII-local; the same contracts transfer to the hosted server.
+processor modules. Start in OSII-local; the same contracts transfer to the hosted server.
 
 ## Boundaries and code locations
 
-Toolbox contains exactly four OSII processor kinds: **extractor, synthesizer,
+Processor modules implement four OSII processor kinds: **extractor, synthesizer,
 enricher, embedder**. A reranker is an optional step in a RAG process. It is not
 a fifth kind and does not need a Processor SDK descriptor or registration in
 Setup's processor list. A RAG pipeline may consume the outputs of those four

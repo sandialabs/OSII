@@ -407,7 +407,7 @@ panel, product views and overview. Administrators run configured synthesizers or
 enrichers over a library, folder, collection or document. Built-in source-excerpt
 synthesis and statistics/keywords need no model service. Other tools advertise
 their scopes through their Processor SDK descriptor. Connect optional running
-services in **Setup → Processors**; the Core does not install or start Toolbox
+services in **Setup → Processors**; the Core does not install or start processor module
 services. Per-document extraction and embedding stay in Intake.
 
 Hosted scope tools freeze every selected document's full usable saved text into

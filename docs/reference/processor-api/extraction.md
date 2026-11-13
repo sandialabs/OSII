@@ -301,7 +301,7 @@ not the output of the UTF-8 example above:
 }
 ```
 
-| Existing Toolbox field / setting | Interpretation |
+| Existing processor field / setting | Interpretation |
 | --- | --- |
 | `source_origin.page` | One-based document page |
 | `source_origin.bbox` | `[left, top, right, bottom]`, normalized by rendered page width/height |
@@ -366,7 +366,7 @@ to other kinds; see [canonical outputs](canonical-outputs.md).
 | Direct result does not appear in OSII | Direct SDK calls do not commit it; register the service and run Core extraction |
 | New parser quality needs testing | Compare a [new extraction version](../extraction-versions.md) against the original evidence |
 
-The experimental Toolbox Tesseract service is a real implementation of this
+The experimental Tesseract processor module is a real implementation of this
 contract: it returns `ocr_region` segments with page and region grounding.
 It also has its own OCR endpoints and tuning UI, separate from
 `/v1/extract`. Read its README at

@@ -94,4 +94,4 @@ native executable is missing; `/health` alone only confirms the HTTP process
 is alive. Install the native executable and required language data before
 queuing OCR. The shared PDF viewer accepts both page `regions` and a segment's
 normalized `source_origin.bbox` for overlays. OSII-tesseract remains an optional
-Toolbox extractor, not a model endpoint or part of RAG orchestration.
+processor module, not a model endpoint or part of RAG orchestration.

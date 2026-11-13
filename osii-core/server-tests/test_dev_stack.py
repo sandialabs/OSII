@@ -91,3 +91,33 @@ def test_database_failure_prevents_application_start(tmp_path, monkeypatch, caps
     monkeypatch.setattr(launcher.subprocess, "Popen", lambda *a, **k: pytest.fail("Application must not start"))
     assert launcher.main() == 1
     assert "password-must-stay-private" not in capsys.readouterr().err
+
+
+def test_module_discovery_is_opt_in_and_does_not_share_database_credentials(tmp_path):
+    module = tmp_path/'card'
+    module.mkdir()
+    (module/'pyproject.toml').write_text('[project]\nname="fixture"\nversion="0.1"\n')
+    (module/'processor-module.toml').write_text('''schema_version=1
+id="card"
+[[processors]]
+id="card"
+processor_id="example.card"
+kind="enricher"
+display_name="Card"
+description="Fixture"
+command=["run.py"]
+port=18109
+''')
+    env={'OSII_PROCESSOR_MODULES_DIR':str(tmp_path), 'DATABASE_URL':'private-database'}
+    assert launcher.processor_modules(env)==[]
+    env['OSII_START_PROCESSOR_MODULES']='true'
+    row,=launcher.processor_modules(env)
+    assert row.enable_env=='OSII_ENABLE_CARD'
+    command=launcher.module_command(row,'uv',env)
+    assert command[-4:]==['--host','127.0.0.1','--port','18109']
+    child=launcher.service_environment('card',env,[row])
+    assert 'DATABASE_URL' not in child
+    assert child['UV_PROJECT_ENVIRONMENT']==str(module/'osii-env')
+    assert launcher.service_environment('API',env,[row])['DATABASE_URL']=='private-database'
+    env['OSII_ENABLE_CARD']='false'
+    assert launcher.processor_modules(env)==[]

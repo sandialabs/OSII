@@ -1,0 +1,29 @@
+schema_version = 1
+id = "banyan"
+extras = [
+    "osii",
+]
+
+[[processors]]
+id = "banyan"
+registration_id = "banyan-nemotron-parse"
+processor_id = "banyan.nemotron-parse"
+kind = "extractor"
+display_name = "Banyan Nemotron Parse"
+description = "Parses PDFs and images using Banyan's locally configured Nemotron endpoint."
+command = [
+    "-m",
+    "uvicorn",
+    "banyan_extract.integrations.osii_extractor:app",
+]
+port = 8101
+
+[processors.capabilities]
+file_extensions = [
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".tif",
+    ".tiff",
+]

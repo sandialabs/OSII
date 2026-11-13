@@ -1,0 +1,32 @@
+schema_version = 1
+id = "osii-tesseract"
+extras = []
+
+[[processors]]
+id = "tesseract-opencv"
+processor_id = "toolbox.tesseract-opencv"
+kind = "extractor"
+display_name = "Tesseract OCR with OpenCV regions"
+description = "Finds page regions with OpenCV and preserves OCR bounding boxes."
+command = [
+    "-m",
+    "uvicorn",
+    "app.main:app",
+]
+port = 8081
+requires = [
+    "tesseract",
+]
+aliases = [
+    "toolchest.tesseract-opencv",
+]
+
+[processors.capabilities]
+file_extensions = [
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".tif",
+    ".tiff",
+]
