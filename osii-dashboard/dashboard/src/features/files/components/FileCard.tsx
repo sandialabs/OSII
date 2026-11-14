@@ -1,234 +1,208 @@
-// src/features/files/components/FileCard.tsx
-import {
-  Box,
-  Card,
-  CardActionArea,
-  CardContent,
-  Stack,
-  Typography,
-} from "@mui/material";
-import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
-import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
-import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
-
+import { useState } from "react";
+import { Box, Card, CardActionArea, Stack, Typography } from "@mui/material";
 import type { FileCardModel } from "../../../domain/files";
+import {
+  defaultFileDisplay,
+  type FileDisplay,
+} from "../../../domain/fileDisplay";
 import { usePdfThumbnail } from "../../../hooks/usePdfThumbnail";
 import { getObjectSourceUrl } from "../../../api/source";
-
-type FileCardProps = {
-  file: FileCardModel;
-  onOpen: (fileId: string) => void;
-  compact?: boolean;
-  showPath?: boolean;
-};
 
 export function formatFileSize(sizeBytes: number | null) {
   if (sizeBytes === null || sizeBytes < 0) return null;
   if (sizeBytes < 1024) return `${sizeBytes} B`;
   const units = ["KB", "MB", "GB", "TB"];
-  let value = sizeBytes / 1024;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
+  let value = sizeBytes / 1024,
+    index = 0;
+  while (value >= 1024 && index < units.length - 1) {
     value /= 1024;
-    unitIndex += 1;
+    index++;
   }
-  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unitIndex]}`;
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[index]}`;
 }
-
-export function formatModifiedDate(modifiedAt: string | null) {
-  if (!modifiedAt) return null;
-  const parsed = new Date(modifiedAt);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+export function formatModifiedDate(value: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? null
+    : date.toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
 }
-
-function Thumbnail({
-  file,
-}: {
-  file: FileCardModel;
-}) {
-  const isPdf = file.mime === "application/pdf";
-  const sourceUrl = isPdf ? getObjectSourceUrl(file.fileId) : null;
-  const shouldGenerate = isPdf && file.previewAvailable;
-
-  const { thumbnailUrl } = usePdfThumbnail(sourceUrl, shouldGenerate);
-
-  if (thumbnailUrl) {
-    return (
-      <Box
-        sx={{
-          width: 80,
-          height: 80,
-          borderRadius: 1.25,
-          overflow: "hidden",
-          border: (theme) => `1px solid ${theme.palette.divider}`,
-          backgroundColor: "#fff",
-          flexShrink: 0,
-        }}
-      >
+function Thumbnail({ file }: { file: FileCardModel }) {
+  const pdf = file.mime === "application/pdf";
+  const { thumbnailUrl } = usePdfThumbnail(
+    pdf ? getObjectSourceUrl(file.fileId) : null,
+    pdf && file.previewAvailable,
+  );
+  const [imageFailed, setImageFailed] = useState(false);
+  const image = imageFailed
+    ? null
+    : thumbnailUrl ||
+      (file.mime?.startsWith("image/")
+        ? getObjectSourceUrl(file.fileId)
+        : null);
+  return (
+    <Box
+      aria-label={image ? "Document thumbnail" : "Text thumbnail"}
+      sx={{
+        height: 180,
+        width: "100%",
+        overflow: "hidden",
+        bgcolor: "#fff",
+        borderBottom: 1,
+        borderColor: "divider",
+      }}
+    >
+      {image ? (
         <img
-          src={thumbnailUrl}
+          src={image}
           alt={`${file.title} thumbnail`}
+          onError={() => setImageFailed(true)}
           style={{
             width: "100%",
             height: "100%",
-            objectFit: "cover",
+            objectFit: "contain",
             display: "block",
           }}
         />
-      </Box>
-    );
-  }
-
-  return (
-    <Box
-      sx={{
-        width: 80,
-        height: 80,
-        borderRadius: 1.25,
-        border: (theme) => `1px solid ${theme.palette.divider}`,
-        backgroundColor: "background.paper",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexShrink: 0,
-      }}
-    >
-      {isPdf ? (
-        <PictureAsPdfOutlinedIcon color="error" />
       ) : (
-        <DescriptionOutlinedIcon color="action" />
+        <Box
+          aria-hidden
+          sx={{
+            p: 2.2,
+            color: "#334155",
+            fontFamily: "Georgia, serif",
+            fontSize: 10,
+            lineHeight: 1.6,
+            whiteSpace: "pre-wrap",
+            overflowWrap: "anywhere",
+            height: "100%",
+            overflow: "hidden",
+            background: "linear-gradient(135deg,#fff,#f1f5f9)",
+          }}
+        >
+          {file.textPreview || file.synthesisPreview || "No saved text yet"}
+        </Box>
       )}
     </Box>
   );
 }
-
-export function FileCard({ file, onOpen, compact = false, showPath = false }: FileCardProps) {
-  const fileSize = formatFileSize(file.sizeBytes);
-  const modifiedDate = formatModifiedDate(file.modifiedAt);
-
+export function FileCard({
+  file,
+  onOpen,
+  compact = false,
+  showPath = false,
+  display = defaultFileDisplay,
+  list = false,
+}: {
+  file: FileCardModel;
+  onOpen: (id: string) => void;
+  compact?: boolean;
+  showPath?: boolean;
+  display?: FileDisplay;
+  list?: boolean;
+}) {
+  const metadata =
+    display.metadata === "path"
+      ? file.subtitle
+      : display.metadata === "modified"
+        ? formatModifiedDate(file.modifiedAt)
+        : display.metadata === "format"
+          ? file.mime?.split("/").pop()
+          : null;
+  const details = [
+    display.show_size ? formatFileSize(file.sizeBytes) : null,
+    metadata,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <Card
+      variant="outlined"
       sx={{
         height: "100%",
         position: "relative",
         overflow: "hidden",
-        "&:hover .file-hover": {
+        "&:hover .file-hover, &:focus-within .file-hover": {
           opacity: 1,
-          transform: "translateY(0)",
+          transform: "none",
         },
       }}
     >
       <CardActionArea
         onClick={() => onOpen(file.fileId)}
         aria-label={`Open file ${file.title}`}
-        title={compact ? file.title : undefined}
         sx={{
           height: "100%",
           display: "flex",
           flexDirection: "column",
           alignItems: "stretch",
+          minHeight: list ? 52 : undefined,
         }}
       >
-        <Box
-          sx={{
-            width: "100%",
-            display: "flex",
-            justifyContent: "center",
-            pt: 1.25,
-            px: 1.25,
-          }}
-        >
-          <Thumbnail file={file} />
-        </Box>
-
-        <CardContent
-          sx={{
-            width: "100%",
-            pt: 1,
-            pb: 1.25,
-          }}
-        >
-          <Stack spacing={0.75}>
-            <Typography
-              variant="subtitle2"
-              fontWeight={600}
-              sx={{
-                display: "-webkit-box",
-                WebkitLineClamp: compact ? 1 : 2,
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
-                minHeight: "1.3em",
-              }}
-            >
-              {file.title}
-            </Typography>
-
-            {!compact || showPath ? <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{
-                display: "-webkit-box",
-                WebkitLineClamp: 1,
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
-                minHeight: "1.25em",
-              }}
-            >
-              {file.subtitle || "No source path"}
-            </Typography> : null}
-
-            {fileSize || modifiedDate ? (
-              <Typography variant="caption" color="text.secondary">
-                {[fileSize, modifiedDate ? `Modified ${modifiedDate}` : null]
-                  .filter(Boolean)
-                  .join(" · ")}
+        {!list && <Thumbnail file={file} />}
+        {(display.show_name || list || details) && (
+          <Stack spacing={0.25} sx={{ p: 1.2, minWidth: 0 }}>
+            {(display.show_name || list) && (
+              <Typography
+                variant="body2"
+                fontWeight={display.show_name ? 600 : 400}
+                noWrap
+              >
+                {display.show_name || !list
+                  ? file.title
+                  : file.synthesisPreview?.slice(0, 120) ||
+                    file.textPreview?.slice(0, 120) ||
+                    "Document"}
               </Typography>
-            ) : null}
-
+            )}
+            {details && (
+              <Typography variant="caption" color="text.secondary" noWrap>
+                {details}
+              </Typography>
+            )}
           </Stack>
-        </CardContent>
-
-        {!compact ? <Box
-          className="file-hover"
-          sx={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "flex-end",
-            background:
-              "linear-gradient(to top, rgba(15,23,42,0.9), rgba(15,23,42,0.5) 58%, rgba(15,23,42,0.06))",
-            color: "#fff",
-            opacity: 0,
-            transform: "translateY(6px)",
-            transition: "opacity 0.16s ease, transform 0.16s ease",
-            p: 1.25,
-          }}
-        >
-          <Stack spacing={1} sx={{ width: "100%" }}>
-            <Typography
-              variant="body2"
-              sx={{
-                display: "-webkit-box",
-                WebkitLineClamp: 5,
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
-                minHeight: "5.7em",
-              }}
-            >
-              {file.synthesisPreview ?? "No synthesis preview available."}
-            </Typography>
-
-            <Stack direction="row" spacing={0.5} alignItems="center" sx={{ alignSelf: "flex-start" }}>
-              <OpenInNewOutlinedIcon fontSize="small" />
-              <Typography variant="button">Open</Typography>
+        )}
+        {file.synthesisPreview && (
+          <Box
+            className="file-hover"
+            sx={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "flex-end",
+              p: 1.5,
+              background:
+                "linear-gradient(to top,rgba(15,23,42,.96),rgba(15,23,42,.8))",
+              color: "#fff",
+              opacity: 0,
+              transform: "translateY(4px)",
+              transition: "opacity .15s ease,transform .15s ease",
+              pointerEvents: "none",
+            }}
+          >
+            <Stack spacing={0.5}>
+              <Typography variant="caption" fontWeight={700}>
+                Summary
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  display: "-webkit-box",
+                  WebkitLineClamp: list ? 2 : 7,
+                  WebkitBoxOrient: "vertical",
+                  overflow: "hidden",
+                  overflowWrap: "anywhere",
+                }}
+              >
+                {file.synthesisPreview}
+              </Typography>
             </Stack>
-          </Stack>
-        </Box> : null}
+          </Box>
+        )}
       </CardActionArea>
     </Card>
   );

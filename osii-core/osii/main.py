@@ -242,3 +242,7 @@ def workbench_home(request: Request):
         return home(request)
     from osii.domain.workbench_local import local_home
     return local_home(request.app.state.osii_root.resolve())
+
+
+from osii.api.file_display_routes import register_file_display_routes
+register_file_display_routes(app)

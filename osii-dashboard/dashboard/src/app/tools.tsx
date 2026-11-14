@@ -12,6 +12,7 @@ const pages: Record<string, ComponentType> = {
   browse: lazy(() => import("../features/browse/pages/BrowsePage").then(m => ({ default: m.BrowsePage }))),
   search: lazy(() => import("../features/search/pages/SearchPage").then(m => ({ default: m.SearchPage }))),
   chat: lazy(() => import("../features/chat/pages/ChatPage").then(m => ({ default: m.ChatPage }))),
+  "create-collections": lazy(() => import("../features/collections/pages/CreateCollectionsPage").then(m => ({ default: m.CreateCollectionsPage }))),
   collections: lazy(() => import("../features/collections/pages/CollectionsPage").then(m => ({ default: m.CollectionsPage }))),
   research: lazy(() => import("../features/research/ResearchPage").then(m => ({ default: m.ResearchPage }))),
   overview: lazy(() => import("../features/library/pages/LibraryOverviewPage").then(m => ({ default: m.LibraryOverviewPage }))),

@@ -170,3 +170,34 @@ Hosted navigation uses metadata-only catalogs and fetches saved bodies on demand
 Inline hosted product previews are limited to 4 MiB; larger products remain
 stored and are available through the existing product/tool interfaces. No
 projection, embedding, OCR, or LLM request is made by opening the document.
+
+## Files display and collection creation
+
+On **Files**, **Thumbnails / List** changes the current layout. Administrators use
+**Display settings** to save library-wide defaults: initial layout, prominent
+filenames, file size, and a small metadata line (file type, modification date, or
+source path). Hosted readers and curators can switch their current layout but
+cannot change the defaults. Local preferences live in `state/file-display.json`;
+PostgreSQL-backed libraries use the existing settings store.
+
+Tiles retain visible PDF/image previews. Blank PDF pages and files without an
+image preview use a miniature of saved text, with saved synthesis as a fallback.
+Saved summaries appear on hover or keyboard focus. Preview reads are batched in
+groups of at most 48, returning at most 1,200 text characters and 1,000 synthesis
+characters per file; they do not invoke a processor or model.
+
+File-grid checkboxes are replaced by **Toolbox → Create Collections**. Select
+files using the compact searchable list, or select folders and preview one
+collection per folder. Folder membership includes files directly in each selected
+folder. The tool follows every catalog page before enabling writes; visible
+selector results are paged without truncating collection membership. Review the
+plan before saving. Existing collections can receive the selected files.
+
+**Topics** leads to the existing Topic Explorer to preview/draw a cluster and
+save its selection. Folder collections use recorded paths; this does not claim
+that folders are semantic topics or introduce an automatic topic classifier.
+A document's **Saved data → Collections** opens the tool with that document
+selected. Collection creation stays private by default on the server.
+
+The Collections page shows its introduction and tool link only when empty.
+OSII package import remains available in the local Create Collections tool.

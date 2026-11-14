@@ -14,6 +14,7 @@ export const documentTools = [
   { id: "chat", path: "/chat", label: "Chat", illustration: "💬", icon: "chat", description: "Ask questions grounded in your documents." },
   { id: "research", path: "/research", label: "Create a Report", illustration: "📝", icon: "report", description: "Write and refine a report with cited sources." },
   { id: "overview", path: "/library-overview", label: "Analyze Library", illustration: "📊", icon: "insights", description: "See document counts, processing progress, and saved insights." },
+  { id: "create-collections", path: "/tools/collections", label: "Create Collections", illustration: "🗂️", icon: "collections", description: "Group documents by folder, select files, or save topic clusters." },
   { id: "topics", path: "/topics", label: "Explore Topics", illustration: "🗺️", icon: "topics", description: "Explore related documents and clusters on a topic map." },
 ] as const;
 

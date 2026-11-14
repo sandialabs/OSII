@@ -55,6 +55,7 @@ def home_state(
             "overview": state(
                 has_documents, "Library metadata available", "No documents yet"
             ),
+            "create-collections": state(has_documents, "Group documents into collections", "No documents yet"),
             "topics": state(
                 index_ready and indexed_documents > 0,
                 f"{indexed_documents:,} of {documents:,} documents ready",
