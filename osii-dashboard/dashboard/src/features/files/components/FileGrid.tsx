@@ -10,13 +10,16 @@ import {
   MenuItem,
   Stack,
   TextField,
-  Typography,
+  Typography, ToggleButton, ToggleButtonGroup,
 } from "@mui/material";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import { useEffect, useMemo, useState } from "react";
 
 import type { FileCardModel } from "../../../domain/files";
 import { FileCard } from "./FileCard";
+import { FileDisplaySettings } from "./FileDisplaySettings";
+import { useFileDisplay, useFilePreviews } from "../../../hooks/useFileDisplay";
+import { defaultFileDisplay, type FileDisplay } from "../../../domain/fileDisplay";
 
 const FILES_PER_PAGE = 48;
 
@@ -110,6 +113,11 @@ export function FileGrid({
   selectedIds,
   onToggle,
 }: FileGridProps) {
+  const {query:displayQuery}=useFileDisplay();
+  const display=displayQuery.data?.settings ?? defaultFileDisplay;
+  const [viewOverride,setViewOverride]=useState<FileDisplay["view"]|null>(null);
+  const view=viewOverride ?? display.view;
+  useEffect(()=>setViewOverride(null),[display.view]);
   const [visibleCount, setVisibleCount] = useState(FILES_PER_PAGE);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<FileSort>("name-asc");
@@ -129,6 +137,8 @@ export function FileGrid({
     () => filteredFiles.slice(0, visibleCount),
     [filteredFiles, visibleCount],
   );
+
+  const previews=useFilePreviews(visibleFiles.map(file=>file.fileId));
 
   useEffect(() => {
     setVisibleCount(FILES_PER_PAGE);
@@ -200,10 +210,13 @@ export function FileGrid({
               </MenuItem>
             ))}
           </TextField>
+          <ToggleButtonGroup exclusive size="small" value={view} aria-label="Files layout" onChange={(_,value)=>{if(value)setViewOverride(value);}}><ToggleButton value="thumbnails">Thumbnails</ToggleButton><ToggleButton value="list">List</ToggleButton></ToggleButtonGroup>
+          <FileDisplaySettings/>
           {toolbarActions}
         </Stack>
       ) : null}
 
+      {previews.failed&&<Typography variant="caption" color="text.secondary">Some text previews could not be loaded.</Typography>}
       {files.length === 0 ? (
         <Typography color="text.secondary">{emptyMessage}</Typography>
       ) : filteredFiles.length === 0 ? (
@@ -220,11 +233,11 @@ export function FileGrid({
           ) : null}
           <Grid container spacing={1.5}>
             {visibleFiles.map((file) => (
-              <Grid item xs={12} sm={6} md={4} lg={3} xl={2} key={file.fileId}>
+              <Grid item xs={12} sm={view==="list"?12:6} md={view==="list"?12:4} lg={view==="list"?12:3} xl={view==="list"?12:2} key={file.fileId}>
                 <Box sx={{ position: "relative" }}>
                   {onToggle && <Checkbox checked={selectedIds?.has(file.fileId) ?? false} onChange={() => onToggle(file.fileId)}
                     inputProps={{ "aria-label": `Select ${file.title}` }} sx={{ position: "absolute", top: 4, left: 4, zIndex: 1, bgcolor: "background.paper", borderRadius: 1 }} />}
-                  <FileCard file={file} onOpen={onOpen} compact showPath />
+                  <FileCard file={{...file,textPreview:previews.items[file.fileId]?.text_preview,synthesisPreview:previews.items[file.fileId]?.synthesis_preview||file.synthesisPreview}} onOpen={onOpen} display={display} list={view==="list"} />
                 </Box>
               </Grid>
             ))}

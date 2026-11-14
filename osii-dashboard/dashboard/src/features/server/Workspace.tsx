@@ -40,6 +40,7 @@ import {
 } from "../../app/layout/WorkbenchLayout";
 import { MoveToInboxOutlined } from "@mui/icons-material";
 import { TopicExplorer } from "./TopicExplorer";
+import { CreateCollectionsTool } from "../collections/components/CreateCollectionsTool";
 import { Collections, CollectionSelection } from "./Collections";
 
 import { DocumentView } from "./DocumentView";
@@ -52,7 +53,7 @@ import {
   type SearchMode,
 } from "../search/components/SearchModeSelect";
 
-const pagePaths: Record<string, string> = { home: "/", files: "/files", browse: "/browse", search: "/search", chat: "/chat", topics: "/topics", collections: "/collections", tools: "/tools", workbench: "/tools/workbench", research: "/research", overview: "/library-overview", inventory: "/inventory", processing: "/intake", setup: "/setup", users: "/users" };
+const pagePaths: Record<string, string> = { home: "/", files: "/files", browse: "/browse", search: "/search", chat: "/chat", topics: "/topics", collections: "/collections", tools: "/tools", "create-collections": "/tools/collections", workbench: "/tools/workbench", research: "/research", overview: "/library-overview", inventory: "/inventory", processing: "/intake", setup: "/setup", users: "/users" };
 
 function InventoryPage() {
   const navigate = useNavigate();
@@ -392,6 +393,7 @@ export function Workspace({
             )}
           </>
         )}
+        {tab === "create-collections" && <CreateCollectionsTool create={async(name,members)=>{await api("/api/collections","POST",{name,members});}}/>}
         {tab === "collections" && (
           <Collections
             collections={collections}
@@ -399,8 +401,7 @@ export function Workspace({
             refresh={refresh}
             fail={fail}
             choose={() => {
-              changeScope(rootScope);
-              navigate("files");
+              navigate("create-collections");
             }}
             browse={(id, page) => {
               changeScope({ scope_type: "collection", collection_id: id });
@@ -472,7 +473,7 @@ export function Workspace({
             canEdit={user.role !== "reader"}
           />
         )}
-        {corpusPage && tab !== "topics" && selectedIds.size > 0 && (
+        {corpusPage && !["files","browse","topics"].includes(tab) && selectedIds.size > 0 && (
           <CollectionSelection
             collections={collections}
             refresh={refresh}

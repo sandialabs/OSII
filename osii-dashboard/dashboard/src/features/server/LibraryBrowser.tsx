@@ -106,8 +106,6 @@ export function LibraryBrowser({
           emptyMessage={
             result.error || "No files match these metadata filters."
           }
-          selectedIds={selected}
-          onToggle={onToggle}
           onOpen={onOpen}
         />
         <MetadataSearchDrawer

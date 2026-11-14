@@ -13,8 +13,7 @@ export function BrowseExplorer({ breadcrumbs, onNavigate, currentFolder, loading
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   return <Stack spacing={1.75}>
-    <Stack spacing={0.35}><Typography variant="h5" fontWeight={700}>Browse</Typography>
-      <Typography variant="body2" color="text.secondary">Open a folder to see its contents. Only files in the current folder appear here.</Typography></Stack>
+    <Stack spacing={0.35}><Typography variant="h5" fontWeight={700}>Browse</Typography></Stack>
     <BrowseBreadcrumbs items={breadcrumbs} onNavigate={onNavigate} />
     {loading ? <Stack direction="row" spacing={2} alignItems="center"><CircularProgress size={24} /><Typography>Loading folder contents…</Typography></Stack>
       : error ? <Alert severity="error">{error}</Alert> : <BrowseGrid {...grid} />}

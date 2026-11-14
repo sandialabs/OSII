@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 
 import { getCachedThumbnail, setCachedThumbnail } from "../utils/thumbnailCache";
-import { generatePdfThumbnailDataUrl } from "../utils/pdfThumbnail";
+import { EmptyPdfThumbnailError, generatePdfThumbnailDataUrl } from "../utils/pdfThumbnail";
 
 type UsePdfThumbnailResult = {
   thumbnailUrl: string | null;
@@ -64,13 +64,13 @@ export function usePdfThumbnail(
       setIsLoading(true);
       setError(null);
 
-      const cacheKey = `pdf-thumb:${sourceUrl}`;
+      const cacheKey = `pdf-thumb-v2:${sourceUrl}`;
 
       try {
         const cached = await getCachedThumbnail(cacheKey);
         if (cached) {
           if (!cancelled) {
-            setThumbnailUrl(cached);
+            setThumbnailUrl(cached === "empty" ? null : cached);
             setIsLoading(false);
           }
           return;
@@ -89,6 +89,7 @@ export function usePdfThumbnail(
           setIsLoading(false);
         }
       } catch (err) {
+        if(err instanceof EmptyPdfThumbnailError) { try { await setCachedThumbnail(cacheKey,"empty"); } catch { /* Cache is optional. */ } }
         if (!cancelled) {
           setThumbnailUrl(null);
           setIsLoading(false);

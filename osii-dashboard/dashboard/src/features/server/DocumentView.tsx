@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ExpandMore } from "@mui/icons-material";
 import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Alert, Accordion, AccordionDetails, AccordionSummary, Button, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { DocumentWorkspace, type DocumentViewMode, type SavedDocumentPanel } from "../files/components/DocumentWorkspace";
 import { GroundedSegmentEditor } from "../files/components/GroundedSegmentEditor";
@@ -64,11 +64,12 @@ export function DocumentView({ doc, close, canEdit = false }: { doc: Doc; close:
     </TextField></AccordionDetails>
   </Accordion>;
   const panels:SavedDocumentPanel[]=(products.data?.items ?? []).map(item=>({id:item.id,label:item.types?.includes('wiki_markdown')?'Wiki':item.kind==='synthesis'?'Summary':item.title,description:item.kind==='synthesis'?'A short account of the document.':item.types?.includes('wiki_markdown')?'A structured reference organized by topic.':'Saved keywords or other document data.'}));
+  panels.push({id:"collections",label:"Collections",description:"Group this document with others."});
   if(versions.length)panels.push({id:'versions',label:'Text versions',description:'Compare saved readings of the source.'});
   if(params.has('report_source'))panels.push({id:'citation',label:'Cited passage',description:'Inspect the bounded excerpt linked from a report.'});
   return <article aria-label={`Document ${doc.filename}`}><DocumentWorkspace mode={mode} onMode={modeChange} panels={panels} loading={products.isPending} initialPanel={params.get('tab')==='extractions'?'versions':params.get('tab')==='syntheses'?products.data?.items.find(item=>item.kind==='synthesis')?.id:params.get('tab')==='wiki'?products.data?.items.find(item=>item.types?.includes('wiki_markdown'))?.id:params.get('tab')==='enrichments'?products.data?.items.find(item=>item.kind==='enrichment')?.id:undefined}
     header={<Stack direction="row" alignItems="center" spacing={1}><Button onClick={()=>{if(!editing||window.confirm('Discard unsaved text edits?'))close();}}>← Files</Button><Typography fontWeight={700} title={doc.source_relpath} sx={{overflowWrap:'anywhere'}}>{doc.filename}</Typography></Stack>}
-    renderPanel={id=>id==='citation'?<ReportPassage text={text} loading={representation.isPending}/>:id==='versions'?<Stack spacing={1}>{versions.map(item=><Button key={item.id} disabled={editing} onClick={()=>{const next=new URLSearchParams(params);next.set('extraction_id',item.id);setParams(next);}}>{item.primary?'Current text':item.processor.name} · {item.segment_count} segments</Button>)}</Stack>:<SavedProduct key={id} fileId={doc.file_id} id={id}/>}>
+    renderPanel={id=>id==='collections'?<Button component={Link} to={`/tools/collections?file_id=${encodeURIComponent(doc.file_id)}`}>Create or choose a collection</Button>:id==='citation'?<ReportPassage text={text} loading={representation.isPending}/>:id==='versions'?<Stack spacing={1}>{versions.map(item=><Button key={item.id} disabled={editing} onClick={()=>{const next=new URLSearchParams(params);next.set('extraction_id',item.id);setParams(next);}}>{item.primary?'Current text':item.processor.name} · {item.segment_count} segments</Button>)}</Stack>:<SavedProduct key={id} fileId={doc.file_id} id={id}/>}>
     <Stack spacing={1.5}>
       {(history.isError||representation.isError)&&<Alert severity="error">Could not load this text version. Reload to retry.</Alert>}
       {products.isError&&<Alert severity="warning">Saved products could not be loaded. Reading remains available.</Alert>}

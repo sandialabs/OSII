@@ -45,9 +45,7 @@ export function Collections({ collections, refresh, fail, user, browse, choose }
   };
   return <Stack spacing={2}>
     <Typography variant="h5">Collections</Typography>
-    <Typography color="text.secondary">Your collections are private by default. Curators and administrators can publish their collections for everyone. Collections group shared documents; they do not restrict access to those source files.</Typography>
-    <Button sx={{ alignSelf: "start" }} onClick={choose}>Choose files in the library</Button>
-    {!collections.length && <Alert severity="info">Select documents in the library, search results, or topic explorer to create a collection.</Alert>}
+    {!collections.length && <Stack spacing={1}><Typography color="text.secondary">Collections are a convenient way to group documents.</Typography><Button variant="contained" sx={{alignSelf:"start"}} onClick={choose}>Create Collections</Button></Stack>}
     {collections.map(c => <Paper key={c.id} sx={{ p: 2 }}><Stack spacing={1}>
       <Button component="a" href={`/research?collection_id=${encodeURIComponent(c.id)}`} sx={{ alignSelf: "start" }}>Write a research report</Button>
       <Typography variant="h6">{c.name}</Typography><Typography>{c.description}</Typography>

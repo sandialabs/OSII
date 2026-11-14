@@ -3,6 +3,8 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
+export class EmptyPdfThumbnailError extends Error {}
+
 export async function generatePdfThumbnailDataUrl(
   pdfUrl: string,
   options?: {
@@ -36,6 +38,9 @@ export async function generatePdfThumbnailDataUrl(
       viewport,
     }).promise;
 
+    const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;
+    let ink=0;for(let i=0;i<pixels.length;i+=4){if(pixels[i+3]>32&&Math.min(pixels[i],pixels[i+1],pixels[i+2])<225)ink++;}
+    if(ink<canvas.width*canvas.height*0.001)throw new EmptyPdfThumbnailError("This page has no visible thumbnail content");
     return canvas.toDataURL("image/jpeg", 0.82);
   } finally {
     await pdf.destroy();

@@ -102,6 +102,10 @@ class Collection(BaseModel):
     visibility: Literal["private", "shared"] = "private"
 
 
+class CollectionMembers(BaseModel):
+    file_ids: list[str] = Field(max_length=10000)
+
+
 class SourceSelection(BaseModel):
     directory: str = Field(default=".", max_length=4000)
 
@@ -486,6 +490,22 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
         store.record("collection_created", account["id"], value["id"])
         return collection_view(value, account)
 
+    @app.post("/api/collections/{cid}/members")
+    def collection_add_members(cid: str, payload: CollectionMembers, account=Depends(require())):
+        previous = visible_collection(cid, account)
+        if not collection_view(previous, account)["can_manage"]:
+            raise HTTPException(403, "You cannot change this collection")
+        members = list(dict.fromkeys([*previous["members"], *payload.file_ids]))
+        if len(members) > 10000:
+            raise HTTPException(422, "A collection supports up to 10,000 document references")
+        value = {**previous, **validate_collection(Collection(
+            name=previous["name"], description=previous["description"],
+            visibility=previous["visibility"], members=members), account, previous)}
+        if not store.save_collection(value, previous):
+            raise HTTPException(409, "Collection changed; retry to append these documents")
+        store.record("collection_members_added", account["id"], cid)
+        return {"collection_id":cid, "added":[item for item in payload.file_ids if item not in previous["members"]]}
+
     @app.put("/api/collections/{cid}")
     def collection_update(cid: str, payload: Collection, account=Depends(require())):
         previous = visible_collection(cid, account)
@@ -785,5 +805,8 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
 
     from osii.server.document_routes import register_document_routes
     register_document_routes(app, store)
+
+    from osii.api.file_display_routes import register_file_display_routes
+    register_file_display_routes(app, store=store)
 
     return app
