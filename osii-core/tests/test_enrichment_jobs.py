@@ -13,23 +13,6 @@ def test_enrichment_job_queues_then_saves(client, temp_osii_root, sample_osii_ob
     execute_job(job)
     run = get_run(job["run_id"])
     assert run["status"] == "done"
-<<<<<<< HEAD
-    assert run["items"][0]["status"] == "done"
-   
-    artifact_path = (
-        temp_osii_root
-        / "objects"
-        / sample_osii_object["file_id"]
-        / "enrichments"
-        / "keywords--stats_keywords.json"
-    )
-    assert artifact_path.is_file()
-   
-    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
-    assert artifact["artifact_type"] == "table"
-    assert artifact["title"] == "Keyword frequencies"
-    assert isinstance(artifact["rows"], list)    
-=======
     # Durable scope tools publish artifacts, rather than embedding output in run items.
     from osii.domain.processing.scope_batches_local import batch_result
     from osii.domain.artifacts.products import product_path, read_product
@@ -39,4 +22,3 @@ def test_enrichment_job_queues_then_saves(client, temp_osii_root, sample_osii_ob
     published = read_product(product_path(temp_osii_root, scope, "keywords--stats_keywords.json"))
     assert published["data"]["artifact_type"] == "table"
     assert published["data"]["rows"]
->>>>>>> origin/main
