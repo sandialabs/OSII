@@ -8,15 +8,16 @@ uses Core HTTP APIs and never opens sidecars or calls a provider directly.
 ## Add an interchangeable method
 
 Implement the existing [Processor SDK](processor-development.md) descriptor and
-operation. Register the running service in **Setup → Advanced & diagnostics →
-Custom Processor API services**. Declare supported `scope_types`,
+operation. For a backend module, add its [manifest](processor-modules.md); local development
+discovers it automatically. Hosted administrators register independently deployed
+services in Setup. Declare supported `scope_types`,
 `output_kinds`, `model_requirements`, and `config_schema` accurately.
 
 - An **extractor** appears in Intake's reading methods and file-type routing.
   Return canonical text segments/source artifacts. An alternative OCR engine
   needs no OCR-specific sidebar page.
 - A **synthesizer** or **embedder** appears in the corresponding Intake step.
-- An **enricher** appears in scope tool controls and **All tools**. Declare
+- An **enricher** appears in scope tool controls and the **Toolbox**. Declare
   `wiki_markdown` for the shared wiki workflow or `document_metadata` for
   metadata suggestions. `topics`, `embedding_projection`, and `recommendations`
   declare separate topic-modeling, projection, and recommendation operations.
@@ -40,8 +41,8 @@ binding keeps the configured tool choice; an empty capability binding explicitly
 inherits a library default. Core validates before queueing and freezes bounded
 inputs. Poll `/api/runs/{run_id}`; a submission acknowledgement is not completion.
 Use the existing run control endpoints and Activity rather than a temporary
-"generating" toast. See the [workbench decision](../concepts/adr-workbench-tools.md)
-for exact limits, retry semantics, and remaining legacy paths.
+"generating" toast. See the [Workbench architecture](../concepts/architecture.md) and branch API
+reference for limits, retry semantics, and permission boundaries.
 
 To introduce a new operation grouping, update the catalog's descriptor-to-action
 adapter and the catalog label mapping. No new Processor SDK kind is needed.
@@ -75,7 +76,7 @@ editor or claim that edited passages retain validated citation spans.
 3. Include scope, selected document, method/configuration, and relevant index
    identity in query keys. Forward cancellation signals where supported and
    avoid displaying results from a previous scope as current results.
-4. Register a lazy page once in `src/app/tools.tsx` with a unique ID, path,
+4. On local, register a lazy page in `src/app/tools.tsx` with a unique ID, path,
    short label, icon, and group (`documents`, `tools`, `start`, or `setup`).
    Routing and sidebar consume that registration. Parameterized detail routes
    belong in the router and use `ToolBoundary`.
@@ -167,3 +168,31 @@ Folder Browse, search results, Topic Explorer, document panes and processing
 activity continue to use their respective shared widgets. A transport-specific
 feature needs a Core adapter; copying a local filesystem call into hosted UI is
 not a supported extension method.
+
+## Frontend Toolbox versus backend modules
+
+A Toolbox item is a React workflow: a page, route, scopes, controls, and result
+views. A processor module is the Extractor, Synthesizer, Embedder, or Enricher
+that performs computation. One Toolbox item can offer several interchangeable
+processors; one processor can serve several pages. A manifest never loads
+arbitrary JavaScript into the browser.
+
+A collection data card generator usually starts as an Enricher module returning
+a standard artifact. Its descriptor adds a method to the processing controls;
+existing viewers can display standard tables, graphs, Markdown, or inspectable
+JSON. It needs no dedicated page just to become usable.
+
+For a dedicated workflow, place the component under `src/features/<name>/`.
+Local routing and sidebar entries use `src/app/tools.tsx`. Shared Toolbox/home
+tiles and navigation labels use `src/domain/workbench.ts` (`documentTools` and
+`workbenchNavigation`) and `src/app/layout/workbenchNavigation.tsx` (icons).
+For a shared tile, also supply the local page loader and hosted adapter:
+`src/features/server/Workspace.tsx` owns hosted `pagePaths`, rendering, and
+role-gated navigation. Preserve server authorization in its API adapter;
+OSII-local remains authentication-free. Add readiness behavior and tests if the
+new tile needs prerequisites. Do not advertise a tile before its route and both
+product adapters are implemented.
+
+Run dashboard tests and build on each affected branch, plus
+`python scripts/check_extensions.py`. Keep durable processing and result storage
+behind Core APIs; reuse ScopePicker, ToolActionPanel, and standard artifact viewers.

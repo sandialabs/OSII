@@ -30,6 +30,9 @@ README, configuration template if needed, and focused tests. Implement the share
 `osii.processor_sdk` interface; declare accepted file types and model needs in the
 Processor API descriptor. Never browse the corpus or write canonical sidecars.
 Do not add module dependencies to Core or the root environment.
+Declare offline contract tests in `[tool.osii.ci]` in `pyproject.toml`.
+`python scripts/check_extensions.py --test` validates and tests the discovered
+modules on either branch without a central workflow list.
 The manifest declares commands, ports, extras, and registrations. OSII discovers it
 automatically; no central launcher or Core list needs editing. See the
 [manifest authoring guide](../docs/extending/processor-modules.md).

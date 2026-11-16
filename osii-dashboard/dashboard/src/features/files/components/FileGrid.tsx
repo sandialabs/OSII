@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 // src/features/files/components/FileGrid.tsx
 import {
   Alert,
@@ -83,6 +84,7 @@ function compareFiles(left: FileCardModel, right: FileCardModel, sort: FileSort)
 }
 
 type FileGridProps = {
+  toolbarActions?: ReactNode;
   files: FileCardModel[];
   title?: string;
   subtitle?: string;
@@ -97,6 +99,7 @@ type FileGridProps = {
 
 export function FileGrid({
   files,
+  toolbarActions,
   title,
   subtitle,
   isLoading = false,
@@ -166,7 +169,7 @@ export function FileGrid({
         </Stack>
       ) : null}
 
-      {files.length > 0 ? (
+      {files.length > 0 || toolbarActions ? (
         <Stack
           direction={{ xs: "column", sm: "row" }}
           spacing={1}
@@ -197,6 +200,7 @@ export function FileGrid({
               </MenuItem>
             ))}
           </TextField>
+          {toolbarActions}
         </Stack>
       ) : null}
 
@@ -220,7 +224,7 @@ export function FileGrid({
                 <Box sx={{ position: "relative" }}>
                   {onToggle && <Checkbox checked={selectedIds?.has(file.fileId) ?? false} onChange={() => onToggle(file.fileId)}
                     inputProps={{ "aria-label": `Select ${file.title}` }} sx={{ position: "absolute", top: 4, left: 4, zIndex: 1, bgcolor: "background.paper", borderRadius: 1 }} />}
-                  <FileCard file={file} onOpen={onOpen} />
+                  <FileCard file={file} onOpen={onOpen} compact showPath />
                 </Box>
               </Grid>
             ))}

@@ -21,6 +21,7 @@ runtime. Add a `processor-module.toml` to declare launch and registration metada
 OSII discovers it and derives enable/port switches automatically. No central Python
 list or `.env.example` edit is required. Follow the
 [manifest authoring guide](processor-modules.md). **Toolbox** is the frontend collection of tools.
+Declare offline tests in `[tool.osii.ci]` in the module pyproject.
 Existing `toolbox.*` processor IDs remain stable for saved-route compatibility.
 
 ## Choose a processor kind
@@ -128,3 +129,17 @@ diagnostics. Product adapters retain their own persistence and permissions.
 Hosted source selection stays inside the read-only mounted root; local file-type
 routing and launcher lifecycle controls remain local capabilities. Registering a
 Processor API address never installs or starts it.
+
+
+### Toolbox and processor terminology
+
+The **Toolbox** is the frontend collection of tools such as Browse, Search, Chat,
+reports, library analysis, and topic exploration (`/tools` remains its URL).
+Backend components are **processors**, implementing extraction, synthesis,
+embedding, or enrichment. Their independent source modules live under
+`osii-processor-modules/`; existing processor IDs and saved provenance are retained.
+
+Browse uses the same `BrowseExplorer`, `BrowseGrid`, breadcrumbs, and folder-detail
+components in local and hosted products. Adapters own catalog queries and URL
+state; hosted source files stay read-only. List/icon views, name filtering and
+sorting apply to the current folder; server catalogs remain paginated.

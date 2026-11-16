@@ -92,3 +92,18 @@ mkdocs build --strict
 
 Do not commit runtime stores, source documents, generated sites, caches,
 credentials, or model weights.
+
+## CI and extension checks
+
+Use the full branch CI commands in `.github/workflows/ci.yml`; do not exclude
+known failures to claim a passing suite. The first local Core job intentionally
+runs without PostgreSQL drivers. PostgreSQL fixtures must check their explicit
+test database URL before importing optional dependencies. CI then exercises real
+PostgreSQL contracts in an isolated database. Never point those tests at an app
+or corpus database.
+
+`python scripts/check_extensions.py` prevents obsolete backend directory names,
+missing manifests, and missing offline test declarations. `--test` runs each
+module's declared contract tests independently. Toolbox is frontend UI;
+processor modules are backend implementations. Historical `toolbox.*` Processor
+API IDs remain compatible and are not directory references.

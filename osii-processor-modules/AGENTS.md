@@ -13,6 +13,8 @@ service does not authorize processing or model invocation.
 - Keep each module's launch/registration metadata in `processor-module.toml`;
   never add a central Python list entry for a new module. Preserve stable processor
   IDs and declare accepted inputs/model needs in its descriptor.
+- Declare offline test paths and extras in `[tool.osii.ci]` in each module's
+  pyproject so the shared CI runner discovers its tests without workflow edits.
 - Keep per-tool dependencies, tests, and API documentation.
   Run tests separately: several independent services use an `app` package name.
 - Container packaging is archived. Maintain host commands and Processor API contracts.

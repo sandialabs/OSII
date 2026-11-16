@@ -5,7 +5,10 @@ A contributor adds one directory under `osii-processor-modules/`, with a
 There is no central Python module list to edit. Restart `make dev` (Windows:
 `.\scripts\osii.ps1 dev`) to discover the module, prepare its independent
 environment, register its processors, and make service controls available in
-Setup. Discovery reads manifests only; it does not import implementation code.
+Setup on OSII-local. OSII-server development requires an explicit
+`OSII_START_PROCESSOR_MODULES=true`; it defaults to false. Hosted production
+deployment and endpoint registration remain administrator-controlled. No manifest
+changes authentication, database access, or the hosted lifecycle allowlist. Discovery reads manifests only; it does not import implementation code.
 
 Toolbox refers to frontend tools. A collection data card **processor** is an
 enricher that receives collection text and returns a standard artifact. A
@@ -152,3 +155,36 @@ variables, and model bindings are preserved for the migrated modules.
 The repository's discovery tests add a temporary collection data card module and
 exercise discovery, startup planning, overrides, opt-outs, Setup registration,
 and service controls without editing any central lists.
+
+## Declare offline CI tests
+
+Each project declares its contract tests in `pyproject.toml`:
+
+```toml
+[project.optional-dependencies]
+dev = ["pytest>=8,<9", "httpx>=0.27,<1"]
+
+[tool.osii.ci]
+paths = ["tests"]
+extras = ["dev"]
+args = []
+```
+
+`python scripts/check_extensions.py` validates manifests, naming, and test
+coverage declarations without installing modules. Add `--test` to run every
+module's declared tests in its isolated environment. CI uses the same command on
+both branches. New modules need no workflow list entry. The runner includes the
+manifest's runtime extras plus the declared test extras. Test paths must stay
+inside the module; tests must use fixtures/mocks rather than live model endpoints
+or corpus data. Tika tests do not download or launch its managed runtime.
+
+## Hosted deployment
+
+Both branches ship the same module catalog and discovery contract. Server
+`make dev` only starts modules after explicit opt-in, preserves independent
+module environments, and does not pass Core's PostgreSQL credentials to them.
+Choose distinct port overrides when local and server stacks run together.
+Hosted deployment must separately install/run reviewed modules and register their
+reachable endpoints in the administrator's Setup page. Saved database endpoint
+choices remain authoritative; copying a manifest never bypasses them or adds
+host lifecycle permissions.

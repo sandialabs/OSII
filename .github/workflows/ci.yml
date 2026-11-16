@@ -16,6 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.1.0
+      - name: Extension layout and naming
+        run: python3 scripts/check_extensions.py
       - name: Core and SDK
         run: uv run --frozen --python 3.12 --package osii --extra dev python -m pytest osii-core/tests osii-core/processor-sdk/tests -q
       - name: Isolated PostgreSQL read-contract database
@@ -41,16 +43,8 @@ jobs:
           uv run --isolated --no-project --python 3.12 --with pytest \
             --with 'uvicorn[standard]>=0.35,<1' python -m pytest \
             osii-core/services/baseline-processors/tests -q
-      - name: Banyan processor module
-        run: >-
-          uv run --project osii-processor-modules/banyan --extra osii
-          --with pytest --with 'httpx>=0.27,<1'
-          python -m pytest osii-processor-modules/banyan/tests/unit/test_osii_extractor.py
-          -q --api-test-mode=mock
-      - name: Managed Tika processor module
-        run: >-
-          uv run --project osii-processor-modules/tika-adapter --extra dev
-          python -m pytest osii-processor-modules/tika-adapter/tests -q
+      - name: Discovered processor module contracts
+        run: python3 scripts/check_extensions.py --test
       - name: Documentation
         run: make docs
   frontend:

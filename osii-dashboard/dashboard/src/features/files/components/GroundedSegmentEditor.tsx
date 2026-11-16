@@ -1,6 +1,6 @@
 import { MathpixText } from "../../../components/text/MathpixText";
 // src/features/files/components/GroundedSegmentEditor.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Alert,
   Box,
@@ -37,6 +37,10 @@ type GroundedSegmentEditorProps = {
   searchResetToken?: number;
   compact?: boolean;
   readOnly?: boolean;
+  controls?: ReactNode;
+  expectedExtractionId?: string;
+  showEdits?: boolean;
+  onEditingChange?: (editing: boolean) => void;
 };
 
 type EditableSegment = {
@@ -97,8 +101,12 @@ export function GroundedSegmentEditor({
   searchResetToken = 0,
   compact = false,
   readOnly = false,
+  controls,
+  expectedExtractionId,
+  showEdits = false,
+  onEditingChange,
 }: GroundedSegmentEditorProps) {
-  const editedQuery = useEditedObjectText(fileId, !readOnly);
+  const editedQuery = useEditedObjectText(fileId, !readOnly || showEdits);
   const saveMutation = useSaveEditedObjectText(fileId);
   const deleteMutation = useDeleteEditedObjectText(fileId);
 
@@ -117,10 +125,19 @@ export function GroundedSegmentEditor({
   const [submittedSearch, setSubmittedSearch] = useState("");
   const [activeMatchIndex, setActiveMatchIndex] = useState(0);
 
+  const editBase = useRef<{ expected_revision?: string | null; expected_state?: string; expected_extraction_id?: string }>({});
+  const version = () => ({ expected_revision: editedQuery.data?.revision ?? null, expected_state: editedQuery.data?.state_revision, expected_extraction_id: expectedExtractionId });
+  useEffect(() => {
+    onEditingChange?.(isEditing);
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    if (isEditing) window.addEventListener("beforeunload", warn);
+    return () => { window.removeEventListener("beforeunload", warn); onEditingChange?.(false); };
+  }, [isEditing, onEditingChange]);
   const segmentRefs = useRef<Record<string, HTMLElement | null>>({});
   useEffect(() => {
+    if (isEditing) return;
     const editedById = new Map(
-      (!readOnly ? editedQuery.data?.segments ?? [] : []).map((segment) => [segment.id, segment.text]),
+      ((!readOnly || showEdits) ? editedQuery.data?.segments ?? [] : []).map((segment) => [segment.id, segment.text]),
     );
 
     const next = baseSegments.map((segment) => ({
@@ -130,7 +147,7 @@ export function GroundedSegmentEditor({
 
     setDraftSegments(next);
     setSegmentPage(0);
-  }, [baseSegments, editedQuery.data?.segments, readOnly]);
+  }, [baseSegments, editedQuery.data?.segments, readOnly, showEdits, isEditing]);
 
   const matchingSegments = useMemo(() => {
     const needle = submittedSearch.trim().toLowerCase();
@@ -192,7 +209,8 @@ export function GroundedSegmentEditor({
   };
 
   const handleSave = async () => {
-    await saveMutation.mutateAsync({
+    try { await saveMutation.mutateAsync({
+      ...editBase.current,
       segments: draftSegments.map((segment) => ({
         id: segment.id,
         text: segment.text,
@@ -200,14 +218,14 @@ export function GroundedSegmentEditor({
     });
 
     setIsEditing(false);
+    } catch { /* Keep the draft; mutation feedback explains the error. */ }
   };
 
   const handleResetEdited = async () => {
-    await deleteMutation.mutateAsync();
-    setIsEditing(false);
+    try { await deleteMutation.mutateAsync(version()); setIsEditing(false); } catch { /* Display mutation error. */ }
   };
 
-  const hasEditedText = !readOnly && Boolean(editedQuery.data?.exists);
+  const hasEditedText = (!readOnly || showEdits) && Boolean(editedQuery.data?.exists);
 
   const goToPreviousMatch = () => {
     if (matchingSegments.length === 0) return;
@@ -269,7 +287,8 @@ export function GroundedSegmentEditor({
               size="small"
               variant="outlined"
               startIcon={<EditOutlinedIcon />}
-              onClick={() => setIsEditing(true)}
+              onClick={() => { editBase.current = version(); setIsEditing(true); }}
+              disabled={editedQuery.isLoading || editedQuery.isError}
             >
               Edit Text
             </Button>
@@ -280,7 +299,7 @@ export function GroundedSegmentEditor({
                 variant="contained"
                 startIcon={<SaveOutlinedIcon />}
                 onClick={() => void handleSave()}
-                disabled={saveMutation.isPending}
+                disabled={saveMutation.isPending || editedQuery.isFetching || editedQuery.isError}
               >
                 Save
               </Button>
@@ -307,6 +326,7 @@ export function GroundedSegmentEditor({
         </Stack>
       </Stack>
 
+      {controls}
       {searchOpen ? (
         <Card>
           <CardContent sx={{ py: 1.25 }}>

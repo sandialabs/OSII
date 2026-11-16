@@ -32,6 +32,10 @@ an AI model.
 - Write editable research reports with passage references, bibliography drafts,
   reviewable revisions, and Markdown or Mathpix exports.
 
+The **Toolbox** contains frontend workflows. Backend **processor modules**
+(Extractors, Synthesizers, Embedders, and Enrichers) live in
+`osii-processor-modules/` and use the shared Processor API.
+
 ## Get started
 
 Install **uv**, **Node.js 22.18+**, and **make** on macOS/Linux. Copy

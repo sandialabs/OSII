@@ -30,11 +30,13 @@ export async function putEditedObjectText(
 
 export async function deleteEditedObjectText(
   fileId: string,
+  version?: { expected_revision?: string | null; expected_state?: string },
 ): Promise<EditedTextDeleteResponse> {
   return apiJson<EditedTextDeleteResponse>(
     `/api/objects/${encodeURIComponent(fileId)}/texts/edited`,
     {
       method: "DELETE",
+      ...(version ? { json: version } : {}),
     },
   );
 }

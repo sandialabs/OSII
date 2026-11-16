@@ -26,14 +26,14 @@ export function ToolsWorkbench() {
   }, [action, catalog.data]);
   return <Stack spacing={3} sx={{ maxWidth: 1100, mx: "auto" }}>
     <Stack spacing={0.5}><Typography variant="h4" fontWeight={750}>Library-wide processing</Typography><Typography color="text.secondary">Choose an operation, then a method.</Typography></Stack>
-    <Button component={Link} to="/tools">← All tools</Button>
+    <Button component={Link} to="/tools">← Toolbox</Button>
     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
       <Button component={Link} to="/research" variant="contained">Write a research report ↗</Button>
       <Button component={Link} to="/topics" variant="outlined">Topic explorer ↗</Button>
       <Button component={Link} to="/library-overview" variant="outlined">Library at a glance ↗</Button>
-      <Button component={Link} disabled={catalog.data?.permissions?.run === false} to="/admin/processors">＋ Connect a tool</Button>
+      <Button component={Link} disabled={catalog.data?.permissions?.run === false} to="/admin/processors">＋ Connect a processor</Button>
     </Stack>
-    {catalog.isError ? <Alert severity="error">Tools could not be loaded.</Alert> : null}
+    {catalog.isError ? <Alert severity="error">Processors could not be loaded.</Alert> : null}
     <TextField select size="small" label="Operation" value={action} onChange={event => setAction(event.target.value)} sx={{ maxWidth: 340 }}>
       {Object.entries(labels).map(([id, label]) => <MenuItem key={id} value={id}>{label}</MenuItem>)}
     </TextField>

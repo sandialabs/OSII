@@ -19,9 +19,10 @@ def queue(request, tmp_path):
     if request.param == 'sidecar':
         module = pytest.importorskip('osii.domain.storage.sidecar_jobs')
         return module.SidecarJobStore(tmp_path / '.osii')
+    # Resolve the guarded database fixture before importing optional drivers.
+    engine = request.getfixturevalue('postgres_reader').engine
     from sqlalchemy import text
     from osii.domain.storage.postgres_jobs import PostgresJobStore
-    engine = request.getfixturevalue('postgres_reader').engine
     with engine.begin() as conn:
         conn.execute(text('''CREATE TABLE jobs(id text PRIMARY KEY,status text,kind text,payload jsonb,
             logs jsonb,attempts integer,worker_id text,lease_until timestamptz,created_at timestamptz)'''))

@@ -23,10 +23,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<9"]
+dev = ["pytest>=8,<9", "httpx>=0.27,<1"]
 
 [tool.uv.sources]
 osii = { path = "../../osii-core", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
+
+[tool.osii.ci]
+paths = ["tests"]
+extras = ["dev"]
+args = []
