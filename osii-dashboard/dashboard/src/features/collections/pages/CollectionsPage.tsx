@@ -8,16 +8,27 @@ import {
 } from "@mui/material";
 import { Link } from "react-router-dom";
 import { useCollections } from "../../../hooks/useCollections";
+import {
+  CollectionSuggestions,
+  useStarterCollections,
+} from "../components/CollectionSuggestions";
+import { useCreateCollectionSelection } from "../../../hooks/useCreateCollectionSelection";
 import { CollectionCard } from "../components/CollectionCard";
 
 export function CollectionsPage() {
   const { data, isLoading, isError, error } = useCollections();
   const collections = data?.collections ?? [];
+  const showSuggestions = useStarterCollections(
+    collections.length,
+    !isLoading && !isError,
+  );
+  const create = useCreateCollectionSelection();
   return (
     <Stack spacing={2}>
       <Typography variant="h5" fontWeight={700}>
         Collections
       </Typography>
+      {showSuggestions && <CollectionSuggestions create={create} />}
       {isLoading ? (
         <CircularProgress size={24} />
       ) : isError ? (

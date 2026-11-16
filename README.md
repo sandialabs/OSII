@@ -27,6 +27,8 @@ an AI model.
 - Edit summaries, metadata, wikis, and other derived products with revision
   history; run replaceable analysis tools.
 - Explore related documents with the experimental Topic Explorer.
+- Create focused collections from topic suggestions or a prompt; see
+  [how suggestions work](docs/reference/collection-suggestions.md).
 - Compare experimental RAG strategies and inspect their evidence in Chat.
 - Extend processing and frontend tools through documented interfaces.
 - Write editable research reports with passage references, bibliography drafts,

@@ -1,29 +1,14 @@
-import { useRef } from "react";
 import { Alert, Button, Stack } from "@mui/material";
 import { CreateCollectionsTool } from "../components/CreateCollectionsTool";
-import {
-  createCollection,
-  addCollectionMembers,
-} from "../../../api/collections";
+import { useCreateCollectionSelection } from "../../../hooks/useCreateCollectionSelection";
 import { usePackageImport } from "../../../hooks/usePackageImport";
 
 export function CreateCollectionsPage() {
-  const pending = useRef(new Map<string, string>());
+  const create = useCreateCollectionSelection();
   const packageImport = usePackageImport();
   return (
     <Stack spacing={2}>
-      <CreateCollectionsTool
-        create={async (name, ids) => {
-          const key = JSON.stringify([name, ids]);
-          let id = pending.current.get(key);
-          if (!id) {
-            id = (await createCollection({ name })).collection.id;
-            pending.current.set(key, id);
-          }
-          await addCollectionMembers(id, { file_ids: ids });
-          pending.current.delete(key);
-        }}
-      />
+      <CreateCollectionsTool create={create} />
       <Button
         component="label"
         variant="outlined"

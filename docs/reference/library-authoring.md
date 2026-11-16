@@ -201,3 +201,7 @@ selected. Collection creation stays private by default on the server.
 
 The Collections page shows its introduction and tool link only when empty.
 OSII package import remains available in the local Create Collections tool.
+
+Starter topic suggestions and prompt-guided collection creation are documented in
+[Suggested collections](collection-suggestions.md), including selection rules,
+limits, caching, and the shared Core extension point.

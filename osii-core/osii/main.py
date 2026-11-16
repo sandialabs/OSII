@@ -246,3 +246,6 @@ def workbench_home(request: Request):
 
 from osii.api.file_display_routes import register_file_display_routes
 register_file_display_routes(app)
+
+from osii.api.collection_suggestion_routes import register_collection_suggestion_routes
+register_collection_suggestion_routes(app)
