@@ -3,6 +3,7 @@ import json
 import pytest
 from osii.domain.artifacts.documentation_wiki import (
     DocumentationCitation,
+    DocumentationUserNote,
     DocumentationWikiPage,
     documentation_scope,
     get_documentation_wiki,
@@ -318,3 +319,118 @@ def test_symlinks_cannot_read_or_overwrite_external_pages(
 def test_pages_require_meaningful_cited_content(wiki_page, field, value):
     with pytest.raises(ValidationError):
         DocumentationWikiPage.model_validate({**wiki_page.model_dump(), field: value})
+
+
+def test_existing_pages_default_to_no_user_notes(wiki_page):
+    assert wiki_page.user_notes == []
+
+
+def test_source_supported_user_note_requires_citation():
+    with pytest.raises(
+        ValidationError,
+        match="source-supported user notes require at least one citation",
+    ):
+        DocumentationUserNote(
+            note_id="operator-scaling",
+            markdown="Check configured scaling before using this value.",
+            support="source_supported",
+        )
+
+
+def test_personal_commentary_must_not_have_citations(wiki_page):
+    with pytest.raises(
+        ValidationError,
+        match="personal commentary must not include source citations",
+    ):
+        DocumentationUserNote(
+            note_id="workflow-opinion",
+            markdown="This workflow is inconvenient for our team.",
+            support="personal_commentary",
+            citations=wiki_page.citations,
+        )
+
+
+def test_personal_commentary_round_trips_without_source_claim(
+    temp_osii_root, wiki_page
+):
+    note = DocumentationUserNote(
+        note_id="workflow-opinion",
+        markdown="This workflow is inconvenient for our team.",
+        support="personal_commentary",
+    )
+    page = wiki_page.model_copy(update={"user_notes": [note]})
+
+    saved = save(temp_osii_root, page)
+
+    assert saved["freshness"]["status"] == "current"
+    assert saved["documentation_wiki"]["user_notes"] == [note.model_dump()]
+
+
+def test_source_supported_note_round_trips_and_tracks_freshness(
+    temp_osii_root, wiki_page
+):
+    note = DocumentationUserNote(
+        note_id="calibration-condition",
+        markdown="The calibration observation applies under the cited conditions.",
+        support="source_supported",
+        citations=wiki_page.citations,
+    )
+    page = wiki_page.model_copy(update={"user_notes": [note]})
+
+    saved = save(temp_osii_root, page)
+    assert saved["freshness"]["status"] == "current"
+    assert saved["documentation_wiki"]["user_notes"] == [note.model_dump()]
+
+    source_path = (
+        temp_osii_root
+        / "objects"
+        / wiki_page.citations[0].file_id
+        / "text.txt"
+    )
+    source_path.write_text(source_path.read_text() + "\nChanged evidence.")
+
+    reread = get_documentation_wiki(
+        temp_osii_root,
+        None,
+        "thermal-calibration",
+    )
+    assert reread["freshness"]["status"] == "stale"
+
+
+def test_duplicate_user_note_ids_are_rejected(wiki_page):
+    note = DocumentationUserNote(
+        note_id="same-note",
+        markdown="Personal observation.",
+        support="personal_commentary",
+    )
+    payload = wiki_page.model_dump()
+    payload["user_notes"] = [note.model_dump(), note.model_dump()]
+
+    with pytest.raises(ValidationError, match="user note IDs must be unique"):
+        DocumentationWikiPage.model_validate(payload)
+
+
+def test_user_notes_are_preserved_in_revision_history(
+    temp_osii_root, wiki_page
+):
+    original_note = DocumentationUserNote(
+        note_id="review-note",
+        markdown="Initial reviewer observation.",
+        support="personal_commentary",
+    )
+    first_page = wiki_page.model_copy(update={"user_notes": [original_note]})
+    save(temp_osii_root, first_page)
+
+    revised_note = original_note.model_copy(
+        update={"markdown": "Revised reviewer observation."}
+    )
+    second_page = first_page.model_copy(update={"user_notes": [revised_note]})
+    result = save(temp_osii_root, second_page, revision=1)
+
+    assert result["documentation_wiki"]["revision"] == 2
+    assert result["documentation_wiki"]["user_notes"] == [
+        revised_note.model_dump()
+    ]
+    assert result["documentation_wiki"]["history"][0]["context"][
+        "user_notes"
+    ] == [original_note.model_dump()]

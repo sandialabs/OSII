@@ -51,6 +51,36 @@ class DocumentationCitation(BaseModel):
         return self
 
 
+class DocumentationUserNote(BaseModel):
+    """Human-authored material kept distinct from generated wiki Markdown."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    note_id: str = Field(min_length=1, max_length=200)
+    markdown: str = Field(min_length=1, max_length=10000)
+    support: Literal["source_supported", "personal_commentary"]
+    citations: list[DocumentationCitation] = Field(
+        default_factory=list,
+        max_length=20,
+    )
+
+    @model_validator(mode="after")
+    def meaningful_note(self) -> DocumentationUserNote:
+        if not self.note_id.strip() or not self.markdown.strip():
+            raise ValueError("note_id and markdown must contain text")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,199}", self.note_id):
+            raise ValueError("note_id must be a single safe name")
+        if self.support == "source_supported" and not self.citations:
+            raise ValueError(
+                "source-supported user notes require at least one citation"
+            )
+        if self.support == "personal_commentary" and self.citations:
+            raise ValueError(
+                "personal commentary must not include source citations"
+            )
+        return self
+
+
 class DocumentationWikiPage(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=200)
@@ -62,6 +92,10 @@ class DocumentationWikiPage(BaseModel):
     software_version: str = Field(default="", max_length=200)
     tags: list[str] = Field(default_factory=list, max_length=30)
     citations: list[DocumentationCitation] = Field(min_length=1, max_length=50)
+    user_notes: list[DocumentationUserNote] = Field(
+        default_factory=list,
+        max_length=100,
+    )
     change_summary: str = Field(min_length=1, max_length=1000)
 
     @model_validator(mode="after")
@@ -70,6 +104,9 @@ class DocumentationWikiPage(BaseModel):
             raise ValueError("title, markdown and change_summary must contain text")
         if any(not tag.strip() or len(tag) > 100 for tag in self.tags):
             raise ValueError("tags must contain 1–100 characters")
+        note_ids = [note.note_id for note in self.user_notes]
+        if len(note_ids) != len(set(note_ids)):
+            raise ValueError("user note IDs must be unique")
         return self
 
 
@@ -210,7 +247,10 @@ def _freshness(
     members: set[str],
     fingerprints: dict[str, dict | None] | None = None,
 ) -> dict:
-    citations = data.get("citations") or []
+    citations = list(data.get("citations") or [])
+    for note in info.get("user_notes") or []:
+        if note.get("support") == "source_supported":
+            citations.extend(note.get("citations") or [])
     sources = info.get("sources") or []
     if not citations or not sources:
         return {
@@ -324,6 +364,22 @@ def save_documentation_wiki(
                     },
                 }
             )
+
+        # Validate note-specific citations independently. Source-supported notes
+        # participate in freshness; personal commentary remains uncited.
+        for note in page.user_notes:
+            for citation in note.citations:
+                if citation.file_id not in members:
+                    raise ValueError(
+                        f"User-note citation is outside scope: {citation.file_id}"
+                    )
+                evidence = read_documentation_evidence(
+                    osii_root,
+                    citation,
+                    context_chars=0,
+                )
+                sources[citation.file_id] = evidence["source"]
+
         history = list(previous_info.get("history") or [])
         if previous:
             history.append(
@@ -338,6 +394,7 @@ def save_documentation_wiki(
                             "software",
                             "software_version",
                             "tags",
+                            "user_notes",
                             "change_summary",
                         )
                     },
