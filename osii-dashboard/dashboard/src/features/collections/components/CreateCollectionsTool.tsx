@@ -18,6 +18,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { CollectionSuggestions } from "./CollectionSuggestions";
 import { apiJson } from "../../../api/client";
 import { useWorkbenchHome } from "../../../hooks/useWorkbenchHome";
 import {
@@ -30,7 +31,7 @@ import {
 export function CreateCollectionsTool({
   create,
 }: {
-  create: (name: string, ids: string[]) => Promise<void>;
+  create: (name: string, ids: string[], description?: string) => Promise<void>;
 }) {
   const home=useWorkbenchHome();
   const [params] = useSearchParams(),
@@ -176,6 +177,7 @@ export function CreateCollectionsTool({
         onChange={(_, value) => setMode(value)}
         aria-label="Collection source"
       >
+        <Tab value="suggestions" label="Suggested" disabled={busy}/>
         <Tab value="files" label="Select files" disabled={busy} />
         <Tab value="folders" label="Folders" disabled={busy} />
         <Tab value="topics" label="Topics" disabled={busy} />
@@ -192,7 +194,7 @@ export function CreateCollectionsTool({
           {(catalog.error as Error).message}
         </Alert>
       )}
-      {mode === "topics" ? (
+      {mode === "suggestions" ? <CollectionSuggestions create={create}/> : mode === "topics" ? (
         <Stack spacing={2}>
           <Typography>
             Preview a cluster or draw around related documents, then save them

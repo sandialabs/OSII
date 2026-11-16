@@ -809,4 +809,7 @@ def create_app(settings: Settings | None = None, store: PostgresStore | None = N
     from osii.api.file_display_routes import register_file_display_routes
     register_file_display_routes(app, store=store)
 
+    from osii.api.collection_suggestion_routes import register_collection_suggestion_routes
+    register_collection_suggestion_routes(app, store=store, connections=connections, provider=provider)
+
     return app

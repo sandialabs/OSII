@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Alert, Button, Dialog, DialogContent, DialogTitle, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
+import { CollectionSuggestions,useStarterCollections } from "../collections/components/CollectionSuggestions";
 import { api, type Collection, type User } from "./api";
 
 type Props = { collections: Collection[]; refresh: () => Promise<void>; fail: (e: unknown) => void };
@@ -33,7 +34,8 @@ export function CollectionSelection({ collections, refresh, fail, selected, clea
   </Stack></Paper>;
 }
 
-export function Collections({ collections, refresh, fail, user, browse, choose }: Props & { user: User; browse: (id: string, page: string) => void; choose: () => void }) {
+export function Collections({ collections, refresh, fail, user, browse, choose,ready }: Props & { ready:boolean; user: User; browse: (id: string, page: string) => void; choose: () => void }) {
+  const showSuggestions=useStarterCollections(collections.length,ready);
   const [editing, setEditing] = useState<Collection | null>(null);
   const [busy, setBusy] = useState(false);
   const save = async (remove = false) => {
@@ -46,6 +48,7 @@ export function Collections({ collections, refresh, fail, user, browse, choose }
   return <Stack spacing={2}>
     <Typography variant="h5">Collections</Typography>
     {!collections.length && <Stack spacing={1}><Typography color="text.secondary">Collections are a convenient way to group documents.</Typography><Button variant="contained" sx={{alignSelf:"start"}} onClick={choose}>Create Collections</Button></Stack>}
+    {showSuggestions&&<CollectionSuggestions create={async(name,members,description)=>{await api("/api/collections","POST",{name,members,description});await refresh();}}/>}
     {collections.map(c => <Paper key={c.id} sx={{ p: 2 }}><Stack spacing={1}>
       <Button component="a" href={`/research?collection_id=${encodeURIComponent(c.id)}`} sx={{ alignSelf: "start" }}>Write a research report</Button>
       <Typography variant="h6">{c.name}</Typography><Typography>{c.description}</Typography>

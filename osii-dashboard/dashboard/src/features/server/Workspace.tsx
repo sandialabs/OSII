@@ -118,6 +118,7 @@ export function Workspace({
   const [tab, setTab] = useState(pageFromHash);
   const flat = tab !== "browse";
   const [scope, setScope] = useState<Scope>(rootScope);
+  const [collectionsReady,setCollectionsReady]=useState(false);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [folders, setFolders] = useState<{ folder_id: string; path: string }[]>(
     [],
@@ -185,7 +186,7 @@ export function Workspace({
   }, [location.pathname, location.search, location.hash]);
   const refreshCollections = async () => {
     const result = await api<{ items: Collection[] }>("/api/collections");
-    setCollections(result.items);
+    setCollections(result.items);setCollectionsReady(true);
     return result.items;
   };
   useEffect(() => {
@@ -393,10 +394,11 @@ export function Workspace({
             )}
           </>
         )}
-        {tab === "create-collections" && <CreateCollectionsTool create={async(name,members)=>{await api("/api/collections","POST",{name,members});}}/>}
+        {tab === "create-collections" && <CreateCollectionsTool create={async(name,members,description)=>{await api("/api/collections","POST",{name,members,description});}}/>}
         {tab === "collections" && (
           <Collections
             collections={collections}
+            ready={collectionsReady}
             user={user}
             refresh={refresh}
             fail={fail}

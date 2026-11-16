@@ -21,6 +21,7 @@ The **Toolbox** contains frontend workflows. Backend **processor modules**
 - Inventory mounted sources, review batches, and ingest documents with optional OCR.
 - Run scoped synthesis and enrichment tools, with saved products and revision history.
 - Browse sources, organize shared collections, and search by keywords or meaning.
+  Topic suggestions and prompts can help create focused collections; see [how suggestions work](docs/reference/collection-suggestions.md).
 - Ask grounded questions using a configured model service.
 - Compare advanced RAG strategies and inspect their agent traces in Chat.
 - Give administrators, curators, and readers appropriate access to the library.

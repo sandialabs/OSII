@@ -1,11 +1,12 @@
 """Shared file-display routes with explicit local/hosted persistence adapters."""
+from __future__ import annotations
 import json
-from typing import Annotated
+from typing import Annotated, TYPE_CHECKING
 from pathlib import Path
 from fastapi import Depends, FastAPI, Request
 from pydantic import BaseModel, Field, StringConstraints
-from sqlalchemy import text
-from sqlalchemy.engine import Engine
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Engine
 from osii.domain.file_display import FileDisplay, display_settings
 
 
@@ -14,6 +15,7 @@ class PreviewRequest(BaseModel):
 
 
 def postgres_previews(engine: Engine, file_ids: list[str]) -> dict[str, dict]:
+    from sqlalchemy import text
     # Only bounded excerpts leave PostgreSQL; never fetch entire OCR/LLM bodies.
     with engine.connect() as connection:
         rows = connection.execute(text("""
