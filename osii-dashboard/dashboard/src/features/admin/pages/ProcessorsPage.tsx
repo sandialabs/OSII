@@ -678,7 +678,7 @@ export function ProcessorsPage() {
           apiKey={apiKey} onApiKey={setApiKey} credentialPresent={providerForm.credential_present}
           credentialWritable={providerForm.credential_writable !== false} showCredential={providerForm.type !== "ollama"}
           urlHelp={providerForm.type === "ollama" ? "Ollama server address, such as http://localhost:11434." : "Use the OpenAI-compatible API base address."}
-          credentialHelp={providerForm.credential_help ?? `Saved locally in ${data?.configuration.files.secrets ?? "secrets.env"}. Never sent to processor modules.`} />
+          credentialHelp={providerForm.credential_help} />
         {providerForm.type === "ollama" && <Alert severity="info" icon={false}>Install and start Ollama yourself. OSII can inspect installed models and download the approved starters.</Alert>}
         <ModelPicker label="Language model" value={providerForm.chat_model} options={discoveredModels.filter(model => !model.capabilities.length || model.capabilities.includes("chat"))}
           onChange={model => setProviderForm(current => ({ ...current, chat_model: model, synthesis_model: model }))} helperText="Choose an available model for chat, summaries, and wiki generation." />

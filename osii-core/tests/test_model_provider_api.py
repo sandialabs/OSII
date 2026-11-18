@@ -79,7 +79,7 @@ def test_corporate_preset_roundtrips_without_a_new_protocol(client):
     config = (Path(os.environ["OSII_CONFIG_DIR"]) / "models.toml").read_text()
     assert 'type = "openai-compatible"' in config
     assert 'preset = "corporate"' in config
-    assert str(Path(os.environ["OSII_CONFIG_DIR"]) / "secrets.env") in saved["credential_help"]
+    assert saved["credential_help"] == ""
 
 
 def test_corporate_preset_rejects_incompatible_transport(client):
@@ -247,8 +247,7 @@ def test_openai_environment_exposes_generic_runtime_defaults(client, monkeypatch
     assert selected_processor("embedder") == "openai.embedder"
     assert selected_processor("synthesizer") == "openai.synthesizer"
     assert provider["credential_writable"] is False
-    assert "OPENAI_API_KEY" in provider["credential_help"]
-    assert "restart" in provider["credential_help"]
+    assert provider["credential_help"] == "OSII is using OPENAI_API_KEY from its startup environment."
     assert "alias-key" not in str(payload)
 
     blocked = client.put("/api/admin/model-providers/openai-compatible/credential",
@@ -417,6 +416,7 @@ def test_setup_rotates_startup_key_without_restart(client, monkeypatch, tmp_path
     providers = client.get("/api/admin/model-providers").json()["providers"]
     provider = next(item for item in providers if item["id"] == "openai-compatible")
     assert provider["credential_writable"] is True
+    assert provider["credential_help"] == "OSII is using OPENAI_API_KEY from its startup environment."
     for replacement in ("replacement-one", "replacement-two"):
         response = client.put("/api/admin/model-providers/openai-compatible/credential",
                               json={"api_key": replacement})

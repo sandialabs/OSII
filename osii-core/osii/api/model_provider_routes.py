@@ -16,12 +16,11 @@ from osii.domain.model_provider_config import (
     DEFAULT_OLLAMA_EMBEDDING_MODEL,
 )
 from osii.domain.env_credentials import (
-    configured_env_file,
     local_config_writable,
     resolve_env_value,
     write_env_value,
 )
-from osii.configuration import load_models_config, save_models_config, secrets_path
+from osii.configuration import load_models_config, save_models_config
 from osii.model_catalog import discover_models
 
 
@@ -211,18 +210,11 @@ def _validate(payload: dict[str, Any], provider_id: str | None = None) -> dict[s
 
 
 def _credential_help(name: str, source: str | None) -> str:
-    if source == "environment" and local_config_writable():
-        return "Using a startup key. Save a replacement here to override it locally without restarting."
     if source == "environment":
-        return (
-            f"OSII is using {name} from its startup environment (which can include root .env). "
-            "This is not a connection-test result. Update that value and restart OSII, "
-            f"or remove {name} from root .env and your shell, then restart to save a key here."
-        )
+        return f"OSII is using {name} from its startup environment."
     if source == "secret_file":
-        return f"OSII is using the secret file configured by {name}_FILE. Update that file to change the key."
-    path = configured_env_file() or secrets_path()
-    return f"Saved locally in {path}; never stored in .osii or sent to processor modules."
+        return f"OSII is using the secret file configured by {name}_FILE."
+    return ""
 
 
 def _public(record: dict[str, Any]) -> dict[str, Any]:
