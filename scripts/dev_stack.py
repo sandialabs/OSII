@@ -348,6 +348,13 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str], *, core_only: b
         env=env,
         check=True,
     )
+    # Check the actual application interpreter before exposing the dashboard.
+    subprocess.run(
+        [uv, "run", "--no-sync", "--package", "osii", "python", "-c",
+         "import fastapi, uvicorn, osii.worker, osii.volume.worker; "
+         "print('Application and worker imports OK')"],
+        cwd=REPOSITORY_ROOT, env=env, check=True,
+    )
     prepared: set[Path] = set()
     for service in ([] if core_only else processor_module_services(uv, env)):
         if not service.start_automatically or service.working_directory in prepared:
@@ -430,7 +437,7 @@ def service_commands(
                 "watchfiles",
                 "--filter",
                 "python",
-                "python -m osii.worker",
+                "--target-type", "function", "osii.worker.main",
                 "osii",
             ),
             REPOSITORY_ROOT / "osii-core",
@@ -439,7 +446,7 @@ def service_commands(
         Service(
             "inventory-worker",
             (uv, "run", "--no-sync", "--package", "osii", "python", "-m",
-             "watchfiles", "--filter", "python", "python -m osii.volume.worker", "osii/volume"),
+             "watchfiles", "--filter", "python", "--target-type", "function", "osii.volume.worker.main", "osii/volume"),
             REPOSITORY_ROOT / "osii-core",
             0,
         ),

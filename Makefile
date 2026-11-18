@@ -37,6 +37,7 @@ if [ -f "$$osii_env_file" ]; then \
 		export "$$osii_name=$$osii_value"; \
 	done < "$$osii_env_file"; \
 fi; \
+if [ "$${UV_SYSTEM_CERTS+x}" != x ] && [ "$${UV_NATIVE_TLS+x}" != x ]; then export UV_SYSTEM_CERTS=true; fi; \
 if [ -n "$${SSL_CERT_FILE:-}" ]; then \
 	if [ ! -r "$$SSL_CERT_FILE" ] || ! grep -q '^-----BEGIN CERTIFICATE-----' "$$SSL_CERT_FILE"; then \
 		echo "SSL_CERT_FILE must point to a readable PEM CA bundle. Use an absolute path; DER .crt files must be exported as PEM." >&2; exit 2; \

@@ -170,3 +170,29 @@ indices and finite scores, and does not accept replacement evidence text. Errors
 propagate rather than silently switching providers. A strategy must account for
 reranking calls separately from the runner's decider-call budget. See the
 [RAG authoring guide](../extending/rag-strategies.md) for limits and composition.
+
+
+## Replace a key in OSII-local
+
+In **Setup → Model connections → Configure**, paste a replacement API key and
+save the connection. This works even when the old key came from the startup
+`.env` or shell. The key is write-only and saved in the active configuration's
+`secrets.env`; it never appears in API responses or corpus sidecars. Core and
+the model bridge read the replacement for subsequent requests without restarting.
+An already-running request can finish with the key it started with.
+
+With local configuration writes enabled, saved keys take precedence over startup
+inline keys of the same name. **Forget key** removes the saved override and
+returns to the startup key, if present. A key explicitly bound through
+`<NAME>_FILE` remains managed through that file. Hosted deployments with local
+writes disabled retain deployment-controlled credential precedence.
+
+LiteLLM proxies use an **OpenAI-compatible** connection: enter the proxy's API
+base URL (often ending in `/v1`), its bearer API key, and the deployment's exact
+model alias. Do not enter a `/chat/completions` or `/embeddings` operation URL as
+the base. **Find models** checks the catalog; **Test models** additionally checks
+configured model capabilities. A successful catalog request alone does not
+verify synthesis or embeddings. Corporate HTTPS may also require
+`REQUESTS_CA_BUNDLE` for model requests; `UV_SYSTEM_CERTS` only configures uv,
+not the model client's HTTPS trust. AWS IAM/SigV4 endpoints are not bearer-key
+OpenAI-compatible endpoints and require an appropriate gateway or adapter.

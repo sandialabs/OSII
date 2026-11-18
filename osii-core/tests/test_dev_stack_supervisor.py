@@ -122,7 +122,9 @@ def test_bad_ca_bundle_fails_before_uv(trust_startup, launcher, contents):
 def test_startup_without_dotenv_still_works(trust_startup, launcher):
     result = invoke_trust_startup(trust_startup, launcher)
     assert result.returncode == 0, result.stderr
-    assert not any(json.loads(result.stdout).values())
+    values = json.loads(result.stdout)
+    assert values.pop("UV_SYSTEM_CERTS") == "true"
+    assert not any(values.values())
 
 
 @pytest.mark.parametrize("launcher", ["make", "powershell"])
@@ -280,8 +282,9 @@ def test_toolbox_opt_out_retains_manual_controls_and_core_only_omits_services():
     assert {s.name for s in core} == {"api", "worker", "inventory-worker", "mcp", "dashboard"}
     by_name = {s.name: s for s in core}
     assert "osii.main:app" in by_name["api"].command
-    assert "python -m osii.worker" in by_name["worker"].command
-    assert "python -m osii.volume.worker" in by_name["inventory-worker"].command
+    assert "osii.worker.main" in by_name["worker"].command
+    assert "--target-type" in by_name["worker"].command
+    assert "osii.volume.worker.main" in by_name["inventory-worker"].command
 
 
 def test_toolbox_environment_registers_custom_ports_without_changing_routes(monkeypatch, tmp_path):
@@ -511,3 +514,41 @@ def test_individual_module_opt_out_skips_environment_and_service(monkeypatch, tm
 def test_legacy_module_startup_flag_remains_compatible():
     assert all(not service.start_automatically for service in DEV_STACK.processor_module_services('uv', {'OSII_START_TOOLBOX': 'false'}))
     assert all(service.start_automatically for service in DEV_STACK.processor_module_services('uv', {'OSII_START_TOOLBOX': 'false', 'OSII_START_PROCESSOR_MODULES': 'true'}))
+
+
+def test_powershell_default_system_trust(trust_startup):
+    result = invoke_trust_startup(trust_startup, "powershell")
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["UV_SYSTEM_CERTS"] == "true"
+
+
+def test_worker_spawn_uses_application_environment(tmp_path):
+    # Exercise the same function target and spawn mechanism used by watchfiles,
+    # including Windows (where fork is unavailable). No worker loop is started.
+    script = tmp_path / "spawn_probe.py"
+    # An actual spawn import probe exits by itself, avoiding timing-based assertions.
+    script.write_text("""import multiprocessing
+import sys
+
+def probe(connection):
+    import fastapi, osii.worker, osii.volume.worker
+    connection.send(sys.executable)
+    connection.close()
+
+if __name__ == '__main__':
+    context = multiprocessing.get_context('spawn')
+    parent, child = context.Pipe()
+    process = context.Process(target=probe, args=(child,))
+    process.start()
+    try:
+        assert parent.poll(30), 'Worker imports failed or timed out'
+        assert parent.recv() == sys.executable
+        process.join(10)
+        assert process.exitcode == 0
+    finally:
+        if process.is_alive():
+            process.terminate()
+        process.join()
+""")
+    result = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=50)
+    assert result.returncode == 0, result.stderr

@@ -14,7 +14,7 @@ from typing import Protocol, Sequence
 import requests
 
 from osii.model_endpoints import ModelEndpoint, endpoint_from_environment
-from osii.domain.env_credentials import read_env_value
+from osii.domain.env_credentials import resolve_env_value
 from osii.rag.strategies.http_reranker import create_reranker  # public Core RAG factory
 
 
@@ -88,8 +88,7 @@ class OpenAICompatibleClient:
 def _endpoint(capability: str) -> ModelEndpoint:
     environment = dict(os.environ)
     for name in (f"OSII_{capability.upper()}_API_KEY", "OSII_MODEL_API_KEY", "OPENAI_API_KEY"):
-        if not environment.get(name):
-            environment[name] = read_env_value(name)
+        environment[name] = resolve_env_value(name)[0]
     return endpoint_from_environment(capability, environment=environment)
 
 

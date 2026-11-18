@@ -26,14 +26,35 @@ make dev
 # Windows PowerShell
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 # Configure corporate certificate trust in .env as described below, then:
-.\\scripts\\osii.ps1 dev
+.\scripts\osii.ps1 dev
 ```
+
+Python selection on Windows is automatic: the launcher checks `py -3.12`,
+then lets uv find or download Python 3.12. You do not need to locate python.exe
+manually. If corporate policy requires a particular installation, use:
+
+```powershell
+.\scripts\osii.ps1 dev -PythonVersion "C:/path/to/Python312/python.exe"
+```
+
+A failed Python download and a failed package download both use uv's trust
+settings below. Startup now checks FastAPI and worker imports before opening
+the dashboard. Processing workers use the same Python interpreter through
+watchfiles function targets, including on Windows; they do not resolve a bare
+`python` command from PATH. If an import check fails, retain the startup log,
+correct any installation error, and rerun the normal startup command.
 
 ### Configure corporate certificate trust once
 
 Both startup commands read certificate settings from root `.env` **before the
-first uv invocation**, including when Python 3.12 is not installed. No separate
-`export` commands or manual Python download are required. These values are
+first uv invocation**, including when Python 3.12 is not installed.
+System certificate trust defaults to enabled on both Windows and macOS, even
+without an env file. OS-installed corporate roots apply to Python downloads
+and package downloads. Set `UV_SYSTEM_CERTS=false` to opt out; explicit
+settings, including the legacy `UV_NATIVE_TLS`, are respected.
+One `.env` template works across platforms; separate `.env.windows` and
+`.env.mac` files are unnecessary. An IT-approved Python installation remains
+an option when corporate policy blocks downloads. These values are
 inherited by dependency installation and child services. Existing shell/CI
 variables override `.env`; editing `.env` does not override a value already set
 in the terminal. PowerShell restores its prior certificate environment after
@@ -186,7 +207,7 @@ instances, Windows execution, and a large PDF corpus remain unverified.
 
 ## Start and check
 
-Run `make dev` (Windows: `.\\scripts\\osii.ps1 dev`). This installs locked
+Run `make dev` (Windows: `.\scripts\osii.ps1 dev`). This installs locked
 Python dependencies and dashboard dependencies, then starts the application,
 baseline processors, and enabled processor modules on the host. Module dependencies
 are prepared once per project in that project's ignored `osii-env/`, separately
@@ -245,7 +266,7 @@ for the proposed background discovery/staging integration for very large shares.
 
 Preview the process plan without launching services:
 `uv run --no-project --python 3.12 python scripts/dev_stack.py --dry-run`.
-On Windows use `.\\scripts\\osii.ps1 dev -DryRun`.
+On Windows use `.\scripts\osii.ps1 dev -DryRun`.
 
 ## Update source
 
@@ -277,7 +298,7 @@ For extension contracts and custom reranking, see the
 [RAG strategy authoring guide](../extending/rag-strategies.md).
 
 Normal local startup now installs the locked `rag-haystack` extra for Chat's
-opt-in experiment controls. Restart `make dev` (Windows: `.\\scripts\\osii.ps1 dev`)
+opt-in experiment controls. Restart `make dev` (Windows: `.\scripts\osii.ps1 dev`)
 after updating. The extra remains optional for standalone Python users and is
 not part of the baseline hosted image.
 

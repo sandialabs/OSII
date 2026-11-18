@@ -470,3 +470,18 @@ def test_independent_metadata_tool_uses_selected_gateway_and_returns_suggestions
     assert next(row for row in artifact["standard_data"]["rows"] if row["field"] == "title")["evidence"] == "Thermal calibration"
     assert calls[0][0] == "http://gateway.test/v1/chat/completions"
     assert calls[0][1]["json"]["model"] == "chosen"
+
+
+def test_local_saved_key_rotation_reaches_generation_headers(monkeypatch, tmp_path):
+    secrets = tmp_path / "secrets.env"
+    monkeypatch.setenv("OSII_ENV_FILE", str(secrets))
+    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
+    monkeypatch.setenv("OPENAI_API_KEY", "bad-startup-key")
+    monkeypatch.delenv("OPENAI_API_KEY_FILE", raising=False)
+    monkeypatch.setattr("app.main._configured_provider", lambda *a: {
+        "base_url": "https://litellm.test/v1", "credential_env": "OPENAI_API_KEY"})
+    for key in ("new-key", "rotated-key"):
+        secrets.write_text(f'OPENAI_API_KEY="{key}"\n')
+        assert CLIENTS["openai"].headers(capability="chat")["Authorization"] == f"Bearer {key}"
+    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "false")
+    assert CLIENTS["openai"].headers(capability="chat")["Authorization"] == "Bearer bad-startup-key"

@@ -49,10 +49,26 @@ try {
             [Environment]::SetEnvironmentVariable($Name, $Value, "Process")
         }
     }
+    # Trust OS-installed corporate roots even without a .env file.
+    if ($null -eq [Environment]::GetEnvironmentVariable("UV_SYSTEM_CERTS", "Process") -and
+        $null -eq [Environment]::GetEnvironmentVariable("UV_NATIVE_TLS", "Process")) {
+        $env:UV_SYSTEM_CERTS = "true"
+    }
     if ($env:SSL_CERT_FILE) {
         if (-not (Test-Path -LiteralPath $env:SSL_CERT_FILE -PathType Leaf) -or
             -not (Select-String -LiteralPath $env:SSL_CERT_FILE -Pattern '^-----BEGIN CERTIFICATE-----' -Quiet)) {
             throw "SSL_CERT_FILE must point to a readable PEM CA bundle. Use an absolute path; DER .crt files must be exported as PEM."
+        }
+    }
+    # The Windows Python launcher finds installations outside PATH.
+    if ($PythonVersion -eq "3.12" -and (Get-Command py -ErrorAction SilentlyContinue)) {
+        try {
+            $InstalledPython = & py -3.12 -c "import sys; print(sys.executable)" 2>$null
+            if ($LASTEXITCODE -eq 0 -and $InstalledPython -and (Test-Path -LiteralPath "$InstalledPython" -PathType Leaf)) {
+                $PythonVersion = "$InstalledPython"
+            }
+        } catch {
+            # No matching installed Python: uv can obtain the requested version.
         }
     }
     $env:OSII_PYTHON_VERSION = $PythonVersion

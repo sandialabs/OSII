@@ -287,6 +287,7 @@ def test_new_external_default_accepts_setup_key_when_environment_key_is_empty(cl
 
 
 def test_openai_environment_accepts_container_secret_file(client, monkeypatch, tmp_path):
+    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
     secret = tmp_path / "openai_api_key"
     secret.write_text("mounted-secret\n", encoding="utf-8")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -402,3 +403,29 @@ def test_ollama_pull_stream_error_is_reported(client, monkeypatch):
     assert job["status"] == "error"
     assert job["status_text"] == "Download failed"
     assert job["detail"] == "registry access was denied"
+
+
+def test_setup_rotates_startup_key_without_restart(client, monkeypatch, tmp_path):
+    from osii.domain.env_credentials import resolve_env_value
+    from osii.model_clients import _endpoint
+    secrets = tmp_path / "secrets.env"
+    monkeypatch.setenv("OSII_ENV_FILE", str(secrets))
+    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://litellm.example.test/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "bad-startup-key")
+    monkeypatch.delenv("OPENAI_API_KEY_FILE", raising=False)
+    providers = client.get("/api/admin/model-providers").json()["providers"]
+    provider = next(item for item in providers if item["id"] == "openai-compatible")
+    assert provider["credential_writable"] is True
+    for replacement in ("replacement-one", "replacement-two"):
+        response = client.put("/api/admin/model-providers/openai-compatible/credential",
+                              json={"api_key": replacement})
+        assert response.status_code == 200
+        assert replacement not in response.text
+        assert resolve_env_value("OPENAI_API_KEY") == (replacement, "repo_env")
+        assert _endpoint("chat").api_key == replacement
+        seen = []
+        monkeypatch.setattr("requests.get", lambda *a, **kw: seen.append(kw["headers"]) or FakeResponse(payload={"data": []}))
+        client.post("/api/admin/model-providers/openai-compatible/health")
+        assert seen[0]["Authorization"] == f"Bearer {replacement}"
+    assert __import__("os").environ["OPENAI_API_KEY"] == "bad-startup-key"

@@ -72,8 +72,15 @@ def read_secret_file_value(name: str) -> str:
 
 
 def resolve_env_value(name: str, *aliases: str) -> tuple[str, str | None]:
-    """Return ``(value, source)`` with process environment taking precedence."""
+    """Local Setup overrides startup keys; managed deployments retain env priority."""
     names = tuple(item for item in (name, *aliases) if item)
+    if local_config_writable():
+        for candidate in names:
+            # Explicit secret-file bindings remain deployment-managed.
+            if not os.getenv(f"{candidate}_FILE", "").strip():
+                value = read_env_value(candidate)
+                if value:
+                    return value, "repo_env"
     for candidate in names:
         value = os.getenv(candidate, "")
         if value:
