@@ -4,6 +4,7 @@ import base64
 import csv
 import io
 import math
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -62,7 +63,7 @@ def _ocr_page(
     dpi: int,
     page_segmentation_mode: int,
 ) -> dict:
-    executable = shutil.which("tesseract")
+    executable = os.getenv("OSII_TESSERACT_EXECUTABLE") or shutil.which("tesseract")
     if executable is None:
         raise ValueError(
             "Tesseract is not installed or is not on PATH. Install the native "
@@ -279,7 +280,7 @@ def ready():
     import shutil
     from fastapi.responses import JSONResponse
 
-    executable = shutil.which("tesseract")
+    executable = os.getenv("OSII_TESSERACT_EXECUTABLE") or shutil.which("tesseract")
     return JSONResponse(
         {
             "status": "ready" if executable else "unavailable",

@@ -16,7 +16,7 @@ import requests
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from app.env_credentials import resolve_secret
+from osii_model_provider_bridge.env_credentials import resolve_secret
 
 from osii.processor_sdk import (
     Capability,

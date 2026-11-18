@@ -1,0 +1,45 @@
+name: Standalone Windows
+on:
+  push:
+    branches: [osii-standalone]
+    tags: ['standalone-v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: standalone-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  runtime:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      - name: Install locked build dependencies
+        run: uv sync --frozen --python 3.12 --package osii --extra standalone-build --extra dev --package osii-local-extractor --package osii-local-tesseract --package osii-local-synthesizer --package osii-local-embedder --package osii-local-enricher --package osii-model-provider-bridge
+      - name: Shared launcher and processor tests
+        run: |
+          uv run --no-sync python -m pytest osii-core/tests/test_library_lock.py osii-core/tests/test_dev_stack_supervisor.py osii-core/services/baseline-processors/tests -q
+          if ($LASTEXITCODE -ne 0) { throw 'Launcher tests failed' }
+          uv run --no-sync python -m pytest osii-core/services --import-mode=importlib -q
+          if ($LASTEXITCODE -ne 0) { throw 'Processor tests failed' }
+      - name: Prepare checksum-verified OCR payload
+        run: uv run --no-sync python scripts/prepare_standalone.py --ocr
+      - name: Freeze Python and native libraries
+        run: uv run --no-sync pyinstaller --clean --noconfirm --distpath osii-desktop/resources/runtime osii-desktop/runtime.spec
+      - name: Frozen runtime gate without dependency tools
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          $env:PYTHONPATH = ''
+          $env:PYTHONHOME = ''
+          & .\osii-desktop\resources\runtime\osii-runtime\osii-runtime.exe self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen runtime gate failed' }
+          & .\osii-desktop\resources\runtime\osii-runtime\osii-runtime.exe self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen runtime restart gate failed' }
+      - uses: actions/upload-artifact@v6
+        with:
+          name: osii-windows-runtime-pilot
+          path: osii-desktop/resources/runtime/osii-runtime
+          retention-days: 7

@@ -71,6 +71,7 @@ Thumbs.db
 
 # Local logs and generated reports
 /release/
+/osii-desktop/resources/
 *.log
 coverage.xml
 repo_for_ai.txt

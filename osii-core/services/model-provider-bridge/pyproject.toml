@@ -16,7 +16,7 @@ dev = ["httpx>=0.27,<1", "pytest>=8,<9", "python-multipart>=0.0.20,<1"]
 osii = { path = "../..", editable = true }
 
 [tool.hatch.build.targets.wheel]
-packages = ["app"]
+packages = ["osii_model_provider_bridge"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -2,14 +2,14 @@ from fastapi.testclient import TestClient
 import pytest
 import requests
 
-from app.main import CLIENTS, app
+from osii_model_provider_bridge.main import CLIENTS, app
 from osii.configuration import save_models_config
 from osii.model_gateway_tokens import issue_model_gateway_token
-from tests.fake_openai_server import app as fake_openai_app
+from .fake_openai_server import app as fake_openai_app
 
 
 def test_named_connection_does_not_inherit_another_providers_key(monkeypatch, tmp_path):
-    monkeypatch.setattr("app.main._configured_provider", lambda *a: {
+    monkeypatch.setattr("osii_model_provider_bridge.main._configured_provider", lambda *a: {
         "base_url": "https://embedding.test/v1", "credential_env": "OSII_EMBEDDING_API_KEY"})
     monkeypatch.setenv("OSII_ENV_FILE", str(tmp_path / "empty.env"))
     monkeypatch.setenv("OPENAI_API_KEY", "shared-must-not-leak")
@@ -108,7 +108,7 @@ def test_ollama_embedding_has_small_us_model_default(monkeypatch, tmp_path):
         return {"model": "all-minilm", "embeddings": [[1.0, 0.0]]}
 
     monkeypatch.setattr(CLIENTS["ollama"], "request", fake_request)
-    monkeypatch.setattr("app.main._ollama_model_digest", lambda _: None)
+    monkeypatch.setattr("osii_model_provider_bridge.main._ollama_model_digest", lambda _: None)
     response = TestClient(app).post("/ollama/embedder/v1/embed", json={"request_id": "r", "inputs": [{"id": "a", "text": "hello"}]})
     assert response.status_code == 200
     assert seen["model"] == "all-minilm"
@@ -438,10 +438,10 @@ def test_gateway_rejects_connection_changed_during_job(monkeypatch):
     import hashlib
     import json
     from fastapi import HTTPException
-    from app.main import _bound_connection
+    from osii_model_provider_bridge.main import _bound_connection
     connection = {"model": "first", "capabilities": ["chat"]}
     fingerprint = hashlib.sha256(json.dumps(connection, sort_keys=True).encode()).hexdigest()
-    monkeypatch.setattr("app.main.model_connection", lambda alias: connection)
+    monkeypatch.setattr("osii_model_provider_bridge.main.model_connection", lambda alias: connection)
     claims = {"bindings": {"chat": "chosen"}, "connection_fingerprints": {"chat": fingerprint}}
     assert _bound_connection(claims, "chat", "chosen")[1]["model"] == "first"
     connection["model"] = "second"
@@ -460,7 +460,7 @@ def test_independent_metadata_tool_uses_selected_gateway_and_returns_suggestions
     def post(url, **kwargs):
         calls.append((url, kwargs))
         return Response()
-    monkeypatch.setattr("app.main.requests.post", post)
+    monkeypatch.setattr("osii_model_provider_bridge.main.requests.post", post)
     response = TestClient(app).post("/metadata/v1/enrich", json={"request_id": "metadata", "scope": {"scope_type": "object", "scope_id": "document", "documents": [{"file_id": "document", "filename": "opaque.pdf", "text": "Thermal calibration improved."}]}, "model_context": {"gateway_url": "http://gateway.test/v1", "token": "job-grant", "bindings": {"chat": "chosen"}}})
     assert response.status_code == 200, response.text
     artifact = response.json()["artifacts"][0]
@@ -478,7 +478,7 @@ def test_local_saved_key_rotation_reaches_generation_headers(monkeypatch, tmp_pa
     monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
     monkeypatch.setenv("OPENAI_API_KEY", "bad-startup-key")
     monkeypatch.delenv("OPENAI_API_KEY_FILE", raising=False)
-    monkeypatch.setattr("app.main._configured_provider", lambda *a: {
+    monkeypatch.setattr("osii_model_provider_bridge.main._configured_provider", lambda *a: {
         "base_url": "https://litellm.test/v1", "credential_env": "OPENAI_API_KEY"})
     for key in ("new-key", "rotated-key"):
         secrets.write_text(f'OPENAI_API_KEY="{key}"\n')
