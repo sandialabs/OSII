@@ -47,7 +47,7 @@ def run() -> dict:
     ocr = LocalTesseractPageExtractor()
     for name, content in (("scan.pdf", scanned.tobytes()), ("scan.png", image)):
         response = ocr.extract(request(name, content))
-        assert "Portable evidence" in response.segments[0].text, "Bundled OCR could not read the fixture"
+        assert response.segments and "Portable evidence" in response.segments[0].text, "Bundled OCR could not read the fixture; check its TSV configuration and language assets"
     import os
     import subprocess
     binary = os.environ["OSII_TESSERACT_EXECUTABLE"]

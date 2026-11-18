@@ -53,6 +53,16 @@ def prepare_ocr() -> None:
         shutil.copy2(engine, output / "tesseract.exe")
         for library in engine.parent.glob("*.dll"):
             shutil.copy2(library, output / library.name)
+        # `tesseract ... tsv` loads tessdata/configs/tsv. Language weights
+        # alone can return exit code zero but plain text instead of TSV.
+        for name in ("configs", "tessconfigs"):
+            source = engine.parent / "tessdata" / name
+            if source.is_dir():
+                shutil.copytree(source, output / "tessdata" / name)
+        if not (output / "tessdata" / "configs" / "tsv").is_file():
+            raise RuntimeError("The OCR payload is missing its required TSV configuration")
+        if (engine.parent / "tessdata" / "osd.traineddata").is_file():
+            shutil.copy2(engine.parent / "tessdata" / "osd.traineddata", output / "tessdata" / "osd.traineddata")
         for notice in engine.parent.glob("*LICENSE*"):
             if notice.is_file():
                 shutil.copy2(notice, output / notice.name)
@@ -61,7 +71,7 @@ def prepare_ocr() -> None:
             if (engine.parent / name).is_dir():
                 shutil.copytree(engine.parent / name, output / name)
     language_dir = output / "tessdata"
-    language_dir.mkdir()
+    language_dir.mkdir(exist_ok=True)
     def language(item):
         name, digest = item
         url = f"https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/{lock['language_commit']}/{name}.traineddata"

@@ -32,6 +32,7 @@ dependencies = [
 [project.optional-dependencies]
 standalone-build = [
   "pyinstaller==6.22.3",
+  "truststore>=0.10,<1",
 ]
 postgres = [
   "SQLAlchemy>=2.0,<3",
