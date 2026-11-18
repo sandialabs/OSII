@@ -87,7 +87,7 @@ def test_desktop_serves_spa_assets_but_never_masks_api_or_path_errors(tmp_path):
     @app.get("/api/evidence")
     def evidence():
         return {"kept": True}
-    attach_dashboard(app, dashboard, "private-token")
+    attach_dashboard(app, dashboard, "private-token", port=19876)
     client = TestClient(app, base_url="http://127.0.0.1:19876")
     headers = {"Authorization": "Bearer private-token"}
     assert client.get("/", headers=headers).status_code == 200
@@ -103,7 +103,7 @@ def test_desktop_serves_spa_assets_but_never_masks_api_or_path_errors(tmp_path):
 def test_private_http_rejects_missing_tokens_foreign_origins_and_rebinding(tmp_path):
     (tmp_path / "index.html").write_text("desktop")
     app = FastAPI()
-    attach_dashboard(app, tmp_path, "secret")
+    attach_dashboard(app, tmp_path, "secret", port=19876)
     client = TestClient(app, base_url="http://127.0.0.1:19876")
     assert client.get("/").status_code == 403
     assert client.get("/", headers={"Authorization": "Bearer wrong"}).status_code == 403

@@ -7,6 +7,7 @@ matches what you want to do.
 ## Start here
 
 - Read the repository README included with your checkout for the first-run path.
+- [Install OSII Standalone on Windows](operations/standalone.md)
 - [Choose a deployment or release runbook](operations/runbooks.md)
 - [Start OSII from source](operations/runbook-development.md)
 - [Use a shared drive or Samba share](operations/shared-drives.md)

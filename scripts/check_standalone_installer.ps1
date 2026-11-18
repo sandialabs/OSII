@@ -1,5 +1,6 @@
 param(
-    [string]$Installer = "$PSScriptRoot/../release/standalone/OSII-Standalone-Setup.exe"
+    [string]$Installer = "$PSScriptRoot/../release/standalone/OSII-Standalone-Setup.exe",
+    [switch]$RequireSignature
 )
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
@@ -20,6 +21,11 @@ function Install-OSII {
 try {
     New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
     Install-OSII
+    if ($RequireSignature) {
+        foreach ($file in @($Installer, (Join-Path $installation 'OSII Standalone.exe'), (Join-Path $installation 'resources/runtime/osii-runtime.exe'))) {
+            if ((Get-AuthenticodeSignature $file).Status -ne 'Valid') { throw "Invalid release signature: $file" }
+        }
+    }
     $env:OSII_DESKTOP_EXECUTABLE = Join-Path $installation 'OSII Standalone.exe'
     $env:OSII_SMOKE_DIRECTORY = $workspace
     # The test driver uses an explicit Node path. The installed app cannot find

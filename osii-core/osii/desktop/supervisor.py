@@ -20,6 +20,7 @@ import sys
 import threading
 import time
 import urllib.request
+import urllib.error
 
 from osii.library_lock import LibraryLock
 from .profiles import Profiles, check_library, require_local, validate_source
@@ -106,6 +107,8 @@ class Supervisor:
                 "HOME", "LANG", "LC_ALL", "PATH", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE",
                 "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"}
         env = {key: value for key, value in os.environ.items() if key.upper() in {name.upper() for name in kept}}
+        bypass = ",".join(filter(None, ["127.0.0.1,localhost,::1", env.get("NO_PROXY"), env.get("no_proxy")]))
+        env.update(NO_PROXY=bypass, no_proxy=bypass)
         if not getattr(sys, "frozen", False):
             # Source-only diagnostic execution; installed builds never need this.
             core = Path(__file__).resolve().parents[2]
@@ -168,6 +171,7 @@ class Supervisor:
         path = "/ready" if service.id == "ocr" else "/health"
         request = urllib.request.Request(service.url + path, headers=headers)
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        last_problem = "No response"
         while time.monotonic() < deadline:
             if self.stopping.is_set():
                 raise RuntimeError("Startup cancelled")
@@ -180,11 +184,13 @@ class Supervisor:
                     if response.status == 200:
                         self.record(service.id, "ready")
                         return
-            except OSError:
-                pass
+            except urllib.error.HTTPError as exc:
+                last_problem = f"HTTP {exc.code}"
+            except OSError as exc:
+                last_problem = type(exc).__name__
             self.stopping.wait(0.15)
         self.record(service.id, "startup_timeout")
-        raise RuntimeError(f"The bundled {service.id} process did not become ready within {int(timeout)} seconds.")
+        raise RuntimeError(f"The bundled {service.id} process did not become ready within {int(timeout)} seconds ({last_problem}).")
 
     def start(self, identifier: str) -> dict:
         if self.profile:

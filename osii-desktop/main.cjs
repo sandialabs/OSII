@@ -109,6 +109,7 @@ async function start() {
   app.setPath('userData', path.join(dataDirectory, 'desktop'));
   await fs.mkdir(dataDirectory, { recursive: true });
   const browserSession = session.fromPartition('osii-' + crypto.randomUUID());
+  await browserSession.setProxy({ mode: 'direct' }); // This session accesses only bundled/local content.
   browserSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   browserSession.setPermissionCheckHandler(() => false);
   browserSession.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {

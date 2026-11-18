@@ -109,6 +109,35 @@ def is_running(pid):
         return False
 
 
+def windows_processes():
+    from ctypes import wintypes
+    class Entry(ctypes.Structure):
+        _fields_ = [("size", wintypes.DWORD), ("usage", wintypes.DWORD), ("pid", wintypes.DWORD),
+                    ("heap", ctypes.c_size_t), ("module", wintypes.DWORD), ("threads", wintypes.DWORD),
+                    ("parent", wintypes.DWORD), ("priority", wintypes.LONG), ("flags", wintypes.DWORD),
+                    ("name", wintypes.WCHAR * 260)]
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    for name in ("Process32FirstW", "Process32NextW"):
+        getattr(kernel, name).argtypes = [wintypes.HANDLE, ctypes.POINTER(Entry)]
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel.CreateToolhelp32Snapshot(2, 0)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    entry = Entry()
+    entry.size = ctypes.sizeof(entry)
+    rows = []
+    try:
+        more = kernel.Process32FirstW(handle, ctypes.byref(entry))
+        while more:
+            rows.append({"pid": entry.pid, "parent": entry.parent, "name": entry.name})
+            more = kernel.Process32NextW(handle, ctypes.byref(entry))
+    finally:
+        kernel.CloseHandle(handle)
+    return rows
+
+
 @contextmanager
 def model_fixture():
     class Handler(BaseHTTPRequestHandler):
@@ -155,6 +184,8 @@ def check(executable: Path) -> dict:
         original.write_text("Portable evidence survives restart. The calibration result was measured twice.", encoding="utf-8")
         original_bytes = original.read_bytes()
         application = temporary / "application"
+        if os.name == "nt":
+            subprocess.run([str(executable), "self-test", "--fixture-dir", str(source)], check=True, timeout=60)
         runtime = Runtime(executable, application)
         try:
             profile = runtime.request("create_profile", profile={"name": "Frozen smoke", "source": str(source)})
@@ -211,6 +242,17 @@ def check(executable: Path) -> dict:
             assert api(session, "/api/search", {"query": "calibration", "mode": "lexical"}).get("results")
             pids = [row["pid"] for row in restarted.request("process_status")]
             if os.name == "nt":
+                statuses = restarted.request("process_status")
+                ocr_pid = next(row["pid"] for row in statuses if row["id"] == "ocr")
+                interrupted = api(session, "/api/runs", {"queue_paths": [str(source / "interrupted-ocr.pdf")],
+                    "run_extraction": True, "extractor_overrides": {".pdf": "local.tesseract-page-ocr"}})
+                deadline = time.monotonic() + 25
+                children = []
+                while not children and time.monotonic() < deadline:
+                    children = [row["pid"] for row in windows_processes() if row["parent"] == ocr_pid and row["name"].lower() == "tesseract.exe"]
+                    time.sleep(0.05)
+                assert children, "The interruption gate never observed a real OCR process"
+                pids.extend(children)
                 restarted.process.kill()
                 restarted.process.wait(timeout=15)
                 deadline = time.monotonic() + 10
@@ -219,6 +261,15 @@ def check(executable: Path) -> dict:
                 assert all(not is_running(pid) for pid in pids), "Supervisor crash left helpers alive"
         finally:
             restarted.close()
+        if os.name == "nt":
+            recovered = Runtime(executable, application)
+            try:
+                session = recovered.request("open_profile", profile_id=profile["id"])
+                assert api(session, "/api/search", {"query": "calibration", "mode": "lexical"}).get("results")
+                api(session, "/api/runs/" + (interrupted.get("run_id") or interrupted["id"]) + "/cancel", {})
+                assert original.read_bytes() == original_bytes
+            finally:
+                recovered.close()
     return {"status": "ok", "startup_seconds": startup_seconds,
             "checks": ["private-runtime", "metadata-scan", "intake", "baseline-processing", "lexical-search", "library-lock", "model-connection", "semantic-search", "model-chat", "endpoint-disconnect", "restart", "helper-cleanup"]}
 

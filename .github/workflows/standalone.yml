@@ -15,6 +15,9 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7
+      - name: Release version
+        id: version
+        run: '"version=$((Get-Content osii-desktop/package.json | ConvertFrom-Json).version)" >> $env:GITHUB_OUTPUT'
       - uses: astral-sh/setup-uv@v10.1.0
       - uses: actions/setup-node@v7
         with:
@@ -96,7 +99,7 @@ jobs:
           @{ signed = ($env:OSII_SIGNED_BUILD -eq 'true'); cleanWindowsAcceptance = 'pending'; commit = '${{ github.sha }}' } | ConvertTo-Json | Set-Content release/standalone/validation.json
       - uses: actions/upload-artifact@v6
         with:
-          name: osii-standalone-windows
+          name: osii-standalone-windows-${{ steps.version.outputs.version }}
           path: |
             release/standalone/OSII-Standalone-Setup.exe
             release/standalone/SHA256SUMS.txt

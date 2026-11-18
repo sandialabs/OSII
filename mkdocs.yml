@@ -36,6 +36,7 @@ nav:
       - Canonical outputs: reference/processor-api/canonical-outputs.md
       - Standard artifacts: reference/processor-api/standard-artifacts.md
   - Install and use:
+      - Windows standalone installer: operations/standalone.md
       - What are you trying to do?: operations/runbooks.md
       - Start from source: operations/runbook-development.md
       - Optional local PostgreSQL: reference/local-storage.md
@@ -48,6 +49,7 @@ nav:
       - Tabular datasets: tutorials/tabular-datasets.md
       - CLI cheat sheet: reference/cli.md
   - Understand OSII:
+      - Standalone desktop decision: concepts/adr-standalone-desktop.md
       - Architecture: concepts/architecture.md
       - Workbench tools decision: concepts/adr-workbench-tools.md
       - Inventory database decision: concepts/adr-volume-store.md

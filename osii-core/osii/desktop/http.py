@@ -10,9 +10,10 @@ from starlette.responses import JSONResponse
 
 
 class DesktopAccess:
-    def __init__(self, app, *, token: str):
+    def __init__(self, app, *, token: str, port: int):
         self.app = app
         self.token = "Bearer " + token
+        self.host = f"127.0.0.1:{port}"
 
     async def __call__(self, scope, receive, send):
         if scope["type"] not in {"http", "websocket"}:
@@ -21,10 +22,8 @@ class DesktopAccess:
         supplied = headers.get(b"authorization", b"").decode("latin1")
         host = headers.get(b"host", b"").decode("latin1")
         origin = headers.get(b"origin", b"").decode("latin1")
-        server = scope.get("server")
-        expected_host = f"127.0.0.1:{server[1]}" if server else host
-        allowed = (hmac.compare_digest(supplied, self.token) and host == expected_host
-                   and (not origin or origin == "http://" + expected_host))
+        allowed = (hmac.compare_digest(supplied, self.token) and host == self.host
+                   and (not origin or origin == "http://" + self.host))
         if not allowed:
             if scope["type"] == "websocket":
                 return await send({"type": "websocket.close", "code": 1008})
@@ -40,7 +39,7 @@ class DesktopAccess:
         return await self.app(scope, receive, secured_send)
 
 
-def attach_dashboard(app, directory: Path, token: str) -> None:
+def attach_dashboard(app, directory: Path, token: str, *, port: int) -> None:
     directory = directory.resolve()
     if not (directory / "index.html").is_file():
         raise RuntimeError("The compiled dashboard is missing. Reinstall OSII.")
@@ -58,4 +57,4 @@ def attach_dashboard(app, directory: Path, token: str) -> None:
             raise HTTPException(status_code=404)
         return FileResponse(directory / "index.html", headers={"Cache-Control": "no-store"})
 
-    app.add_middleware(DesktopAccess, token=token)
+    app.add_middleware(DesktopAccess, token=token, port=port)

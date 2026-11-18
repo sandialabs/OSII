@@ -57,7 +57,7 @@ def run_role(role: str) -> None:
     if role == "api":
         from osii.main import app
         from .http import attach_dashboard
-        attach_dashboard(app, resources() / "dashboard", os.environ["OSII_DESKTOP_TOKEN"])
+        attach_dashboard(app, resources() / "dashboard", os.environ["OSII_DESKTOP_TOKEN"], port=sock.getsockname()[1])
     else:
         app = importlib.import_module(SERVICES[role][0]).app
     import uvicorn
@@ -70,11 +70,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="OSII packaged runtime")
     parser.add_argument("role", choices=["self-test", "supervisor", "api", "worker", "inventory-worker", *SERVICES])
     parser.add_argument("--data-dir", type=Path)
+    parser.add_argument("--fixture-dir", type=Path, help="Self-test only: write a temporary OCR interruption fixture")
     args = parser.parse_args()
     configure_ocr()
+    if args.fixture_dir is not None and args.role != "self-test":
+        parser.error("--fixture-dir is only supported by self-test")
     if args.role == "self-test":
         from .selftest import run
-        print(json.dumps(run()), flush=True)
+        print(json.dumps(run(args.fixture_dir)), flush=True)
     elif args.role == "supervisor":
         if args.data_dir is None:
             parser.error("--data-dir is required for the supervisor")

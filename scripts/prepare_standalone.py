@@ -88,6 +88,9 @@ def main() -> None:
     args = parser.parse_args()
     PAYLOAD.mkdir(parents=True, exist_ok=True)
     version = tomllib.loads((ROOT / "osii-core" / "pyproject.toml").read_text())["project"]["version"]
+    for filename in (ROOT / "osii-desktop" / "package.json", ROOT / "osii-dashboard" / "dashboard" / "package.json"):
+        if json.loads(filename.read_text())["version"] != version:
+            raise RuntimeError("Release version mismatch: " + str(filename))
     (PAYLOAD / "release.json").write_text(json.dumps({"version": version, "target": "windows-x64", "storage": "sidecar"}) + "\n")
     notices = ["OSII bundled Python dependencies\nBuild tools may also appear in this inventory.\n"]
     for distribution in sorted(distributions(), key=lambda item: item.metadata.get("Name", "").lower()):

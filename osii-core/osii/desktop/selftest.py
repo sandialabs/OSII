@@ -8,7 +8,7 @@ import tempfile
 from zipfile import ZipFile
 
 
-def run() -> dict:
+def run(fixture_dir: Path | None = None) -> dict:
     import faiss
     import numpy as np
     import pymupdf
@@ -44,6 +44,15 @@ def run() -> dict:
     image = page.get_pixmap(dpi=180).tobytes("png")
     scanned = pymupdf.open()
     scanned.new_page(width=900, height=300).insert_image(page.rect, stream=image)
+    if fixture_dir is not None:
+        fixture_dir.mkdir(parents=True, exist_ok=True)
+        stress = pymupdf.open()
+        xref = 0
+        for _ in range(40):
+            target = stress.new_page(width=900, height=300)
+            xref = target.insert_image(target.rect, stream=image, xref=xref)
+        stress.save(fixture_dir / "interrupted-ocr.pdf")
+        stress.close()
     ocr = LocalTesseractPageExtractor()
     for name, content in (("scan.pdf", scanned.tobytes()), ("scan.png", image)):
         response = ocr.extract(request(name, content))
