@@ -5,6 +5,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+
+function windowsProcessMemory(rootId) {
+  // Measure the installed desktop and its descendants, excluding the test driver.
+  const script = `$owned = @(${Number(rootId)}); $all = Get-CimInstance Win32_Process; do { $next = @($all | Where-Object { $_.ParentProcessId -in $owned -and $_.ProcessId -notin $owned } | ForEach-Object { [int]$_.ProcessId }); $owned += $next } while ($next.Count); $processes = @(Get-Process -Id $owned -ErrorAction SilentlyContinue); @{ processCount = $processes.Count; workingSetBytes = ($processes | Measure-Object WorkingSet64 -Sum).Sum; privateBytes = ($processes | Measure-Object PrivateMemorySize64 -Sum).Sum } | ConvertTo-Json -Compress`;
+  return JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
+    { encoding: 'utf8', windowsHide: true, timeout: 30_000 }));
+}
 
 async function main() {
   const temporary = process.env.OSII_SMOKE_DIRECTORY || await fs.mkdtemp(path.join(os.tmpdir(), 'OSII smoke — '));
@@ -23,7 +31,9 @@ async function main() {
   if (process.env.OSII_DESKTOP_EXECUTABLE) options.executablePath = process.env.OSII_DESKTOP_EXECUTABLE;
   else options.args = [path.resolve(__dirname, '..')];
   let application;
+  const metrics = { platform: process.platform, packaged: Boolean(process.env.OSII_DESKTOP_EXECUTABLE) };
   try {
+    const started = Date.now();
     application = await _electron.launch(options);
     let page = await application.firstWindow();
     page.on('pageerror', error => errors.push(error.message));
@@ -63,6 +73,8 @@ async function main() {
     assert.equal(setup.extraction_ready, true);
     assert.equal(setup.ai_ready, false);
     assert.ok(setup.services.some(service => service.id === 'ocr' && service.ownership === 'osii'));
+    metrics.dashboardReadySeconds = (Date.now() - started) / 1000;
+    if (process.platform === 'win32') metrics.idleMemory = windowsProcessMemory(application.process().pid);
     const noToken = await fetch(new URL('/health', page.url()));
     assert.equal(noToken.status, 403, 'The API must reject requests outside the Electron session');
     const run = await api('/api/runs', 'POST', { queue_paths: [documents], run_extraction: true,
@@ -104,6 +116,8 @@ async function main() {
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: 'calibration', mode: 'lexical' }) })).json());
     assert.ok(reopened.results.length > 0, JSON.stringify(reopened));
     assert.deepEqual(errors, []);
+    await fs.writeFile(path.join(output, 'standalone-metrics.json'), JSON.stringify(metrics, null, 2) + '\n');
+    console.log(JSON.stringify({ metrics }));
     console.log(JSON.stringify({ status: 'ok', checks: ['first-run', 'private-session', 'offline-mathematics', 'intake', 'preview', 'enrichment', 'keyword-search', 'offline-chat', 'spa-reload', 'ipc-boundary', 'restart'] }));
   } catch (error) {
     const page = application?.windows()[0];

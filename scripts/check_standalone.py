@@ -186,7 +186,6 @@ def model_fixture():
 
 
 def check(executable: Path) -> dict:
-    started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="OSII frozen — ") as directory:
         temporary = Path(directory)
         source = temporary / "Documents with spaces"
@@ -197,6 +196,7 @@ def check(executable: Path) -> dict:
         application = temporary / "application"
         if os.name == "nt":
             subprocess.run([str(executable), "self-test", "--fixture-dir", str(source)], check=True, timeout=60)
+        started = time.monotonic()
         runtime = Runtime(executable, application)
         try:
             profile = runtime.request("create_profile", profile={"name": "Frozen smoke", "source": str(source)})
