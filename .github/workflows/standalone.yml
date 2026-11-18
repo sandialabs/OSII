@@ -96,7 +96,7 @@ jobs:
           }
           $hash = (Get-FileHash release/standalone/OSII-Standalone-Setup.exe -Algorithm SHA256).Hash.ToLower()
           "$hash  OSII-Standalone-Setup.exe" | Set-Content release/standalone/SHA256SUMS.txt
-          @{ signed = ($env:OSII_SIGNED_BUILD -eq 'true'); cleanWindowsAcceptance = 'pending'; commit = '${{ github.sha }}' } | ConvertTo-Json | Set-Content release/standalone/validation.json
+          @{ signed = ($env:OSII_SIGNED_BUILD -eq 'true'); cleanWindowsAcceptance = 'pending'; commit = '${{ github.sha }}'; installerBytes = (Get-Item release/standalone/OSII-Standalone-Setup.exe).Length } | ConvertTo-Json | Set-Content release/standalone/validation.json
       - uses: actions/upload-artifact@v6
         with:
           name: osii-standalone-windows-${{ steps.version.outputs.version }}
@@ -111,6 +111,5 @@ jobs:
           name: standalone-test-evidence
           path: |
             output/playwright/
-            release/standalone/builder-debug.yml
           if-no-files-found: ignore
           retention-days: 7

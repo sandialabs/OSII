@@ -17,7 +17,7 @@ async function main() {
   try { saved = (await fs.readdir(path.join(temporary, 'application', 'profiles'))).length > 0; } catch { /* First installation. */ }
   const errors = [];
   const options = {
-    env: { ...process.env, OSII_DESKTOP_DATA_DIR: path.join(temporary, 'application') },
+    env: { ...process.env, PYTHONIOENCODING: 'cp1252', OSII_DESKTOP_DATA_DIR: path.join(temporary, 'application') },
     timeout: 90_000,
   };
   if (process.env.OSII_DESKTOP_EXECUTABLE) options.executablePath = process.env.OSII_DESKTOP_EXECUTABLE;
@@ -105,6 +105,16 @@ async function main() {
     assert.ok(reopened.results.length > 0, JSON.stringify(reopened));
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ status: 'ok', checks: ['first-run', 'private-session', 'offline-mathematics', 'intake', 'preview', 'enrichment', 'keyword-search', 'offline-chat', 'spa-reload', 'ipc-boundary', 'restart'] }));
+  } catch (error) {
+    const page = application?.windows()[0];
+    if (page && !page.isClosed()) {
+      const output = path.resolve(__dirname, '../../output/playwright');
+      await fs.mkdir(output, { recursive: true });
+      await page.screenshot({ path: path.join(output, 'standalone-failure.png'), fullPage: true }).catch(() => {});
+      const detail = await page.locator('#error').textContent({ timeout: 1000 }).catch(() => '');
+      if (detail) error.message += '\nDesktop status: ' + detail;
+    }
+    throw error;
   } finally {
     if (application) await application.close();
     if (!process.env.OSII_SMOKE_DIRECTORY) await fs.rm(temporary, { recursive: true, force: true });

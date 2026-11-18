@@ -108,6 +108,11 @@ def run_role(role: str) -> None:
 
 
 def main() -> int:
+    # Electron writes UTF-8 JSON, independently of Windows' ANSI code page.
+    # Frozen Python may ignore PYTHONUTF8, so configure the actual pipe streams.
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
     from .supervisor import SERVICES
     parser = argparse.ArgumentParser(description="OSII packaged runtime")
     parser.add_argument("role", choices=["self-test", "supervisor", "api", "worker", "inventory-worker", *SERVICES])

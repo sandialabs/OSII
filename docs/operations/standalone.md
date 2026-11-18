@@ -50,7 +50,7 @@ manually before switching applications.
 | Without a model | Metadata inventory, keyword search, extractive previews and grounded answers, statistics and keywords |
 | With an optional endpoint | Semantic search, model-backed synthesis/chat, and existing model-dependent workflows |
 | Preserved product interfaces | Browsing, collections, editing, provenance, reports and exports; Topic Explorer retains its existing requirements |
-| Not bundled | Java/Tika, PostgreSQL, Banyan, OpenCV region OCR, specialist dataset analysis, Haystack, Ollama and model weights |
+| Not bundled | Java/Tika, PostgreSQL, Banyan, OpenCV region OCR, specialist dataset analysis, Haystack, Ollama and LLM/embedding weights |
 
 Existing external Processor API services can be registered in Setup. The
 installer does not download or install their dependencies. MCP is not started
