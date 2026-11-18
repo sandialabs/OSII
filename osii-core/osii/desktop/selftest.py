@@ -10,6 +10,7 @@ from zipfile import ZipFile
 
 def run(fixture_dir: Path | None = None) -> dict:
     import faiss
+    from osii.indexing.faiss_io import read_index, write_index
     import numpy as np
     import pymupdf
     from osii.processor_sdk import DocumentInput, ExtractionRequest
@@ -63,13 +64,13 @@ def run(fixture_dir: Path | None = None) -> dict:
     languages = subprocess.run([binary, "--list-langs"], capture_output=True, text=True, check=True).stdout
     assert all(language in languages.split() for language in SUPPORTED_LANGUAGES), "Missing bundled OCR languages"
 
-    with tempfile.TemporaryDirectory(prefix="osii-native-smoke-") as folder:
+    with tempfile.TemporaryDirectory(prefix="osii-native-smoke — ") as folder:
         path = Path(folder) / "portable.faiss"
         index = faiss.IndexFlatIP(3)
         vectors = np.array([[1, 0, 0], [0, 1, 0]], dtype="float32")
         index.add(vectors)
-        faiss.write_index(index, str(path))
-        reopened = faiss.read_index(str(path))
+        write_index(index, path)
+        reopened = read_index(path)
         _, hits = reopened.search(vectors[:1], 1)
         assert int(hits[0, 0]) == 0
     return {"status": "ok", "checks": ["pdf", "docx", "pptx", "xlsx", "text", "csv", "tsv", "ocr-pdf", "ocr-image", "ocr-languages", "faiss-reopen"]}
