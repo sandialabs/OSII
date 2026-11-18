@@ -30,7 +30,7 @@ jobs:
         run: uv sync --frozen --python 3.12 --package osii --extra standalone-build --extra dev --package osii-local-extractor --package osii-local-tesseract --package osii-local-synthesizer --package osii-local-embedder --package osii-local-enricher --package osii-model-provider-bridge
       - name: Shared launcher and processor tests
         run: |
-          uv run --no-sync python -m pytest osii-core/tests/test_library_lock.py osii-core/tests/test_desktop.py osii-core/tests/test_dev_stack_supervisor.py osii-core/services/baseline-processors/tests -q
+          uv run --no-sync python -m pytest osii-core/tests/test_library_lock.py osii-core/tests/test_faiss_io.py osii-core/tests/test_desktop.py osii-core/tests/test_dev_stack_supervisor.py osii-core/services/baseline-processors/tests -q
           if ($LASTEXITCODE -ne 0) { throw 'Launcher tests failed' }
           uv run --no-sync python -m pytest osii-core/services --import-mode=importlib -q
           if ($LASTEXITCODE -ne 0) { throw 'Processor tests failed' }

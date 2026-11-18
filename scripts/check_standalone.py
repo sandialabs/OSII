@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import deque
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 import ctypes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import queue
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -217,6 +218,7 @@ def check(executable: Path) -> dict:
             wait_run(session, "/api/runs/" + run.get("run_id", run["id"]))
             search = api(session, "/api/search", {"query": "calibration", "mode": "lexical"})
             assert search.get("results"), search
+            collection = api(session, "/api/collections", {"name": "Preserved collection"})
             # A second supervisor cannot write the same library.
             other = Runtime(executable, application)
             try:
@@ -246,6 +248,23 @@ def check(executable: Path) -> dict:
         finally:
             runtime.close()
         assert all(not is_running(pid) for pid in pids), "Closing OSII left owned helpers alive"
+        # Explicitly open the same real library from a fresh application profile,
+        # rather than only testing this launcher's own saved-profile reopening.
+        canonical = {path: path.read_bytes() for path in Path(profile["library"]).rglob("*.toml")}
+        with closing(sqlite3.connect(inventory)) as connection:
+            inventory_before = connection.execute("SELECT id,path,size_bytes,mtime_ns FROM entries ORDER BY id").fetchall()
+        adopted = Runtime(executable, temporary / "separate-application")
+        try:
+            existing = adopted.request("create_profile", profile={"name": "Existing library", "source": str(source),
+                "library": profile["library"], "existing": True})
+            opened = adopted.request("open_profile", profile_id=existing["id"])
+            assert api(opened, "/api/search", {"query": "calibration", "mode": "lexical"}).get("results")
+            assert "Preserved collection" in json.dumps(api(opened, "/api/collections"))
+            assert all(path.read_bytes() == content for path, content in canonical.items())
+            with closing(sqlite3.connect(inventory)) as connection:
+                assert connection.execute("SELECT id,path,size_bytes,mtime_ns FROM entries ORDER BY id").fetchall() == inventory_before
+        finally:
+            adopted.close()
         restarted = Runtime(executable, application)
         try:
             session = restarted.request("open_profile", profile_id=profile["id"])

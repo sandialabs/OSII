@@ -16,6 +16,7 @@ let allowExit = false;
 let dataDirectory;
 
 app.setName('OSII Standalone');
+if (process.platform === 'win32') app.setAppUserModelId('org.osii.standalone');
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {

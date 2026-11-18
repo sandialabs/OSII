@@ -13,7 +13,11 @@ class LibraryLock:
         self._file: BinaryIO | None = None
 
     def acquire(self) -> "LibraryLock":
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.path.parent.parent.is_dir():
+            raise RuntimeError("The library folder is unavailable. Reconnect its drive before opening OSII.")
+        # Create operational state only inside an existing library. A deleted
+        # or disconnected library must never be silently recreated by a lock.
+        self.path.parent.mkdir(exist_ok=True)
         handle = self.path.open("a+b")
         try:
             # Windows locks an existing byte. Never truncate, replace, or unlink

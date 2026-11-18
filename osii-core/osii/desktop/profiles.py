@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import closing
 import os
 from pathlib import Path
 import sqlite3
@@ -54,7 +55,7 @@ def check_library(root: Path, *, existing: bool) -> None:
         if inventory.exists():
             from osii.volume.store import SCHEMA_VERSION
             try:
-                with sqlite3.connect(inventory.as_uri() + "?mode=ro", uri=True) as connection:
+                with closing(sqlite3.connect(inventory.as_uri() + "?mode=ro", uri=True)) as connection:
                     version = connection.execute("PRAGMA user_version").fetchone()[0]
                     if version != SCHEMA_VERSION:
                         raise ValueError("This inventory needs an explicit migration with a backup in OSII-local. Its evidence has not been changed.")
@@ -63,7 +64,7 @@ def check_library(root: Path, *, existing: bool) -> None:
         jobs = root / "state" / "jobs.sqlite3"
         if jobs.exists():
             try:
-                with sqlite3.connect(jobs.as_uri() + "?mode=ro", uri=True) as connection:
+                with closing(sqlite3.connect(jobs.as_uri() + "?mode=ro", uri=True)) as connection:
                     required = {"id", "run_id", "payload_json", "status", "worker_id", "heartbeat_at"}
                     columns = {row[1] for row in connection.execute("PRAGMA table_info(queue_jobs)")}
                     if not required.issubset(columns) or connection.execute("PRAGMA user_version").fetchone()[0] != 0:

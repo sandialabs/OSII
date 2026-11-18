@@ -73,4 +73,12 @@ def run(fixture_dir: Path | None = None) -> dict:
         reopened = read_index(path)
         _, hits = reopened.search(vectors[:1], 1)
         assert int(hits[0, 0]) == 0
+        from osii.domain.storage.embedding_snapshot import new_snapshot, publish_snapshot, active_snapshot
+        namespace = Path(folder) / "published"
+        snapshot = new_snapshot(namespace)
+        write_index(index, snapshot / "segments.faiss")
+        (snapshot / "segments.mapping.jsonl").write_text('{}\n', encoding="utf-8")
+        (snapshot / "segments.meta.toml").write_text('[embeddings]\ncount=2\n', encoding="utf-8")
+        publish_snapshot(namespace, snapshot)
+        assert read_index(active_snapshot(namespace) / "segments.faiss").ntotal == 2
     return {"status": "ok", "checks": ["pdf", "docx", "pptx", "xlsx", "text", "csv", "tsv", "ocr-pdf", "ocr-image", "ocr-languages", "faiss-reopen"]}

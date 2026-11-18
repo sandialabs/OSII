@@ -22,6 +22,7 @@
     "appId": "org.osii.standalone",
     "productName": "OSII Standalone",
     "asar": true,
+    "beforePack": "./verify-package.cjs",
     "files": ["main.cjs", "preload.cjs", "runtime-client.cjs", "welcome.html", "welcome.css", "welcome.js", "package.json"],
     "extraResources": [{"from": "resources/runtime/osii-runtime", "to": "runtime"}],
     "directories": {"output": "../release/standalone"},

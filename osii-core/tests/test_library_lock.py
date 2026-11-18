@@ -7,6 +7,13 @@ import pytest
 from osii.library_lock import LibraryLock
 
 
+def test_missing_library_is_not_created_by_ownership_check(tmp_path):
+    root = tmp_path / "missing-library"
+    with pytest.raises(RuntimeError, match="unavailable"):
+        LibraryLock(root).acquire()
+    assert not root.exists()
+
+
 def test_another_launcher_cannot_own_the_same_library(tmp_path):
     command = [sys.executable, "-c", "from pathlib import Path; from osii.library_lock import LibraryLock; "
                "lock=LibraryLock(Path(__import__('sys').argv[1])).acquire()", str(tmp_path)]
