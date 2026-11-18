@@ -1,7 +1,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
+const os = require('node:os');
+const path = require('node:path');
 const { RuntimeClient, validRuntimeSession } = require('../runtime-client.cjs');
+
+test('a missing runtime reports an actionable error and does not hang on shutdown', async () => {
+  const child = spawn(path.join(os.tmpdir(), 'osii-runtime-does-not-exist'), [], { stdio: ['pipe', 'pipe', 'ignore'] });
+  const client = new RuntimeClient(child);
+  await assert.rejects(client.ready, /runtime is missing or blocked/);
+  await client.shutdown();
+  assert.equal(client.closed, true);
+});
 
 test('runtime addresses must be private loopback sessions', () => {
   const token = 'x'.repeat(48);

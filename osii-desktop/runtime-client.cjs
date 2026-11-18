@@ -13,6 +13,7 @@ class RuntimeClient extends EventEmitter {
       this.readyResolve = resolve;
       this.readyReject = reject;
     });
+    this.ready.catch(() => {}); // The window may finish loading before its caller awaits readiness.
     this.readyTimer = setTimeout(() => this.fail(new Error('The bundled runtime did not start. Reinstall OSII or export diagnostics.')), 30_000);
     this.lines = createInterface({ input: child.stdout });
     this.lines.on('line', line => {
@@ -33,15 +34,21 @@ class RuntimeClient extends EventEmitter {
       }
     });
     child.on('error', error => this.fail(error));
-    child.on('exit', code => {
+    const stopped = code => {
+      if (this.closed) return;
       this.closed = true;
       this.fail(new Error(`The OSII runtime stopped (exit ${code ?? 'unknown'}). Reopen OSII to recover queued work.`));
       this.emit('stopped', code);
-    });
+    };
+    child.on('exit', stopped);
+    child.on('close', stopped); // A failed spawn emits close without an exit event.
     child.stdin.on('error', error => this.fail(error));
   }
 
   fail(error) {
+    if (['ENOENT', 'EACCES', 'ENOEXEC'].includes(error.code)) {
+      error = new Error('The OSII runtime is missing or blocked. Reinstall OSII and check application permissions.');
+    }
     clearTimeout(this.readyTimer);
     this.readyReject(error);
     for (const request of this.pending.values()) {
@@ -67,7 +74,7 @@ class RuntimeClient extends EventEmitter {
 
   async shutdown() {
     if (this.closed) return;
-    const exited = new Promise(resolve => this.child.once('exit', resolve));
+    const exited = new Promise(resolve => this.once('stopped', resolve));
     this.child.stdin.end(JSON.stringify({ command: 'shutdown' }) + '\n');
     let timer;
     const timeout = new Promise(resolve => { timer = setTimeout(resolve, 20_000); });
