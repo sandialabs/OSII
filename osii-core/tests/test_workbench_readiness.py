@@ -25,9 +25,9 @@ def test_readiness_is_per_tool_and_partial_indexing_is_usable():
     "documents,text,chat,indexed,valid,expected",
     [
         (0, 0, False, 0, False, set()),
-        (2, 0, True, 0, False, {"browse", "overview"}),
-        (2, 2, True, 0, False, {"browse", "overview", "search", "chat", "research"}),
-        (2, 2, True, 2, False, {"browse", "overview", "search", "chat", "research"}),
+        (2, 0, True, 0, False, {"browse", "overview", "create-collections"}),
+        (2, 2, True, 0, False, {"browse", "overview", "search", "chat", "research", "create-collections"}),
+        (2, 2, True, 2, False, {"browse", "overview", "search", "chat", "research", "create-collections"}),
     ],
 )
 def test_incomplete_information_never_enables_an_unusable_tile(
