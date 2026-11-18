@@ -67,7 +67,7 @@ def endpoint_from_environment(capability: str, *, default_url: str = "",
                     raise ValueError()
                 key = file.read_text(encoding="utf-8").strip()
             except (OSError, ValueError):
-                raise ValueError(f"{name}_FILE points to an unreadable or invalid key file: {path}. Clear this optional setting or replace the key in Setup.") from None
+                raise ValueError(f"{name}_FILE points to an unreadable or invalid key file. Clear this optional setting or replace the key in Setup.") from None
             selected = name
             break
         if path and not resolve_credentials:
