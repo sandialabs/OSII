@@ -89,5 +89,14 @@ def upstream_health(tika_endpoint: str = DEFAULT_ENDPOINT):
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except requests.RequestException as exc:
-        raise HTTPException(status_code=503, detail=upstream_error(address, exc)) from exc
+        runtime = getattr(app.state, 'tika_runtime', None)
+        detail = upstream_error(address, exc)
+        if address == DEFAULT_ENDPOINT and runtime is not None and runtime.enabled:
+            if runtime.error:
+                detail = f"Managed Apache Tika could not start: {runtime.error}"
+            elif runtime.process is None:
+                detail = "Apache Tika is preparing its first runtime download. Other readers are available; retry this test when preparation finishes."
+            else:
+                detail = "Apache Tika is starting. Retry this test shortly."
+        raise HTTPException(status_code=503, detail=detail) from exc
     return {'status': 'ok', 'endpoint': address}

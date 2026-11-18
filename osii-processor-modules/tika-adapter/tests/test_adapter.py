@@ -53,3 +53,13 @@ def test_unavailable_upstream_is_clear_and_does_not_crash_adapter(monkeypatch):
     assert result.status_code == 422
     assert 'Apache Tika extraction failed' in result.json()['detail']
     assert client.get('/v1/descriptor').json()['name'] == 'tika'
+
+
+@pytest.mark.parametrize('runtime_error,expected', [(None, 'preparing its first runtime download'), ('certificate verification failed', 'could not start: certificate verification failed')])
+def test_managed_preparation_or_failure_is_visible_without_terminal(monkeypatch, runtime_error, expected):
+    from types import SimpleNamespace
+    monkeypatch.setattr(app.state, 'tika_runtime', SimpleNamespace(enabled=True, error=runtime_error, process=None), raising=False)
+    monkeypatch.setattr(requests, 'get', lambda *a, **kw: (_ for _ in ()).throw(requests.ConnectionError('offline')))
+    response = TestClient(app).get('/upstream-health')
+    assert response.status_code == 503
+    assert expected in response.json()['detail']

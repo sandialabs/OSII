@@ -411,7 +411,7 @@ export function DiscoveryIntakePanel({
     <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 } }}>
       <Stack spacing={2}>
         <Typography variant="h6" component="h2" fontWeight={750}>
-          1. Choose location
+          1. Select files
         </Typography>
         {error && (
           <Alert severity="error" onClose={() => setError(null)}>
@@ -423,6 +423,23 @@ export function DiscoveryIntakePanel({
             {locationNotice}
           </Alert>
         )}
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          <Button variant="contained" startIcon={<FolderOutlinedIcon />} disabled={busy} onClick={() => {
+            if (selectedId && !mayClear()) return;
+            if (selectedId) clear();
+            setFileBrowser(true);
+          }}>Browse files</Button>
+          {allowUploads && <Button
+            component="label"
+            startIcon={<UploadFileOutlinedIcon />}
+            disabled={busy}
+            sx={{ flexShrink: 0 }}
+          >
+            Upload files
+            <input hidden type="file" multiple onChange={upload} />
+          </Button>}
+        </Stack>
+        <details><summary style={{cursor: "pointer", fontWeight: 600}}>Scan a large folder or share</summary><Stack spacing={2} sx={{pt: 2}}>
         {sources.isError && (
           <Alert
             severity="error"
@@ -460,42 +477,9 @@ export function DiscoveryIntakePanel({
           >
             Add location
           </Button>
-          {allowUploads && <Button
-            component="label"
-            startIcon={<UploadFileOutlinedIcon />}
-            disabled={busy}
-            sx={{ flexShrink: 0 }}
-          >
-            Upload files
-            <input hidden type="file" multiple onChange={upload} />
-          </Button>}
+
         </Stack>
-        <Divider />
-        <Typography variant="h6" component="h2" fontWeight={750}>
-          2. Select files
-        </Typography>
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-          <Button
-            variant="contained"
-            startIcon={<FolderOutlinedIcon />}
-            disabled={!source || busy}
-            onClick={() => {
-              const replace =
-                Boolean(selectedId) ||
-                directFiles.some(
-                  (file) =>
-                    !normalize(file.path).startsWith(
-                      `${normalize(source?.root ?? "")}/`,
-                    ),
-                );
-              if (!replace || mayClear()) {
-                if (replace) clear();
-                setFileBrowser(true);
-              }
-            }}
-          >
-            Browse files
-          </Button>
           <Button
             variant="outlined"
             disabled={
@@ -906,6 +890,7 @@ export function DiscoveryIntakePanel({
             )}
           </Stack>
         )}
+        </Stack></details>
         <Stack
           direction="row"
           spacing={1}
@@ -1025,7 +1010,7 @@ export function DiscoveryIntakePanel({
         <LocationBrowser
           open={fileBrowser}
           initialPath={source?.root}
-          boundaryPath={source?.root}
+          boundaryPath={boundaryPath}
           selected={directFiles}
           onClose={() => setFileBrowser(false)}
           onFiles={(files) => {

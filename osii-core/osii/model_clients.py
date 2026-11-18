@@ -36,14 +36,16 @@ class EmbeddingClient(Protocol):
 class OpenAICompatibleClient:
     """Minimal client for standard OpenAI chat and embedding HTTP endpoints."""
 
-    def __init__(self, base_url: str, api_key: str | None = None):
+    def __init__(self, base_url: str, api_key: str | None = None, *, credential_env: str | None = None):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key or None
+        self.credential_env = credential_env
 
     def _post(self, path: str, payload: dict) -> dict:
         headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        key = resolve_env_value(self.credential_env)[0] if self.credential_env else self.api_key
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
         try:
             response = requests.post(
                 f"{self.base_url}{path}", json=payload, headers=headers, timeout=120
@@ -109,11 +111,17 @@ def create_chat_client() -> ChatClient:
 
 def create_embedding_client() -> EmbeddingClient:
     from osii.domain.model_provider_config import selected_processor
-    from osii.configuration import models_path
+    from osii.configuration import models_path, load_models_config, model_connection
 
     # Setup's saved choice is authoritative for the app, just as it is for
     # readiness tests. Standalone callers without a profile retain env support.
     if models_path().is_file():
+        configuration = load_models_config()
+        alias = configuration.get("defaults", {}).get("embedding")
+        connection = model_connection(alias) if alias else None
+        if connection and connection.get("type") == "openai-compatible":
+            key = resolve_env_value(str(connection.get("api_key_env") or "OPENAI_API_KEY"))[0]
+            return OpenAICompatibleClient(str(connection.get("base_url") or ""), key, credential_env=str(connection.get("api_key_env") or "OPENAI_API_KEY"))
         processor_name = selected_processor("embedder")
         if processor_name:
             from osii.processors.remote import ProcessorEmbeddingClient, resolve_remote_processor

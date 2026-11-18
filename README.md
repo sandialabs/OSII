@@ -62,8 +62,9 @@ Apache Tika and its Java runtime are prepared automatically on first startup;
 configure optional model connections in **Setup**. The
 [Banyan processor module](osii-processor-modules/banyan/README.md) uses its
 own local Nemotron endpoint configuration. Keep credentials outside Git.
-Choose an Intake preset for selected files; the startup guide covers provider
-profiles and configurable processing defaults.
+Use Intake to select files, choose processing, and queue the work. The same flow
+reads new files or upgrades existing text and OCR. The startup guide covers
+provider profiles and configurable processing defaults.
 
 See the [startup guide](docs/operations/runbook-development.md) for setup and
 troubleshooting, [architecture](docs/concepts/architecture.md) for the design,

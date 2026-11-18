@@ -204,3 +204,9 @@ supply that file. Configuration loading reads endpoint metadata only, so a stale
 file setting cannot prevent browsing, local extraction, or opening Setup. If a
 request actually uses an unreadable configured file, its provider reports the
 problem. Clear that optional setting or save a replacement in local Setup.
+
+
+Saved model selections also govern embedding jobs and search queries. An unrelated
+OpenAI URL/key-file variable does not override a saved Ollama choice. Environment
+endpoints remain supported for standalone clients without a saved configuration;
+for the application, change the selected connection in Setup.

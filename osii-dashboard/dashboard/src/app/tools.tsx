@@ -20,7 +20,7 @@ const pages: Record<string, ComponentType> = {
 };
 export const workbenchTools: readonly WorkbenchTool[] = [
   ...sharedNavigation.map(item => ({ ...item, Page: pages[item.id] })),
-  { id: "intake", path: "/intake", label: "Add files", group: "start", icon: MoveToInboxOutlined,
+  { id: "intake", path: "/intake", label: "Intake", group: "start", icon: MoveToInboxOutlined,
     Page: lazy(() => import("../features/queue/pages/QueuePage").then(m => ({ default: m.QueuePage }))) },
   { id: "inventory", path: "/inventory", label: "Scan inventory", group: "start", icon: FolderOutlined,
     Page: lazy(() => import("../features/volume/VolumePage")) },

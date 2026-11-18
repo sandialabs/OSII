@@ -60,6 +60,18 @@ def _install_diagnostics(app: FastAPI, descriptor: ProcessorDescriptor) -> None:
     def diagnostics():
         return {"processor": descriptor.name, "python": environment()}
 
+    @app.exception_handler(HTTPException)
+    async def rejected(request, exc):
+        from fastapi.exception_handlers import http_exception_handler
+        from .diagnostics import redact
+        # Preserve the existing 422 detail while retaining wrapped import/read
+        # failures that would otherwise lose their traceback at the HTTP boundary.
+        if exc.status_code == 422 and isinstance(exc.detail, str) and isinstance(exc.__cause__, Exception):
+            return JSONResponse(status_code=422, headers=exc.headers, content={
+                "detail": redact(exc.detail), "diagnostics": failure(exc.__cause__,
+                    processor=descriptor.name, phase=request.url.path, runtime="Processor service")})
+        return await http_exception_handler(request, exc)
+
     @app.exception_handler(Exception)
     async def failed(request, exc):
         return JSONResponse(status_code=500, content={"detail": failure(

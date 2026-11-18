@@ -84,3 +84,20 @@ def test_preflight_executes_sample_and_reports_failure(client, monkeypatch):
     assert result["ok"] is False
     assert result["diagnostics"]["endpoint"] == "http://processor.test"
     assert "ModuleNotFoundError" in result["diagnostics"]["traceback"]
+
+
+def test_wrapped_import_error_keeps_422_detail_and_processor_traceback():
+    class Broken(Extractor):
+        descriptor = ProcessorDescriptor(name="test.wrapped", version="1", display_name="Wrapped", description="Failure fixture", kind=ProcessorKind.EXTRACTOR)
+        def extract(self, request):
+            try:
+                raise ModuleNotFoundError("No module named fastapi")
+            except ImportError as exc:
+                raise ValueError("Python reader could not load its dependency") from exc
+    response = TestClient(create_processor_app(Broken())).post("/v1/extract", json={"request_id": "test", "document": {"filename": "test.pdf"}})
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Python reader could not load its dependency"
+    diagnostic = response.json()["diagnostics"]
+    assert diagnostic["processor"] == "test.wrapped"
+    assert diagnostic["python"]["executable"]
+    assert "ModuleNotFoundError: No module named fastapi" in diagnostic["traceback"]

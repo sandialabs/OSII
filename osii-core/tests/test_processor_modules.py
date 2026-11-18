@@ -73,6 +73,7 @@ def test_new_module_drives_startup_registration_and_controls_without_central_edi
     process = type('Process', (), {'stdout': io.BytesIO(b'ready\n'), 'returncode': None,
         'poll': lambda self: self.returncode})()
     commands = []
+    monkeypatch.setattr(launcher, 'verify_python_runtime', lambda *a: None)
     monkeypatch.setattr(launcher.subprocess, 'Popen', lambda **kw: commands.append(kw) or process)
     monkeypatch.setattr(launcher, 'stop_service', lambda proc: setattr(proc, 'returncode', 0))
     assert supervisor.action(service.name, 'start')['status'] == 'running'

@@ -1155,3 +1155,15 @@ a structured diagnostic `detail`, including the processor's traceback and Python
 environment. Existing typed successful responses and 422 validation behavior
 remain compatible. Run items may include a `diagnostics` array; embedding failures
 may include run-level diagnostics. Older services/runs need not have these fields.
+
+
+Intake preflight results include `runtime` when the processor provides
+`/v1/diagnostics`: its own Python executable, module paths, and package versions.
+This is separate from Core's error environment. Sample tests support PDF, image,
+plain-text, and CSV readers based on declared extensions. If no synthetic input
+is supported, `ok` is null and the result explicitly says no operation was tested.
+The test never labels that case as passed.
+
+SDK operation errors wrapped as HTTP 422 retain their existing string `detail`
+and add `diagnostics` with the original exception chain. This preserves validation
+compatibility while making lazy dependency/import failures visible to Intake.

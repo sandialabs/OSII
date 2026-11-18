@@ -47,3 +47,14 @@ def test_automatic_model_skips_disabled_default(monkeypatch, tmp_path):
     assert configuration.resolve_tool_models('wiki', {'chat': 'required'}, tmp_path) == {'chat': 'working'}
     with pytest.raises(ValueError, match='enabled chat model'):
         configuration.resolve_tool_models('wiki', {'chat': 'required'}, tmp_path, {'chat': 'disabled'})
+
+
+def test_manifest_extractors_validate_without_the_old_registry(monkeypatch):
+    monkeypatch.setattr(routes, 'load_extractors_file', lambda: {'extractors': []})
+    for name in ('tika', 'tika_catchall', 'local.native-text', 'local.tesseract-page-ocr', 'toolbox.tesseract-opencv'):
+        errors, warnings = routes.validate_routes({'routes': [{'name': 'reader', 'extractor': name, 'extensions': ['.pdf']}]})
+        assert not errors
+        assert not any('registry' in warning for warning in warnings)
+    errors, warnings = routes.validate_routes({'routes': [{'name': 'unknown', 'extractor': 'not.installed', 'extensions': ['.pdf']}]})
+    assert not errors
+    assert any('registry' in warning for warning in warnings)

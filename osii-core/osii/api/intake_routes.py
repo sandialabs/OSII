@@ -440,23 +440,35 @@ def test_intake_processors(request: Request, payload: dict):
             raise HTTPException(422, "Unsupported processor test kind")
         context = None
         endpoint = None
+        remote_environment = None
         try:
             descriptor = resolve_remote_processor(name, kind)
             endpoint = descriptor["base_url"]
             client = ProcessorClient(endpoint, timeout=120)
+            try:
+                remote_environment = ProcessorClient(endpoint, timeout=3)._get("/v1/diagnostics")
+            except Exception:
+                remote_environment = {"detail": "This service did not provide runtime diagnostics"}
             request_id = f"preflight-{uuid.uuid4()}"
             context = _model_context(processor_name=name, descriptor=descriptor, request_id=request_id, osii_root=root)
             config = merged_processor_settings(root, name, {})
             if kind == "extractor":
                 extensions = descriptor.get("capabilities", {}).get("file_extensions", [])
-                if ".pdf" not in extensions and "*" not in extensions:
-                    raise ValueError("Automatic operation test requires a PDF-capable extractor; no test was performed")
-                with pymupdf.open() as pdf:
-                    page = pdf.new_page()
-                    page.insert_text((72, 72), "OSII endpoint test document.")
-                    content = base64.b64encode(pdf.tobytes()).decode("ascii")
+                extension = next((ext for ext in (".pdf", ".txt", ".csv", ".png") if ext in extensions or "*" in extensions), None)
+                if extension is None:
+                    results.append({"processor": name, "endpoint": endpoint, "ok": None, "detail": "No supported synthetic input for this extractor; no operation was tested", "runtime": remote_environment})
+                    continue
+                media_type = {".pdf": "application/pdf", ".txt": "text/plain", ".csv": "text/csv", ".png": "image/png"}[extension]
+                if extension in {".pdf", ".png"}:
+                    with pymupdf.open() as pdf:
+                        page = pdf.new_page()
+                        page.insert_text((72, 72), "OSII endpoint test document.")
+                        raw_content = pdf.tobytes() if extension == ".pdf" else page.get_pixmap(dpi=150).tobytes("png")
+                else:
+                    raw_content = b"name,value\nosii,1\n" if extension == ".csv" else b"OSII endpoint test document."
+                content = base64.b64encode(raw_content).decode("ascii")
                 response = client.extract(ExtractionRequest(request_id=request_id,
-                    document=DocumentInput(filename="osii-test.pdf", media_type="application/pdf", content_base64=content),
+                    document=DocumentInput(filename="osii-test" + extension, media_type=media_type, content_base64=content),
                     config=config, model_context=context))
                 if not response.segments:
                     raise ValueError("Extractor returned no text for the test document")
@@ -465,9 +477,9 @@ def test_intake_processors(request: Request, payload: dict):
                     scope=ScopeInput(scope_type="object", scope_id=request_id,
                         documents=[DocumentInput(filename="osii-test.txt", text="OSII endpoint test document.")]),
                     config=config, model_context=context))
-            results.append({"processor": name, "endpoint": endpoint, "ok": True, "detail": "Tiny operation passed"})
+            results.append({"processor": name, "endpoint": endpoint, "ok": True, "detail": "Tiny operation passed", "runtime": remote_environment})
         except Exception as exc:
-            results.append({"processor": name, "ok": False, "diagnostics": failure(exc, processor=name, phase="preflight", endpoint=endpoint)})
+            results.append({"processor": name, "ok": False, "diagnostics": failure(exc, processor=name, phase="preflight", endpoint=endpoint), "runtime": remote_environment})
         finally:
             _revoke_model_context(context)
     if payload.get("embed"):

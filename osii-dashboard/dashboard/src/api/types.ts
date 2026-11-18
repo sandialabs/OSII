@@ -778,7 +778,7 @@ export type ProcessingRun = {
     diagnostics?: Array<Record<string, unknown>>;
     synthesizer?: string | null;
     enricher?: string | null;
-    current_step?: string;
+    current_step?: string | null;
     steps?: Record<string, string>;
     extractor?: string | null;
     extraction_variant_id?: string | null;

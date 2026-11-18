@@ -331,8 +331,6 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str], *, core_only: b
             "--package",
             "osii",
             "--extra", "rag-haystack",
-            "--package",
-            "osii-mcp",
             "--package", "osii-local-extractor",
             "--package", "osii-local-tesseract",
             "--package", "osii-local-synthesizer",
@@ -340,6 +338,8 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str], *, core_only: b
             "--package", "osii-local-enricher",
             "--package", "osii-model-provider-bridge",
         ]
+    if env.get("OSII_ENABLE_MCP", "false").strip().lower() in {"1", "true", "yes", "on"}:
+        sync_command.extend(["--package", "osii-mcp"])
     if env.get("OSII_STORAGE_BACKEND", "sidecar").strip().lower() == "postgres":
         sync_command.extend(["--extra", "postgres"])
     subprocess.run(
@@ -493,6 +493,8 @@ def service_commands(
         bridge_port = env.get("OSII_MODEL_BRIDGE_PORT", "8095")
         services.insert(4, Service("model-bridge", (uv, "run", "--no-sync", "--package", "osii-model-provider-bridge", "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", bridge_port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "osii-core" / "services" / "model-provider-bridge", int(bridge_port)))
         services.extend(processor_module_services(uv, env))
+    if env.get("OSII_ENABLE_MCP", "false").strip().lower() not in {"1", "true", "yes", "on"}:
+        services = [service for service in services if service.name != "mcp"]
     return services
 
 
@@ -537,7 +539,27 @@ def service_environment(service: Service, env: dict[str,str]) -> dict[str,str]:
     return result
 
 
+
+def verify_python_runtime(service: Service, env: dict[str, str]) -> None:
+    """Probe the exact project/interpreter command used by this service."""
+    if "python" not in service.command:
+        return
+    position = service.command.index("python")
+    command = [*service.command[:position], "python", "-c",
+        "import sys, fastapi, osii.processor_sdk; "
+        "print('Python:', sys.executable); print('FastAPI:', fastapi.__file__)"]
+    result = subprocess.run(command, cwd=service.working_directory,
+        env=service_environment(service, env), capture_output=True, text=True)
+    if result.returncode:
+        name = service.display_name or SERVICE_DISPLAY_NAMES.get(service.name, service.name)
+        raise RuntimeError(f"{name}: Python dependency check failed before startup. "
+            f"Run make dev (Windows: scripts/osii.ps1 dev) to prepare this environment. "
+            f"Project: {service.working_directory}\n{result.stdout}{result.stderr}")
+    print(f"[check:{service.name}] {result.stdout.strip()}", flush=True)
+
+
 def start_service(service: Service, env: dict[str, str]) -> subprocess.Popen[bytes]:
+    verify_python_runtime(service, env)
     display_name = service.display_name or SERVICE_DISPLAY_NAMES.get(service.name, service.name)
     print(f"[dev] Starting {display_name}...")
     kwargs: dict[str, object] = {
@@ -593,6 +615,7 @@ class CapabilitySupervisor:
         service = self.services[service_id]
         if self._reachable(service_id):
             raise RuntimeError(f"{service_info(service)[0]} is already running externally.")
+        verify_python_runtime(service, self.env)
         kwargs: dict[str, object] = {
             "args": service.command,
             "cwd": service.working_directory,
@@ -903,7 +926,8 @@ def run(
         if env.get("OSII_SOURCE_KIND") == "shared":
             print("[ready] Shared-drive mode: originals are read in place; artifacts remain in the local OSII data folder.")
         print(f"[dev] API health: http://localhost:{api_port}/health")
-        print(f"[dev] MCP: http://localhost:{env.get('OSII_MCP_PORT', '8022')}/mcp")
+        if any(service.name == "mcp" for service in services):
+            print(f"[dev] MCP: http://localhost:{env.get('OSII_MCP_PORT', '8022')}/mcp")
         print("[ready] Keep this terminal open. Press Ctrl+C once to stop OSII.")
         if not core_only:
             if shutil.which("tesseract") is None:

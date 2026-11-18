@@ -212,6 +212,14 @@ Python dependencies and dashboard dependencies, then starts the application,
 baseline processors, and enabled processor modules on the host. Module dependencies
 are prepared once per project in that project's ignored `osii-env/`, separately
 from Core. Later starts reuse those environments and npm dependencies.
+Each Python service checks FastAPI and the Processor SDK in its own runtime
+before starting. Operation-test diagnostics include that runtime’s executable,
+package versions, and module paths. A passing Core import alone does not verify
+a separately installed processor environment.
+
+MCP is **off by default**. Set `OSII_ENABLE_MCP=true` in the selected `.env` to
+start the optional agent interface on `OSII_MCP_PORT`. When disabled, startup
+does not select the MCP package for dependency preparation or bind its port.
 
 Modules include OpenCV/Tesseract (`8081`), CSV extraction (`8097`), collection
 tables (`8098`), Readable Wiki (`8099`), Concept/Entity Wiki (`8100`), Banyan

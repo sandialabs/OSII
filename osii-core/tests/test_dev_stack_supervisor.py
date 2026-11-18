@@ -230,6 +230,7 @@ def test_service_plan_uses_nested_components_without_concurrent_uv_sync():
         {
             "OSII_API_PORT": "8511",
             "OSII_DASHBOARD_PORT": "5173",
+            "OSII_ENABLE_MCP": "true",
             "OSII_MCP_PORT": "8022",
             "OSII_EMBEDDINGS_PORT": "8085",
         },
@@ -279,7 +280,7 @@ def test_toolbox_opt_out_retains_manual_controls_and_core_only_omits_services():
     assert len(tools) == 7 and all(not s.start_automatically for s in tools)
     assert all("--no-sync" not in s.command for s in tools)
     core = DEV_STACK.service_commands("uv", "npm", {}, core_only=True)
-    assert {s.name for s in core} == {"api", "worker", "inventory-worker", "mcp", "dashboard"}
+    assert {s.name for s in core} == {"api", "worker", "inventory-worker", "dashboard"}
     by_name = {s.name: s for s in core}
     assert "osii.main:app" in by_name["api"].command
     assert "osii.worker.main" in by_name["worker"].command
@@ -552,3 +553,22 @@ if __name__ == '__main__':
 """)
     result = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=50)
     assert result.returncode == 0, result.stderr
+
+
+def test_mcp_is_opt_in_and_no_port_is_claimed_by_default():
+    assert not any(s.name == "mcp" for s in DEV_STACK.service_commands("uv", "npm", {}, core_only=False))
+    assert any(s.name == "mcp" for s in DEV_STACK.service_commands("uv", "npm", {"OSII_ENABLE_MCP": "true"}, core_only=True))
+
+
+def test_runtime_probe_uses_the_services_exact_environment(monkeypatch, tmp_path):
+    service = DEV_STACK.Service("extractor", ("uv", "run", "--no-sync", "--package", "osii-local-extractor", "python", "-m", "uvicorn", "app.main:app"), tmp_path, 8092)
+    calls = []
+    monkeypatch.setattr(DEV_STACK.subprocess, "run", lambda command, **kw: calls.append((command, kw)) or subprocess.CompletedProcess(command, 0, "Python: app-env/python", ""))
+    DEV_STACK.verify_python_runtime(service, {"UV_PROJECT_ENVIRONMENT": str(tmp_path / "app-env")})
+    command, options = calls[0]
+    assert command[:6] == list(service.command[:6])
+    assert options["env"]["UV_PROJECT_ENVIRONMENT"] == str(tmp_path / "app-env")
+    assert options["cwd"] == tmp_path
+    monkeypatch.setattr(DEV_STACK.subprocess, "run", lambda *a, **kw: subprocess.CompletedProcess(a[0], 1, "", "ModuleNotFoundError: No module named fastapi"))
+    with pytest.raises(RuntimeError, match="extractor.*dependency check failed"):
+        DEV_STACK.verify_python_runtime(service, {})

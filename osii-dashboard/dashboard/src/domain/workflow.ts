@@ -34,7 +34,7 @@ export function libraryWorkflowSteps(
   return [
     {
       id: "source",
-      label: "Source folder",
+      label: "Choose source",
       complete: sourceReady ?? Boolean(readiness?.source?.ready_for_intake),
       detail:
         readiness?.source?.detail ||
@@ -43,7 +43,7 @@ export function libraryWorkflowSteps(
     },
     {
       id: "extractor",
-      label: "Document reader",
+      label: "Connect reader",
       complete: Boolean(extractor?.available),
       detail: extractor?.available
         ? `${extractor.display_name} is available. Intake also checks the rules for each file type.`
@@ -52,7 +52,7 @@ export function libraryWorkflowSteps(
     },
     {
       id: "embedding",
-      label: "Embedding model",
+      label: "Connect embeddings",
       complete: Boolean(
         embedding?.available &&
           !embedding.lexical &&
@@ -65,7 +65,7 @@ export function libraryWorkflowSteps(
     },
     {
       id: "language",
-      label: "Language model",
+      label: "Connect chat",
       complete: Boolean(readiness?.language_model?.available),
       detail:
         readiness?.language_model?.detail ||
@@ -74,7 +74,7 @@ export function libraryWorkflowSteps(
     },
     {
       id: "text",
-      label: "Documents read",
+      label: "Read documents",
       complete: count > 0 && textCount === count,
       detail: count
         ? `${textCount} of ${count} library documents have saved text. Review failed or empty extractions in Intake.`
@@ -83,7 +83,7 @@ export function libraryWorkflowSteps(
     },
     {
       id: "index",
-      label: "Semantic index",
+      label: "Build index",
       complete:
         count > 0 &&
         indexedCount === count &&

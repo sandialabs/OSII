@@ -1,1389 +1,233 @@
-import { DiscoveryActivity, useDiscoveryRuns } from "../components/DiscoveryActivity";
-import { LocationBrowser, type PickedFile } from "../../../components/discovery/LocationBrowser";
-import { DiscoveryIntakePanel } from "../components/DiscoveryIntakePanel";
-import { ProcessorStepControl } from "../components/ProcessorStepControl";
-import {
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
-  Alert,
-  Box,
-  Button,
-  Checkbox,
-  Divider,
-  FormControlLabel,
-  LinearProgress,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemText,
-  MenuItem,
-  Paper,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
-import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
-import FolderOutlinedIcon from "@mui/icons-material/FolderOutlined";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, IconButton, LinearProgress, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import PlayArrowOutlinedIcon from "@mui/icons-material/PlayArrowOutlined";
-import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
-import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiJson } from "../../../api/client";
-import { FileSelectionList } from "../components/FileSelectionList";
-import { IntakeSections } from "../components/IntakeSections";
-import { ProcessingActivity } from "../components/ProcessingActivity";
+import { controlProcessingRun, createProcessingRun, getProcessingRunLogs, getIntakeReadiness, listProcessingRuns, recoverProcessingQueue, resolveIntake } from "../../../api/queue";
+import type { ProcessingRun } from "../../../api/types";
+import type { PickedFile } from "../../../components/discovery/LocationBrowser";
 import { WorkflowProgress } from "../../../components/discovery/WorkflowProgress";
-import type { WorkflowStepId } from "../../../domain/workflow";
+import { DiscoveryIntakePanel } from "../components/DiscoveryIntakePanel";
+import { DiscoveryActivity, useDiscoveryRuns } from "../components/DiscoveryActivity";
+import { IntakeSections } from "../components/IntakeSections";
+import { ProcessingActivity, type ProcessingAction } from "../components/ProcessingActivity";
+import { ProcessorStepControl } from "../components/ProcessorStepControl";
 
-import {
-  browseIntake,
-  controlProcessingRun,
-  createProcessingRun,
-  getProcessingRunLogs,
-  getIntakeReadiness,
-  listProcessingRuns,
-  recoverProcessingQueue,
-  rescanSourcePaths,
-  resolveIntake,
-} from "../../../api/queue";
-import type {
-  QueueBrowseResponse,
-  ProcessingRun,
-  SourceRescanResponse,
-  UploadResponse,
-} from "../../../api/types";
-
-type Notice = {
-  severity: "error" | "info" | "success";
-  text: string;
-};
-
-type ChunkingMethod = "sentence_window" | "paragraph" | "window";
-
-const FILE_FILTERS = [
-  { value: "all", label: "All file types", patterns: "" },
-  {
-    value: "documents",
-    label: "Common documents",
-    patterns: "*.pdf\n*.doc\n*.docx\n*.txt\n*.md\n*.rtf",
-  },
-  { value: "pdf", label: "PDF only", patterns: "*.pdf" },
-  {
-    value: "office",
-    label: "Office documents",
-    patterns: "*.doc\n*.docx\n*.xls\n*.xlsx\n*.ppt\n*.pptx",
-  },
-  {
-    value: "text-data",
-    label: "Text and tabular data",
-    patterns: "*.txt\n*.md\n*.csv\n*.tsv\n*.json\n*.xml",
-  },
-  { value: "custom", label: "Custom patterns", patterns: "" },
-] as const;
-
-function formatSize(size: number | null | undefined): string {
-  if (size == null) return "";
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
+type Defaults = {preset: string; synthesize: boolean; build_embeddings: boolean; enrich: boolean; chunk_size: number; chunk_overlap: number; synthesizer: string; enricher: string; presets: {id: string; label: string; synthesize: boolean; build_embeddings: boolean; enrich: boolean}[]};
+type TestReport = {tested_at: string; results: {processor: string; ok: boolean | null; detail?: string; diagnostics?: Record<string, unknown>}[]};
+type Recipe = "text" | "search" | "summary-search" | "full" | "upgrade" | "index" | "summaries" | "custom";
+const active = (status: string) => ["queued", "pending", "running", "pausing", "cancelling"].includes(status);
 
 export function QueuePage() {
-  const queryClient = useQueryClient();
+  const client = useQueryClient();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const requestedStep = searchParams.get("step");
-  const [directFiles, setDirectFiles] = useState<PickedFile[]>([]);
-  const [frozenSelection, setFrozenSelection] = useState<number | null>(() => {
-    const id = Number(localStorage.getItem("osii:last-intake-selection"));
-    return Number.isInteger(id) && id > 0 ? id : null;
+  const [params, setParams] = useSearchParams();
+  const [section, setSection] = useState<"add" | "activity">(params.get("tab") === "activity" ? "activity" : "add");
+  const [files, setFiles] = useState<PickedFile[]>([]);
+  const [selection, setSelection] = useState<number | null>(() => {
+    const value = Number(localStorage.getItem("osii:last-intake-selection"));
+    return Number.isInteger(value) && value > 0 ? value : null;
   });
   useEffect(() => {
-    if (frozenSelection) localStorage.setItem("osii:last-intake-selection", String(frozenSelection));
+    if (selection) localStorage.setItem("osii:last-intake-selection", String(selection));
     else localStorage.removeItem("osii:last-intake-selection");
-  }, [frozenSelection]);
-  const [endpointTest, setEndpointTest] = useState<{results: Array<{processor: string; ok: boolean; detail?: string; diagnostics?: Record<string, unknown>}>; tested_at: string} | null>(null);
-  const [testingEndpoints, setTestingEndpoints] = useState(false);
-  const [endpointTestError, setEndpointTestError] = useState("");
-  const [path, setPath] = useState(() => localStorage.getItem("osii:last-folder") ?? "");
-  const [selectedFolder, setSelectedFolder] =
-    useState<QueueBrowseResponse | null>(null);
-  const [selectingFolder, setSelectingFolder] = useState(false);
-  const [folderError, setFolderError] = useState<string | null>(null);
-  const [browseOpen, setBrowseOpen] = useState(false);
-  const [excludedPaths, setExcludedPaths] = useState<string[]>([]);
-  const [visibleFileCount, setVisibleFileCount] = useState(50);
-  const [uploadedItems, setUploadedItems] = useState<UploadResponse["uploads"]>(
-    [],
-  );
-  const [filterPreset, setFilterPreset] = useState("all");
-  const [customIncludes, setCustomIncludes] = useState("");
-  const [excludePatterns, setExcludePatterns] = useState("");
-  const [includeSubfolders, setIncludeSubfolders] = useState(true);
-  const [showHidden, setShowHidden] = useState(false);
-  const [section, setSection] = useState<"add" | "process" | "activity">(searchParams.get("tab") === "activity" ? "activity" : requestedStep === "index" ? "process" : "add");
-  const useDiscovery = section === "add" && directFiles.length === 0;
-  const discoveryRuns = useDiscoveryRuns();
-  const [libraryGoal, setLibraryGoal] = useState<
-    "embed" | "synthesize" | "reextract" | "enrich" | "custom"
-  >("embed");
-  const [runExtraction, setRunExtraction] = useState(requestedStep !== "index");
-  const [extractorOverrides, setExtractorOverrides] = useState<Record<string, string>>({});
-  const [extractMode, setExtractMode] = useState<"missing" | "reprocess">(
-    "missing",
-  );
-  const [extractionPolicy, setExtractionPolicy] = useState<
-    "auto" | "make_primary" | "save_variant"
-  >("auto");
-  const [synthesize, setSynthesize] = useState(requestedStep !== "index");
-  const [embed, setEmbed] = useState(true);
-  const [chunkingMethod, setChunkingMethod] =
-    useState<ChunkingMethod>("sentence_window");
-  const [chunkSize, setChunkSize] = useState(768);
-  const [chunkOverlap, setChunkOverlap] = useState(128);
+  }, [selection]);
+  const [recipe, setRecipe] = useState<Recipe>("text");
+  const [extract, setExtract] = useState(true);
+  const [synthesize, setSynthesize] = useState(false);
+  const [embed, setEmbed] = useState(false);
   const [enrich, setEnrich] = useState(false);
-  const [createCollection, setCreateCollection] = useState(false);
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [extractMode, setExtractMode] = useState<"missing" | "reprocess">("missing");
+  const [policy, setPolicy] = useState<"auto" | "make_primary" | "save_variant">("auto");
+  const [synthesizer, setSynthesizer] = useState("");
+  const [enricher, setEnricher] = useState("");
+  const [chunking, setChunking] = useState<"sentence_window" | "paragraph" | "window">("sentence_window");
+  const [size, setSize] = useState(768);
+  const [overlap, setOverlap] = useState(128);
+  const [context, setContext] = useState("");
+  const [collection, setCollection] = useState(false);
   const [collectionName, setCollectionName] = useState("");
-  const [collectionDescription, setCollectionDescription] = useState("");
-  const [selectedSynthesizer, setSelectedSynthesizer] = useState("");
-  const [selectedEnricher, setSelectedEnricher] = useState("");
-  const [expertContext, setExpertContext] = useState("");
-  const [intakePreset, setIntakePreset] = useState("summary-search");
-  const defaultsApplied = useRef(false);
-  const intakeDefaults = useQuery({
-    queryKey: ["intake", "defaults"],
-    queryFn: () => apiJson<{
-      preset: string; synthesize: boolean; build_embeddings: boolean; enrich: boolean;
-      presets: { id: string; label: string; synthesize: boolean; build_embeddings: boolean; enrich: boolean }[];
-      include_subfolders: boolean; show_hidden: boolean; include_patterns: string; exclude_patterns: string;
-      chunk_size: number; chunk_overlap: number; synthesizer: string; enricher: string;
-    }>("/api/intake/defaults"),
-    staleTime: Infinity,
-  });
-  const applyIntakePreset = (id: string) => {
-    const preset = intakeDefaults.data?.presets.find(item => item.id === id);
-    if (!preset) return;
-    setIntakePreset(id);
-    setRunExtraction(true); setExtractMode("missing"); setExtractionPolicy("auto");
-    setSynthesize(preset.synthesize); setEmbed(preset.build_embeddings); setEnrich(preset.enrich);
-  };
-  useEffect(() => {
-    const defaults = intakeDefaults.data;
-    if (!defaults || defaultsApplied.current) return;
-    defaultsApplied.current = true;
-    if (requestedStep !== "index") applyIntakePreset(defaults.preset);
-    setIncludeSubfolders(defaults.include_subfolders); setShowHidden(defaults.show_hidden);
-    if (defaults.include_patterns) { setFilterPreset("custom"); setCustomIncludes(defaults.include_patterns); }
-    setExcludePatterns(defaults.exclude_patterns);
-    setChunkSize(defaults.chunk_size); setChunkOverlap(defaults.chunk_overlap);
-    setSelectedSynthesizer(defaults.synthesizer); setSelectedEnricher(defaults.enricher);
-  }, [intakeDefaults.data]);
   const [starting, setStarting] = useState(false);
-  const [rescanning, setRescanning] = useState(false);
-  const [rescanResult, setRescanResult] = useState<SourceRescanResponse | null>(
-    null,
-  );
-  const [notice, setNotice] = useState<Notice | null>(null);
-  const [controllingRun, setControllingRun] = useState<string | null>(null);
-  const [recoveringQueue, setRecoveringQueue] = useState(false);
-  const [selectedLogRunId, setSelectedLogRunId] = useState<string | null>(null);
-
-  const selectedFilter =
-    FILE_FILTERS.find((option) => option.value === filterPreset) ??
-    FILE_FILTERS[0];
-  const includePatterns =
-    filterPreset === "custom" ? customIncludes : selectedFilter.patterns;
-  const deferredIncludePatterns = useDeferredValue(includePatterns);
-  const deferredExcludePatterns = useDeferredValue(excludePatterns);
-  const filtersUpdating =
-    includePatterns !== deferredIncludePatterns ||
-    excludePatterns !== deferredExcludePatterns;
-  const chunkSettingsValid =
-    chunkingMethod === "paragraph" ||
-    (chunkSize > 0 && chunkOverlap >= 0 && chunkOverlap < chunkSize);
-
-  const runs = useQuery({
-    queryKey: ["processing-runs"],
-    queryFn: listProcessingRuns,
-    refetchInterval: (query) =>
-      query.state.data?.runs.some((run) =>
-        ["queued", "pending", "running", "pausing", "cancelling"].includes(
-          run.status,
-        ),
-      )
-        ? 1500
-        : 5000,
-  });
-  const readiness = useQuery({
-    queryKey: ["intake", "readiness"],
-    queryFn: getIntakeReadiness,
-    staleTime: 30_000,
-    refetchInterval: 15_000,
-  });
-  const sourceStatus = readiness.data?.source;
-  const availableSynthesizers =
-    readiness.data?.synthesizers.filter((item) => item.available) ?? [];
-  const configuredSynthesizer = readiness.data?.defaults.synthesizer;
-  const effectiveSynthesizer =
-    selectedSynthesizer ||
-    availableSynthesizers.find((item) => item.id === configuredSynthesizer)
-      ?.id ||
-    availableSynthesizers.find((item) => item.id === "local.extractive-preview")
-      ?.id ||
-    availableSynthesizers[0]?.id ||
-    "";
-
-  const queuePaths = useMemo(() => {
-    if (section === "add") return directFiles.map(file => file.path);
-    return [
-      ...(selectedFolder ? [selectedFolder.current_path] : []),
-      ...uploadedItems.map((item) => item.path),
-    ];
-  }, [selectedFolder, uploadedItems, directFiles, section]);
-  const folderChanged = section === "process" &&
-    path.trim() !==
-    (selectedFolder?.host_path ?? selectedFolder?.current_path ?? "");
-
-  const preview = useQuery({
-    queryKey: [
-      "intake",
-      "preview",
-      useDiscovery ? frozenSelection : null,
-      useDiscovery,
-      queuePaths,
-      excludedPaths,
-      includeSubfolders,
-      deferredIncludePatterns,
-      deferredExcludePatterns,
-      showHidden,
-      section,
-      runExtraction,
-      extractMode,
-      extractorOverrides,
-      synthesize,
-      embed,
-      enrich,
-      effectiveSynthesizer,
-      selectedEnricher,
-    ],
-    queryFn: ({ signal }) =>
-      resolveIntake({
-        inventory_selection_id: useDiscovery ? frozenSelection : undefined,
-        queue_paths: useDiscovery ? [] : queuePaths,
-        excluded_paths: section === "add" ? [] : excludedPaths,
-        include_subfolders: section === "add" ? false : includeSubfolders,
-        include_patterns: section === "add" ? "" : deferredIncludePatterns,
-        exclude_patterns: section === "add" ? "" : deferredExcludePatterns,
-        show_hidden: showHidden,
-        workflow: section === "process" ? "library" : "intake",
-        run_extraction: runExtraction,
-        extract_mode: extractMode,
-        extractor_overrides: extractorOverrides,
-        synthesizer_name: synthesize ? effectiveSynthesizer || null : null,
-        build_embeddings: embed,
-        chunking_method: chunkingMethod,
-        chunk_size: chunkSize,
-        chunk_overlap: chunkOverlap,
-        enricher_name: enrich
-          ? selectedEnricher ||
-            readiness.data?.defaults.enricher ||
-            "local.stats-keywords"
-          : null,
-      }, signal),
-    enabled: (useDiscovery ? Boolean(frozenSelection) : queuePaths.length > 0) && section !== "activity",
-    retry: false,
-    staleTime: 30_000,
-    refetchOnWindowFocus: false,
-  });
-
-  const recentRuns = useMemo(
-    () => runs.data?.runs ?? [],
-    [runs.data],
-  );
-  const selectedLogRun = recentRuns.find((run) => run.id === selectedLogRunId);
-  const runLogs = useQuery({
-    queryKey: ["processing-runs", selectedLogRunId, "logs"],
-    queryFn: () => getProcessingRunLogs(selectedLogRunId ?? ""),
-    enabled: section === "activity" && Boolean(selectedLogRunId),
-    refetchInterval: selectedLogRun
-      && ["queued", "pending", "running", "pausing", "cancelling"].includes(selectedLogRun.status)
-      ? 1000
-      : 5000,
-  });
-  const displayedLogLines = runLogs.data?.logs ?? selectedLogRun?.logs ?? [];
-
-  const previousLogRun = useRef<{ id: string; status: string } | null>(null);
+  const [controlling, setControlling] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{severity: "error" | "info" | "success"; text: string} | null>(null);
+  const [logId, setLogId] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [report, setReport] = useState<TestReport | null>(null);
+  const [testError, setTestError] = useState("");
+  const [help, setHelp] = useState(false);
+  const initialized = useRef(false);
+  const defaults = useQuery({queryKey: ["intake", "defaults"], queryFn: () => apiJson<Defaults>("/api/intake/defaults"), staleTime: Infinity});
+  const readiness = useQuery({queryKey: ["intake", "readiness"], queryFn: getIntakeReadiness, refetchInterval: 30_000});
+  const runs = useQuery({queryKey: ["processing-runs"], queryFn: listProcessingRuns, refetchInterval: 2500});
+  const scans = useDiscoveryRuns();
+  const changeRecipe = (value: Recipe) => {
+    initialized.current = true;
+    setRecipe(value);
+    if (value === "custom") return;
+    setPolicy("auto"); setExtractMode(value === "upgrade" ? "reprocess" : "missing");
+    const preset = defaults.data?.presets.find(item => item.id === value);
+    setExtract(!["index", "summaries"].includes(value));
+    setSynthesize(value === "summaries" || Boolean(preset?.synthesize));
+    setEmbed(value === "index" || Boolean(preset?.build_embeddings));
+    setEnrich(Boolean(preset?.enrich));
+  };
   useEffect(() => {
-    const previous = previousLogRun.current;
-    const active = ["queued", "pending", "running", "pausing", "cancelling"];
-    if (selectedLogRun && previous?.id === selectedLogRun.id && active.includes(previous.status) && !active.includes(selectedLogRun.status)) {
-      setSelectedLogRunId(null);
+    if (!defaults.data || initialized.current) return;
+    const value = defaults.data;
+    setSynthesizer(value.synthesizer); setEnricher(value.enricher);
+    setSize(value.chunk_size); setOverlap(value.chunk_overlap);
+    if (params.get("step") === "index") changeRecipe("index");
+    else if (params.get("goal") === "reextract") changeRecipe("upgrade");
+    else {
+      setRecipe(value.preset as Recipe); setSynthesize(value.synthesize);
+      setEmbed(value.build_embeddings); setEnrich(value.enrich); initialized.current = true;
     }
-    previousLogRun.current = selectedLogRun ? { id: selectedLogRun.id, status: selectedLogRun.status } : null;
-  }, [selectedLogRun?.status, selectedLogRunId]);
-
-  const controlRun = async (run: ProcessingRun, action: "pause" | "resume" | "cancel" | "retry") => {
-    setControllingRun(`${run.id}:${action}`);
+  }, [defaults.data]);
+  const effectiveSynthesizer = synthesizer || readiness.data?.defaults.synthesizer || "";
+  const effectiveEnricher = enricher || readiness.data?.defaults.enricher || "";
+  const baseSelection = useMemo(() => ({inventory_selection_id: selection ?? undefined, queue_paths: selection ? [] : files.map(file => file.path), include_subfolders: false}), [files, selection]);
+  // File metadata is requested once per explicit selection, never when a processing option changes.
+  const preview = useQuery({queryKey: ["intake", "selected-files", baseSelection],
+    queryFn: ({signal}) => resolveIntake({...baseSelection, run_extraction: true, synthesize: false, build_embeddings: false}, signal),
+    enabled: section !== "activity" && Boolean(selection || files.length), retry: false, staleTime: Infinity, refetchOnWindowFocus: false});
+  const plans = preview.data?.preview.extractor_plan ?? [];
+  const count = preview.data?.preview.matched_count ?? 0;
+  const methods = readiness.data?.extractors ?? [];
+  const status = (name: string) => methods.find(method => method.id === name || method.aliases?.includes(name));
+  const unavailable = plans.filter(plan => ![overrides[plan.extension] || plan.extractor, ...(overrides[plan.extension] ? [] : plan.fallbacks ?? [])].some(name => status(name)?.available));
+  const embedder = readiness.data?.embedders.find(method => method.id === readiness.data?.defaults.embedder);
+  const variantOnly = extract && policy === "save_variant";
+  const options = {workflow: "intake", run_extraction: extract, extract_mode: extractMode, extractor_overrides: overrides, extraction_policy: policy,
+    synthesizer_name: synthesize ? effectiveSynthesizer : null, build_embeddings: embed,
+    chunking_method: chunking, chunk_size: size, chunk_overlap: overlap, enricher_name: enrich ? effectiveEnricher : null,
+    expert_context: context.trim() || null, collection: collection ? {name: collectionName.trim()} : undefined};
+  const signature = JSON.stringify({plans, overrides, extract, synthesize, embed, effectiveSynthesizer, recipe});
+  const currentSignature = useRef(signature); currentSignature.current = signature;
+  useEffect(() => { setReport(null); setTestError(""); }, [signature]);
+  const testEndpoints = async () => {
+    setTesting(true); setReport(null); setTestError("");
+    const tested = signature;
     try {
-      const result = await controlProcessingRun(run.id, action);
-      setNotice({
-        severity: "info",
-        text: action === "pause"
-          ? "Pause requested. OSII will finish the current file, then free the worker for another run."
-          : action === "cancel"
-            ? "Cancellation requested. OSII will finish the current file, then stop this run."
-            : action === "retry"
-              ? "The failed run is queued again. Files that already completed will not be repeated."
-            : "Run resumed. Completed files will not be repeated.",
-      });
-      await queryClient.invalidateQueries({ queryKey: ["processing-runs"] });
-      if (result.status === "paused" || result.status === "cancelled") {
-        await runs.refetch();
-      }
-    } catch (error) {
-      setNotice({
-        severity: "error",
-        text: error instanceof Error ? error.message : `Could not ${action} run.`,
-      });
-    } finally {
-      setControllingRun(null);
-    }
+      const names = extract ? [...new Set(plans.map(plan => overrides[plan.extension] || plan.extractor))] : [];
+      const processors = names.map(name => ({name, kind: "extractor"}));
+      if (synthesize && effectiveSynthesizer) processors.push({name: effectiveSynthesizer, kind: "synthesizer"});
+      const result = await apiJson<TestReport>("/api/intake/preflight", {method: "POST", json: {processors, embed}});
+      if (tested === currentSignature.current) setReport(result);
+      else setTestError("Processing choices changed. Test again.");
+    } catch (error) { setTestError((error as Error).message); }
+    finally {setTesting(false);}
   };
-
-  const recoverQueue = async () => {
-    setRecoveringQueue(true);
+  const showSection = (next: "add" | "activity") => {
+    setNotice(null); setSection(next); setParams(next === "activity" ? {tab: "activity"} : {}, {replace: true});
+  };
+  const queue = async () => {
+    setStarting(true); setNotice(null);
     try {
-      const result = await recoverProcessingQueue();
-      setNotice({
-        severity: "info",
-        text: result.recovered_count
-          ? `${result.recovered_count} interrupted run(s) returned to a safe queue state.`
-          : "No stale run was found. If the worker just stopped, wait 15 seconds and try again.",
-      });
-      await queryClient.invalidateQueries({ queryKey: ["processing-runs"] });
-    } catch (error) {
-      setNotice({
-        severity: "error",
-        text: error instanceof Error ? error.message : "Could not recover the processing queue.",
-      });
-    } finally {
-      setRecoveringQueue(false);
-    }
+      const run = await createProcessingRun({...baseSelection, ...options});
+      setLogId(null); showSection("activity");
+      setNotice({severity: "success", text: `Queued ${run.resolved_count ?? count} ${(run.resolved_count ?? count) === 1 ? "file" : "files"}.`});
+      await client.invalidateQueries({queryKey: ["processing-runs"]});
+    } catch (error) {setNotice({severity: "error", text: (error as Error).message});}
+    finally {setStarting(false);}
   };
-
-  const selectFolder = async (requestedPath: string) => {
-    setSelectingFolder(true);
-    setFolderError(null);
+  const control = async (run: ProcessingRun, action: ProcessingAction) => {
+    if (action === "start") return;
+    setControlling(`${run.id}:${action}`);
     try {
-      const folder = await browseIntake(requestedPath || undefined);
-      localStorage.setItem("osii:last-folder", folder.host_path ?? folder.current_path);
-      setSelectedFolder(folder);
-      setNotice(null);
-      setPath(folder.host_path ?? folder.current_path);
-      setExcludedPaths([]);
-      setVisibleFileCount(50);
-      if (!collectionName.trim())
-        setCollectionName(folder.folder_name ?? folder.display_path);
-      setBrowseOpen(false);
-    } catch (error) {
-      setFolderError(
-        error instanceof Error ? error.message : "Could not open this folder.",
-      );
-    } finally {
-      setSelectingFolder(false);
-    }
+      await controlProcessingRun(run.id, action);
+      await client.invalidateQueries({queryKey: ["processing-runs"]});
+    } catch (error) {setNotice({severity: "error", text: (error as Error).message});}
+    finally {setControlling(null);}
   };
-
-  const rescanSources = async (apply: boolean) => {
-    setRescanning(true);
-    setNotice(null);
-    try {
-      const result = await rescanSourcePaths(apply);
-      setRescanResult(result);
-      if (apply) {
-        setNotice({
-          severity: "success",
-          text: `${result.applied?.moved_updated ?? 0} moved source path(s) remapped by matching file content hashes.`,
-        });
-        await queryClient.invalidateQueries();
-      }
-    } catch (error) {
-      setNotice({
-        severity: "error",
-        text: error instanceof Error ? error.message : "Could not rescan source paths.",
-      });
-    } finally {
-      setRescanning(false);
-    }
-  };
-
-  const start = async () => {
-    if (
-      !(useDiscovery ? frozenSelection : queuePaths.length) ||
-      !preview.data?.preview.matched_count ||
-      preview.isFetching ||
-      preview.isError ||
-      filtersUpdating ||
-      selectingFolder ||
-      folderChanged ||
-      (!useDiscovery && folderError) ||
-      (createCollection && !collectionName.trim())
-    )
-      return;
-    setStarting(true);
-    setNotice(null);
-    try {
-      const run = await createProcessingRun({
-        inventory_selection_id: useDiscovery ? frozenSelection : undefined,
-        queue_paths: useDiscovery ? [] : queuePaths,
-        excluded_paths: section === "add" ? [] : excludedPaths,
-        include_subfolders: section === "add" ? false : includeSubfolders,
-        include_patterns: section === "add" ? "" : includePatterns,
-        exclude_patterns: section === "add" ? "" : excludePatterns,
-        show_hidden: showHidden,
-        workflow: section === "process" ? "library" : "intake",
-        run_extraction: runExtraction,
-        extract_mode: extractMode,
-        extractor_overrides: extractorOverrides,
-        extraction_policy: extractionPolicy,
-        synthesizer_name: synthesize ? effectiveSynthesizer || null : null,
-        build_embeddings: embed,
-        chunking_method: chunkingMethod,
-        chunk_size: chunkSize,
-        chunk_overlap: chunkOverlap,
-        enricher_name: enrich
-          ? selectedEnricher ||
-            readiness.data?.defaults.enricher ||
-            "local.stats-keywords"
-          : null,
-        expert_context: expertContext.trim() || null,
-        collection:
-          section === "add" && createCollection
-            ? {
-                name: collectionName.trim(),
-                description: collectionDescription.trim() || null,
-              }
-            : undefined,
-      });
-      const collectionMessage = run.collection
-        ? ` Collection: ${run.collection.name}.`
-        : "";
-      setNotice({
-        severity: "success",
-        text: `Queued ${run.resolved_count ?? preview.data.preview.matched_count} files.${collectionMessage}`,
-      });
-      setUploadedItems([]);
-      setExcludedPaths([]);
-      setExpertContext("");
-      setCreateCollection(false);
-      setCollectionName("");
-      setCollectionDescription("");
-      await queryClient.invalidateQueries({ queryKey: ["processing-runs"] });
-      setSelectedLogRunId(run.id);
-      setSection("activity");
-    } catch (error) {
-      setNotice({
-        severity: "error",
-        text:
-          error instanceof Error ? error.message : "Could not start intake.",
-      });
-    } finally {
-      setStarting(false);
-    }
-  };
-
-  const chooseLibraryGoal = (goal: typeof libraryGoal) => {
-    setLibraryGoal(goal);
-    if (goal === "embed") {
-      setRunExtraction(false); setSynthesize(false); setEmbed(true); setEnrich(false);
-    } else if (goal === "synthesize") {
-      setRunExtraction(false); setSynthesize(true); setEmbed(false); setEnrich(false);
-    } else if (goal === "reextract") {
-      setRunExtraction(true); setExtractMode("reprocess"); setSynthesize(false); setEmbed(false); setEnrich(false);
-    } else if (goal === "enrich") {
-      setRunExtraction(false); setSynthesize(false); setEmbed(false); setEnrich(true);
-    }
-  };
-
-  const changeSection = (next: "add" | "process" | "activity") => {
-    setSection(next);
-    setNotice(null);
-    if (next === "add") {
-      applyIntakePreset(intakePreset);
-    } else if (next === "process") {
-      chooseLibraryGoal(libraryGoal);
-    }
-  };
-
-  const matchedCount = preview.data?.preview.matched_count ?? 0;
-  const queuedDocumentCount =
-    section === "process"
-      ? (preview.data?.preview.processing_plan?.unique_document_count ??
-        matchedCount)
-      : matchedCount;
-  const embeddingStatus =
-    readiness.data?.embedders.find(
-      (embedder) => embedder.id === readiness.data?.defaults.embedder,
-    );
-  const embeddingAvailable = Boolean(embeddingStatus?.available && !embeddingStatus.lexical && embeddingStatus.id !== "local.hashing");
-  const extractorStatus = (name: string) =>
-    readiness.data?.extractors.find(
-      (extractor) => extractor.id === name || extractor.aliases?.includes(name),
-    );
-  const unavailableExtractorPlan =
-    preview.data?.preview.extractor_plan.filter(
-      (plan) =>
-        ![plan.extractor, ...(plan.fallbacks ?? [])].some(
-          (name) => extractorStatus(name)?.available,
-        ),
-    ) ?? [];
-  const extractorPlanReady =
-    Boolean(readiness.data) && unavailableExtractorPlan.length === 0;
-  const availableFiles =
-    preview.data?.preview.available_files ?? preview.data?.resolved_files ?? [];
-  const documentLabel = (filePath: string, display: string) => {
-    const upload = uploadedItems.find((item) => item.path === filePath);
-    if (upload) return `Uploads/${upload.name}`;
-    const root = selectedFolder?.current_path
-      .replace(/\\/g, "/")
-      .replace(/\/$/, "");
-    const normalized = filePath.replace(/\\/g, "/");
-    return root && normalized.startsWith(`${root}/`)
-      ? normalized.slice(root.length + 1)
-      : display;
-  };
-  const processingSummary =
-    [
-      runExtraction ? "Read text" : null,
-      synthesize
-        ? effectiveSynthesizer === "local.extractive-preview"
-          ? "Cited source previews"
-          : "Summaries"
-        : null,
-      embed ? "Retrieval embeddings" : null,
-      enrich ? "Enrichment" : null,
-    ]
-      .filter(Boolean)
-      .join(" · ") || "No processing selected";
-
-  const followWorkflowStep = (step: WorkflowStepId) => {
-    if (["embedding", "language", "extractor"].includes(step)) {
-      navigate(`/admin/processors?step=${step}`);
-    } else if (step === "index") {
-      setSection("process");
-      setLibraryGoal("embed");
-      chooseLibraryGoal("embed");
-    } else {
-      changeSection("add");
-    }
-  };
-
-  const useTextOnlyIntake = () => {
-    changeSection("add");
-    setIntakePreset("text");
-    setRunExtraction(true); setSynthesize(false); setEmbed(false); setEnrich(false);
-    setNotice({ severity: "info", text: "Text-only preset selected." });
-  };
-
-  const endpointSelection = JSON.stringify({extractors: preview.data?.preview.extractor_plan?.map(plan => extractorOverrides[plan.extension] || plan.extractor), synthesize, effectiveSynthesizer, embed, runExtraction});
-  const endpointSelectionRef = useRef(endpointSelection);
-  endpointSelectionRef.current = endpointSelection;
-  useEffect(() => { setEndpointTest(null); }, [endpointSelection]);
-  return (
-    <Stack spacing={2.5} sx={{ maxWidth: 1100, mx: "auto" }}>
-      <Typography variant="h5" fontWeight={700}>Intake</Typography>
-
-      <WorkflowProgress readiness={readiness.data} checking={readiness.isLoading} failed={readiness.isError} onStep={followWorkflowStep} />
-      <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
-        <IntakeSections value={section} onChange={changeSection} activeCount={(runs.data?.runs.filter(run => ["queued", "pending", "running", "pausing", "cancelling"].includes(run.status)).length ?? 0) + (discoveryRuns.data?.filter(run => ["queued", "running"].includes(run.status)).length ?? 0)} />
-      </Box>
-
-
-
-      {notice ? <Alert severity={notice.severity}>{notice.text}</Alert> : null}
-
-      {runs.data?.worker && !runs.data.worker.available ? (
-        <Alert
-          severity="error"
-          action={
-            <Stack direction="row" spacing={0.5}>
-              <Button
-                color="inherit"
-                size="small"
-                onClick={() => setSection("activity")}
-              >
-                View activity
-              </Button>
-              <Button
-                color="inherit"
-                size="small"
-                disabled={recoveringQueue}
-                onClick={() => void recoverQueue()}
-              >
-                {recoveringQueue ? "Checking…" : "Recover queue"}
-              </Button>
-            </Stack>
-          }
-        >
-          <strong>The intake worker is not responding.</strong>{" "}
-          {runs.data.worker.detail} New work will remain queued until the worker
-          is running.
-        </Alert>
-      ) : null}
-
-      {section !== "activity" ? (
-        <>
-          {section === "process" ? (
-            <Paper variant="outlined" sx={{ p: 2 }}>
-              <Stack spacing={1.5}>
-                <Stack spacing={0.25}>
-                  <Typography variant="h6" component="h2" fontWeight={750}>
-                    1. Choose work
-                  </Typography>
-                </Stack>
-                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                  {(
-                    [
-                      ["embed", "Add embeddings"],
-                      ["synthesize", "Generate summaries"],
-                      ["reextract", "Upgrade extraction"],
-                      ["enrich", "Run enrichment"],
-                      ["custom", "Custom workflow"],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <Button
-                      key={value}
-                      variant={libraryGoal === value ? "contained" : "outlined"}
-                      onClick={() => chooseLibraryGoal(value)}
-                    >
-                      {label}
-                    </Button>
-                  ))}
-                </Stack>
-                {libraryGoal === "reextract" ? (
-                  <Alert severity="info">
-                    Previous extractions are kept. Choose whether the new version becomes primary.
-                  </Alert>
-                ) : null}
-              </Stack>
-            </Paper>
-          ) : null}
-
-          {section === "add" ? <DiscoveryIntakePanel selectedId={frozenSelection} onSelect={setFrozenSelection} directFiles={directFiles} onFiles={setDirectFiles} /> : <>
-          <Paper
-            variant="outlined"
-            sx={{
-              p: { xs: 2, sm: 3 },
-              borderRadius: 2,
-              borderColor: "secondary.main",
-              borderTopWidth: 4,
-            }}
-          >
-            <Stack spacing={2}>
-              <Stack spacing={0.5}>
-                <Typography variant="h6" component="h2" fontWeight={750}>
-                  {section === "process" ? "2. Select documents" : "1. Choose files"}
-                </Typography>
-              </Stack>
-              <Box
-                component="form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void selectFolder(path);
-                }}
-              >
-                <Stack
-                  direction={{ xs: "column", sm: "row" }}
-                  spacing={1}
-                  alignItems={{ sm: "flex-start" }}
-                >
-                  <TextField
-                    fullWidth
-                    label="Document folder"
-                    value={path}
-                    onChange={(event) => {
-                      setPath(event.target.value);
-                      setFolderError(null);
-                    }}
-                    placeholder="Paste a folder path"
-                    helperText={
-                      folderChanged || !selectedFolder
-                        ? "Select Use folder to apply this location."
-                        : "Folder selected"
-                    }
-                  />
-                  <Button
-                    type="submit"
-                    variant={folderChanged ? "contained" : "outlined"}
-                    color="secondary"
-                    disabled={selectingFolder || !path.trim()}
-                    sx={{ minHeight: 40, flexShrink: 0 }}
-                  >
-                    {selectingFolder ? "Opening…" : "Use folder"}
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    color="secondary"
-                    startIcon={<FolderOutlinedIcon />}
-                    sx={{ minHeight: 40, flexShrink: 0 }}
-                    onClick={() => {
-                      setFolderError(null);
-                      setBrowseOpen(true);
-                    }}
-                  >
-                    Browse
-                  </Button>
-                </Stack>
-              </Box>
-              {folderError && !browseOpen ? (
-                <Alert severity="error">{folderError}</Alert>
-              ) : null}
-              {sourceStatus?.osii_writable === false ? (
-                <Alert severity="error">
-                  OSII's artifact folder is not writable. Fix its access before
-                  starting a run.
-                </Alert>
-              ) : null}
-
-              <Stack spacing={1}>
-                <Typography variant="body2" component="p" fontWeight={750}>
-                  File filters
-                </Typography>
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-                  <TextField
-                    select
-                    size="small"
-                    label="File types"
-                    value={filterPreset}
-                    onChange={(event) => setFilterPreset(event.target.value)}
-                    sx={{ minWidth: { xs: 0, sm: 220 }, width: { xs: "100%", sm: "auto" } }}
-                  >
-                    {FILE_FILTERS.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </TextField>
-                </Stack>
-                <details><summary>More filters</summary>
-                <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="Include patterns (optional)"
-                    value={includePatterns}
-                    onChange={(event) => {
-                      setCustomIncludes(event.target.value);
-                      setFilterPreset("custom");
-                    }}
-                    placeholder={"*.pdf\nreports/*.csv"}
-                    helperText="One pattern per line; blank includes all files."
-                    multiline
-                    maxRows={4}
-                  />
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="Exclude patterns (optional)"
-                    value={excludePatterns}
-                    onChange={(event) => setExcludePatterns(event.target.value)}
-                    placeholder={"*.tmp\narchive/**"}
-                    helperText="One pattern per line; exclusions take priority."
-                    multiline
-                    maxRows={4}
-                  />
-                </Stack>
-                <Typography variant="caption" color="text.secondary">
-                  Patterns apply to the selected folder and added uploads.
-                </Typography>
-                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={includeSubfolders}
-                        onChange={(event) =>
-                          setIncludeSubfolders(event.target.checked)
-                        }
-                      />
-                    }
-                    label="Include subfolders"
-                  />
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={showHidden}
-                        onChange={(event) =>
-                          setShowHidden(event.target.checked)
-                        }
-                      />
-                    }
-                    label="Include hidden files"
-                  />
-                </Stack>
-                </details>
-              </Stack>
-
-              <Divider />
-              <Stack
-                direction="row"
-                justifyContent="space-between"
-                alignItems="center"
-                spacing={1}
-              >
-                <Typography fontWeight={700}>
-                  {preview.isFetching
-                    ? "Updating file selection…"
-                    : `${matchedCount} file${matchedCount === 1 ? "" : "s"} included`}
-                </Typography>
-                {excludedPaths.length ? (
-                  <Button size="small" onClick={() => setExcludedPaths([])}>
-                    Include all
-                  </Button>
-                ) : (
-                  <Typography variant="caption" color="text.secondary">
-                    All matching files selected
-                  </Typography>
-                )}
-              </Stack>
-              {preview.isFetching || selectingFolder ? (
-                <LinearProgress />
-              ) : null}
-              {preview.isError ? (
-                <Alert severity="error" action={<Button color="inherit" onClick={() => void preview.refetch()}>Retry</Button>}>
-                  {preview.error instanceof Error
-                    ? preview.error.message
-                    : "Could not list files for this folder."}
-                </Alert>
-              ) : null}
-
-              <FileSelectionList files={availableFiles.slice(0, visibleFileCount).map(file => ({ path: file.path, display: documentLabel(file.path, file.display), size_bytes: "size_bytes" in file && typeof file.size_bytes === "number" ? file.size_bytes : null }))} excludedPaths={excludedPaths}
-                onToggle={path => setExcludedPaths(paths => paths.includes(path) ? paths.filter(item => item !== path) : [...paths, path])} />
-              {availableFiles.length > visibleFileCount ? (
-                <Button
-                  sx={{ alignSelf: "flex-start" }}
-                  onClick={() => setVisibleFileCount((count) => count + 50)}
-                >
-                  Show more files ({availableFiles.length - visibleFileCount}{" "}
-                  remaining)
-                </Button>
-              ) : null}
-              {preview.data && !availableFiles.length ? (
-                <Typography variant="body2" color="text.secondary">
-                  No matching files.
-                </Typography>
-              ) : null}
-              <Stack
-                direction={{ xs: "column", sm: "row" }}
-                justifyContent="space-between"
-                alignItems={{ sm: "center" }}
-                spacing={1}
-              >
-                <Typography variant="caption" color="text.secondary">
-                  {preview.data
-                    ? `${preview.data.preview.unprocessed_count} new · ${preview.data.preview.processed_count} already read · ${preview.data.preview.total_size_human}`
-                    : ""}
-                </Typography>
-
-              </Stack>
-              {uploadedItems.length ? (
-                <Typography variant="caption" color="text.secondary">
-                  {uploadedItems.length} uploaded file(s) added alongside the
-                  folder. Uploaded files follow the same filters.
-                </Typography>
-              ) : null}
-            </Stack>
-          </Paper>
-
-          </>}
-
-          <LocationBrowser open={browseOpen} foldersOnly
-            initialPath={selectedFolder?.current_path || path || undefined}
-            onClose={() => setBrowseOpen(false)}
-            onFolder={(folder) => void selectFolder(folder)} />
-
-          <Typography id="intake-processing" variant="h6" component="h2" tabIndex={-1} fontWeight={750} sx={{ scrollMarginTop: 96 }}>3. Process</Typography>
-          {useDiscovery && frozenSelection === null ? <Typography color="text.secondary">Select files above to continue.</Typography> : <>
-                      {section === "add" && <TextField select size="small" label="Processing preset" value={intakePreset} disabled={!intakeDefaults.data} onChange={e => applyIntakePreset(e.target.value)}>
-                        {(intakeDefaults.data?.presets ?? [{ id: "summary-search", label: "Loading intake defaults…" }]).map(preset => <MenuItem key={preset.id} value={preset.id}>{preset.label}</MenuItem>)}
-                      </TextField>}
-          <Accordion
-            variant="outlined"
-            disableGutters
-            sx={{
-              borderRadius: "8px !important",
-              "&:before": { display: "none" },
-            }}
-          >
-            <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}>
-              <Stack>
-                <Typography fontWeight={700}>
-                  Processing options
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {processingSummary}
-                </Typography>
-              </Stack>
-            </AccordionSummary>
-            <AccordionDetails>
-              <Stack spacing={2.5}>
-                {section === "add" ? (
-                  <Stack spacing={1}>
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={createCollection}
-                          onChange={(event) =>
-                            setCreateCollection(event.target.checked)
-                          }
-                        />
-                      }
-                      label="Save this run as a reusable collection"
-                    />
-                    {createCollection ? (
-                      <>
-                        <TextField
-                          fullWidth
-                          size="small"
-                          label="Collection name"
-                          value={collectionName}
-                          required
-                          onChange={(event) =>
-                            setCollectionName(event.target.value)
-                          }
-                        />
-                        <TextField
-                          fullWidth
-                          size="small"
-                          label="Collection description (optional)"
-                          value={collectionDescription}
-                          onChange={(event) =>
-                            setCollectionDescription(event.target.value)
-                          }
-                        />
-                      </>
-                    ) : null}
-                  </Stack>
-                ) : null}
-                <TextField
-                  fullWidth
-                  multiline
-                  minRows={2}
-                  label="Expert context (optional)"
-                  value={expertContext}
-                  onChange={(event) => setExpertContext(event.target.value)}
-                  inputProps={{ maxLength: 20_000 }}
-                  helperText="Blank reuses saved guidance. Tesseract ignores this field."
-                />
-                <Box>
-                  <Stack spacing={1.5}>
-                    <Stack spacing={0.25}>
-                      <Typography fontWeight={700}>Processing steps</Typography>
-                      {intakeDefaults.isError && <Alert severity="error">Could not load intake defaults: {intakeDefaults.error.message}</Alert>}
-                    </Stack>
-                    {section === "add" || libraryGoal === "reextract" || libraryGoal === "custom" ? (
-                      <Stack spacing={1}>
-                        <FormControlLabel
-                          control={
-                            <Checkbox
-                              checked={runExtraction}
-                              onChange={(event) =>
-                                setRunExtraction(event.target.checked)
-                              }
-                            />
-                          }
-                          label="Read text"
-                        />
-                        {runExtraction && <>
-                          {(preview.data?.preview.extractor_plan ?? []).map(plan => <TextField key={plan.extension} select size="small" label={`Reader (${plan.extension})`} slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
-                            value={extractorOverrides[plan.extension] ?? ""} onChange={event => {
-                              const method = event.target.value;
-                              setExtractorOverrides(current => { const next = { ...current }; if (method) next[plan.extension] = method; else delete next[plan.extension]; return next; });
-                              if (method) setExtractMode("reprocess");
-                            }}>
-                            <MenuItem value="">File-type defaults</MenuItem>
-                            {(readiness.data?.extractors ?? []).filter(method => method.available && method.descriptor?.capabilities?.file_extensions?.includes(plan.extension)).map(method => <MenuItem key={method.id} value={method.id}>{method.display_name}</MenuItem>)}
-                          </TextField>)}
-                          <TextField select size="small" label="Existing text" value={extractMode} onChange={event => setExtractMode(event.target.value as typeof extractMode)}>
-                            <MenuItem value="missing">Keep completed text</MenuItem>
-                            <MenuItem value="reprocess">Read selected files again</MenuItem>
-                          </TextField>
-                        </>}
-                        {runExtraction ? (
-                          <TextField
-                            select
-                            size="small"
-                            label="After the new extraction finishes"
-                            value={extractionPolicy}
-                            onChange={(event) =>
-                              setExtractionPolicy(
-                                event.target.value as typeof extractionPolicy,
-                              )
-                            }
-                          >
-                            <MenuItem value="auto">Keep primary when adding a different method</MenuItem>
-                            <MenuItem value="make_primary">
-                              Make it primary and preserve the previous version
-                            </MenuItem>
-                            <MenuItem value="save_variant">
-                              Save as another version; keep the current primary
-                            </MenuItem>
-                          </TextField>
-                        ) : null}
-                      </Stack>
-                    ) : null}
-                    <ProcessorStepControl label="Generate document summaries" methodLabel="Synthesizer" checked={synthesize} onChecked={setSynthesize}
-                      method={effectiveSynthesizer} onMethod={setSelectedSynthesizer} options={availableSynthesizers}
-                      disabled={extractionPolicy === "save_variant" && runExtraction}
-                      helperText={!availableSynthesizers.length ? "Summaries are unavailable until a synthesizer is connected in Setup. You can still read and search extracted text." : effectiveSynthesizer === "local.extractive-preview" ? "Using the no-AI baseline: OSII copies cited source excerpts and does not generate new prose." : "Using a connected model-backed synthesizer; its provider and model are recorded with the result."} />
-                    {embed ? (
-                      <Accordion variant="outlined" disableGutters>
-                        <AccordionSummary
-                          expandIcon={<ExpandMoreOutlinedIcon />}
-                        >
-                          <Stack spacing={0.2}>
-                            <Typography variant="body2" fontWeight={600}>
-                              Retrieval chunking
-                            </Typography>
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                            >
-                              {chunkingMethod === "sentence_window"
-                                ? `${chunkSize} characters with about ${chunkOverlap} characters of sentence-aligned overlap`
-                                : chunkingMethod === "window"
-                                  ? `${chunkSize} characters with ${chunkOverlap} characters of fixed overlap`
-                                  : "One chunk per paragraph; no overlap"}
-                            </Typography>
-                          </Stack>
-                        </AccordionSummary>
-                        <AccordionDetails>
-                          <Stack spacing={1.5}>
-                            <TextField
-                              select
-                              size="small"
-                              label="Chunking strategy"
-                              value={chunkingMethod}
-                              onChange={(event) =>
-                                setChunkingMethod(
-                                  event.target.value as ChunkingMethod,
-                                )
-                              }
-                            >
-                              <MenuItem value="sentence_window">
-                                Sentence-aligned windows (recommended)
-                              </MenuItem>
-                              <MenuItem value="paragraph">
-                                Paragraphs (compatibility)
-                              </MenuItem>
-                              <MenuItem value="window">
-                                Fixed character windows
-                              </MenuItem>
-                            </TextField>
-                            {chunkingMethod !== "paragraph" ? (
-                              <Stack
-                                direction={{ xs: "column", sm: "row" }}
-                                spacing={1.5}
-                              >
-                                <TextField
-                                  size="small"
-                                  type="number"
-                                  label="Maximum characters"
-                                  value={chunkSize}
-                                  inputProps={{ min: 100, step: 100 }}
-                                  onChange={(event) =>
-                                    setChunkSize(Number(event.target.value))
-                                  }
-                                />
-                                <TextField
-                                  size="small"
-                                  type="number"
-                                  label="Overlap characters"
-                                  value={chunkOverlap}
-                                  inputProps={{ min: 0, step: 25 }}
-                                  error={!chunkSettingsValid}
-                                  helperText={
-                                    !chunkSettingsValid
-                                      ? "Overlap must be smaller than the chunk size."
-                                      : "Preserves context across boundaries."
-                                  }
-                                  onChange={(event) =>
-                                    setChunkOverlap(Number(event.target.value))
-                                  }
-                                />
-                              </Stack>
-                            ) : null}
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                            >
-                              Sentence-aligned windows preserve exact character
-                              offsets and source-page grounding. Changing these
-                              settings rebuilds both semantic and BM25 indexes.
-                            </Typography>
-                          </Stack>
-                        </AccordionDetails>
-                      </Accordion>
-                    ) : null}
-                    {embeddingStatus?.index_rebuild_required ? (
-                      <Alert severity="warning">
-                        {embeddingStatus.indexed_model
-                          ? `The existing index uses ${embeddingStatus.indexed_model}; this run will rebuild it for ${embeddingStatus.model}.`
-                          : `The current semantic index is incompatible and will be rebuilt for ${embeddingStatus.model}.`}
-                      </Alert>
-                    ) : null}
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={embed}
-                          disabled={
-                            (!embeddingAvailable && !embed) ||
-                            (extractionPolicy === "save_variant" &&
-                              runExtraction)
-                          }
-                          onChange={(event) => setEmbed(event.target.checked)}
-                        />
-                      }
-                      label="Build retrieval embeddings"
-                    />
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ mt: -1 }}
-                    >
-                      {embeddingAvailable
-                        ? `Ready${embeddingStatus?.model ? `: ${embeddingStatus.model}` : ""}.${embeddingStatus?.lexical ? " Hashing vectors provide approximate lexical similarity, not semantic understanding." : ""}`
-                        : "Unavailable and cannot be queued. Lexical search remains available without an embedder."}
-                    </Typography>
-                    {section === "process" &&
-                    (libraryGoal === "enrich" || libraryGoal === "custom") ? (
-                      <>
-                        <ProcessorStepControl label="Run enrichment" methodLabel="Enricher" checked={enrich} onChecked={setEnrich}
-                          method={selectedEnricher || readiness.data?.defaults.enricher || ""} onMethod={setSelectedEnricher}
-                          options={(readiness.data?.enrichers ?? []).filter(item => item.available)} disabled={extractionPolicy === "save_variant" && runExtraction} />
-                      </>
-                    ) : null}
-                    {extractionPolicy === "save_variant" && runExtraction ? (
-                      <Alert severity="info">
-                        Downstream steps are disabled because this new
-                        extraction will not become primary.
-                      </Alert>
-                    ) : null}
-                  </Stack>
-                </Box>
-                <Divider />
-                <Stack spacing={1}>
-                  <Typography variant="body2" fontWeight={700}>
-                    Repair moved source paths
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Find moved files in the configured source folder.
-                  </Typography>
-                  <Button
-                    startIcon={<RefreshOutlinedIcon />}
-                    disabled={rescanning}
-                    onClick={() => void rescanSources(false)}
-                    sx={{ alignSelf: "flex-start" }}
-                  >
-                    Check moved files
-                  </Button>
-                  {rescanResult ? (
-                    <Typography variant="body2">
-                      {rescanResult.summary.moved} moved
-                    </Typography>
-                  ) : null}
-                  {rescanResult?.summary.moved ? (
-                    <Button
-                      disabled={rescanning}
-                      onClick={() => void rescanSources(true)}
-                      sx={{ alignSelf: "flex-start" }}
-                    >
-                      Apply hash-matched repairs
-                    </Button>
-                  ) : null}
-                </Stack>
-              </Stack>
-            </AccordionDetails>
-          </Accordion>
-
-          <Box sx={{ px: { xs: 0, sm: 1 }, py: 1 }}>
-            <Stack spacing={1.5}>
-
-              {preview.isLoading ? (
-                <LinearProgress />
-              ) : null}
-              {preview.isError ? (
-                <Alert severity="error">
-                  Could not preview this intake.
-                  {preview.error instanceof Error
-                    ? ` ${preview.error.message}`
-                    : ""}
-                </Alert>
-              ) : null}
-
-              {expertContext.trim() ? (
-                <Paper
-                  variant="outlined"
-                  sx={{ p: 1.5, bgcolor: "action.hover" }}
-                >
-                  <Stack spacing={0.5}>
-                    <Typography
-                      variant="caption"
-                      fontWeight={700}
-                      color="text.secondary"
-                    >
-                      EXPERT CONTEXT INCLUDED
-                    </Typography>
-                    <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
-                      {expertContext.trim()}
-                    </Typography>
-                  </Stack>
-                </Paper>
-              ) : null}
-
-              {preview.data?.preview.processing_plan ? (
-                <Stack spacing={0.75}>
-                  {preview.data.preview.processing_plan.steps.map((step) => (
-                    <Stack
-                      key={step.id}
-                      direction="row"
-                      justifyContent="space-between"
-                      spacing={2}
-                    >
-                      <Typography variant="body2">{step.label}</Typography>
-                      <Typography variant="body2" fontWeight={600}>
-                        {step.eligible_count} {preview.data?.preview.processing_plan?.estimated ? "planned" : "to process"}
-                        {step.current_count
-                          ? ` · ${step.current_count} current`
-                          : ""}
-                      </Typography>
-                    </Stack>
-                  ))}
-                  {preview.data.preview.processing_plan.note && <Box component="details"><Typography component="summary" variant="caption" sx={{ cursor: "pointer" }}>Plan details</Typography><Typography variant="caption" color="text.secondary">{preview.data.preview.processing_plan.note}</Typography></Box>}
-                  {preview.data.preview.processing_plan.blocked_count ? (
-                    <Alert severity="warning">
-                      {preview.data.preview.processing_plan.blocked_count}{" "}
-                      document(s) have no extraction and will be skipped unless
-                      extraction is selected.
-                    </Alert>
-                  ) : null}
-                </Stack>
-              ) : null}
-
-              {(useDiscovery ? !frozenSelection : queuePaths.length === 0) ? (
-                <Alert severity="info">
-                  {useDiscovery ? "Select files above to continue." : "Choose a document folder or add files from elsewhere."}
-                </Alert>
-              ) : null}
-              <Paper variant="outlined" sx={{p: 1.5}}>
-                <Button disabled={testingEndpoints} onClick={async () => {
-                  setTestingEndpoints(true); setEndpointTestError(""); setEndpointTest(null);
-                  try {
-                    const names = runExtraction ? [...new Set((preview.data?.preview.extractor_plan ?? []).map(plan => extractorOverrides[plan.extension] || plan.extractor))] : [];
-                    const processors = names.map(name => ({name, kind: "extractor"}));
-                    if (synthesize && effectiveSynthesizer) processors.push({name: effectiveSynthesizer, kind: "synthesizer"});
-                    if (!processors.length && !embed) throw new Error("Select files and processing methods first.");
-                    const result = await apiJson<NonNullable<typeof endpointTest>>("/api/intake/preflight", {method: "POST", json: {processors, embed}});
-                    if (endpointSelectionRef.current === endpointSelection) setEndpointTest(result);
-                    else setEndpointTestError("Selection changed during testing. Test the current endpoints again.");
-                  } catch (error) { setEndpointTestError(error instanceof Error ? error.message : String(error)); }
-                  finally {setTestingEndpoints(false);}
-                }}>{testingEndpoints ? "Testing tiny sample…" : "Test selected endpoints"}</Button>
-                <Typography variant="caption" display="block">Runs a tiny sample; may use model credits. No library files are read or saved.</Typography>
-                {endpointTestError && <Alert severity="error">{endpointTestError}</Alert>}
-                {endpointTest?.results.map((result, i) => <Alert key={i} severity={result.ok ? "success" : "error"}>{result.processor}: {result.ok ? "Operation passed" : "Test failed"}{result.detail ? ` · ${result.detail}` : ""}</Alert>)}
-                {endpointTest && <><Typography variant="caption">Tested {new Date(endpointTest.tested_at).toLocaleString()} · results describe that test only.</Typography><Button size="small" onClick={() => void navigator.clipboard.writeText(JSON.stringify(endpointTest, null, 2))}>Copy test diagnostics</Button></>}
-              </Paper>
-              {readiness.isError ? (
-                <Alert severity="error">
-                  Could not check processing services.{" "}
-                  {readiness.error instanceof Error
-                    ? readiness.error.message
-                    : ""}
-                </Alert>
-              ) : null}
-              {readiness.data && runExtraction && !extractorPlanReady ? (
-                <Alert severity="error">
-                  An extractor is unavailable for:{" "}
-                  {unavailableExtractorPlan
-                    .map((item) => item.extension)
-                    .join(", ")}
-                  . Connect the required processor in Setup or exclude those
-                  file types.
-                </Alert>
-              ) : null}
-              {readiness.data && synthesize && !effectiveSynthesizer ? (
-                <Alert severity="warning">
-                  No synthesizer is connected. Connect one in Setup, or turn off
-                  summaries under Processing options.
-                </Alert>
-              ) : null}
-              {readiness.data && embed && !embeddingAvailable ? <Alert severity="warning" action={<Stack direction="row"><Button color="inherit" onClick={useTextOnlyIntake}>Text only</Button><Button color="inherit" onClick={() => navigate("/admin/processors?step=embedding")}>Setup</Button></Stack>}>Embedding model unavailable. Choose Text only or update Setup.</Alert> : null}
-              {preview.data && matchedCount === 0 ? (
-                <Alert severity="warning">
-                  No files match the current source scope and intake rules.
-                </Alert>
-              ) : null}
-              {!runExtraction && !synthesize && !embed && !enrich ? (
-                <Alert severity="info">Select at least one step under Processing options.</Alert>
-              ) : null}
-
-              <Button
-                variant="contained"
-                color="secondary"
-                startIcon={<PlayArrowOutlinedIcon />}
-                disabled={
-                  !(useDiscovery ? frozenSelection : queuePaths.length) ||
-                  (!runExtraction && !synthesize && !embed && !enrich) ||
-                  !matchedCount ||
-                  starting ||
-                  preview.isFetching ||
-                  filtersUpdating ||
-                  preview.isError ||
-                  selectingFolder ||
-                  folderChanged ||
-                  (!useDiscovery && Boolean(folderError)) ||
-                  readiness.isLoading ||
-                  sourceStatus?.osii_writable === false ||
-                  runs.data?.worker?.available === false ||
-                  (runExtraction && !extractorPlanReady) ||
-                  (synthesize && !effectiveSynthesizer) ||
-                  (embed && !embeddingAvailable) ||
-                  (embed && !chunkSettingsValid) ||
-                  (extractionPolicy === "save_variant" &&
-                    runExtraction &&
-                    (synthesize || embed || enrich)) ||
-                  (section === "add" &&
-                    createCollection &&
-                    !collectionName.trim())
-                }
-                onClick={() => void start()}
-                sx={{ alignSelf: "flex-start" }}
-              >
-                {starting
-                  ? "Queueing work…"
-                  : `${section === "process" ? "Queue processing" : `Queue ${queuedDocumentCount} ${queuedDocumentCount === 1 ? "file" : "files"}`}${section === "process" && queuedDocumentCount ? ` (${queuedDocumentCount} documents)` : ""}`}
-              </Button>
-            </Stack>
-          </Box>
-          </>}
-        </>
-      ) : null}
-
-      {section === "activity" && <DiscoveryActivity />}
-      {section === "activity" && <ProcessingActivity recentRuns={recentRuns} workerAvailable={runs.data?.worker?.available}
-        selectedLogRunId={selectedLogRunId} setSelectedLogRunId={setSelectedLogRunId} controllingRun={controllingRun}
-        controlRun={(run, action) => action === "start" ? undefined : controlRun(run, action)} displayedLogLines={displayedLogLines}
-        refreshLogs={() => void runLogs.refetch()} logError={runLogs.isError} />}
-
-    </Stack>
-  );
+  const logs = useQuery({queryKey: ["processing-runs", logId, "logs"], queryFn: () => getProcessingRunLogs(logId!), enabled: Boolean(logId) && section === "activity", refetchInterval: 2000});
+  const activeCount = (runs.data?.runs.filter(run => active(run.status)).length ?? 0) + (scans.data?.filter(run => ["queued", "running"].includes(run.status)).length ?? 0);
+  const blocked = !count || preview.isFetching || preview.isError || starting || testing || readiness.isLoading || runs.data?.worker?.available === false || readiness.data?.source?.osii_writable === false ||
+    (!extract && !synthesize && !embed && !enrich) || (extract && unavailable.length > 0) || (synthesize && !effectiveSynthesizer) || (embed && !embedder?.available) ||
+    (variantOnly && (synthesize || embed || enrich)) || (collection && !collectionName.trim()) || (embed && (size <= 0 || overlap < 0 || (chunking !== "paragraph" && overlap >= size))) || Boolean(report?.results.some(item => item.ok === false));
+  return <Stack spacing={2.5} sx={{maxWidth: 1100, mx: "auto"}}>
+    <Stack direction="row" alignItems="center" spacing={1}><Typography variant="h5" fontWeight={700}>Intake</Typography><IconButton aria-label="How Intake works" onClick={() => setHelp(true)}><HelpOutlineIcon /></IconButton></Stack>
+    <WorkflowProgress readiness={readiness.data} checking={readiness.isLoading} failed={readiness.isError} onStep={step => {
+      if (["extractor", "embedding", "language"].includes(step)) navigate(`/admin/processors?step=${step}`);
+      else {showSection("add"); if (step === "index") changeRecipe("index");}
+    }} />
+    <IntakeSections value={section} onChange={showSection} activeCount={activeCount} />
+    {notice && <Alert severity={notice.severity} onClose={() => setNotice(null)}>{notice.text}</Alert>}
+    {runs.data?.worker?.available === false && <Alert severity="error" action={<Button onClick={async () => {
+      try {await recoverProcessingQueue(); await runs.refetch();} catch (error) {setNotice({severity: "error", text: (error as Error).message});}
+    }}>Check worker</Button>}>Worker unavailable. Queued files will wait.</Alert>}
+    {section === "add" ? <>
+      <DiscoveryIntakePanel selectedId={selection} onSelect={setSelection} directFiles={files} onFiles={setFiles} />
+      <Paper variant="outlined" sx={{p: {xs: 2, sm: 3}}}><Stack spacing={2}>
+        <Typography variant="h6" component="h2" fontWeight={750}>2. Choose processing</Typography>
+        <TextField select size="small" label="Processing preset" value={recipe} onChange={event => changeRecipe(event.target.value as Recipe)}>
+          {(defaults.data?.presets ?? [{id: "text", label: "Read text only"}]).map(item => <MenuItem key={item.id} value={item.id}>{item.label}</MenuItem>)}
+          <MenuItem value="upgrade">Upgrade extraction / OCR</MenuItem><MenuItem value="index">Index existing text</MenuItem><MenuItem value="summaries">Summarize existing text</MenuItem><MenuItem value="custom">Custom</MenuItem>
+        </TextField>
+        {defaults.isError && <Alert severity="error">Could not load processing defaults.</Alert>}
+        <Stack spacing={1}>
+          <FormControlLabel control={<Checkbox checked={extract} onChange={event => {setRecipe("custom"); setExtract(event.target.checked);}} />} label="Read text" />
+          {extract && plans.map(plan => <TextField key={plan.extension} select size="small" label={`Reader for ${plan.extension}`} value={overrides[plan.extension] || ""} slotProps={{select: {displayEmpty: true}, inputLabel: {shrink: true}}} onChange={event => {
+            const value = event.target.value;
+            setOverrides(previous => {const next = {...previous}; if (value) next[plan.extension] = value; else delete next[plan.extension]; return next;});
+            if (value) setExtractMode("reprocess");
+          }}><MenuItem value="">File-type default ({status(plan.extractor)?.display_name || plan.extractor})</MenuItem>
+            {methods.filter(method => {
+              const extensions = method.descriptor?.capabilities?.file_extensions;
+              return extensions?.includes("*") || extensions?.includes(plan.extension);
+            }).map(method => <MenuItem key={method.id} value={method.id} disabled={!method.available}>{method.display_name}{!method.available ? " — unavailable" : ""}</MenuItem>)}
+          </TextField>)}
+          {extract && <TextField select size="small" label="Existing text" value={extractMode} onChange={event => setExtractMode(event.target.value as typeof extractMode)}>
+            <MenuItem value="missing">Keep completed extraction</MenuItem><MenuItem value="reprocess">Read selected files again</MenuItem>
+          </TextField>}
+        </Stack>
+        <Divider />
+        <ProcessorStepControl label="Generate summaries" methodLabel="Summarizer" checked={synthesize} onChecked={value => {setRecipe("custom"); setSynthesize(value);}} method={effectiveSynthesizer} onMethod={setSynthesizer} options={readiness.data?.synthesizers ?? []} disabled={variantOnly} />
+        <FormControlLabel control={<Checkbox checked={embed} disabled={variantOnly} onChange={event => {setRecipe("custom"); setEmbed(event.target.checked);}} />} label={`Build search embeddings${embedder ? ` · ${embedder.display_name}` : ""}`} />
+        <Box component="details"><Box component="summary" sx={{cursor: "pointer", fontWeight: 600}}>Options</Box><Stack spacing={2} sx={{pt: 2}}>
+          {extract && <TextField select size="small" label="New extraction" value={policy} onChange={event => {
+            const value = event.target.value as typeof policy; setPolicy(value);
+            if (value === "save_variant") {setSynthesize(false); setEmbed(false); setEnrich(false);}
+          }}><MenuItem value="auto">Keep primary when adding a different reader</MenuItem><MenuItem value="make_primary">Use the new text as primary</MenuItem><MenuItem value="save_variant">Save another version only</MenuItem></TextField>}
+          {embed && <Stack direction={{xs: "column", sm: "row"}} spacing={1}>
+            <TextField select fullWidth size="small" label="Chunking" value={chunking} onChange={event => setChunking(event.target.value as typeof chunking)}><MenuItem value="sentence_window">Sentence windows</MenuItem><MenuItem value="paragraph">Paragraphs</MenuItem><MenuItem value="window">Fixed windows</MenuItem></TextField>
+            <TextField type="number" size="small" label="Chunk characters" value={size} onChange={event => setSize(Number(event.target.value))} />
+            <TextField type="number" size="small" label="Overlap" value={overlap} disabled={chunking === "paragraph"} onChange={event => setOverlap(Number(event.target.value))} />
+          </Stack>}
+          <ProcessorStepControl label="Run enrichment" methodLabel="Enricher" checked={enrich} onChecked={setEnrich} method={effectiveEnricher} onMethod={setEnricher} options={readiness.data?.enrichers ?? []} disabled={variantOnly} />
+          <TextField multiline minRows={2} label="Expert guidance" value={context} onChange={event => setContext(event.target.value)} inputProps={{maxLength: 20_000}} />
+          <FormControlLabel control={<Checkbox checked={collection} onChange={event => setCollection(event.target.checked)} />} label="Save selection as a collection" />
+          {collection && <TextField size="small" label="Collection name" value={collectionName} onChange={event => setCollectionName(event.target.value)} />}
+        </Stack></Box>
+      </Stack></Paper>
+      <Paper variant="outlined" sx={{p: {xs: 2, sm: 3}}}><Stack spacing={1.5}>
+        <Typography variant="h6" component="h2" fontWeight={750}>3. Test & queue</Typography>
+        {preview.isFetching && <LinearProgress aria-label="Checking selected files" />}
+        {preview.isError && <Alert severity="error" action={<Button onClick={() => void preview.refetch()}>Retry selection check</Button>}>{preview.error.message}</Alert>}
+        {readiness.isError && <Alert severity="error" action={<Button onClick={() => void readiness.refetch()}>Retry</Button>}>Endpoint status unavailable.</Alert>}
+        {extract && unavailable.length > 0 && <Alert severity="error">Reader unavailable for {unavailable.map(plan => plan.extension).join(", ")}. Choose another reader or check Setup.</Alert>}
+        {embed && embedder?.available === false && <Alert severity="warning" action={<Button onClick={() => navigate("/admin/processors?step=embedding")}>Setup</Button>}>Embedding endpoint unavailable. Choose Read text only to continue without embeddings.</Alert>}
+        {testError && <Alert severity="error">{testError}</Alert>}
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+          <Button variant="outlined" disabled={!count || testing || (!extract && !synthesize && !embed)} onClick={() => void testEndpoints()}>{testing ? "Testing sample…" : "Test selected endpoints"}</Button>
+          {!report && <Chip size="small" label="Operation test not run" />}
+          {report?.results.map((result, i) => <Chip key={i} color={result.ok === true ? "success" : result.ok === false ? "error" : "default"} label={`${result.processor}: ${result.ok === true ? "passed" : result.ok === false ? "failed" : "not tested"}`} />)}
+        </Stack>
+        {report && <details><summary>Test diagnostics · {new Date(report.tested_at).toLocaleTimeString()}</summary><Button size="small" onClick={() => void navigator.clipboard.writeText(JSON.stringify(report, null, 2))}>Copy test diagnostics</Button><Box component="pre" sx={{whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 300, overflow: "auto", fontSize: 12}}>{JSON.stringify(report, null, 2)}</Box></details>}
+        <Stack direction="row" spacing={2} alignItems="center"><Button variant="contained" startIcon={<PlayArrowOutlinedIcon />} disabled={blocked} onClick={() => void queue()}>{starting ? "Queueing…" : `Queue ${count} ${count === 1 ? "file" : "files"}`}</Button><Typography variant="body2">{count ? "Only selected files will be processed." : "Select files to continue."}</Typography></Stack>
+      </Stack></Paper>
+    </> : <>
+      {runs.isError && <Alert severity="error" action={<Button onClick={() => void runs.refetch()}>Retry</Button>}>Queue unavailable.</Alert>}
+      <DiscoveryActivity />
+      <ProcessingActivity recentRuns={runs.data?.runs ?? []} workerAvailable={runs.data?.worker?.available} selectedLogRunId={logId} setSelectedLogRunId={setLogId} controllingRun={controlling} controlRun={control} displayedLogLines={logs.data?.logs ?? runs.data?.runs.find(run => run.id === logId)?.logs ?? []} refreshLogs={() => void logs.refetch()} logError={logs.isError} />
+    </>}
+    <Dialog open={help} onClose={() => setHelp(false)} fullWidth maxWidth="sm"><DialogTitle>Choose files → choose processing → queue</DialogTitle><DialogContent><Stack spacing={2}>
+      <Typography>Use this same workflow for new files and files already in the library. Completed text is reused unless you choose to read it again. Upgrade extraction adds OCR or another reader while preserving previous versions.</Typography>
+      <Typography>Browse files in place, or upload copies. For large shares, open Scan a large folder or share to discover metadata gradually and select files found so far. Nothing is selected automatically.</Typography>
+      <Typography>Test selected endpoints runs tiny sample operations, including the selected reader and model. It reads no library files; model-backed tests may use credits. A passed test applies to that sample and time.</Typography>
+      <Typography>Queue & activity contains scanning, progress, failures, retry, and copyable diagnostics. Retrying failed work preserves completed results. Local extraction and keyword search work without a language model.</Typography>
+    </Stack></DialogContent><DialogActions><Button onClick={() => setHelp(false)}>Close</Button></DialogActions></Dialog>
+  </Stack>;
 }

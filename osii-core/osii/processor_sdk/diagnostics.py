@@ -48,7 +48,8 @@ def environment() -> dict:
             packages[name] = "not installed"
     return {"executable": sys.executable, "version": sys.version,
             "prefix": sys.prefix, "base_prefix": sys.base_prefix,
-            "platform": platform.platform(), "packages": packages}
+            "platform": platform.platform(), "packages": packages,
+            "module_paths": {name: getattr(sys.modules.get(name), "__file__", None) for name in ("osii", "fastapi", "osii.processor_sdk")}}
 
 
 def failure(exc: Exception, *, processor: str, phase: str, endpoint: str | None = None, runtime: str = "Core worker") -> dict:

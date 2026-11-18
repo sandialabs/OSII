@@ -42,55 +42,61 @@ hashes, OCR, or model endpoints.
 
 ## Discovery and staged Intake
 
-Intake has three numbered steps: **1. Choose location**, **2. Select files**,
-and **3. Process**. Library Readiness stays above them. **Queue & activity**
+Intake has one workflow for new files and existing library documents:
+**1. Select files → 2. Choose processing → 3. Test & queue**.
+The readiness pane stays above it, with action labels for each checkpoint. **Queue & activity**
 shows discovery and processing work, even after closing and reopening the browser.
 Completed processing runs and their logs are collapsed by default; open a run and
 choose **View log** to inspect historical evidence.
 
-1. Choose a saved location, or use **Add location** to browse the computer and
-   mounted drives or paste a path. Locations display their full path once.
-   Registering or selecting a location does not enumerate its contents or start
-   discovery. Overlapping locations direct you to the existing registered root.
-2. For a small folder, choose **Browse files**. Navigate one directory at a time
+1. For ordinary batches, choose **Browse files** directly; no registration or
+   scan is required. Navigate one directory at a time
    and check individual files; nothing is preselected. Directory pages inspect at
    most 100 entries without sorting the whole directory, following symbolic
    links, reading contents, or consulting the sidecar catalog. **Next page**
    continues the same short-lived cursor. Cancel loading or change folders to
    release it; an idle cursor expires after 45 seconds. A stalled reader times
    out after 15 seconds. Use **Upload files** to copy one-off files instead.
-   Direct selections stay within one registered location; uploads form a separate
-   selection. Direct selection accepts up to 10,000 files and 1 GiB total, with
+   Uploads form a separate selection. Direct selection accepts up to 10,000 files and 1 GiB total, with
    the existing 50 MiB per-file processing limit.
-3. For a large share, explicitly choose **Start background scan**. Scan options
+2. For a large share, expand **Scan a large folder or share**, choose or add a
+   registered location, then explicitly choose **Start background scan**.
+   Registering a location does not scan it. Overlapping roots direct users to
+   the existing location. Scan options
    include patterns, hidden paths, depth (0 means root only), cross-filesystem
    policy, and readers (default two, maximum eight). These rules are frozen for
    that scan. Discovery reads directory entries and metadata only. It does not
    read file contents, hash files, invoke OCR, or call models.
-4. Progress shows observed entries, last activity, elapsed time, and issues;
+3. Progress shows observed entries, last activity, elapsed time, and issues;
    it does not estimate an unknown total. Pause/resume/retry/cancel controls are
    available beside the scan and in **Queue & activity**. Closing the browser or
    restarting OSII does not discard scan checkpoints. An unfinished flat
    directory replays from its beginning; partial discovery never proves deletion.
-5. Choose **View discovered files** to query paginated local inventory results.
+4. Choose **View discovered files** to query paginated local inventory results.
    Filter by name, extension, path, size, date, metadata availability, or prior
    staged processing. Check individual files and choose **Use N files**, or use
    **Select matching files…** to preview matches and approve file/byte limits
    (default 100 files and 1 GiB). Earlier-scan and unavailable entries cannot be
    selected. Selecting during unfinished discovery requires acknowledging
    **Use files found so far**. Later discoveries never join an existing selection.
-6. **Review selection** shows the saved membership. A discovered-file selection
+5. **Review selection** shows the saved membership. A discovered-file selection
    records source generation, inventory revision, path, file identity, size,
    timestamps, and discovery coverage without reading content. **Saved selections**
    restores earlier selections; the last applied inventory selection also survives
    browser reload. Changing filters does not change it. Switching locations asks
    before clearing the selection. Direct-picked file selections last for the
    current page session; queued jobs are durable.
-7. Choose a processing preset/options and **Queue N files**. Under **Processing
-   options**, choose a **Reader** for each selected file type or keep **File-type
-   defaults**. Choosing a reader selects **Read selected files again** for this
-   run; it does not change global routing. **After the new extraction finishes**
-   controls whether to keep the current primary or promote the new version.
+6. Under **Choose processing**, select a preset and review Read text, Generate
+   summaries, and Build search embeddings. **Upgrade extraction / OCR** reads
+   the same selected files again; **Index existing text** skips extraction.
+   Choose a Reader for each file type or keep the file-type default. Wildcard
+   readers such as Tika remain available for any supported input. Unavailable
+   methods are shown disabled. **Options → New extraction** controls whether to
+   keep the primary text, promote the new extraction, or save another version.
+7. **Test selected endpoints** uses tiny synthetic inputs and returns actual
+   operation results and copyable runtime diagnostics. It does not process the
+   selected originals; model tests may use credits. Confirm the choices, then
+   **Queue N files**. Processing choices do not trigger another share listing.
    Selected processing verifies availability and identity, then reads and hashes those originals.
    Changed, missing, denied, and malformed files fail individually; healthy files
    continue. Successful documents appear in Files and can feed Search, Topics,
@@ -415,10 +421,18 @@ when selected, an embedding operation. It reads no original documents and commit
 no library artifacts. Model-backed tests may consume credits. A green result
 means that sample operation passed at the displayed time; it does not guarantee
 every PDF or future model request will succeed. Changing methods clears previous
-results. PDF-incompatible extractors report that no automatic sample was tested.
+results. PDF, PNG, plain-text, and CSV sample inputs follow the declared capabilities.
+Other unsupported sample formats report that no automatic operation was tested.
 
 Folder prompts use the shared browser. With no previous selection they show
 mounted roots and a path field, without choosing the startup corpus. Confirmed
 folders are remembered in this browser for future prompts; opening Intake does
 not enumerate the remembered folder. This preference is specific to the browser
 and OSII origin, not a change to the configured corpus root.
+
+
+Processing cards show the current phase (source access, reading, summary, or
+enrichment) and the responsible processor. Completed runs start collapsed;
+expanding one exposes retry controls, selections, diagnostics, and its log.
+A completed run with historical diagnostics is not marked failed after a
+successful retry. Diagnostics and log text are rendered only when opened.
