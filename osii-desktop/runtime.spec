@@ -27,5 +27,6 @@ a = Analysis([str(root / "scripts" / "standalone_runtime.py")],
     noarchive=False)
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="osii-runtime",
-          debug=False, strip=False, upx=False, console=True)
+          # Keep pipe stdio available while hiding consoles owned by spawned helpers.
+          debug=False, strip=False, upx=False, console=True, hide_console="hide-early")
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="osii-runtime")

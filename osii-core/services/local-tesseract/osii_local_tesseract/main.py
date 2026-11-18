@@ -87,6 +87,7 @@ def _ocr_page(
             capture_output=True,
             check=False,
             timeout=180,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
     except subprocess.TimeoutExpired as exc:
         raise ValueError(
