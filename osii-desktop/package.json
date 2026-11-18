@@ -26,7 +26,7 @@
     "extraResources": [{"from": "resources/runtime/osii-runtime", "to": "runtime"}],
     "directories": {"output": "../release/standalone"},
     "artifactName": "OSII-Standalone-Setup.${ext}",
-    "win": {"target": [{"target": "nsis", "arch": ["x64"]}], "forceCodeSigning": true, "signAndEditExecutable": true},
+    "win": {"target": [{"target": "nsis", "arch": ["x64"]}], "icon": "icon.ico", "forceCodeSigning": true, "signAndEditExecutable": true},
     "nsis": {
       "oneClick": true,
       "perMachine": false,

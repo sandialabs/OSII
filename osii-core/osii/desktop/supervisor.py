@@ -76,6 +76,7 @@ class Supervisor:
         self.guard = threading.RLock()
         self.services: dict[str, Service] = {}
         self.events: dict[str, deque] = {}
+        self.phases: dict[str, str] = {}
         self.library_lock: LibraryLock | None = None
         self.server: ThreadingHTTPServer | None = None
         self.server_thread: threading.Thread | None = None
@@ -109,6 +110,8 @@ class Supervisor:
         env = {key: value for key, value in os.environ.items() if key.upper() in {name.upper() for name in kept}}
         bypass = ",".join(filter(None, ["127.0.0.1,localhost,::1", env.get("NO_PROXY"), env.get("no_proxy")]))
         env.update(NO_PROXY=bypass, no_proxy=bypass)
+        if os.environ.get("OSII_BUILD_TRACE") == "1":
+            env["OSII_BUILD_TRACE"] = "1"
         if not getattr(sys, "frozen", False):
             # Source-only diagnostic execution; installed builds never need this.
             core = Path(__file__).resolve().parents[2]
@@ -142,7 +145,7 @@ class Supervisor:
 
     def spawn(self, service: Service, sock: socket.socket | None = None) -> None:
         options = {"env": self.environment, "cwd": str(self.profiles.directory), "stdin": subprocess.PIPE,
-                   "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+                   "stdout": subprocess.PIPE, "stderr": subprocess.PIPE}
         if os.name == "nt":
             options["creationflags"] = subprocess.CREATE_NO_WINDOW
         else:
@@ -153,6 +156,30 @@ class Supervisor:
             process = subprocess.Popen(command(service.id), **options)
             service.process = process
             service.stopped = False
+            def output():
+                for line in process.stdout:
+                    try:
+                        value = json.loads(line)
+                        phase = value.get("phase")
+                        if value.get("osii_runtime") == 1 and phase in {
+                            "python_ready", "job_ready", "bootstrap_ready", "trust_ready", "importing_core",
+                            "core_imported", "dashboard_attached", "server_starting", "worker_starting",
+                        }:
+                            self.phases[service.id] = phase
+                            self.record(service.id, phase)
+                    except (ValueError, AttributeError):
+                        pass  # Never store arbitrary processor/library output.
+                process.stdout.close()
+            def errors():
+                for line in process.stderr:
+                    # Maintainer-only native build traces use synthetic fixtures.
+                    # Normal application diagnostics never collect stderr.
+                    if self.environment.get("OSII_BUILD_TRACE") == "1":
+                        sys.stderr.buffer.write(line)
+                        sys.stderr.buffer.flush()
+                process.stderr.close()
+            threading.Thread(target=output, daemon=True).start()
+            threading.Thread(target=errors, daemon=True).start()
             bootstrap = {}
             if sock is not None:
                 bootstrap = ({"socket_share": base64.b64encode(sock.share(process.pid)).decode()}
@@ -190,7 +217,8 @@ class Supervisor:
                 last_problem = type(exc).__name__
             self.stopping.wait(0.15)
         self.record(service.id, "startup_timeout")
-        raise RuntimeError(f"The bundled {service.id} process did not become ready within {int(timeout)} seconds ({last_problem}).")
+        phase = self.phases.get(service.id, "process_starting")
+        raise RuntimeError(f"The bundled {service.id} process did not become ready within {int(timeout)} seconds ({last_problem}; {phase}).")
 
     def start(self, identifier: str) -> dict:
         if self.profile:

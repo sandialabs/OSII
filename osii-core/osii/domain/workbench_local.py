@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import json
+import os
 from pathlib import Path
 import struct
 import tomllib
@@ -114,7 +115,7 @@ def local_home(root: Path) -> dict:
     configured = (primary == "ollama" and bool(chat.ollama_chat_model)) or (
         primary == "openai" and bool(chat.openai_chat_model)
     )
-    return home_state(
+    result = home_state(
         documents=documents,
         text_documents=text_documents,
         indexed_documents=indexed_documents,
@@ -122,3 +123,9 @@ def local_home(root: Path) -> dict:
         chat_configured=configured,
         setup_dismissed=setup_dismissed(root),
     )
+    if os.getenv("OSII_STANDALONE") == "1" and text_documents and not configured:
+        result["tools"]["chat"] = {
+            "enabled": True,
+            "reason": "Grounded extractive answers ready; AI is optional",
+        }
+    return result

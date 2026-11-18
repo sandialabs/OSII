@@ -44,6 +44,21 @@ async function main() {
     }, { route, method, body });
     assert.equal((await api('/health')).status, 'ok');
     assert.equal((await api('/api/runtime')).user_authentication, false);
+    const assetDirectory = process.env.OSII_DESKTOP_EXECUTABLE
+      ? path.join(path.dirname(process.env.OSII_DESKTOP_EXECUTABLE), 'resources/runtime/_internal/dashboard/assets')
+      : path.resolve(__dirname, '../resources/dashboard/assets');
+    const assetFiles = await fs.readdir(assetDirectory);
+    const mathWorker = assetFiles.find(name => name.startsWith('mathpix.worker-'));
+    const mathBundle = assetFiles.find(name => name.startsWith('bundle-') && name.endsWith('.js'));
+    assert.ok(mathWorker && mathBundle, 'Math rendering assets must be bundled');
+    const mathematics = await page.evaluate(({ worker, bundle }) => new Promise((resolve, reject) => {
+      const renderer = new Worker('/assets/' + worker);
+      const timeout = setTimeout(() => { renderer.terminate(); reject(new Error('Offline mathematics timed out')); }, 15_000);
+      renderer.onmessage = event => { clearTimeout(timeout); renderer.terminate(); resolve(event.data); };
+      renderer.onerror = () => { clearTimeout(timeout); renderer.terminate(); reject(new Error('Offline mathematics worker failed')); };
+      renderer.postMessage({ text: 'Calibration $E=mc^2$', bundleUrl: location.origin + '/assets/' + bundle });
+    }), { worker: mathWorker, bundle: mathBundle });
+    assert.ok(mathematics.html?.includes('Calibration'), JSON.stringify(mathematics));
     const setup = await api('/api/admin/setup');
     assert.equal(setup.extraction_ready, true);
     assert.equal(setup.ai_ready, false);
@@ -61,6 +76,9 @@ async function main() {
       await new Promise(resolve => setTimeout(resolve, 300));
     }
     assert.equal(finished.status, 'done', JSON.stringify(finished));
+    const home = await api('/api/workbench/home');
+    assert.equal(home.tools.chat.enabled, true, 'Offline chat must be reachable in the dashboard');
+    assert.equal(home.tools.research.enabled, false, 'Model-backed reports still require a model');
     const search = await api('/api/search', 'POST', { query: 'calibration', mode: 'lexical' });
     assert.ok(search.results.length > 0, JSON.stringify(search));
     const chat = await api('/api/chat', 'POST', { query: 'What calibration result was measured?', scope: { scope_type: 'root' } });
@@ -86,7 +104,7 @@ async function main() {
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: 'calibration', mode: 'lexical' }) })).json());
     assert.ok(reopened.results.length > 0, JSON.stringify(reopened));
     assert.deepEqual(errors, []);
-    console.log(JSON.stringify({ status: 'ok', checks: ['first-run', 'private-session', 'intake', 'preview', 'enrichment', 'keyword-search', 'offline-chat', 'spa-reload', 'ipc-boundary', 'restart'] }));
+    console.log(JSON.stringify({ status: 'ok', checks: ['first-run', 'private-session', 'offline-mathematics', 'intake', 'preview', 'enrichment', 'keyword-search', 'offline-chat', 'spa-reload', 'ipc-boundary', 'restart'] }));
   } finally {
     if (application) await application.close();
     if (!process.env.OSII_SMOKE_DIRECTORY) await fs.rm(temporary, { recursive: true, force: true });

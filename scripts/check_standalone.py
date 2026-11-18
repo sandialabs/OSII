@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 from contextlib import contextmanager
 import ctypes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -24,6 +25,7 @@ class Runtime:
         environment = os.environ.copy()
         environment.pop("PYTHONPATH", None)
         environment.pop("PYTHONHOME", None)
+        environment["OSII_BUILD_TRACE"] = "1"
         if os.name == "nt":
             environment["PATH"] = os.path.join(os.environ["SystemRoot"], "System32")
         self.process = subprocess.Popen([str(executable), "supervisor", "--data-dir", str(directory)],
@@ -31,14 +33,20 @@ class Runtime:
             text=True, encoding="utf-8")
         self.messages = queue.Queue()
         self.sequence = 0
+        self.trace = deque(maxlen=160)
         def read():
             for line in self.process.stdout:
                 self.messages.put(json.loads(line))
             self.messages.put({"event": "exited"})
         threading.Thread(target=read, daemon=True).start()
+        def errors():
+            for line in self.process.stderr:
+                self.trace.append(line)
+        self.errors = threading.Thread(target=errors, daemon=True)
+        self.errors.start()
         first = self.messages.get(timeout=30)
         if first.get("event") != "supervisor_ready":
-            raise RuntimeError("The frozen supervisor did not start: " + self.process.stderr.read()[-3000:])
+            raise RuntimeError("The frozen supervisor did not start: " + "".join(self.trace)[-6000:])
 
     def request(self, command: str, **fields):
         self.sequence += 1
@@ -47,10 +55,10 @@ class Runtime:
         while True:
             value = self.messages.get(timeout=180)
             if value.get("event") == "exited":
-                raise RuntimeError("Frozen supervisor exited: " + self.process.stderr.read()[-3000:])
+                raise RuntimeError("Frozen supervisor exited: " + "".join(self.trace)[-6000:])
             if value.get("id") == self.sequence:
                 if "error" in value:
-                    raise RuntimeError(value["error"])
+                    raise RuntimeError(value["error"] + "\n" + "".join(self.trace)[-12000:])
                 return value["result"]
 
     def close(self):
@@ -60,6 +68,7 @@ class Runtime:
         if not self.process.stdin.closed:
             self.process.stdin.close()
         self.process.stdout.close()
+        self.errors.join(timeout=5)
         self.process.stderr.close()
 
 

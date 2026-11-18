@@ -29,11 +29,16 @@ def run_role(role: str) -> None:
     import signal
     import socket
     import threading
+    def phase(value: str):
+        print(json.dumps({"osii_runtime": 1, "phase": value}), flush=True)
+    phase("python_ready")
     from .windows import ProcessJob
     role_job = ProcessJob()  # A stopped OCR helper must also stop its grandchildren.
+    phase("job_ready")
 
     # All installed roles share the same resource directory and private pipes.
     bootstrap = json.loads(sys.stdin.readline())
+    phase("bootstrap_ready")
     def parent_closed():
         sys.stdin.read()
         import _thread
@@ -45,7 +50,9 @@ def run_role(role: str) -> None:
     except ImportError:
         if getattr(sys, "frozen", False):
             raise
+    phase("trust_ready")
     if role in {"worker", "inventory-worker"}:
+        phase("worker_starting")
         module = "osii.worker" if role == "worker" else "osii.volume.worker"
         importlib.import_module(module).main()
         return
@@ -55,12 +62,21 @@ def run_role(role: str) -> None:
         sock = socket.socket(fileno=int(bootstrap["socket_fd"]))
     from .supervisor import SERVICES
     if role == "api":
+        if os.getenv("OSII_BUILD_TRACE") == "1":
+            import faulthandler
+            faulthandler.dump_traceback_later(20, repeat=True)
+        phase("importing_core")
         from osii.main import app
+        phase("core_imported")
+        if os.getenv("OSII_BUILD_TRACE") == "1":
+            faulthandler.cancel_dump_traceback_later()
         from .http import attach_dashboard
         attach_dashboard(app, resources() / "dashboard", os.environ["OSII_DESKTOP_TOKEN"], port=sock.getsockname()[1])
+        phase("dashboard_attached")
     else:
         app = importlib.import_module(SERVICES[role][0]).app
     import uvicorn
+    phase("server_starting")
     uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=sock.getsockname()[1],
                                  log_level="error", access_log=False, loop="asyncio", http="h11")).run(sockets=[sock])
 
