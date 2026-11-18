@@ -33,7 +33,7 @@ class Runtime:
             text=True, encoding="utf-8")
         self.messages = queue.Queue()
         self.sequence = 0
-        self.trace = deque(maxlen=160)
+        self.trace = deque(maxlen=400)
         def read():
             for line in self.process.stdout:
                 self.messages.put(json.loads(line))
@@ -41,7 +41,8 @@ class Runtime:
         threading.Thread(target=read, daemon=True).start()
         def errors():
             for line in self.process.stderr:
-                self.trace.append(line)
+                if len(self.trace) < 400:
+                    self.trace.append(line)
         self.errors = threading.Thread(target=errors, daemon=True)
         self.errors.start()
         first = self.messages.get(timeout=30)

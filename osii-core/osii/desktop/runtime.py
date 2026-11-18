@@ -8,6 +8,36 @@ from pathlib import Path
 import sys
 
 
+def watch_parent_pipe() -> None:
+    """Detect pipe closure without holding a blocking CRT stdin read on Windows.
+
+    Native numeric DLLs may initialize the same CRT during API imports. A
+    background TextIO read can prevent that initialization from completing.
+    PeekNamedPipe observes liveness without taking the buffered stdin lock.
+    """
+    import _thread
+    import threading
+    import time
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        import msvcrt
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.PeekNamedPipe.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
+                                        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+        kernel.PeekNamedPipe.restype = wintypes.BOOL
+        handle = msvcrt.get_osfhandle(sys.stdin.fileno())
+        def parent_closed():
+            while kernel.PeekNamedPipe(handle, None, 0, None, None, None):
+                time.sleep(0.2)
+            _thread.interrupt_main()
+    else:
+        def parent_closed():
+            sys.stdin.read()
+            _thread.interrupt_main()
+    threading.Thread(target=parent_closed, daemon=True).start()
+
+
 def resources() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys._MEIPASS)
@@ -39,11 +69,7 @@ def run_role(role: str) -> None:
     # All installed roles share the same resource directory and private pipes.
     bootstrap = json.loads(sys.stdin.readline())
     phase("bootstrap_ready")
-    def parent_closed():
-        sys.stdin.read()
-        import _thread
-        _thread.interrupt_main()
-    threading.Thread(target=parent_closed, daemon=True).start()
+    watch_parent_pipe()
     try:
         import truststore
         truststore.inject_into_ssl()

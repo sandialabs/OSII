@@ -125,6 +125,7 @@ class Supervisor:
         processors += [bridge + f"/{provider}/{kind}" for provider in ("ollama", "openai") for kind in ("embedder", "synthesizer")]
         env.update({
             "PYTHONUNBUFFERED": "1", "OSII_STANDALONE": "1", "OSII_STORAGE_BACKEND": "sidecar",
+            "OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1",
             "OSII_RUNTIME_DIR": str(runtime), "OSII_ROOT": profile["library"], "OSII_CONFIG_DIR": profile["config"],
             "OSII_ENV_FILE": str(Path(profile["config"]) / "secrets.env"), "OSII_ACTIVE_PROFILE": profile["id"],
             "OSII_ALLOW_LOCAL_CONFIG_WRITES": "true", "OSII_PROCESSOR_MODULES_DIR": str(modules),
