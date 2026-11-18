@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
+from types import SimpleNamespace
 import sqlite3
 import threading
 import time
@@ -758,3 +759,55 @@ def test_registered_mount_does_not_block_startup_or_trigger_source_io(library, m
         assert response.status_code == 200
         assert response.json()["items"][0]["inode"] == "previous-mount"
     assert store.source(source_id)["inode"] == "previous-mount"
+
+
+
+def test_initialization_retries_only_transient_locks_without_resetting_inventory(library, monkeypatch):
+    store, root, source = library
+    before = store.sources()
+    initialize = store._initialize_once
+    calls, sleeps = [], []
+    def locked_then_ready():
+        calls.append(1)
+        if len(calls) < 3:
+            error = sqlite3.OperationalError("database is locked")
+            error.sqlite_errorcode = sqlite3.SQLITE_BUSY
+            raise error
+        initialize()
+    monkeypatch.setattr(store, "_initialize_once", locked_then_ready)
+    monkeypatch.setattr("osii.volume.store.time", SimpleNamespace(time=time.time, monotonic=time.monotonic, sleep=sleeps.append))
+    store.initialize()
+    assert len(calls) == 3 and sleeps == [0.05, 0.05]
+    assert store.sources() == before
+
+
+def test_initialization_lock_retry_is_bounded_and_other_errors_propagate(tmp_path, monkeypatch):
+    store = VolumeStore(tmp_path / "inventory.sqlite3")
+    def fail(code):
+        error = sqlite3.OperationalError("initialization failed")
+        error.sqlite_errorcode = code
+        raise error
+    monkeypatch.setattr(store, "_initialize_once", lambda: fail(sqlite3.SQLITE_CORRUPT))
+    monkeypatch.setattr("osii.volume.store.time", SimpleNamespace(time=time.time, monotonic=time.monotonic, sleep=lambda *a: pytest.fail("Do not retry non-lock errors")))
+    with pytest.raises(sqlite3.OperationalError):
+        store.initialize()
+    clock = iter([0, 31])
+    monkeypatch.setattr("osii.volume.store.time", SimpleNamespace(time=time.time, monotonic=lambda: next(clock, 31), sleep=lambda *a: pytest.fail("Retry deadline must stop immediately")))
+    monkeypatch.setattr(store, "_initialize_once", lambda: fail(sqlite3.SQLITE_BUSY))
+    with pytest.raises(sqlite3.OperationalError):
+        store.initialize()
+
+
+def test_inventory_connection_is_closed_if_connection_setup_fails(tmp_path, monkeypatch):
+    closed = []
+    class Connection:
+        row_factory = None
+        def execute(self, *args):
+            raise sqlite3.OperationalError('database is locked')
+        def close(self):
+            closed.append(True)
+    monkeypatch.setattr('osii.volume.store.sqlite3.connect', lambda *a, **kw: Connection())
+    with pytest.raises(sqlite3.OperationalError):
+        with VolumeStore(tmp_path / 'inventory.sqlite3').connect():
+            pytest.fail('No connection should be yielded after setup failed')
+    assert closed == [True]
