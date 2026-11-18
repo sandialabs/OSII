@@ -10,7 +10,8 @@ const { execFileSync } = require('node:child_process');
 function windowsProcessMemory(rootId) {
   // Measure the installed desktop and its descendants, excluding the test driver.
   const script = `$owned = @(${Number(rootId)}); $all = Get-CimInstance Win32_Process; do { $next = @($all | Where-Object { $_.ParentProcessId -in $owned -and $_.ProcessId -notin $owned } | ForEach-Object { [int]$_.ProcessId }); $owned += $next } while ($next.Count); $processes = @(Get-Process -Id $owned -ErrorAction SilentlyContinue); @{ processCount = $processes.Count; workingSetBytes = ($processes | Measure-Object WorkingSet64 -Sum).Sum; privateBytes = ($processes | Measure-Object PrivateMemorySize64 -Sum).Sum } | ConvertTo-Json -Compress`;
-  return JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
+  const powershell = path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  return JSON.parse(execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', script],
     { encoding: 'utf8', windowsHide: true, timeout: 30_000 }));
 }
 
