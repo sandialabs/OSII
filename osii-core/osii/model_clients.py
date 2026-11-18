@@ -88,7 +88,10 @@ class OpenAICompatibleClient:
 def _endpoint(capability: str) -> ModelEndpoint:
     environment = dict(os.environ)
     for name in (f"OSII_{capability.upper()}_API_KEY", "OSII_MODEL_API_KEY", "OPENAI_API_KEY"):
-        environment[name] = resolve_env_value(name)[0]
+        value, source = resolve_env_value(name)
+        environment[name] = value
+        if source == "repo_env":
+            environment.pop(name + "_FILE", None)
     return endpoint_from_environment(capability, environment=environment)
 
 

@@ -78,7 +78,7 @@ def default_models_config() -> dict[str, Any]:
     from osii.model_endpoints import endpoint_from_environment
 
     for capability, alias in (("chat", "openai-compatible"), ("embedding", "openai-compatible-embedding")):
-        endpoint = endpoint_from_environment(capability)
+        endpoint = endpoint_from_environment(capability, resolve_credentials=False)
         if not endpoint.base_url:
             continue
         model = endpoint.model

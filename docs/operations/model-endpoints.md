@@ -183,8 +183,8 @@ An already-running request can finish with the key it started with.
 
 With local configuration writes enabled, saved keys take precedence over startup
 inline keys of the same name. **Forget key** removes the saved override and
-returns to the startup key, if present. A key explicitly bound through
-`<NAME>_FILE` remains managed through that file. Hosted deployments with local
+returns to the startup key, if present. OSII-local also lets a saved key replace an optional `<NAME>_FILE` binding;
+the original file is never created or modified. Hosted deployments with local
 writes disabled retain deployment-controlled credential precedence.
 
 LiteLLM proxies use an **OpenAI-compatible** connection: enter the proxy's API
@@ -196,3 +196,11 @@ verify synthesis or embeddings. Corporate HTTPS may also require
 `REQUESTS_CA_BUNDLE` for model requests; `UV_SYSTEM_CERTS` only configures uv,
 not the model client's HTTPS trust. AWS IAM/SigV4 endpoints are not bearer-key
 OpenAI-compatible endpoints and require an appropriate gateway or adapter.
+
+
+A `provider-key` file is never required for startup. `*_API_KEY_FILE` is an
+optional alternative to inline or Setup credentials. Leave it blank unless you
+supply that file. Configuration loading reads endpoint metadata only, so a stale
+file setting cannot prevent browsing, local extraction, or opening Setup. If a
+request actually uses an unreadable configured file, its provider reports the
+problem. Clear that optional setting or save a replacement in local Setup.

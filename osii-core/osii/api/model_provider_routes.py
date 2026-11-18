@@ -225,7 +225,7 @@ def _public(record: dict[str, Any]) -> dict[str, Any]:
         "credential_required": record.get("type") != "ollama",
         "credential_present": bool(credential),
         "credential_source": source,
-        "credential_writable": local_config_writable() and source != "secret_file",
+        "credential_writable": local_config_writable(),
         "credential_help": _credential_help(str(credential_env), source),
         "credential_value": None,
     }
@@ -518,7 +518,7 @@ def save_provider_credential(request: Request, provider_id: str, payload: dict):
         raise HTTPException(status_code=422, detail="Ollama does not use an API key")
     current_name = str(record.get("credential_env") or "OPENAI_API_KEY")
     _, current_source = resolve_env_value(current_name)
-    if current_source == "secret_file" or (current_source == "environment" and not local_config_writable()):
+    if current_source in {"environment", "secret_file"} and not local_config_writable():
         raise HTTPException(status_code=409, detail=_credential_help(current_name, current_source))
     name = _saved_credential_name(record)
     value = str(payload.get("api_key") or "")
@@ -543,7 +543,7 @@ def delete_provider_credential(request: Request, provider_id: str):
         raise HTTPException(status_code=404, detail="model provider not found")
     current_name = str(record.get("credential_env") or "OPENAI_API_KEY")
     _, current_source = resolve_env_value(current_name)
-    if current_source == "secret_file" or (current_source == "environment" and not local_config_writable()):
+    if current_source in {"environment", "secret_file"} and not local_config_writable():
         raise HTTPException(status_code=409, detail=_credential_help(current_name, current_source))
     name = _saved_credential_name(record)
     try:

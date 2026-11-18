@@ -54,7 +54,7 @@ def _secret_file_value(name: str) -> str:
 def resolve_secret(*names: str) -> str:
     if os.getenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "").strip().lower() in {"1", "true", "yes", "on"}:
         for name in names:
-            if name and not os.getenv(f"{name}_FILE", "").strip():
+            if name:
                 value = _file_value(name)
                 if value:
                     return value

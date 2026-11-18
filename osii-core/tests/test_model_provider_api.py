@@ -1,3 +1,4 @@
+import pytest
 import json
 import os
 from pathlib import Path
@@ -286,7 +287,7 @@ def test_new_external_default_accepts_setup_key_when_environment_key_is_empty(cl
 
 
 def test_openai_environment_accepts_container_secret_file(client, monkeypatch, tmp_path):
-    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
+    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "false")
     secret = tmp_path / "openai_api_key"
     secret.write_text("mounted-secret\n", encoding="utf-8")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -429,3 +430,27 @@ def test_setup_rotates_startup_key_without_restart(client, monkeypatch, tmp_path
         client.post("/api/admin/model-providers/openai-compatible/health")
         assert seen[0]["Authorization"] == f"Bearer {replacement}"
     assert __import__("os").environ["OPENAI_API_KEY"] == "bad-startup-key"
+
+
+@pytest.mark.parametrize("key_file_exists", [True, False])
+def test_optional_key_file_does_not_block_setup_or_local_replacement(client, monkeypatch, tmp_path, key_file_exists):
+    from osii.configuration import default_models_config, load_models_config
+    from osii.model_clients import _endpoint
+    key_file = tmp_path / "provider-key"
+    if key_file_exists:
+        key_file.write_text("previous-file-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://corporate.test/v1")
+    monkeypatch.setenv("OPENAI_API_KEY_FILE", str(key_file))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
+    monkeypatch.setenv("OSII_ENV_FILE", str(tmp_path / "saved-secrets.env"))
+    assert default_models_config()["models"]["openai-compatible"]["api_key_env"] == "OPENAI_API_KEY"
+    assert load_models_config()
+    response = client.get("/api/admin/model-providers")
+    assert response.status_code == 200
+    provider = next(p for p in response.json()["providers"] if p["id"] == "openai-compatible")
+    assert provider["credential_writable"]
+    saved = client.put("/api/admin/model-providers/openai-compatible/credential", json={"api_key": "replacement-from-setup"})
+    assert saved.status_code == 200
+    assert _endpoint("chat").api_key == "replacement-from-setup"
+    assert key_file.exists() == key_file_exists
