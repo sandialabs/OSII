@@ -89,3 +89,19 @@ def test_openai_embedding_response_indices_preserve_input_identity(monkeypatch):
 
     with pytest.raises(RuntimeError, match="invalid vectors"):
         client.embed(model="test", texts=["first", "second"])
+
+
+def test_saved_ollama_embedding_does_not_read_an_unused_openai_key_file(monkeypatch, tmp_path):
+    from osii.configuration import save_models_config
+    from osii.processors.remote import ProcessorEmbeddingClient
+    save_models_config({"version": 1, "models": {"chosen": {
+        "type": "ollama-local", "base_url": "http://ollama.test", "model": "all-minilm", "enabled": True,
+        "capabilities": ["embedding"]}}, "defaults": {"embedding": "chosen"}})
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://unused.test/v1")
+    monkeypatch.setenv("OPENAI_API_KEY_FILE", str(tmp_path / "provider-key"))
+    monkeypatch.setattr("osii.model_clients._endpoint", lambda *a: __import__("pytest").fail("Unused provider must not be resolved"))
+    seen = []
+    monkeypatch.setattr("osii.processors.remote.resolve_remote_processor", lambda name, kind: seen.append((name, kind)) or {"name": name, "base_url": "http://bridge.test/ollama/embedder"})
+    result = create_embedding_client()
+    assert isinstance(result, ProcessorEmbeddingClient)
+    assert seen == [("ollama.embedder", "embedder")]

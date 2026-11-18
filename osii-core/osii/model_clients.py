@@ -109,6 +109,15 @@ def create_chat_client() -> ChatClient:
 
 def create_embedding_client() -> EmbeddingClient:
     from osii.domain.model_provider_config import selected_processor
+    from osii.configuration import models_path
+
+    # Setup's saved choice is authoritative for the app, just as it is for
+    # readiness tests. Standalone callers without a profile retain env support.
+    if models_path().is_file():
+        processor_name = selected_processor("embedder")
+        if processor_name:
+            from osii.processors.remote import ProcessorEmbeddingClient, resolve_remote_processor
+            return ProcessorEmbeddingClient(resolve_remote_processor(processor_name, "embedder"))
 
     endpoint = _endpoint("embedding")
     base_url = endpoint.base_url
