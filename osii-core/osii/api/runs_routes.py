@@ -824,6 +824,7 @@ def _start_run(request: Request, payload: dict):
     run["expert_context"] = context or None
     run["collection_id"] = collection["id"] if collection else None
     run["operations"] = {
+        "extractor_overrides": extractor_overrides,
         "extract": run_extraction,
         "extract_mode": extract_mode,
         "extraction_policy": extraction_policy,
@@ -835,6 +836,20 @@ def _start_run(request: Request, payload: dict):
             "chunk_overlap": chunk_overlap,
         } if build_embeddings else None,
         "enrich": enricher_name,
+    }
+    save_run(run)
+
+    run["selection"] = {
+        "inventory_selection_id": payload.get("inventory_selection_id"),
+        "paths": [str(path) for path in resolved_files],
+        "include_subfolders": include_subfolders, "include_patterns": include_patterns,
+        "exclude_patterns": exclude_patterns,
+    }
+    from osii.domain.model_provider_config import selected_processor, processor_model
+    embedder = selected_processor("embedder", osii_root=osii_store) if build_embeddings else None
+    run["model_targets"] = {
+        kind: {"alias": name, "model": processor_model(name, kind, osii_root=osii_store) or ""}
+        for kind, name in (("embedder", embedder), ("synthesizer", synthesizer_name)) if name
     }
     save_run(run)
 

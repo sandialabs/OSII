@@ -65,7 +65,7 @@ def retry_file_access(operation, *, on_retry=None):
             return operation()
         except OSError as exc:
             transient = isinstance(exc, TimeoutError) or exc.errno in {
-                errno.ETIMEDOUT, errno.ECONNRESET, errno.EAGAIN, errno.ESTALE,
+                errno.ETIMEDOUT, errno.ECONNRESET, errno.EAGAIN, getattr(errno, "ESTALE", 116),
             } or getattr(exc, "winerror", None) in {64, 121, 1231, 1232}
             if not transient or attempt == 2:
                 raise

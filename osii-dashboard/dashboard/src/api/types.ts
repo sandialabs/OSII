@@ -727,6 +727,7 @@ export type IntakeResolveResponse = {
 };
 
 export type ProcessingRun = {
+  selection?: {inventory_selection_id?: number; paths: string[]; include_subfolders: boolean; include_patterns: string[]; exclude_patterns: string[]};
   diagnostics?: Array<Record<string, unknown>>;
   batch_progress?: BatchProgress;
   id: string;

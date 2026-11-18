@@ -216,8 +216,8 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
               {run.status === "pausing" ? <Alert severity="info" sx={{ mt: 1 }}>Finishing the current file before pausing.</Alert> : null}
               {run.status === "cancelling" ? <Alert severity="info" sx={{ mt: 1 }}>Finishing the current file before cancelling.</Alert> : null}
               <details style={{marginTop: 12}}><summary>Selections & diagnostics</summary>
-                <Button size="small" onClick={() => void navigator.clipboard.writeText(JSON.stringify({run_id: run.id, status: run.status, operations: run.operations, models: run.model_targets, embedding: run.embedding_target, error: run.error, indexing_error: run.indexing_error, diagnostics: run.diagnostics, items: run.items}, null, 2))}>Copy diagnostics</Button>
-                <Box component="pre" sx={{fontSize: 12, overflow: "auto", maxHeight: 400, whiteSpace: "pre-wrap"}}>{JSON.stringify({operations: run.operations, models: run.model_targets, embedding: run.embedding_target, diagnostics: run.diagnostics, files: run.items}, null, 2)}</Box>
+                <Button size="small" onClick={() => void navigator.clipboard.writeText(JSON.stringify({run_id: run.id, status: run.status, selection: run.selection, operations: run.operations, models: run.model_targets, embedding: run.embedding_target, error: run.error, indexing_error: run.indexing_error, diagnostics: run.diagnostics, items: run.items}, null, 2))}>Copy diagnostics</Button>
+                <Box component="pre" sx={{fontSize: 12, overflow: "auto", maxHeight: 400, whiteSpace: "pre-wrap"}}>{JSON.stringify({selection: run.selection, operations: run.operations, models: run.model_targets, embedding: run.embedding_target, diagnostics: run.diagnostics, files: run.items}, null, 2)}</Box>
               </details>
               {run.error ? <Alert severity="error" sx={{ mt: 1 }}>{run.error}</Alert> : null}
               {run.indexing_error && run.indexing_error !== run.error ? <Alert severity="error" sx={{ mt: 1 }}>{run.indexing_error}</Alert> : null}
