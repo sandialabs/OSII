@@ -1,7 +1,7 @@
 import { Button, Stack, TextField } from "@mui/material";
 
 /** Transport-free endpoint fields shared by local Setup and hosted administration. */
-export function EndpointFields({ baseUrl, onBaseUrl, apiKey, onApiKey, credentialPresent = false,
+export function EndpointFields({ baseUrl, onBaseUrl, apiKey, onApiKey,
   credentialHelp, credentialWritable = true, showCredential = true, urlHelp, required = false, onDiscover, discovering = false }: {
   baseUrl: string; onBaseUrl: (value: string) => void; apiKey: string; onApiKey: (value: string) => void;
   credentialPresent?: boolean; credentialHelp?: string; credentialWritable?: boolean;
@@ -14,8 +14,8 @@ export function EndpointFields({ baseUrl, onBaseUrl, apiKey, onApiKey, credentia
       helperText={urlHelp ?? "API base address, including /v1 or /v2 where required. Leave empty to disable."} />
     {onDiscover && <Button color="secondary" variant="outlined" disabled={discovering || !baseUrl.trim()} onClick={onDiscover} sx={{ flexShrink: 0, mt: 1 }}>{discovering ? "Finding models…" : "Find available models"}</Button>}
     </Stack>
-    {showCredential && <TextField type="password" autoComplete="new-password" label={credentialPresent ? "API key (already configured)" : "API key"}
+    {showCredential && <TextField type="password" autoComplete="new-password" label="API key"
       value={apiKey} onChange={e => onApiKey(e.target.value)} disabled={!credentialWritable}
-      helperText={credentialHelp ?? "Leave empty to keep the saved key at the same URL. A changed URL requires its own key."} />}
+      helperText={credentialHelp} />}
   </Stack>;
 }
