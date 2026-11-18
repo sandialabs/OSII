@@ -226,7 +226,7 @@ def scan(store: VolumeStore, run: dict, owner: str, stopping) -> None:
                             "Directory reader timed out; reconnect the share and resume",
                             None,
                         )
-                        timeouts += 1
+                        # Count exhausted readers only; transient stalls receive bounded retries.
                     elif not process.is_alive():
                         message = (
                             "error",
@@ -240,13 +240,26 @@ def scan(store: VolumeStore, run: dict, owner: str, stopping) -> None:
                 if message[0] == "batch":
                     _write_batch(store, run, owner, message[1], message[2])
                 else:
-                    _finish_directory(store, run, owner, relative, message)
                     reaped = _stop_reader(process, output)
                     del active[relative]
                     if not reaped:
                         raise ValueError(
                             "A filesystem reader remains blocked in the OS; restore the mount before resuming"
                         )
+                    timed_out = message[0] == "error" and "timed out" in message[1]
+                    if timed_out:
+                        with store.connect() as conn:
+                            check_owner(store, conn, run["id"], owner)
+                            attempts = conn.execute("SELECT attempts FROM directories WHERE run_id=? AND path=?", (run["id"], relative)).fetchone()[0]
+                            if attempts < 3:
+                                conn.execute("UPDATE directories SET status='pending',updated=? WHERE run_id=? AND path=?", (time.time(), run["id"], relative))
+                                conn.execute("INSERT INTO events(run_id,created,path,message) VALUES(?,?,?,?)", (run["id"], time.time(), relative, f"Slow share: retry {attempts}/2 after directory timeout"))
+                        if attempts < 3:
+                            if stopping.wait(1 if attempts == 1 else 3):
+                                raise InterruptedRun()
+                            continue
+                        timeouts += 1
+                    _finish_directory(store, run, owner, relative, message)
                 if timeouts >= options.get("readers", 2):
                     raise ValueError(
                         "Source circuit breaker opened after repeated stalled readers; reconnect and resume"

@@ -200,6 +200,7 @@ extensions = [".txt"]
     assert attempts == ["unavailable.primary", "native_text"]
     assert completed["status"] == "done"
     assert completed["items"][0]["extractor"] == "native_text"
+    assert completed["items"][0]["diagnostics"][0]["processor"] == "unavailable.primary"
     assert any("Trying fallback extractor 'native_text'" in line for line in completed["logs"])
 
 

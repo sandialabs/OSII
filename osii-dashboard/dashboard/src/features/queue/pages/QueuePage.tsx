@@ -1,5 +1,5 @@
 import { DiscoveryActivity, useDiscoveryRuns } from "../components/DiscoveryActivity";
-import type { PickedFile } from "../../../components/discovery/LocationBrowser";
+import { LocationBrowser, type PickedFile } from "../../../components/discovery/LocationBrowser";
 import { DiscoveryIntakePanel } from "../components/DiscoveryIntakePanel";
 import { ProcessorStepControl } from "../components/ProcessorStepControl";
 import {
@@ -17,10 +17,6 @@ import {
   Box,
   Button,
   Checkbox,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   Divider,
   FormControlLabel,
   LinearProgress,
@@ -115,14 +111,15 @@ export function QueuePage() {
     if (frozenSelection) localStorage.setItem("osii:last-intake-selection", String(frozenSelection));
     else localStorage.removeItem("osii:last-intake-selection");
   }, [frozenSelection]);
-  const [path, setPath] = useState("");
+  const [endpointTest, setEndpointTest] = useState<{results: Array<{processor: string; ok: boolean; detail?: string; diagnostics?: Record<string, unknown>}>; tested_at: string} | null>(null);
+  const [testingEndpoints, setTestingEndpoints] = useState(false);
+  const [endpointTestError, setEndpointTestError] = useState("");
+  const [path, setPath] = useState(() => localStorage.getItem("osii:last-folder") ?? "");
   const [selectedFolder, setSelectedFolder] =
     useState<QueueBrowseResponse | null>(null);
   const [selectingFolder, setSelectingFolder] = useState(false);
   const [folderError, setFolderError] = useState<string | null>(null);
   const [browseOpen, setBrowseOpen] = useState(false);
-  const [browsePath, setBrowsePath] = useState("");
-  const [browseAddress, setBrowseAddress] = useState("");
   const [excludedPaths, setExcludedPaths] = useState<string[]>([]);
   const [visibleFileCount, setVisibleFileCount] = useState(50);
   const [uploadedItems, setUploadedItems] = useState<UploadResponse["uploads"]>(
@@ -214,26 +211,6 @@ export function QueuePage() {
     chunkingMethod === "paragraph" ||
     (chunkSize > 0 && chunkOverlap >= 0 && chunkOverlap < chunkSize);
 
-  const rootBrowse = useQuery({
-    queryKey: ["intake", "browse", "shared-root"],
-    queryFn: () => browseIntake(),
-    enabled: section === "process",
-  });
-  const browse = useQuery({
-    queryKey: ["intake", "folders", browsePath],
-    queryFn: () => browseIntake(browsePath || undefined),
-    enabled: browseOpen,
-  });
-  useEffect(() => {
-    if (section === "process" && rootBrowse.data && !selectedFolder) {
-      setSelectedFolder(rootBrowse.data);
-      setPath((draft) => draft.trim() ? draft : (rootBrowse.data.host_path ?? rootBrowse.data.current_path));
-    }
-  }, [rootBrowse.data, selectedFolder, section]);
-  useEffect(() => {
-    if (browse.data)
-      setBrowseAddress(browse.data.host_path ?? browse.data.current_path);
-  }, [browse.data]);
   const runs = useQuery({
     queryKey: ["processing-runs"],
     queryFn: listProcessingRuns,
@@ -408,6 +385,7 @@ export function QueuePage() {
     setFolderError(null);
     try {
       const folder = await browseIntake(requestedPath || undefined);
+      localStorage.setItem("osii:last-folder", folder.host_path ?? folder.current_path);
       setSelectedFolder(folder);
       setNotice(null);
       setPath(folder.host_path ?? folder.current_path);
@@ -616,6 +594,10 @@ export function QueuePage() {
     setNotice({ severity: "info", text: "Text-only preset selected." });
   };
 
+  const endpointSelection = JSON.stringify({extractors: preview.data?.preview.extractor_plan?.map(plan => extractorOverrides[plan.extension] || plan.extractor), synthesize, effectiveSynthesizer, embed, runExtraction});
+  const endpointSelectionRef = useRef(endpointSelection);
+  endpointSelectionRef.current = endpointSelection;
+  useEffect(() => { setEndpointTest(null); }, [endpointSelection]);
   return (
     <Stack spacing={2.5} sx={{ maxWidth: 1100, mx: "auto" }}>
       <Typography variant="h5" fontWeight={700}>Intake</Typography>
@@ -754,7 +736,6 @@ export function QueuePage() {
                     startIcon={<FolderOutlinedIcon />}
                     sx={{ minHeight: 40, flexShrink: 0 }}
                     onClick={() => {
-                      setBrowsePath(selectedFolder?.current_path ?? "");
                       setFolderError(null);
                       setBrowseOpen(true);
                     }}
@@ -765,13 +746,6 @@ export function QueuePage() {
               </Box>
               {folderError && !browseOpen ? (
                 <Alert severity="error">{folderError}</Alert>
-              ) : null}
-              {rootBrowse.isError && !selectedFolder && !folderError ? (
-                <Alert severity="error">
-                  {rootBrowse.error instanceof Error
-                    ? rootBrowse.error.message
-                    : "The default folder is unavailable. Choose another folder above."}
-                </Alert>
               ) : null}
               {sourceStatus?.osii_writable === false ? (
                 <Alert severity="error">
@@ -880,7 +854,7 @@ export function QueuePage() {
                   </Typography>
                 )}
               </Stack>
-              {preview.isFetching || rootBrowse.isLoading || selectingFolder ? (
+              {preview.isFetching || selectingFolder ? (
                 <LinearProgress />
               ) : null}
               {preview.isError ? (
@@ -931,124 +905,10 @@ export function QueuePage() {
 
           </>}
 
-          <Dialog
-            open={browseOpen}
-            onClose={() => {
-              setBrowseOpen(false);
-              setFolderError(null);
-            }}
-            fullWidth
-            maxWidth="sm"
-          >
-            <DialogTitle>Choose a document folder</DialogTitle>
-            <DialogContent>
-              <Stack spacing={1.5} sx={{ pt: 1 }}>
-                <Box
-                  component="form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    setFolderError(null);
-                    setBrowsePath(browseAddress);
-                  }}
-                >
-                  <Stack direction="row" spacing={1}>
-                    <TextField
-                      fullWidth
-                      size="small"
-                      label="Folder path"
-                      value={browseAddress}
-                      onChange={(event) => setBrowseAddress(event.target.value)}
-                    />
-                    <Button type="submit" variant="outlined">
-                      Go
-                    </Button>
-                  </Stack>
-                </Box>
-                <Stack direction="row" spacing={1}>
-                  <Button
-                    disabled={!browse.data?.parent_path || browse.isFetching}
-                    onClick={() =>
-                      setBrowsePath(browse.data?.parent_path ?? "")
-                    }
-                  >
-                    Up one folder
-                  </Button>
-                  <Button onClick={() => setBrowsePath("")}>
-                    Default folder
-                  </Button>
-                </Stack>
-                {browse.isFetching ? <LinearProgress /> : null}
-                {browse.isError ? (
-                  <Alert severity="error">
-                    {browse.error instanceof Error
-                      ? browse.error.message
-                      : "Could not open this folder."}
-                  </Alert>
-                ) : null}
-                {folderError ? (
-                  <Alert severity="error">{folderError}</Alert>
-                ) : null}
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{ overflowWrap: "anywhere" }}
-                >
-                  {browse.data?.host_path ?? browse.data?.current_path}
-                </Typography>
-                <List
-                  dense
-                  aria-label="Available folders"
-                  sx={{ maxHeight: 320, overflow: "auto" }}
-                >
-                  {(browse.data?.entries ?? [])
-                    .filter((entry) => entry.type === "folder")
-                    .map((entry) => (
-                      <ListItem key={entry.path} disablePadding>
-                        <ListItemButton
-                          onClick={() => setBrowsePath(entry.path)}
-                        >
-                          <FolderOutlinedIcon sx={{ mr: 1 }} />
-                          <ListItemText primary={entry.name} />
-                        </ListItemButton>
-                      </ListItem>
-                    ))}
-                </List>
-                {browse.data &&
-                !browse.data.entries.some(
-                  (entry) => entry.type === "folder",
-                ) ? (
-                  <Typography variant="body2" color="text.secondary">
-                    No subfolders. You can use this folder.
-                  </Typography>
-                ) : null}
-              </Stack>
-            </DialogContent>
-            <DialogActions>
-              <Button
-                onClick={() => {
-                  setBrowseOpen(false);
-                  setFolderError(null);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="contained"
-                color="secondary"
-                disabled={
-                  !browse.data ||
-                  browse.isFetching ||
-                  browse.isError ||
-                  selectingFolder
-                }
-                onClick={() =>
-                  void selectFolder(browse.data?.current_path ?? "")
-                }
-              >
-                Use this folder
-              </Button>
-            </DialogActions>
-          </Dialog>
+          <LocationBrowser open={browseOpen} foldersOnly
+            initialPath={selectedFolder?.current_path || path || undefined}
+            onClose={() => setBrowseOpen(false)}
+            onFolder={(folder) => void selectFolder(folder)} />
 
           <Typography id="intake-processing" variant="h6" component="h2" tabIndex={-1} fontWeight={750} sx={{ scrollMarginTop: 96 }}>3. Process</Typography>
           {useDiscovery && frozenSelection === null ? <Typography color="text.secondary">Select files above to continue.</Typography> : <>
@@ -1357,7 +1217,7 @@ export function QueuePage() {
           <Box sx={{ px: { xs: 0, sm: 1 }, py: 1 }}>
             <Stack spacing={1.5}>
 
-              {preview.isLoading || (!useDiscovery && rootBrowse.isLoading) ? (
+              {preview.isLoading ? (
                 <LinearProgress />
               ) : null}
               {preview.isError ? (
@@ -1423,6 +1283,25 @@ export function QueuePage() {
                   {useDiscovery ? "Select files above to continue." : "Choose a document folder or add files from elsewhere."}
                 </Alert>
               ) : null}
+              <Paper variant="outlined" sx={{p: 1.5}}>
+                <Button disabled={testingEndpoints} onClick={async () => {
+                  setTestingEndpoints(true); setEndpointTestError(""); setEndpointTest(null);
+                  try {
+                    const names = runExtraction ? [...new Set((preview.data?.preview.extractor_plan ?? []).map(plan => extractorOverrides[plan.extension] || plan.extractor))] : [];
+                    const processors = names.map(name => ({name, kind: "extractor"}));
+                    if (synthesize && effectiveSynthesizer) processors.push({name: effectiveSynthesizer, kind: "synthesizer"});
+                    if (!processors.length && !embed) throw new Error("Select files and processing methods first.");
+                    const result = await apiJson<NonNullable<typeof endpointTest>>("/api/intake/preflight", {method: "POST", json: {processors, embed}});
+                    if (endpointSelectionRef.current === endpointSelection) setEndpointTest(result);
+                    else setEndpointTestError("Selection changed during testing. Test the current endpoints again.");
+                  } catch (error) { setEndpointTestError(error instanceof Error ? error.message : String(error)); }
+                  finally {setTestingEndpoints(false);}
+                }}>{testingEndpoints ? "Testing tiny sample…" : "Test selected endpoints"}</Button>
+                <Typography variant="caption" display="block">Runs a tiny sample; may use model credits. No library files are read or saved.</Typography>
+                {endpointTestError && <Alert severity="error">{endpointTestError}</Alert>}
+                {endpointTest?.results.map((result, i) => <Alert key={i} severity={result.ok ? "success" : "error"}>{result.processor}: {result.ok ? "Operation passed" : "Test failed"}{result.detail ? ` · ${result.detail}` : ""}</Alert>)}
+                {endpointTest && <><Typography variant="caption">Tested {new Date(endpointTest.tested_at).toLocaleString()} · results describe that test only.</Typography><Button size="small" onClick={() => void navigator.clipboard.writeText(JSON.stringify(endpointTest, null, 2))}>Copy test diagnostics</Button></>}
+              </Paper>
               {readiness.isError ? (
                 <Alert severity="error">
                   Could not check processing services.{" "}

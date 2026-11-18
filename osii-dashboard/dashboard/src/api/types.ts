@@ -727,6 +727,7 @@ export type IntakeResolveResponse = {
 };
 
 export type ProcessingRun = {
+  diagnostics?: Array<Record<string, unknown>>;
   batch_progress?: BatchProgress;
   id: string;
   status: "pending" | "queued" | "running" | "done" | "error" | string;
@@ -773,6 +774,9 @@ export type ProcessingRun = {
     display: string;
     status: string;
     error?: string | null;
+    diagnostics?: Array<Record<string, unknown>>;
+    synthesizer?: string | null;
+    enricher?: string | null;
     current_step?: string;
     steps?: Record<string, string>;
     extractor?: string | null;

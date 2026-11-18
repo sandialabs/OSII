@@ -1,3 +1,5 @@
+
+from osii.processor_sdk.diagnostics import failure, retry_file_access, redact
 from datetime import datetime, UTC
 import os
 from pathlib import Path
@@ -65,6 +67,15 @@ def _finish_item_timing(item: dict, started: datetime) -> None:
     item["finished_at"] = finished.isoformat()
     item["duration_seconds"] = round(max(0.0, (finished - started).total_seconds()), 3)
 
+
+
+
+def _record_failure(run_id, index, exc, processor, phase):
+    current = get_run(run_id)
+    if current:
+        current["items"][index].setdefault("diagnostics", []).append(
+            failure(exc, processor=processor or "Core", phase=phase))
+        save_run(current)
 
 
 def load_parser_routes(config_path: Path) -> list[dict]:
@@ -375,13 +386,16 @@ def run_worker(
             run["items"][index]["duration_seconds"] = None
             save_run(run)
 
+            phase, active_processor = "source access", "Core file reader"
             try:
                 if staging:
                     from osii.volume.staging import validate_member
-                    validate_member(staging, staging["members"][index])
-                file_id = compute_file_id(src)
+                    retry_file_access(lambda: validate_member(staging, staging["members"][index]))
+                file_id = retry_file_access(lambda: compute_file_id(src), on_retry=lambda n, e: append_log(run_id, f"File access retry {n}/2: {src.name}: {redact(str(e))}"))
                 if staging:
-                    validate_member(staging, staging["members"][index])
+                    retry_file_access(lambda: validate_member(staging, staging["members"][index]))
+                run["items"][index]["file_id"] = file_id
+                save_run(run)
                 document_context = resolve_expert_context(
                     osii_store, {"scope_type": "object", "file_id": file_id}, context
                 )
@@ -402,6 +416,7 @@ def run_worker(
                 if should_extract:
                     extraction_failures: list[str] = []
                     for attempt, candidate in enumerate(extractor_chain):
+                        phase, active_processor = "extraction", candidate
                         extractor_name = candidate
                         run["items"][index]["extractor"] = extractor_name
                         save_run(run)
@@ -424,7 +439,9 @@ def run_worker(
                             )
                             break
                         except Exception as exc:
-                            extraction_failures.append(f"{extractor_name}: {exc}")
+                            _record_failure(run_id, index, exc, extractor_name, "extraction")
+                            run = get_run(run_id)
+                            extraction_failures.append(f"{extractor_name}: {redact(str(exc))}")
                             append_log(run_id, f"Extractor '{extractor_name}' failed for {src.name}: {exc}")
                             if attempt + 1 < len(extractor_chain):
                                 append_log(run_id, f"Trying fallback extractor '{extractor_chain[attempt + 1]}'.")
@@ -474,7 +491,8 @@ def run_worker(
                             append_log(run_id, f"Synthesis used fallback {synthesis_result['actual_synthesizer']}; earlier failures: {'; '.join(synthesis_result['fallback_failures'])}")
                         append_log(run_id, f"synthesis complete: {src.name}")
                     except Exception as exc:
-                        synthesis_error = str(exc)
+                        _record_failure(run_id, index, exc, synthesizer_name, "synthesis")
+                        synthesis_error = redact(str(exc))
                         append_log(run_id, f"synthesis error: {src.name} -> {exc}")
 
                 if enricher_name:
@@ -490,7 +508,8 @@ def run_worker(
                         )
                         append_log(run_id, f"Enrichment complete: {src.name}")
                     except Exception as exc:
-                        enrichment_error = str(exc)
+                        _record_failure(run_id, index, exc, enricher_name, "enrichment")
+                        enrichment_error = redact(str(exc))
                         append_log(run_id, f"Enrichment error: {src.name} -> {exc}")
 
                 run = get_run(run_id)
@@ -498,7 +517,7 @@ def run_worker(
                     return
 
                 if staging:
-                    validate_member(staging, staging["members"][index])
+                    retry_file_access(lambda: validate_member(staging, staging["members"][index]))
                     from osii.volume.store import VolumeStore
                     VolumeStore(Path(staging["database"])).link_sidecar(staging["members"][index], file_id, run_id)
 
@@ -523,18 +542,13 @@ def run_worker(
                 append_log(run_id, f"Done: {src.name}")
 
             except Exception as exc:
+                _record_failure(run_id, index, exc, active_processor, phase)
                 run = get_run(run_id)
                 if run is None:
                     return
 
-                try:
-                    if not staging:
-                        run["items"][index]["file_id"] = compute_file_id(src)
-                except Exception:
-                    pass
-
                 run["items"][index]["status"] = "error"
-                run["items"][index]["error"] = str(exc)
+                run["items"][index]["error"] = redact(str(exc))
                 _finish_item_timing(run["items"][index], item_started)
                 run["completed"] += 1
                 save_run(run)

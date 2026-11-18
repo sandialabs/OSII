@@ -1,4 +1,5 @@
 from __future__ import annotations
+from osii.processor_sdk.diagnostics import retry_file_access
 
 import hashlib
 import json
@@ -284,7 +285,7 @@ class RemoteExtractor:
                     file_id=doc_ctx["file_id"],
                     filename=source_path.name,
                     media_type=doc_ctx["mime"],
-                    content_base64=base64.b64encode(source_path.read_bytes()).decode("ascii"),
+                    content_base64=base64.b64encode(retry_file_access(source_path.read_bytes)).decode("ascii"),
                     metadata={"source_relpath": doc_ctx["source_relpath"]},
                 ),
                 expert_context=expert_context,

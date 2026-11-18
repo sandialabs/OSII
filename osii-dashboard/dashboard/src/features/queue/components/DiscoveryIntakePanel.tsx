@@ -140,15 +140,8 @@ export function DiscoveryIntakePanel({
       setSourceId(JSON.parse(selected.data.request).filters.source_id);
   }, [selected.data]);
   useEffect(() => {
-    if (sourceId === "" && sources.data?.items.length)
-      setSourceId(
-        (
-          sources.data.items.find(
-            (item) =>
-              item.root === localStorage.getItem("osii:last-discovery-root"),
-          ) ?? sources.data.items[0]
-        ).id,
-      );
+    const last = sources.data?.items.find(item => item.root === localStorage.getItem("osii:last-discovery-root"));
+    if (sourceId === "" && last) setSourceId(last.id);
   }, [sources.data, sourceId]);
   useEffect(() => {
     if (
@@ -284,7 +277,7 @@ export function DiscoveryIntakePanel({
     setCursor(0);
     setPrevious([]);
     const found = sources.data?.items.find((item) => item.id === id);
-    if (found) localStorage.setItem("osii:last-discovery-root", found.root);
+    if (found) { localStorage.setItem("osii:last-discovery-root", found.root); localStorage.setItem("osii:last-folder", found.root); }
   };
   const register = () =>
     act(async () => {
@@ -304,6 +297,7 @@ export function DiscoveryIntakePanel({
         setAdding(false);
         setShowEntries(false);
         localStorage.setItem("osii:last-discovery-root", overlap.root);
+        localStorage.setItem("osii:last-folder", overlap.root);
         setLocationNotice(
           `Using the existing location ${overlap.root}. Browse inside it to select files.`,
         );
@@ -316,6 +310,7 @@ export function DiscoveryIntakePanel({
       clear();
       setSourceId(value.id);
       localStorage.setItem("osii:last-discovery-root", value.root);
+      localStorage.setItem("osii:last-folder", value.root);
       setAdding(false);
       setShowEntries(false);
       setMountIssue(false);

@@ -382,3 +382,43 @@ Regression tests also cover recovered files joining the embedding set and
 changed source bytes producing a new content identity. Derived catalog schema 4
 allows multiple content-addressed revisions at one source path; upgrading that
 cache rebuilds it from sidecars without changing the canonical inventory.
+
+## Slow shares and Intake diagnostics
+
+Intake retries transient source read/stat failures up to twice (three total
+attempts), with 1- and 3-second backoff. Permission failures, changed identities,
+and invalid documents are not automatically retried. Processor operations and
+model requests are not repeated by this retry policy. OS-level blocked reads
+can still require IT to restore the mount; OSII cannot repair the share.
+
+Isolated discovery readers retain the scan's configured inactivity timeout
+(default 30 seconds), retry a timed-out directory up to twice, and preserve
+already-discovered inventory rows. A reader that cannot be terminated stops
+recovery rather than creating more stuck processes. Exhausted failures remain
+visible and resumable from Queue & activity. Existing completed processing and
+embedding checkpoints remain intact when retrying failed work.
+
+Expand a processing run's **Selections & diagnostics** to inspect frozen files,
+per-file extractor/synthesizer/enricher, operation choices, model targets, errors,
+and available tracebacks. **Copy diagnostics** copies this evidence as JSON.
+Python diagnostics identify executable, version, environment prefixes, platform,
+and relevant installed package versions. They distinguish the Core worker from
+a responding processor service; an unreachable service cannot report its Python
+environment. SDK-based processors return their own diagnostics for unexpected
+operation exceptions. Older/external services can only supply the error body
+they expose. Large remote error bodies are bounded at 128 KiB and marked when
+truncated. Known environment/local credential values are redacted; diagnostic
+paths and filenames remain visible, so review before sharing externally.
+
+**Test selected endpoints** executes a tiny generated PDF/synthesis sample and,
+when selected, an embedding operation. It reads no original documents and commits
+no library artifacts. Model-backed tests may consume credits. A green result
+means that sample operation passed at the displayed time; it does not guarantee
+every PDF or future model request will succeed. Changing methods clears previous
+results. PDF-incompatible extractors report that no automatic sample was tested.
+
+Folder prompts use the shared browser. With no previous selection they show
+mounted roots and a path field, without choosing the startup corpus. Confirmed
+folders are remembered in this browser for future prompts; opening Intake does
+not enumerate the remembered folder. This preference is specific to the browser
+and OSII origin, not a change to the configured corpus root.

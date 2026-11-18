@@ -147,9 +147,12 @@ def test_stalled_reader_timeout_opens_circuit_and_resume_recovers(
     rid = store.new_scan(sid, ScanOptions(readers=1, timeout_seconds=1))
     started = time.monotonic()
     result = work(store)
-    assert time.monotonic() - started < 6
+    assert time.monotonic() - started < 14
     assert result["status"] == "error"
     assert "circuit breaker" in result["error"]
+    with store.connect() as conn:
+        assert conn.execute("SELECT attempts FROM directories WHERE run_id=?", (rid,)).fetchone()[0] == 3
+        assert conn.execute("SELECT COUNT(*) FROM events WHERE run_id=? AND message LIKE 'Slow share:%'", (rid,)).fetchone()[0] == 2
     monkeypatch.setattr(scanner, "_reader", original)
     store.control(rid, "resume")
     assert work(store)["status"] == "done"

@@ -1138,3 +1138,20 @@ adapter exposes the standard `/v1/descriptor` and `/v1/extract` endpoints;
 Apache Tika. The normal development stack prepares and manages Apache Tika
 automatically; `OSII_TIKA_MANAGED=false` selects an externally managed runtime. See the
 [Apache Tika adapter guide](../extractor-routing.md#apache-tika-processor-module).
+
+### Explicit Intake operation tests
+
+`POST /api/intake/preflight` accepts `processors` (up to eight
+`{"name": "processor.id", "kind": "extractor" | "synthesizer"}` entries) and
+`embed` (boolean). It uses registered endpoints, saved processor configuration,
+and model bindings to execute tiny synthetic inputs without canonical writes.
+Each result contains processor identity, `ok`, detail or redacted diagnostics,
+and the response includes `tested_at`. This is an explicit, potentially billable
+operation, not an automatic health poll. Invalid targets return 422.
+
+Processor SDK services expose `GET /v1/diagnostics` for processor identity and
+Python/package information. Unexpected operation failures return HTTP 500 with
+a structured diagnostic `detail`, including the processor's traceback and Python
+environment. Existing typed successful responses and 422 validation behavior
+remain compatible. Run items may include a `diagnostics` array; embedding failures
+may include run-level diagnostics. Older services/runs need not have these fields.

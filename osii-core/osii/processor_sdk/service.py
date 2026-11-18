@@ -52,11 +52,27 @@ class Enricher(ABC):
         """Produce one or more standard, derived artifacts over a scope."""
 
 
+def _install_diagnostics(app: FastAPI, descriptor: ProcessorDescriptor) -> None:
+    from fastapi.responses import JSONResponse
+    from .diagnostics import environment, failure
+
+    @app.get("/v1/diagnostics")
+    def diagnostics():
+        return {"processor": descriptor.name, "python": environment()}
+
+    @app.exception_handler(Exception)
+    async def failed(request, exc):
+        return JSONResponse(status_code=500, content={"detail": failure(
+            exc, processor=descriptor.name, phase=request.url.path, runtime="Processor service")})
+
+
 def create_processor_app(processor: Extractor | Synthesizer | Embedder | Enricher) -> FastAPI:
     app = FastAPI(
         title=processor.descriptor.display_name,
         version=processor.descriptor.version,
     )
+
+    _install_diagnostics(app, processor.descriptor)
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -128,6 +144,8 @@ def create_openai_processor_app(
         )
 
     app = FastAPI(title=descriptor.display_name, version=descriptor.version)
+
+    _install_diagnostics(app, descriptor)
 
     @app.get("/health")
     def health() -> dict[str, str]:

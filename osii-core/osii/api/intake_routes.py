@@ -413,3 +413,64 @@ async def upload_files(
         )
 
     return {"uploads": uploaded}
+
+
+@router.post("/intake/preflight")
+def test_intake_processors(request: Request, payload: dict):
+    """Explicit tiny operation tests; no corpus reads or canonical writes."""
+    import base64
+    import pymupdf
+    from osii.processor_sdk import ProcessorClient, ExtractionRequest, DocumentInput, SynthesisRequest, ScopeInput
+    from osii.processor_sdk.diagnostics import failure
+    from osii.processors.remote import resolve_remote_processor, _model_context, _revoke_model_context
+    from osii.domain.processor_settings import merged_processor_settings
+    from osii.domain.processing.capability_readiness import embedding_readiness
+
+    targets = payload.get("processors", [])
+    if not isinstance(targets, list) or len(targets) > 8:
+        raise HTTPException(422, "Test up to eight selected processors at a time")
+    if any(not isinstance(target, dict) or not isinstance(target.get("name"), str)
+           or not target["name"] or target.get("kind") not in {"extractor", "synthesizer"} for target in targets):
+        raise HTTPException(422, "Specify a registered extractor or synthesizer")
+    results = []
+    root = request.app.state.osii_root.resolve()
+    for target in targets:
+        name, kind = str(target.get("name", "")), target.get("kind")
+        if kind not in {"extractor", "synthesizer"}:
+            raise HTTPException(422, "Unsupported processor test kind")
+        context = None
+        endpoint = None
+        try:
+            descriptor = resolve_remote_processor(name, kind)
+            endpoint = descriptor["base_url"]
+            client = ProcessorClient(endpoint, timeout=120)
+            request_id = f"preflight-{uuid.uuid4()}"
+            context = _model_context(processor_name=name, descriptor=descriptor, request_id=request_id, osii_root=root)
+            config = merged_processor_settings(root, name, {})
+            if kind == "extractor":
+                extensions = descriptor.get("capabilities", {}).get("file_extensions", [])
+                if ".pdf" not in extensions and "*" not in extensions:
+                    raise ValueError("Automatic operation test requires a PDF-capable extractor; no test was performed")
+                with pymupdf.open() as pdf:
+                    page = pdf.new_page()
+                    page.insert_text((72, 72), "OSII endpoint test document.")
+                    content = base64.b64encode(pdf.tobytes()).decode("ascii")
+                response = client.extract(ExtractionRequest(request_id=request_id,
+                    document=DocumentInput(filename="osii-test.pdf", media_type="application/pdf", content_base64=content),
+                    config=config, model_context=context))
+                if not response.segments:
+                    raise ValueError("Extractor returned no text for the test document")
+            else:
+                client.synthesize(SynthesisRequest(request_id=request_id,
+                    scope=ScopeInput(scope_type="object", scope_id=request_id,
+                        documents=[DocumentInput(filename="osii-test.txt", text="OSII endpoint test document.")]),
+                    config=config, model_context=context))
+            results.append({"processor": name, "endpoint": endpoint, "ok": True, "detail": "Tiny operation passed"})
+        except Exception as exc:
+            results.append({"processor": name, "ok": False, "diagnostics": failure(exc, processor=name, phase="preflight", endpoint=endpoint)})
+        finally:
+            _revoke_model_context(context)
+    if payload.get("embed"):
+        result = embedding_readiness(root)
+        results.append({"processor": "Selected embedding model", "ok": bool(result.get("available")), "detail": result.get("detail"), "result": result})
+    return {"results": results, "tested_at": __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat()}
