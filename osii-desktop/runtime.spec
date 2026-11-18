@@ -19,6 +19,7 @@ if (root / "osii-core" / "config").is_dir():
 if (payload / "dashboard").is_dir():
     data.append((str(payload / "dashboard"), "dashboard"))
 data.append((str(payload / "release.json"), "."))
+data.append((str(payload / "THIRD_PARTY_NOTICES.txt"), "."))
 
 a = Analysis([str(root / "scripts" / "standalone_runtime.py")],
     pathex=[str(root / "osii-core")], binaries=[], datas=data, hiddenimports=hidden,

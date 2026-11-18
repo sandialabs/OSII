@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
+from importlib.metadata import distributions
 from io import BytesIO
 import json
 import os
@@ -88,13 +89,26 @@ def main() -> None:
     PAYLOAD.mkdir(parents=True, exist_ok=True)
     version = tomllib.loads((ROOT / "osii-core" / "pyproject.toml").read_text())["project"]["version"]
     (PAYLOAD / "release.json").write_text(json.dumps({"version": version, "target": "windows-x64", "storage": "sidecar"}) + "\n")
+    notices = ["OSII bundled Python dependencies\nBuild tools may also appear in this inventory.\n"]
+    for distribution in sorted(distributions(), key=lambda item: item.metadata.get("Name", "").lower()):
+        metadata = distribution.metadata
+        notices.append(f"\n{'=' * 72}\n{metadata.get('Name', 'Unknown')} {distribution.version}\n")
+        notices.append("License: " + str(metadata.get("License-Expression") or metadata.get("License") or "See dependency source and license files") + "\n")
+        for file in distribution.files or []:
+            if ".dist-info" in str(file) and any(part.lower().startswith(("license", "copying", "notice")) for part in file.parts):
+                path = distribution.locate_file(file)
+                if path.is_file():
+                    notices.append(f"\n{file}\n" + path.read_text(encoding="utf-8", errors="replace") + "\n")
+    (PAYLOAD / "THIRD_PARTY_NOTICES.txt").write_text("".join(notices), encoding="utf-8")
     if args.ocr:
         prepare_ocr()
     if args.dashboard:
         dashboard = ROOT / "osii-dashboard" / "dashboard" / "dist"
         if not (dashboard / "index.html").is_file():
             raise RuntimeError("Build the dashboard before preparing its release assets")
-        shutil.copytree(dashboard, PAYLOAD / "dashboard", dirs_exist_ok=True)
+        if (PAYLOAD / "dashboard").exists():
+            shutil.rmtree(PAYLOAD / "dashboard")
+        shutil.copytree(dashboard, PAYLOAD / "dashboard")
 
 
 if __name__ == "__main__":

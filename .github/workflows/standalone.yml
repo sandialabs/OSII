@@ -16,16 +16,34 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.1.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            osii-desktop/package-lock.json
+            osii-dashboard/dashboard/package-lock.json
       - name: Install locked build dependencies
         run: uv sync --frozen --python 3.12 --package osii --extra standalone-build --extra dev --package osii-local-extractor --package osii-local-tesseract --package osii-local-synthesizer --package osii-local-embedder --package osii-local-enricher --package osii-model-provider-bridge
       - name: Shared launcher and processor tests
         run: |
-          uv run --no-sync python -m pytest osii-core/tests/test_library_lock.py osii-core/tests/test_dev_stack_supervisor.py osii-core/services/baseline-processors/tests -q
+          uv run --no-sync python -m pytest osii-core/tests/test_library_lock.py osii-core/tests/test_desktop.py osii-core/tests/test_dev_stack_supervisor.py osii-core/services/baseline-processors/tests -q
           if ($LASTEXITCODE -ne 0) { throw 'Launcher tests failed' }
           uv run --no-sync python -m pytest osii-core/services --import-mode=importlib -q
           if ($LASTEXITCODE -ne 0) { throw 'Processor tests failed' }
       - name: Prepare checksum-verified OCR payload
         run: uv run --no-sync python scripts/prepare_standalone.py --ocr
+      - name: Build offline dashboard assets
+        working-directory: osii-dashboard/dashboard
+        run: |
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Dashboard installation failed' }
+          npm test
+          if ($LASTEXITCODE -ne 0) { throw 'Dashboard tests failed' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Dashboard build failed' }
+      - name: Include dashboard and dependency notices
+        run: uv run --no-sync python scripts/prepare_standalone.py --dashboard
       - name: Freeze Python and native libraries
         run: uv run --no-sync pyinstaller --clean --noconfirm --distpath osii-desktop/resources/runtime osii-desktop/runtime.spec
       - name: Frozen runtime gate without dependency tools
@@ -38,8 +56,58 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Frozen runtime gate failed' }
           & .\osii-desktop\resources\runtime\osii-runtime\osii-runtime.exe self-test
           if ($LASTEXITCODE -ne 0) { throw 'Frozen runtime restart gate failed' }
+      - name: Frozen application, model connection and process-tree recovery
+        run: uv run --no-sync python scripts/check_standalone.py --runtime osii-desktop/resources/runtime/osii-runtime/osii-runtime.exe
+      - name: Install desktop build tools and test private protocol
+        working-directory: osii-desktop
+        run: |
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop build tool installation failed' }
+          npm test
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop protocol tests failed' }
+      - name: Build full offline installer
+        id: installer
+        working-directory: osii-desktop
+        env:
+          CSC_LINK: ${{ secrets.OSII_WINDOWS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.OSII_WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if ($env:CSC_LINK) {
+            npm run package:windows
+            "signed=true" >> $env:GITHUB_OUTPUT
+          } else {
+            npm run package:pilot
+            "signed=false" >> $env:GITHUB_OUTPUT
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Installer packaging failed' }
+      - name: Install, exercise, reinstall and uninstall the delivered application
+        run: ./scripts/check_standalone_installer.ps1
+      - name: Verify signatures and write release checksums
+        env:
+          OSII_SIGNED_BUILD: ${{ steps.installer.outputs.signed }}
+        run: |
+          if ($env:OSII_SIGNED_BUILD -eq 'true') {
+            foreach ($file in @('release/standalone/OSII-Standalone-Setup.exe', 'release/standalone/win-unpacked/OSII Standalone.exe', 'release/standalone/win-unpacked/resources/runtime/osii-runtime.exe')) {
+              if ((Get-AuthenticodeSignature $file).Status -ne 'Valid') { throw "Invalid signature: $file" }
+            }
+          }
+          $hash = (Get-FileHash release/standalone/OSII-Standalone-Setup.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  OSII-Standalone-Setup.exe" | Set-Content release/standalone/SHA256SUMS.txt
+          @{ signed = ($env:OSII_SIGNED_BUILD -eq 'true'); cleanWindowsAcceptance = 'pending'; commit = '${{ github.sha }}' } | ConvertTo-Json | Set-Content release/standalone/validation.json
       - uses: actions/upload-artifact@v6
         with:
-          name: osii-windows-runtime-pilot
-          path: osii-desktop/resources/runtime/osii-runtime
+          name: osii-standalone-windows
+          path: |
+            release/standalone/OSII-Standalone-Setup.exe
+            release/standalone/SHA256SUMS.txt
+            release/standalone/validation.json
+          retention-days: 30
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: standalone-test-evidence
+          path: |
+            output/playwright/
+            release/standalone/builder-debug.yml
+          if-no-files-found: ignore
           retention-days: 7

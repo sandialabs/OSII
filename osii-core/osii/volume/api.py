@@ -48,6 +48,15 @@ def create_app(path: Path | None = None, *, api_prefix: str = "/api/volume") -> 
 
     app = FastAPI(title="OSII file inventory API", lifespan=lifespan)
     app.state.volume_store = store
+
+    @app.get(api_prefix + "/runtime")
+    def processor_runtime():
+        return {"endpoints": {
+            "extract": os.getenv("OSII_NATIVE_EXTRACTOR_URL", "http://127.0.0.1:8092"),
+            "ocr": os.getenv("OSII_OCR_URL", "http://127.0.0.1:8080"),
+            "synthesize": os.getenv("OSII_PREVIEW_URL", "http://127.0.0.1:8093"),
+            "enrich": os.getenv("OSII_ENRICHER_URL", "http://127.0.0.1:8094"),
+        }}
     app.add_middleware(
         TrustedHostMiddleware,
         allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"],

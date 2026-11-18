@@ -123,7 +123,12 @@ export default function VolumePage() {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [memberCursor, setMemberCursor] = useState(0);
   const [stage, setStage] = useState("extract");
-  const [endpoint, setEndpoint] = useState("http://127.0.0.1:8092");
+  const [endpointOverride, setEndpoint] = useState<string | null>(null);
+  const processorRuntime = useQuery({
+    queryKey: ["volume", "runtime"],
+    queryFn: () => get<{ endpoints: Record<string, string> }>("runtime"),
+  });
+  const endpoint = endpointOverride ?? processorRuntime.data?.endpoints[stage] ?? "";
   const [config, setConfig] = useState("{}");
   const [seconds, setSeconds] = useState(3600);
   const [activeRun, setActiveRun] = useState<number | null>(null);
@@ -652,9 +657,7 @@ export default function VolumePage() {
             onChange={(e) => {
               const s = e.target.value;
               setStage(s);
-              setEndpoint(
-                `http://127.0.0.1:${s === "ocr" ? 8080 : s === "synthesize" ? 8093 : s === "enrich" ? 8094 : 8092}`,
-              );
+              setEndpoint(null);
             }}
           >
             {["extract", "ocr", "synthesize", "enrich"].map((s) => (
