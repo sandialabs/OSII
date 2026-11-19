@@ -45,7 +45,7 @@ generic entity-list and table renderers.
 
 Processor settings, including the prompt, temperature, and input budget, are
 descriptor-driven and appear in Setup. The chosen model connection is a tool
-binding in `tools.toml`, not a processor-specific URL. No frontend change is
+binding in `processors.toml`, not a processor-specific URL. No frontend change is
 required to expose the same supported schema fields from a new processor.
 
 ## Models, progress, and editing

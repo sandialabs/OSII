@@ -167,7 +167,7 @@ register**. OSII reads the descriptor and shows its kind,
 scopes, outputs, and model requirements. Choose a model connection when one is
 required. **Health** verifies liveness and **Descriptor** checks the contract.
 
-Registration persists in the active `tools.toml`; it does not launch the
+Registration persists in the active `processors.toml`; it does not launch the
 service or change extraction routes. For a new extractor, choose it under
 **Extractors → Extraction routing** and save the rules. Follow the
 [developer startup checklist](../operations/runbook-development.md#connect-an-optional-tool-or-your-own-processor)

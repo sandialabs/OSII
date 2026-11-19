@@ -11,7 +11,7 @@ from osii.domain.catalog_db import list_semantic_indexes
 from osii.domain.model_provider_config import processor_model, selected_processor
 from osii.indexing.common import embeddings_meta_path
 from osii.processors.remote import discover_remote_processors
-from osii.configuration import configured_tools, load_models_config, load_tools_config, model_connection, models_path, tools_path
+from osii.configuration import configured_tools, load_models_config, load_tools_config, model_connection, models_path, processors_path
 from osii.domain.env_credentials import resolve_env_value
 from osii.domain.processing.extractor_selection import load_extractor_routes
 
@@ -42,7 +42,7 @@ def _processor_origin(
             "label": "Bundled Core",
             "description": "OSII's own local implementation; no external model required.",
             "implementation": implementation,
-            "configuration_file": str(tools_path()),
+            "configuration_file": str(processors_path()),
             "configuration_key": "routes / processor_settings",
         }
     if identifier == "pdf_default":
@@ -51,7 +51,7 @@ def _processor_origin(
             "description": "An older model-backed PDF integration, not a bundled Nemotron model or a default service.",
             "implementation": "osii-core/osii/extraction/banyan_extractor.py",
             "endpoint_source": "NEMOTRON_BASE_URL (startup environment)",
-            "configuration_file": str(tools_path()),
+            "configuration_file": str(processors_path()),
             "configuration_key": "routes.extractor / processor_settings.pdf_default",
         }
     if identifier.startswith(("ollama.", "openai.")):
@@ -79,7 +79,7 @@ def _processor_origin(
             "description": "Separately deployed Processor API service." if saved else "Development registration supplied by OSII; availability depends on starting this optional service.",
             "implementation": registration.get("implementation") or ("Service descriptor at " + endpoint + "/v1/descriptor" if saved else "osii-core/osii/configuration.py: builtin_tools_config"),
             "manifest": registration.get("manifest_path"),
-            "configuration_file": str(tools_path()),
+            "configuration_file": str(processors_path()),
             "configuration_key": f"tools.{tool_id} (saved override)" if not saved else f"tools.{tool_id}",
         }
     return {

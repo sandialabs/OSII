@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import tomllib
 
-from osii.configuration import load_tools_config, tools_path
+from osii.configuration import load_tools_config, processors_path
 
 
 NATIVE_EXTENSIONS = [
@@ -24,7 +24,7 @@ def default_extractor_routes() -> list[dict]:
 
 def extractor_routes_path() -> Path:
     configured = os.getenv("OSII_EXTRACTOR_ROUTES_PATH", "").strip()
-    return Path(configured).expanduser().resolve() if configured else tools_path()
+    return Path(configured).expanduser().resolve() if configured else processors_path()
 
 
 def load_extractor_routes(config_path: Path | None = None) -> list[dict]:

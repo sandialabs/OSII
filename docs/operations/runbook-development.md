@@ -154,7 +154,8 @@ is still required for OCR. Nemotron and Wiki models require endpoint configurati
 
 Set individual `OSII_ENABLE_TIKA=false`, `OSII_ENABLE_BANYAN=false`, or the other
 `OSII_ENABLE_…` switches in `.env` to omit a module's dependencies and startup.
-The complete switch list is in `.env.example`. Restart the stack after changing
+Switch names are derived from each manifest service ID; see the
+[manifest contract](../extending/processor-modules.md). Restart the stack after changing
 these flags. Banyan's implementation and launch configuration are both under
 `osii-processor-modules/banyan/`; no separate host project is needed.
 
@@ -222,7 +223,8 @@ needs verification on a Windows workstation.
 
 ## Choose startup and intake defaults
 
-`.env.example` documents the complete host configuration. Copy it to an ignored
+`.env.example` is a short startup template. Processing preferences belong in
+Setup, not in a list of per-processor environment variables. Copy it to an ignored
 `.env` once, or keep several private files and select one at startup:
 
 ```bash
@@ -238,14 +240,70 @@ changing environment settings. Paths are checkout-relative; values are literal,
 without shell variable interpolation. This selects a configuration file, not a
 user account. OSII-local has no login.
 
-Set `OSII_INTAKE_PRESET` to `text`, `search`, `summary-search`, or `full`.
-Intake displays the preset prominently and lets you switch for each batch, then
-adjust individual steps. These presets initialize the form, never start work.
-`text` needs no model; `search` adds semantic embeddings; `summary-search` adds
-summaries; `full` also enables the selected enrichment. Explicit API run payloads
-remain authoritative. Patterns, subfolders, hidden files, chunk sizes, and method
-overrides have documented `OSII_INTAKE_*` settings in the example file. The
-processor and model must be available before model-backed work can run.
+Use **Setup → Processing defaults → Intake defaults** to choose `text`,
+`search`, `summary-search`, or `full` and the embedding chunk size/overlap.
+Without a saved or environment choice, the application retains its
+`summary-search` default (read + summaries + embeddings). Connect and test both
+model capabilities first, or choose `text` for model-free processing. Existing
+`OSII_INTAKE_PRESET=search` settings retain their read + search behavior.
+Saving initializes future Intake sessions; it does not change an open selection,
+queue work, or modify existing runs. Each run can override these choices.
+Reader routing, synthesis/enrichment methods, model bindings, endpoints, and
+processor request settings are configured in the adjacent Setup sections.
+
+Configuration ownership:
+
+| Location | Purpose |
+| --- | --- |
+| Root `.env` | Bootstrap paths, corporate trust, Python, application ports, global startup switches; optional deployment overrides |
+| Module `processor-module.toml` | Identity, command, default port, capabilities, offline request schema, startup schema/defaults |
+| Setup → Model connections | Provider endpoints, model selection, replaceable credentials; saved in `models.toml` and private `secrets.env` |
+| Setup → Processing defaults | Intake preferences, routing, bindings and processor settings; saved in `processors.toml` |
+| Processor → Startup settings | Manifest-defined lifecycle options, such as Tika's bundled runtime, JVM port and cache; restart the service after saving |
+
+When `processors.toml` is absent, Core copies valid existing `tools.toml`
+configuration once and leaves the old file unchanged. Existing `processors.toml`
+always wins, even if invalid; parse errors are shown rather than falling back to
+an older file. The `[tools]` registration table and legacy API/import names remain
+compatible; only the filename changes. Routes, model bindings, request settings,
+and unknown extension sections are retained. Legacy YAML/JSON import remains
+supported. Avoid editing the old file after migration.
+
+Existing private `.env` files are never rewritten. `OSII_INTAKE_PRESET`,
+`OSII_INTAKE_CHUNK_SIZE`, `OSII_INTAKE_CHUNK_OVERLAP`,
+`OSII_INTAKE_SYNTHESIZER`, and `OSII_INTAKE_ENRICHER` remain bootstrap defaults
+until replaced in Setup (or `[intake]` in `processors.toml`). Saved Intake fields
+win over those old values; an explicit run payload wins over both. Legacy
+`OSII_INTAKE_INCLUDE_PATTERNS`, `OSII_INTAKE_EXCLUDE_PATTERNS`,
+`OSII_INTAKE_INCLUDE_SUBFOLDERS`, and `OSII_INTAKE_SHOW_HIDDEN` remain in
+`GET /api/intake/defaults` for API callers; the explicit discovery/browser controls
+own file selection in the current UI.
+
+### Advanced startup overrides
+
+You can still add these to an existing private env file; omitting them uses the
+application/manifest defaults. Module additions need no root-template edit.
+
+| Optional overrides | Default / effect |
+| --- | --- |
+| `OSII_SOURCE_KIND` | `auto`; `shared` labels a mounted source |
+| `OSII_ROOT`, `UPLOAD_ORIGINALS_ROOT`, `OSII_INVENTORY_DB` | Derived local runtime paths; keep inventory outside source roots |
+| `OSII_STORAGE_BACKEND`, `DATABASE_URL` | Sidecars by default; PostgreSQL requires explicit initialization, never an automatic migration |
+| `OSII_ACTIVE_PROFILE` | `development` |
+| `OSII_DEFAULT_EXTRACTOR`, `OSII_DEFAULT_ENRICHER` | Native text and statistics/keywords fallback; prefer Setup's saved routing and method choices |
+| `OSII_PROCESSOR_MODULES_DIR`, `OSII_PROCESSORS` | Trusted manifest root and additional Processor API URLs |
+| `OSII_ENABLE_<SERVICE_ID>` | `true`; `false` omits preparation, registration and startup |
+| Manifest `port_env` | Module's adapter port override; otherwise the manifest's `port` |
+| `OSII_LOCAL_EXTRACTOR_PORT`, `OSII_TESSERACT_PORT` | `8092`, `8080` |
+| `OSII_LOCAL_SYNTHESIZER_PORT`, `OSII_EMBEDDINGS_PORT`, `OSII_LOCAL_ENRICHER_PORT` | `8093`, `8085`, `8094` |
+
+For module startup fields, explicit environment values win over saved Setup
+choices, then manifest defaults. Setup shows the names of overriding variables
+without revealing values. Tika's managed JVM settings live in its manifest;
+`OSII_TIKA_MANAGED`, `OSII_TIKA_SERVER_PORT`, and `OSII_TIKA_CACHE_DIR` still
+work for unattended deployments. Restarting a module from Setup rereads its saved
+startup settings. Global enable/port overrides require restarting `make dev`.
+See the [Tika guide](../reference/extractor-routing.md#apache-tika-processor-module).
 
 For an OpenRouter or corporate OpenAI-compatible provider, set its API base URL,
 exact chat and embedding model IDs, and credentials. Shared `OPENAI_BASE_URL`

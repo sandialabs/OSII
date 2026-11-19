@@ -63,7 +63,7 @@ class FakeDescriptorResponse:
         }
 
 
-def test_register_running_processor_discovers_descriptor_and_writes_tools_toml(
+def test_register_running_processor_discovers_descriptor_and_writes_processors_toml(
     client, monkeypatch
 ):
     monkeypatch.setattr(
@@ -167,8 +167,8 @@ def test_legacy_yaml_migrates_to_toml_without_overwriting_existing(tmp_path, mon
     assert load_models_config()["models"]["top"]["model"] == "quality-model"
     assert load_tools_config()["tools"]["wiki"]["processor_id"] == "toolbox.readable-wiki"
     assert tomllib.loads((config_dir / "models.toml").read_text())["defaults"]["chat"] == "top"
-    assert tomllib.loads((config_dir / "tools.toml").read_text())["tools"]["wiki"]["enabled"]
-    assert "unused" not in tomllib.loads((config_dir / "tools.toml").read_text())["tools"]["wiki"]
+    assert tomllib.loads((config_dir / "processors.toml").read_text())["tools"]["wiki"]["enabled"]
+    assert "unused" not in tomllib.loads((config_dir / "processors.toml").read_text())["tools"]["wiki"]
     (config_dir / "models.yml").write_text("models: {}\n", encoding="utf-8")
     assert load_models_config()["models"]["top"]["model"] == "quality-model"
 
@@ -191,7 +191,7 @@ def test_profile_routes_and_processor_settings_are_toml_not_sidecar(tmp_path, mo
     ]
     save_tools_config(config)
     assert load_extractor_routes()[0]["extractor"] == "toolbox.tesseract-opencv"
-    assert "routes" in tomllib.loads((config_dir / "tools.toml").read_text())
+    assert "routes" in tomllib.loads((config_dir / "processors.toml").read_text())
 
 
 def test_unselected_toolbox_processors_are_not_registered_in_direct_compose(monkeypatch):
@@ -216,3 +216,60 @@ def test_custom_old_route_file_is_imported_without_writing_to_source(tmp_path, m
     assert load_tools_config()["routes"]["extractor"][0]["name"] == "special-pdf"
     assert original.read_bytes() == b"original"
     assert sorted(path.name for path in source.iterdir()) == ["example.pdf"]
+
+
+def test_processors_filename_migrates_legacy_once_and_preserves_unknown_sections():
+    from osii.configuration import processors_path, tools_path
+    directory = config_directory()
+    directory.mkdir(parents=True)
+    legacy = directory / 'tools.toml'
+    original = 'version=1\n[tools.wiki]\nenabled=true\n[routes]\nextractor=[]\n[processor_settings.tika]\nchunk_chars=1200\n[extension]\ncustom="kept"\n'
+    legacy.write_text(original)
+    loaded = load_tools_config()
+    assert processors_path().name == 'processors.toml'
+    assert tools_path() == processors_path()  # old public import remains supported
+    assert loaded['extension'] == {'custom': 'kept'}
+    assert loaded['processor_settings']['tika']['chunk_chars'] == 1200
+    assert legacy.read_text() == original
+    loaded['tools']['wiki']['enabled'] = False
+    save_tools_config(loaded)
+    legacy.write_text(original.replace('1200', '9999'))
+    assert not load_tools_config()['tools']['wiki']['enabled']
+    assert load_tools_config()['processor_settings']['tika']['chunk_chars'] == 1200
+    assert configuration_status()['files']['processors'] == str(processors_path())
+
+
+def test_invalid_legacy_or_new_processor_file_is_not_overwritten():
+    import pytest
+    from osii.configuration import processors_path
+    directory = config_directory()
+    directory.mkdir(parents=True)
+    legacy = directory / 'tools.toml'
+    legacy.write_text('malformed = [')
+    load_tools_config()
+    assert not processors_path().exists()
+    assert 'processors' in configuration_status()['errors']
+    with pytest.raises(ValueError, match='existing configuration error'):
+        save_tools_config({'version': 1})
+    legacy.write_text('version=1\n')
+    load_tools_config()
+    processors_path().write_text('broken = [')
+    load_tools_config()
+    with pytest.raises(ValueError, match='existing configuration error'):
+        save_tools_config({'version': 1})
+    assert processors_path().read_text() == 'broken = ['
+
+
+def test_read_only_legacy_configuration_remains_readable(monkeypatch):
+    import osii.configuration as configuration
+    directory = config_directory()
+    directory.mkdir(parents=True)
+    original = 'version=1\n[extension]\nkeep="read only"\n'
+    (directory / 'tools.toml').write_text(original)
+    def unavailable(*args):
+        raise PermissionError('read-only configuration directory')
+    monkeypatch.setattr(configuration, '_atomic_toml', unavailable)
+    assert load_tools_config()['extension'] == {'keep': 'read only'}
+    assert not configuration.processors_path().exists()
+    assert 'Could not copy legacy' in configuration_status()['errors']['processors']
+    assert (directory / 'tools.toml').read_text() == original

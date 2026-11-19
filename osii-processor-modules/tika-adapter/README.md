@@ -8,8 +8,10 @@ SHA-512 checksum. Later starts use the verified cache. Neither binary is committ
 to Git. Downloads use the configured corporate certificate trust.
 
 Set `OSII_ENABLE_TIKA=false` in the root `.env` to omit the entire module, including
-dependency preparation and downloads. Set `OSII_TIKA_MANAGED=false` to run the
-adapter with an external Tika server instead; enter that server's address in
+dependency preparation and downloads. Use **Setup → Extractors → Apache Tika → Startup settings** to disable the
+bundled runtime or change its port/cache folder, then restart Tika using Setup
+service controls. Alternatively set `OSII_TIKA_MANAGED=false` in the startup
+environment to use an external server; enter that server's address in
 **Setup → Extractors → Apache Tika → Apache Tika endpoint**.
 
 | Setting | Default | Purpose |
@@ -18,6 +20,12 @@ adapter with an external Tika server instead; enter that server's address in
 | `OSII_TIKA_SERVER_PORT` | `9998` | Managed Apache Tika on loopback |
 | `OSII_TIKA_MANAGED` | `true` | Start/stop the managed JVM with this module |
 | `OSII_TIKA_CACHE_DIR` | `<runtime>/processor-cache/tika` | Verified jar cache; can be prepopulated offline |
+
+Defaults and both request/startup schemas live in `processor-module.toml`, not
+the root `.env.example`. Setup saves overrides in `processors.toml`; explicit
+startup environment values still win and are identified in Setup. Leave the
+Apache Tika endpoint blank to follow the managed port automatically. A saved
+external endpoint is preserved when runtime settings change.
 
 For independent startup, from this directory:
 

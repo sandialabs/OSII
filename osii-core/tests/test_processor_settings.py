@@ -44,3 +44,23 @@ def test_processor_settings_reject_toml_incompatible_null(client):
         json={"config": {"temperature": None}},
     )
     assert response.status_code == 422
+
+
+def test_manifest_startup_settings_validate_persist_and_report_environment_overrides(client, monkeypatch):
+    from osii.configuration import load_tools_config
+    monkeypatch.setenv('OSII_TIKA_MANAGED', 'true')
+    modules = client.get('/api/admin/processor-settings/startup').json()
+    tika = next(item for item in modules['processors'] if item['id'] == 'tika')
+    assert tika['schema']['properties']['OSII_TIKA_SERVER_PORT']['default'] == 9998
+    assert tika['environment_overrides'] == ['OSII_TIKA_MANAGED']
+    from pathlib import Path
+    assert Path(modules['path']).name == 'processors.toml'
+    endpoint = '/api/admin/processor-settings/startup/tika'
+    config = {'OSII_TIKA_MANAGED': False, 'OSII_TIKA_SERVER_PORT': 19998, 'OSII_TIKA_CACHE_DIR': ''}
+    saved = client.put(endpoint, json={'config': config})
+    assert saved.status_code == 200 and saved.json()['restart_required']
+    assert load_tools_config()['processor_startup']['tika'] == config
+    for bad in ({'OSII_TIKA_MANAGED': 'false'}, {'OSII_TIKA_SERVER_PORT': 0}, {'DATABASE_URL': 'not-a-module-setting'}):
+        assert client.put(endpoint, json={'config': bad}).status_code == 422
+        assert load_tools_config()['processor_startup']['tika'] == config
+    assert client.put('/api/admin/processor-settings/startup/missing', json={'config': {}}).status_code == 404

@@ -15,14 +15,14 @@ containers.
 
 ## Where configuration lives
 
-Model and tool configuration belongs to the active library profile, not the
+Model and processor configuration belongs to the active library profile, not the
 source documents or portable `.osii` sidecar. The launcher keeps an existing
 `profiles/<profile-id>/deployment/` directory beside its local `data/` directory:
 
 ```text
 deployment/
 ├── models.toml      # connection aliases, model names, and defaults
-├── tools.toml       # processors, bindings, routing, and setting overrides
+├── processors.toml  # processors, bindings, routing, and setting overrides
 └── secrets.env      # API keys; never returned by the API
 ```
 
@@ -36,6 +36,8 @@ Set `OSII_CONFIG_DIR` to select a different location. Installed launchers still
 use their writable profile workspace: a signed application installation is
 not an appropriate place for mutable configuration or credentials.
 The selected source may be on a read-only shared drive; configuration stays local.
+Existing `tools.toml` is copied once when `processors.toml` is absent; the old file
+is retained. Use the new filename for subsequent edits.
 
 Setup offers **Corporate endpoint** alongside OpenAI-compatible and Ollama.
 The corporate choice is a named preset for the same OpenAI-compatible protocol;
@@ -52,7 +54,7 @@ older PDF compatibility adapter, shown only when `NEMOTRON_BASE_URL` or an
 extraction rule explicitly selects it; OSII does not bundle its model.
 
 `models.toml` names reusable connections such as `base`, `mid`, `top`, and
-`minilm`. `tools.toml` binds a processor capability to one of those aliases.
+`minilm`. `processors.toml` binds a processor capability to one of those aliases.
 Changing a binding takes effect on the next operation; the processor does not
 restart. Both files are re-read when used. If an edit contains invalid TOML,
 OSII keeps the last valid generation and reports the line and column in the
@@ -83,7 +85,7 @@ model = "all-minilm"
 capabilities = ["embedding"]
 ```
 
-The corresponding `tools.toml` states whether a processor is self-contained or
+The corresponding `processors.toml` states whether a processor is self-contained or
 which connection it may use:
 
 ```toml

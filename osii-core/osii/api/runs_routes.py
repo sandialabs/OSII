@@ -79,10 +79,10 @@ def _record_failure(run_id, index, exc, processor, phase):
 
 
 def load_parser_routes(config_path: Path) -> list[dict]:
-    from osii.configuration import tools_path
+    from osii.configuration import processors_path
     from osii.domain.processing.extractor_selection import load_extractor_routes
 
-    return load_extractor_routes(config_path if config_path.exists() and config_path != tools_path() else None)
+    return load_extractor_routes(config_path if config_path.exists() and config_path != processors_path() else None)
 
 
 def choose_parser(path: Path, routes: list[dict]) -> str:

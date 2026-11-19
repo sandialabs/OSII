@@ -9,7 +9,18 @@ import socket
 import subprocess
 import tempfile
 import threading
+import tomllib
 import urllib.request
+
+# Manifest owns defaults for both independent startup and OSII's launcher.
+manifest_path = Path(__file__).with_name('processor-module.toml')
+if not manifest_path.exists():  # Editable source installation.
+    manifest_path = Path(__file__).resolve().parents[1] / 'processor-module.toml'
+MANIFEST = tomllib.loads(manifest_path.read_text(encoding='utf-8'))['processors'][0]
+
+def runtime_setting(name: str) -> str:
+    value = os.getenv(name, MANIFEST['startup_schema']['properties'][name]['default'])
+    return str(value).lower() if isinstance(value, bool) else str(value)
 
 VERSION = '3.3.3'
 SHA512 = '5242b1c9d7aa455bdb0fe101304b2c4a274882406f4d054af39cc91eef678aecb7bf31127d8cc692cd5f47a9f602f4840139f9e8e44a708e312b2ba59d1ebe89'
@@ -48,10 +59,10 @@ def verified_jar(cache: Path) -> Path:
 class ManagedTika:
     """Own the JVM only when enabled; a failed runtime leaves the adapter available."""
     def __init__(self) -> None:
-        self.enabled = os.getenv('OSII_TIKA_MANAGED', 'true').lower() not in {'false', '0', 'no', 'off'}
-        self.port = int(os.getenv('OSII_TIKA_SERVER_PORT', '9998'))
+        self.enabled = runtime_setting('OSII_TIKA_MANAGED').lower() not in {'false', '0', 'no', 'off'}
+        self.port = int(runtime_setting('OSII_TIKA_SERVER_PORT'))
         runtime = Path(os.getenv('OSII_RUNTIME_DIR', str(Path(__file__).resolve().parents[3] / 'osii-data')))
-        self.cache = Path(os.getenv('OSII_TIKA_CACHE_DIR', str(runtime / 'processor-cache' / 'tika')))
+        self.cache = Path(runtime_setting('OSII_TIKA_CACHE_DIR') or str(runtime / 'processor-cache' / 'tika'))
         self.process: subprocess.Popen | None = None
         self.error: str | None = None
         self.stop = threading.Event()

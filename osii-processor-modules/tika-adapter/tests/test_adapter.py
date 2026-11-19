@@ -33,7 +33,7 @@ def test_forwards_only_selected_bytes_and_returns_grounded_chunks(monkeypatch):
     assert 'bbox' not in result.segments[0].source_origin
 
 
-@pytest.mark.parametrize('value', ['file:///tmp/a', 'http://user:password@host', 'http://host?secret=1', ''])
+@pytest.mark.parametrize('value', ['file:///tmp/a', 'http://user:password@host', 'http://host?secret=1'])
 def test_rejects_invalid_endpoint(value):
     with pytest.raises(ValueError):
         endpoint(value)
@@ -63,3 +63,10 @@ def test_managed_preparation_or_failure_is_visible_without_terminal(monkeypatch,
     response = TestClient(app).get('/upstream-health')
     assert response.status_code == 503
     assert expected in response.json()['detail']
+
+
+def test_blank_endpoint_follows_managed_default_and_descriptor_uses_manifest():
+    from tika_adapter.main import DEFAULT_ENDPOINT
+    from tika_adapter.runtime import MANIFEST
+    assert endpoint('') == DEFAULT_ENDPOINT
+    assert TikaExtractor.descriptor.config_schema == MANIFEST['config_schema']

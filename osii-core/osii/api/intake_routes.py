@@ -27,11 +27,23 @@ router = APIRouter(prefix="/api", tags=["intake"])
 
 @router.get("/intake/defaults")
 def default_intake_settings():
-    from osii.domain.processing.defaults import intake_defaults
+    from osii.domain.processing.defaults import configured_intake_defaults
     try:
-        return intake_defaults()
+        return configured_intake_defaults()
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.put("/intake/defaults")
+def update_intake_defaults(payload: dict):
+    from jsonschema import ValidationError
+    from osii.domain.processing.defaults import save_intake_defaults
+    try:
+        return save_intake_defaults(payload)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.message) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _safe_upload_name(filename: str | None) -> str:

@@ -85,7 +85,7 @@ Processor fields:
 | --- | --- |
 | `id` | Required unique service ID; derives `OSII_ENABLE_<ID>` and the default port variable |
 | `processor_id` | Required Processor API descriptor name, such as `example.collection-data-card` |
-| `registration_id` | Optional stable key for `tools.toml`; defaults to `id` |
+| `registration_id` | Optional stable key for `processors.toml`; defaults to `id` |
 | `kind` | Required `extractor`, `synthesizer`, `embedder`, or `enricher` |
 | `display_name`, `description` | Required text used in Setup and logs |
 | `command` | Required Python argument array, e.g. `["run.py", "enricher"]`; never a shell command |
@@ -96,6 +96,7 @@ Processor fields:
 | `model_requirements` | Optional table mapping `chat` or `embedding` to `required` or `optional` |
 | `model_access` | `gateway` or `none`; inferred from model requirements if omitted |
 | `capabilities` | Optional offline metadata, including accepted `file_extensions` |
+| `startup_schema` | Optional closed object schema keyed by environment variable names, with scalar types and defaults; Setup saves lifecycle settings and the launcher passes them on service start |
 | `config_schema` | Optional offline settings schema; the live descriptor supplies processing configuration when available |
 | `health_path` | Adapter liveness path; defaults to `/health` |
 | `readiness_path` | Operational readiness path; defaults to `health_path` |
@@ -117,12 +118,40 @@ keep operational secrets in the deployment environment.
 
 ## Configuration and readiness
 
-Manifest defaults supply registrations. Existing `tools.toml` overrides take
+Manifest defaults supply registrations. Existing `processors.toml` overrides take
 precedence while preserving module metadata, and explicit environment opt-outs
 suppress the module even if it has saved settings. Normal Setup controls still
 save model bindings and processor configuration. Describe processing options in
 the descriptor's `config_schema`: Setup renders the fields, and Core sends saved
-settings with requests. No new environment variable is needed for each option.
+settings with requests. No new environment variable is needed for each processing option.
+Declare offline request fields and defaults in the manifest's `config_schema` as
+well, so Setup remains configurable while the service is stopped. Tika reuses
+that same schema in its live descriptor to avoid two competing definitions.
+
+Use `startup_schema` only for lifecycle options that must exist before a request,
+not ordinary processing preferences. For example:
+
+```toml
+[processors.startup_schema]
+type = "object"
+additionalProperties = false
+[processors.startup_schema.properties.EXAMPLE_CACHE_ENABLED]
+type = "boolean"
+title = "Enable runtime cache"
+default = true
+```
+
+Setup renders these fields automatically under the processor's **Startup settings**,
+including before the service starts. It saves typed choices under
+`[processor_startup.<service-id>]` in `processors.toml`. The launcher rereads them
+on each service start. Explicit deployment environment values win over saved
+choices, then manifest defaults. Defaults must be non-secret scalar values;
+Core storage/configuration and Python environment controls cannot be declared
+as module startup fields. Keep independent module startup consistent by reading
+its own manifest, as the Tika adapter does; include that manifest in built wheels.
+Credentials belong in private credential storage or the model gateway, never
+this non-secret schema. No central launcher, API field list, or root `.env.example`
+change is needed.
 
 If a service is stopped or unavailable, Setup retains a gray entry with its
 manifest-provided name and configuration schema. Available services use their

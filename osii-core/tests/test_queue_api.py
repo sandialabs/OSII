@@ -310,7 +310,7 @@ def test_intake_readiness_reports_bundled_tools(
     assert tika["origin"]["implementation"].endswith("osii-processor-modules/tika-adapter")
     assert tika["origin"]["manifest"].endswith("processor-module.toml")
     assert native["origin"]["label"] == "Bundled Core"
-    assert native["origin"]["configuration_file"].endswith("tools.toml")
+    assert native["origin"]["configuration_file"].endswith("processors.toml")
     assert not any(item["id"] == "pdf_default" for item in payload["extractors"])
     assert payload["synthesizers"] == []
     assert payload["embedders"][0]["available"] is False

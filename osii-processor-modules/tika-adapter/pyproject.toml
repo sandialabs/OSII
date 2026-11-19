@@ -22,3 +22,6 @@ packages = ["tika_adapter"]
 paths = ["tests"]
 extras = ["dev"]
 args = []
+
+[tool.hatch.build.targets.wheel.force-include]
+"processor-module.toml" = "tika_adapter/processor-module.toml"

@@ -1081,7 +1081,7 @@ and rejects changed evidence rather than silently attaching stale locations.
 ### Extraction routing setup
 
 `GET /api/extractor-routes` returns `routes` and the active `path` to
-`tools.toml`. `PUT /api/extractor-routes` preserves other tool configuration and
+`processors.toml`. `PUT /api/extractor-routes` preserves other tool configuration and
 validates primary and fallback file-type compatibility.
 
 `POST /api/extractor-routes/import` accepts `{"toml": "..."}` (up to 1 MiB)
@@ -1093,6 +1093,34 @@ Processor administration records expose `resolved_models` and `model_error`
 for per-service model assignment. Missing bindings inherit enabled compatible
 library defaults; explicit disabled or missing bindings report a setup error.
 
+### Saved Intake and processor startup defaults
+
+`GET /api/intake/defaults` keeps the existing response fields. `PUT` at the same
+path accepts a partial object with `preset`, `chunk_size`, `chunk_overlap`,
+`synthesizer`, `enricher`, or legacy discovery-default fields. Unknown keys,
+invalid types/presets, and invalid chunk sizes/overlap return 422 without writing.
+Saved fields under `[intake]` in `processors.toml` override old startup
+`OSII_INTAKE_*` values. Explicit run payloads remain authoritative; saving does
+not create a job or change queued/running work.
+
+`GET /api/admin/processor-settings/startup` returns `path` and `processors`
+with service `id`, `processor_id`, `display_name`, manifest `schema`, saved
+`config`, and `environment_overrides` (names only). Modules without startup
+fields are omitted. `PUT /api/admin/processor-settings/startup/{service_id}`
+accepts `{"config": {...}}`, validates against the manifest, and saves under
+`[processor_startup.<service-id>]`. It returns `restart_required: true`; it does
+not restart or interrupt the service. Unsupported services return 404, invalid
+settings return 422. The launcher rereads the file for each service start, with
+explicit environment overrides taking precedence. Existing
+`/api/admin/processor-settings/{processor_name}` remains the per-request settings
+API, independent of lifecycle settings.
+
+`processors.toml` replaces the old filename `tools.toml`. The first load copies
+valid legacy settings when the new file is absent, preserving the original;
+an existing new file always wins. `[tools]` registration tables and existing
+API payloads remain compatible. Configuration status names the new file
+`processors`; the old Python `tools_path()` import remains an alias.
+
 ### Apache Tika processor module configuration
 
 Save the upstream address with `PUT /api/admin/processor-settings/tika` and
@@ -1101,7 +1129,10 @@ Both `tika` and `tika_catchall` intake routes use these saved settings. The
 adapter exposes the standard `/v1/descriptor` and `/v1/extract` endpoints;
 `/health` checks the wrapper and `/upstream-health?tika_endpoint=...` checks
 Apache Tika. The normal development stack prepares and manages Apache Tika
-automatically; `OSII_TIKA_MANAGED=false` selects an externally managed runtime. See the
+automatically. Its manifest defines startup fields for the managed JVM,
+port, and cache, editable through Setup or the startup-settings API above.
+`OSII_TIKA_MANAGED=false` remains a deployment override for an external runtime.
+An empty `tika_endpoint` follows the managed loopback port automatically. See the
 [Apache Tika adapter guide](../extractor-routing.md#apache-tika-processor-module).
 
 ### Explicit Intake operation tests

@@ -881,7 +881,7 @@ export type SetupSummary = {
   configuration: {
     directory: string;
     active_profile: string;
-    files: Record<"models" | "tools" | "secrets", string>;
+    files: Record<"models" | "processors" | "secrets", string>;
     errors: Record<string, string>;
     generation: number;
   };

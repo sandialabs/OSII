@@ -17,7 +17,7 @@ Routing is configured externally so extractor selection is not hardcoded in the 
 Location:
 
 ```text
-<OSII application data>/profiles/<profile-id>/deployment/tools.toml
+<OSII application data>/profiles/<profile-id>/deployment/processors.toml
 ```
 
 ---
@@ -175,7 +175,7 @@ Extractor routing is externalized because:
 
 ## Setup controls and tool configuration
 
-The routing section displays the active `tools.toml` path. **Load TOML** accepts
+The routing section displays the active `processors.toml` path. **Load TOML** accepts
 `[[routes.extractor]]` tables (or the older `[[routes]]` format), validates them,
 and stages a draft. **Save routes** changes only routing, preserving other tool
 settings. Invalid files leave saved configuration and the current draft intact.

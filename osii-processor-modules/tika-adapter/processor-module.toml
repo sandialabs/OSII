@@ -27,3 +27,39 @@ readiness_config = [
 file_extensions = [
     "*",
 ]
+
+# Processing options: rendered by Setup even before the adapter is available.
+[processors.config_schema]
+type = "object"
+additionalProperties = false
+[processors.config_schema.properties.tika_endpoint]
+type = "string"
+title = "Apache Tika endpoint"
+default = ""
+description = "Blank uses the managed runtime; enter an HTTP(S) URL for an external server."
+[processors.config_schema.properties.chunk_chars]
+type = "integer"
+title = "Text chunk characters"
+minimum = 1
+maximum = 1000000
+default = 4000
+
+# Lifecycle options: saved in Setup, passed only when this service starts.
+[processors.startup_schema]
+type = "object"
+additionalProperties = false
+[processors.startup_schema.properties.OSII_TIKA_MANAGED]
+type = "boolean"
+title = "Run bundled Apache Tika"
+default = true
+[processors.startup_schema.properties.OSII_TIKA_SERVER_PORT]
+type = "integer"
+title = "Managed Tika port"
+minimum = 1
+maximum = 65535
+default = 9998
+[processors.startup_schema.properties.OSII_TIKA_CACHE_DIR]
+type = "string"
+title = "Runtime cache folder (optional)"
+default = ""
+description = "Blank uses processor-cache/tika inside the local runtime folder."

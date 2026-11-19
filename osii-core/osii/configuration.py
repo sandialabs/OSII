@@ -40,8 +40,8 @@ def models_path() -> Path:
     return config_directory() / "models.toml"
 
 
-def tools_path() -> Path:
-    return config_directory() / "tools.toml"
+def processors_path() -> Path:
+    return config_directory() / "processors.toml"
 
 
 def secrets_path() -> Path:
@@ -137,7 +137,7 @@ def _read_toml(path: Path, fallback: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(value, dict):
         _CONFIG_ERRORS[path] = "The TOML document must be a table."
         return _CONFIG_CACHE.get(path, fallback)
-    expected = ("models", "defaults") if path == models_path() else ("tools", "routes", "processor_settings")
+    expected = ("models", "defaults") if path == models_path() else ("tools", "routes", "processor_settings", "intake", "processor_startup")
     invalid = next((name for name in expected if name in value and not isinstance(value[name], dict)), None)
     if invalid:
         _CONFIG_ERRORS[path] = f"The [{invalid}] section must be a TOML table."
@@ -167,7 +167,13 @@ def save_models_config(value: dict[str, Any]) -> None:
 
 
 def save_tools_config(value: dict[str, Any]) -> None:
-    _atomic_toml(tools_path(), value)
+    path = processors_path()
+    existing = path if path.exists() else config_directory() / "tools.toml"
+    if existing.exists():
+        _read_toml(existing, {})
+        if existing in _CONFIG_ERRORS:
+            raise ValueError(f"Cannot save {path.name}: fix the existing configuration error first: {_CONFIG_ERRORS[existing]}")
+    _atomic_toml(processors_path(), value)
 
 
 def _read_legacy_yaml(name: str) -> dict[str, Any] | None:
@@ -333,7 +339,19 @@ def _migrate_legacy_settings(osii_root: Path, value: dict[str, Any]) -> dict[str
 
 
 def load_tools_config(osii_root: Path | None = None) -> dict[str, Any]:
-    path = tools_path()
+    path = processors_path()
+    # Copy a valid legacy file once; retain the original and all unknown fields.
+    legacy = config_directory() / "tools.toml"
+    if not path.exists() and legacy.exists():
+        value = _read_toml(legacy, default_tools_config())
+        if legacy in _CONFIG_ERRORS:
+            _CONFIG_ERRORS[path] = _CONFIG_ERRORS[legacy]
+            return value
+        try:
+            save_tools_config(value)
+        except OSError as exc:
+            _CONFIG_ERRORS[path] = f"Could not copy legacy configuration to {path.name}: {exc}"
+            return value
     if path.exists():
         value = _read_toml(path, default_tools_config())
         if path in _CONFIG_ERRORS:
@@ -405,7 +423,7 @@ def configuration_status() -> dict[str, Any]:
     """Return paths and parse failures without exposing any secret values."""
     secret_file = os.getenv("OSII_ENV_FILE", "").strip()
     files = {
-        "models": models_path(), "tools": tools_path(),
+        "models": models_path(), "processors": processors_path(),
         "secrets": Path(secret_file).expanduser().resolve() if secret_file else secrets_path(),
     }
     return {
@@ -460,3 +478,7 @@ def resolve_tool_models(processor_id: str, requirements: dict[str, str], osii_ro
             continue
         result[capability] = alias
     return result
+
+
+# Compatibility for integrations importing the old path helper.
+tools_path = processors_path

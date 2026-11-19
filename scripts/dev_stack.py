@@ -27,7 +27,7 @@ import urllib.request
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 # The loader uses only the standard library; startup works before uv sync.
 sys.path.insert(0, str(REPOSITORY_ROOT / "osii-core"))
-from osii.processor_modules import active_processors, modules_directory, enabled, ModuleManifestError
+from osii.processor_modules import active_processors, modules_directory, enabled, ModuleManifestError, load_startup_settings
 SERVICE_DISPLAY_NAMES = {
     "extractor": "Python text-layer PDF and Office extractor",
     "ocr": "Tesseract OCR — full page",
@@ -202,11 +202,11 @@ def build_environment(core_only: bool) -> dict[str, str]:
     # Never import home-directory settings over a repository's existing config.
     new_configuration = not any(
         (configuration_root / name).exists()
-        for name in ("models.toml", "tools.toml", "models.yml", "tools.yml", "secrets.env")
+        for name in ("models.toml", "processors.toml", "tools.toml", "models.yml", "tools.yml", "secrets.env")
     )
     configuration_root.mkdir(parents=True, exist_ok=True)
     if new_configuration and previous_configuration_root is not None:
-        for name in ("models.toml", "tools.toml", "models.yml", "tools.yml", "secrets.env"):
+        for name in ("models.toml", "processors.toml", "tools.toml", "models.yml", "tools.yml", "secrets.env"):
             previous = previous_configuration_root / name
             if previous.is_file():
                 target = configuration_root / name
@@ -507,6 +507,10 @@ def render_command(service: Service) -> str:
 
 def service_environment(service: Service, env: dict[str,str]) -> dict[str,str]:
     result={**env,**dict(service.environment)}
+    if service.processor_module:
+        processor = next(p for p in active_processors(modules_directory(env, REPOSITORY_ROOT), env) if p.id == service.name)
+        saved = load_startup_settings(env).get(service.name, {})
+        result.update(processor.startup_environment(env, saved))
     if service.name not in {"api","worker"}:
         result.pop("DATABASE_URL",None)
         result.pop("OSII_STORAGE_BACKEND",None)

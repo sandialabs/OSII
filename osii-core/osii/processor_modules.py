@@ -27,6 +27,25 @@ def enabled(value: str) -> bool:
     return value.strip().lower() not in {'false', '0', 'no', 'off'}
 
 
+def load_startup_settings(env: Mapping[str, str]) -> dict[str, Any]:
+    """Launcher-safe read; Core owns writes and legacy migration."""
+    directory = Path(env.get('OSII_CONFIG_DIR', 'osii-data/config'))
+    path = directory / 'processors.toml'
+    if not path.exists():
+        path = directory / 'tools.toml'  # Existing installations, before Core migrates.
+    try:
+        value = tomllib.loads(path.read_text(encoding='utf-8')).get('processor_startup', {})
+    except FileNotFoundError:
+        return {}
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise ModuleManifestError(f'{path}: cannot read processor startup settings: {exc}') from exc
+    if not isinstance(value, dict):
+        raise ModuleManifestError(f'{path}: processor_startup must be a table')
+    if any(not isinstance(settings, dict) for settings in value.values()):
+        raise ModuleManifestError(f'{path}: each processor_startup service must be a table')
+    return value
+
+
 def modules_directory(env: Mapping[str, str] | None = None, checkout: Path | None = None) -> Path:
     env = os.environ if env is None else env
     checkout = checkout or Path(__file__).resolve().parents[2]
@@ -61,6 +80,7 @@ class ModuleProcessor:
     health_path: str
     readiness_path: str
     readiness_config: tuple[str, ...]
+    startup_schema: dict[str, Any]
 
     @property
     def directory(self) -> Path:
@@ -95,6 +115,16 @@ class ModuleProcessor:
             'readiness_config': list(self.readiness_config),
         }
 
+    def startup_environment(self, env: Mapping[str, str], settings: Mapping[str, Any]) -> dict[str, str]:
+        """Explicit deployment overrides win over saved Setup choices and defaults."""
+        result = {}
+        for name, property in self.startup_schema.get('properties', {}).items():
+            value = env.get(name, settings.get(name, property['default']))
+            if name not in env:
+                _startup_scalar(value, property, name, self.manifest)
+            result[name] = str(value).lower() if isinstance(value, bool) else str(value)
+        return result
+
 
 def _text(value: Any, field: str, path: Path) -> str:
     if not isinstance(value, str) or not value.strip():
@@ -106,6 +136,15 @@ def _strings(value: Any, field: str, path: Path) -> tuple[str, ...]:
     if not isinstance(value, list):
         raise ModuleManifestError(f'{path}: {field} must be an array of strings')
     return tuple(_text(item, field, path) for item in value)
+
+
+def _startup_scalar(value: Any, property: dict, name: str, path: Path) -> None:
+    expected = {'string': (str,), 'boolean': (bool,), 'integer': (int,), 'number': (int, float)}[property['type']]
+    if type(value) not in expected:
+        raise ModuleManifestError(f'{path}: {name} must have type {property["type"]}')
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if value < property.get('minimum', float('-inf')) or value > property.get('maximum', float('inf')):
+            raise ModuleManifestError(f'{path}: {name} is outside its allowed range')
 
 
 def _load(path: Path) -> list[ModuleProcessor]:
@@ -128,7 +167,7 @@ def _load(path: Path) -> list[ModuleProcessor]:
     records = data.get('processors')
     if not isinstance(records, list) or not records:
         raise ModuleManifestError(f'{path}: processors must contain at least one [[processors]] table')
-    allowed = {'id', 'registration_id', 'processor_id', 'kind', 'display_name', 'description', 'command', 'port', 'port_env', 'requires', 'aliases', 'model_access', 'model_requirements', 'capabilities', 'config_schema', 'health_path', 'readiness_path', 'readiness_config'}
+    allowed = {'id', 'registration_id', 'processor_id', 'kind', 'display_name', 'description', 'command', 'port', 'port_env', 'requires', 'aliases', 'model_access', 'model_requirements', 'capabilities', 'config_schema', 'health_path', 'readiness_path', 'readiness_config', 'startup_schema'}
     result = []
     for record in records:
         if not isinstance(record, dict) or set(record) - allowed:
@@ -153,11 +192,22 @@ def _load(path: Path) -> list[ModuleProcessor]:
         if any(not IDENTITY.fullmatch(item) for item in [*identities, *aliases]):
             raise ModuleManifestError(f'{path}: invalid registration_id, processor_id, or alias')
         tables = {}
-        for key in ['model_requirements', 'capabilities', 'config_schema']:
+        for key in ['model_requirements', 'capabilities', 'config_schema', 'startup_schema']:
             value = record.get(key, {})
             if not isinstance(value, dict):
                 raise ModuleManifestError(f'{path}: {key} must be a table')
             tables[key] = value
+        startup = tables['startup_schema']
+        if startup:
+            properties = startup.get('properties', {})
+            if startup.get('type') != 'object' or not isinstance(properties, dict) or startup.get('additionalProperties') is not False:
+                raise ModuleManifestError(f'{path}: startup_schema must be a closed object schema')
+            for name, prop in properties.items():
+                if not ENV_NAME.fullmatch(name) or name in {'DATABASE_URL', 'OSII_STORAGE_BACKEND', 'PYTHONPATH', 'UV_PROJECT_ENVIRONMENT', 'OSII_CONFIG_DIR'}:
+                    raise ModuleManifestError(f'{path}: invalid startup setting {name}')
+                if not isinstance(prop, dict) or prop.get('type') not in {'string', 'boolean', 'integer', 'number'} or 'default' not in prop:
+                    raise ModuleManifestError(f'{path}: startup settings need scalar types and defaults')
+                _startup_scalar(prop['default'], prop, name, path)
         if any(key not in {'chat', 'embedding'} or not isinstance(value, str) or value not in {'required', 'optional'} for key, value in tables['model_requirements'].items()):
             raise ModuleManifestError(f'{path}: invalid model_requirements')
         access = record.get('model_access', 'gateway' if tables['model_requirements'] else 'none')
@@ -172,7 +222,7 @@ def _load(path: Path) -> list[ModuleProcessor]:
             _text(record.get('display_name'), 'display_name', path), _text(record.get('description'), 'description', path),
             command, port, port_env, extras, _strings(record.get('requires', []), 'requires', path), aliases,
             access, tables['model_requirements'], tables['capabilities'], tables['config_schema'], health_path, readiness_path,
-            _strings(record.get('readiness_config', []), 'readiness_config', path)))
+            _strings(record.get('readiness_config', []), 'readiness_config', path), startup))
     return result
 
 

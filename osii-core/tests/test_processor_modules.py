@@ -52,7 +52,7 @@ def test_new_module_drives_startup_registration_and_controls_without_central_edi
     assert card['runtime']['endpoint'] == 'http://127.0.0.1:18124'
     assert card['manifest_path'] == str(path)
     assert card['config_schema']['properties']['detail']['default'] == 'short'
-    # Binding changes in tools.toml preserve discovery metadata and offline schema.
+    # Binding changes in processors.toml preserve discovery metadata and offline schema.
     monkeypatch.setattr(configuration, 'load_tools_config', lambda *a: {'tools': {
         'collection-data-card': {'model_access': {'mode': 'gateway', 'bindings': {'chat': 'chosen'}}}}})
     assert configuration.configured_tools(profile='development')['collection-data-card']['config_schema'] == card['config_schema']
@@ -229,3 +229,14 @@ def test_disabling_module_does_not_persist_machine_specific_manifest_metadata(tm
     override = saved['tools']['collection-data-card']
     assert override == {'enabled':False, 'model_access':{'mode':'gateway','bindings':{'chat':'chosen'}}}
     assert 'manifest_path' not in override and 'implementation' not in override
+
+
+@pytest.mark.parametrize('property', [
+    {'type': 'boolean', 'default': 'false'},
+    {'type': 'integer', 'default': True},
+    {'type': 'integer', 'default': 0, 'minimum': 1},
+])
+def test_invalid_startup_defaults_fail_during_discovery(tmp_path, property):
+    write_module(tmp_path, startup_schema={'type': 'object', 'additionalProperties': False, 'properties': {'EXAMPLE_VALUE': property}})
+    with pytest.raises(ModuleManifestError, match='EXAMPLE_VALUE'):
+        discover_processors(tmp_path)

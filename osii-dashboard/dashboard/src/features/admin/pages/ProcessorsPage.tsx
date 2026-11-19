@@ -1,3 +1,5 @@
+import { IntakeDefaults } from "../components/IntakeDefaults";
+import { ProcessorStartupSettings } from "../components/ProcessorStartupSettings";
 import { ServiceRow } from "../components/ServiceRow";
 import { CapabilitySection, SetupLayout } from "../components/SetupLayout";
 import { ProcessorConfigInput as ConfigInput } from "../../queue/components/ProcessorConfigInput";
@@ -559,15 +561,16 @@ export function ProcessorsPage() {
             {processor.model_error ? <Typography variant="caption" color="error">{processor.model_error}</Typography> : null}
             <Button size="small" onClick={() => openNewConnection()}>Connect model</Button>
           </Stack> : null}
-          {item.id === "tika" ? <Stack direction={{xs: "column", sm: "row"}} spacing={1}><TextField size="small" label="Apache Tika endpoint" value={tikaEndpoint ?? String(settings.data?.settings.tika?.tika_endpoint ?? schema?.properties?.tika_endpoint?.default ?? "http://127.0.0.1:9998")} onChange={event => setTikaEndpoint(event.target.value)} sx={{minWidth: 300}} /><Button size="small" onClick={async () => {
-            const endpoint = String(tikaEndpoint ?? settings.data?.settings.tika?.tika_endpoint ?? schema?.properties?.tika_endpoint?.default ?? "http://127.0.0.1:9998");
-            try { const url = new URL(endpoint); if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("invalid"); }
+          {item.id === "tika" ? <Stack direction={{xs: "column", sm: "row"}} spacing={1}><TextField size="small" label="Apache Tika endpoint" placeholder="Managed runtime (default)" value={tikaEndpoint ?? String(settings.data?.settings.tika?.tika_endpoint ?? schema?.properties?.tika_endpoint?.default ?? "")} onChange={event => setTikaEndpoint(event.target.value)} sx={{minWidth: 300}} /><Button size="small" onClick={async () => {
+            const endpoint = String(tikaEndpoint ?? settings.data?.settings.tika?.tika_endpoint ?? schema?.properties?.tika_endpoint?.default ?? "");
+            try { if (endpoint.trim()) { const url = new URL(endpoint); if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("invalid"); } }
             catch { notify("Enter an HTTP(S) base URL without credentials, query, or fragment.", "error"); return; }
             try { await saveProcessorSettings("tika", {...settings.data?.settings.tika, tika_endpoint: endpoint}); notify("Apache Tika endpoint saved."); await queryClient.invalidateQueries({queryKey: ["admin"]}); }
             catch (error) { notify(error instanceof Error ? error.message : "Could not save endpoint.", "error"); }
           }}>Save endpoint</Button></Stack> : null}
           {Object.keys(schema?.properties ?? {}).length ? <Button size="small" sx={{ alignSelf: "flex-start", px: 0 }} onClick={() => editingCapability === item.id ? setEditingCapability(null) : editCapability(item)}>{editingCapability === item.id ? "Hide settings" : "Settings"}</Button> : null}
           {editingCapability === item.id ? <Stack spacing={1}>{Object.entries(schema?.properties ?? {}).map(([name, property]) => <ConfigInput key={name} name={name} property={property} value={capabilityDraft[name]} onChange={(value) => setCapabilityDraft((current) => ({ ...current, [name]: value }))} />)}<Button variant="contained" size="small" onClick={() => void saveCapability(item)} sx={{ alignSelf: "flex-start" }}>Save settings</Button></Stack> : null}
+          <ProcessorStartupSettings processorId={item.id} />
           <IconButton size="small" aria-label={`About ${item.display_name} implementation and configuration`} onClick={() => setSourceHelp(item)} sx={{alignSelf: "flex-start"}}><HelpOutlineIcon fontSize="small" /></IconButton>
         </Stack></Box>;
       })}
@@ -595,7 +598,7 @@ export function ProcessorsPage() {
     <Dialog open={routingHelp} onClose={() => setRoutingHelp(false)} maxWidth="sm" fullWidth><DialogTitle>Extraction routing defaults</DialogTitle><DialogContent><Stack spacing={2}>
       <Typography>Rules are checked from top to bottom. The first matching file extension chooses the primary extractor. If it fails, OSII tries the fallbacks from left to right. Put the * catch-all last.</Typography>
       <Typography>These are Intake defaults; an explicit reader choice for a batch overrides them. Each reader must support all file types in its rule, including fallbacks. Unavailable services are gray; their saved rules remain so a temporary outage does not change your configuration.</Typography>
-      <Typography>Save routes writes the active tools.toml shown in this section. Load TOML reads [[routes.extractor]] rules for review; it does not save or replace other tool settings until you click Save routes.</Typography>
+      <Typography>Save routes writes the active processors.toml shown in this section. Load TOML reads [[routes.extractor]] rules for review; it does not save or replace other tool settings until you click Save routes.</Typography>
       <Typography>To add your own extractor, start with the code in <code>osii-core/osii/extraction/</code> and the independent tools in <code>osii-processor-modules/</code>. Read <code>docs/reference/extractor-routing.md</code> and <code>docs/reference/processor-api/extraction.md</code>. Build a tool that follows OSII’s Processor API: it receives selected files, declares the file types it accepts, and returns text and source locations. Register its service address in Setup.</Typography>
     </Stack></DialogContent><DialogActions><Button onClick={() => setRoutingHelp(false)}>Close</Button></DialogActions></Dialog>
     <WorkflowProgress readiness={data?.readiness} checking={setup.isLoading} failed={setup.isError} onStep={followWorkflowStep} />
@@ -632,6 +635,7 @@ export function ProcessorsPage() {
 
     <Stack spacing={1.25}>
       <Typography variant="h6" fontWeight={700}>Processing defaults</Typography>
+      <IntakeDefaults path={data?.configuration?.files.processors} />
       {renderCapabilityDrawer("extractor")}
       {renderCapabilityDrawer("synthesizer")}
       {renderCapabilityDrawer("embedder")}

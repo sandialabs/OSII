@@ -1,8 +1,7 @@
 """Processor module for managed or external Apache Tika."""
 import base64
-import os
 from contextlib import asynccontextmanager
-from .runtime import ManagedTika
+from .runtime import ManagedTika, MANIFEST, runtime_setting
 from urllib.parse import urlsplit
 
 import requests
@@ -11,10 +10,10 @@ from osii.processor_sdk import (Capability, ExtractionRequest, ExtractionRespons
     Extractor, ProcessorDescriptor, ProcessorKind, TextSegment, create_processor_app)
 
 
-DEFAULT_ENDPOINT = f"http://127.0.0.1:{os.getenv('OSII_TIKA_SERVER_PORT', '9998')}"
+DEFAULT_ENDPOINT = f"http://127.0.0.1:{runtime_setting('OSII_TIKA_SERVER_PORT')}"
 
 def endpoint(value: str) -> str:
-    value = value.strip().rstrip('/')
+    value = value.strip().rstrip('/') or DEFAULT_ENDPOINT
     parsed = urlsplit(value)
     if parsed.scheme not in {'http', 'https'} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError('Apache Tika endpoint must be an HTTP(S) base URL without credentials, query, or fragment.')
@@ -33,15 +32,12 @@ class TikaExtractor(Extractor):
         description='Extracts plain text through Apache Tika; no page boxes or OCR are inferred.',
         kind=ProcessorKind.EXTRACTOR,
         capabilities=Capability(file_extensions=['*']),
-        config_schema={'type': 'object', 'properties': {
-            'tika_endpoint': {'type': 'string', 'title': 'Apache Tika endpoint', 'default': DEFAULT_ENDPOINT, 'description': 'Optional external Tika server; leave the default for the managed runtime.'},
-            'chunk_chars': {'type': 'integer', 'minimum': 1, 'maximum': 1000000, 'default': 4000},
-        }, 'additionalProperties': False},
+        config_schema=MANIFEST['config_schema'],
     )
 
     def extract(self, request: ExtractionRequest) -> ExtractionResponse:
         address = endpoint(str(request.config.get('tika_endpoint', DEFAULT_ENDPOINT)))
-        size = request.config.get('chunk_chars', 4000)
+        size = request.config.get('chunk_chars', MANIFEST['config_schema']['properties']['chunk_chars']['default'])
         if not isinstance(size, int) or isinstance(size, bool) or not 1 <= size <= 1000000:
             raise ValueError('chunk_chars must be between 1 and 1000000.')
         if not request.document.content_base64:

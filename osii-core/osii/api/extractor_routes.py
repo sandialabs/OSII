@@ -3,14 +3,14 @@ from pathlib import Path
 import tomllib
 
 from fastapi import APIRouter
-from osii.configuration import load_tools_config, save_tools_config, tools_path
+from osii.configuration import load_tools_config, save_tools_config, processors_path
 from osii.domain.processing.extractor_selection import load_extractor_routes
 
 router = APIRouter(prefix="/api", tags=["extractor-routes"])
 
 
 def extractor_routes_path() -> Path:
-    return tools_path()
+    return processors_path()
 
 
 def extractors_config_path() -> Path:
@@ -18,7 +18,7 @@ def extractors_config_path() -> Path:
 
 
 def load_extractor_routes_file() -> dict:
-    return {"routes": load_extractor_routes(), "path": str(tools_path())}
+    return {"routes": load_extractor_routes(), "path": str(processors_path())}
 
 
 def load_extractors_file() -> dict:
@@ -182,7 +182,7 @@ async def put_extractor_routes(payload: dict):
     return {
         "ok": True,
         "message": "extractor routes updated.",
-        "path": str(tools_path()),
+        "path": str(processors_path()),
         "routes": payload.get("routes", []),
         "warnings": warnings,
     }
