@@ -262,7 +262,7 @@ Configuration ownership:
 | Processor → Startup settings | Manifest-defined lifecycle options, such as Tika's bundled runtime, JVM port and cache; restart the service after saving |
 
 When `processors.toml` is absent, Core copies valid existing `tools.toml`
-configuration once and leaves the old file unchanged. Existing `processors.toml`
+configuration atomically, then removes the migrated file. Existing `processors.toml`
 always wins, even if invalid; parse errors are shown rather than falling back to
 an older file. The `[tools]` registration table and legacy API/import names remain
 compatible; only the filename changes. Routes, model bindings, request settings,

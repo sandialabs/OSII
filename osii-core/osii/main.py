@@ -74,6 +74,9 @@ async def lifespan(application):
             if backend is not None:
                 backend.close()
 
+from osii.processor_sdk.access_logs import quiet_status_logs
+quiet_status_logs()
+
 app = FastAPI(
     title="OSII Backend",
     docs_url="/docs",

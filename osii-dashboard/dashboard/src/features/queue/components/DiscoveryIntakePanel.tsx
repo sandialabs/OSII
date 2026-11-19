@@ -1,3 +1,4 @@
+import { queuePollInterval } from "../../../domain/workflow";
 import { ChangeEvent, useDeferredValue, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -126,7 +127,7 @@ export function DiscoveryIntakePanel({
         )
       ).items,
     enabled: sourceId !== "",
-    refetchInterval: 3000,
+    refetchInterval: query => queuePollInterval(query.state.data),
   });
   const source = sources.data?.items.find((item) => item.id === sourceId);
   const latest = runs.data?.find((run) => run.source_id === sourceId);

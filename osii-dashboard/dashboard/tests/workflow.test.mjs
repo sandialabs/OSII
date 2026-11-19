@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { libraryWorkflowSteps } from "../src/domain/workflow.ts";
+import { libraryWorkflowSteps, queuePollInterval } from "../src/domain/workflow.ts";
 
 const ready = () => ({
   defaults: { extractor: "local.native-text", embedder: "openai.embedder" },
@@ -96,4 +96,14 @@ test("pixel source coordinates require dimensions and invalid boxes are ignored"
   assert.deepEqual(pageBoundingRegions([{ source_origin: { ...origin, bbox: [100, 200, 400, 600] } }], 1)[0].bbox, [0.1, 0.1, 0.4, 0.3]);
   assert.equal(pageBoundingRegions([{ source_origin: { page: 1, bbox: [0.8, 0.2, 0.1, 0.3] } }], 1).length, 0);
   assert.equal(pageBoundingRegions([{ source_origin: { page: 1, coordinate_space: "pdf-points", bbox: [1, 2, 4, 5] } }], 1).length, 0);
+});
+
+
+test("queue polling is slow when idle and fast through active transitions", () => {
+  assert.equal(queuePollInterval(), 30_000);
+  assert.equal(queuePollInterval([]), 30_000);
+  assert.equal(queuePollInterval([{status: "completed"}, {status: "error"}, {status: "paused"}]), 30_000);
+  for (const status of ["queued", "pending", "running", "pausing", "cancelling"]) {
+    assert.equal(queuePollInterval([{status: "completed"}, {status}]), 3000);
+  }
 });

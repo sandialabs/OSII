@@ -37,11 +37,10 @@ use their writable profile workspace: a signed application installation is
 not an appropriate place for mutable configuration or credentials.
 The selected source may be on a read-only shared drive; configuration stays local.
 Existing `tools.toml` is copied once when `processors.toml` is absent; the old file
-is retained. Use the new filename for subsequent edits.
+is removed only after the new file is successfully saved. Use processors.toml for subsequent edits.
 
-Setup offers **Corporate endpoint** alongside OpenAI-compatible and Ollama.
-The corporate choice is a named preset for the same OpenAI-compatible protocol;
-enter your organization's base URL, model names, and key. No corporate address
+For a corporate endpoint, choose **OpenAI-compatible endpoint**, give it a clear
+connection name, and enter your organization's API base URL and key. No corporate address
 is built into OSII. Configure corporate certificate trust in the startup
 environment, not by disabling TLS checks.
 
@@ -259,3 +258,33 @@ The bridge exposes live docs at <http://localhost:8095/docs>. Provider-specific
 Processor mounts are `/ollama/embedder`, `/ollama/synthesizer`,
 `/openai/embedder`, `/openai/synthesizer`, `/openai/embedder`, and
 `/openai/synthesizer`.
+
+## Connection setup and configuration ownership
+
+Add a connection using its name, API base URL and optional key, then **Save and check**.
+The compact dialog separates **Connection** and **Models** tabs. The Connection
+tab retains the endpoint and a saved-key mask with replacement/removal controls.
+Save and check saves credentials and reads the endpoint's model catalog; it does not establish
+that every listed model works. Choose a listed language or embedding model to save
+and test that capability with one small inference request. Unknown capabilities
+remain labeled until tested; OSII maintains no model-name allowlist. Tests may
+incur provider charges. Manual model entry is no longer offered.
+
+Corporate installations should prepopulate `models.toml` with endpoint URLs,
+model choices and capability defaults. Keep keys in private `secrets.env` via
+Setup or a deployment secret source, referenced by name in TOML. Do not duplicate
+saved endpoints in `.env`: environment model settings seed fresh profiles;
+saved model configuration remains authoritative. `.env` controls startup paths,
+certificate/proxy trust and deployment overrides.
+
+Processor manifests declare discovery, service startup and built-in defaults.
+`processors.toml` stores user overrides: routing, processor settings, model
+bindings, lifecycle settings and Intake defaults. It is not a module inventory
+that contributors must maintain. Setup reads and writes this file; hand editing
+is optional. Legacy `[tools]` table names remain compatible with existing APIs.
+
+Idle dashboard status refreshes run every 30 seconds; active Intake jobs update
+every 3 seconds. Completed logs stop polling. Hidden tabs use React Query's
+foreground-only polling and refresh on focus. Worker recovery heartbeats remain
+unchanged. Routine successful status GETs are quiet in terminal access logs;
+failed requests, warnings, exceptions and lifecycle messages remain visible.

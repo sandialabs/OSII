@@ -98,3 +98,8 @@ export function libraryWorkflowSteps(
     },
   ];
 }
+
+/** Busy queues refresh promptly; empty and terminal queues stay quiet. */
+export function queuePollInterval(runs?: readonly {status: string}[]): number {
+  return runs?.some(run => ["queued", "pending", "running", "pausing", "cancelling"].includes(run.status)) ? 3000 : 30_000;
+}

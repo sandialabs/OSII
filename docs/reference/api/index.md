@@ -1116,7 +1116,7 @@ explicit environment overrides taking precedence. Existing
 API, independent of lifecycle settings.
 
 `processors.toml` replaces the old filename `tools.toml`. The first load copies
-valid legacy settings when the new file is absent, preserving the original;
+valid legacy settings when the new file is absent, then removes the migrated file;
 an existing new file always wins. `[tools]` registration tables and existing
 API payloads remain compatible. Configuration status names the new file
 `processors`; the old Python `tools_path()` import remains an alias.
@@ -1163,3 +1163,13 @@ The test never labels that case as passed.
 SDK operation errors wrapped as HTTP 422 retain their existing string `detail`
 and add `diagnostics` with the original exception chain. This preserves validation
 compatibility while making lazy dependency/import failures visible to Intake.
+
+### Explicit model capability test
+
+`POST /api/admin/model-providers/{provider_id}/test-model` accepts
+`{"model": "catalog-model-id", "capability": "chat"}` (or `embedding`).
+It performs one small inference request and returns `ok`, `model`, `capability`,
+optional `dimensions` for embeddings, or `detail` on failure. It does not change
+default assignments or write library artifacts. Clients must invoke it only on
+explicit selection or testing, never periodic status refreshes. Existing health
+and provider configuration endpoints remain compatible.

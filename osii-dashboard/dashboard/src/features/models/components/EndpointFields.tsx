@@ -2,7 +2,7 @@ import { Button, Stack, TextField } from "@mui/material";
 
 /** Transport-free endpoint fields shared by local Setup and hosted administration. */
 export function EndpointFields({ baseUrl, onBaseUrl, apiKey, onApiKey,
-  credentialHelp, credentialWritable = true, showCredential = true, urlHelp, required = false, onDiscover, discovering = false }: {
+  credentialPresent, credentialHelp, credentialWritable = true, showCredential = true, urlHelp, required = false, onDiscover, discovering = false }: {
   baseUrl: string; onBaseUrl: (value: string) => void; apiKey: string; onApiKey: (value: string) => void;
   credentialPresent?: boolean; credentialHelp?: string; credentialWritable?: boolean;
   showCredential?: boolean; urlHelp?: string; required?: boolean;
@@ -15,7 +15,7 @@ export function EndpointFields({ baseUrl, onBaseUrl, apiKey, onApiKey,
     {onDiscover && <Button color="secondary" variant="outlined" disabled={discovering || !baseUrl.trim()} onClick={onDiscover} sx={{ flexShrink: 0, mt: 1 }}>{discovering ? "Finding models…" : "Find available models"}</Button>}
     </Stack>
     {showCredential && <TextField type="password" autoComplete="new-password" label="API key"
-      value={apiKey} onChange={e => onApiKey(e.target.value)} disabled={!credentialWritable}
-      helperText={credentialHelp} />}
+      InputLabelProps={{shrink: credentialPresent || Boolean(apiKey)}} placeholder={credentialPresent ? "•••••••• (saved)" : undefined} value={apiKey} onChange={e => onApiKey(e.target.value)} disabled={!credentialWritable}
+      helperText={credentialPresent ? `Saved key. Type to replace.${credentialHelp ? " " + credentialHelp : ""}` : credentialHelp} />}
   </Stack>;
 }

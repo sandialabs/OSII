@@ -269,6 +269,7 @@ def _allowed_ollama_models() -> set[str]:
 
 def _model_details(payload: dict[str, Any]) -> list[dict[str, Any]]:
     models = payload.get("models") or payload.get("data") or []
+    from osii.model_catalog import model_capabilities
     result = []
     for item in models:
         if not isinstance(item, dict):
@@ -280,7 +281,7 @@ def _model_details(payload: dict[str, Any]) -> list[dict[str, Any]]:
         result.append({
             "name": str(name),
             "display_name": str(item.get("name") or name),
-            "capabilities": (["embedding"] if "embeddings" in (item.get("architecture") or {}).get("output_modalities", []) else ["chat"] if "text" in (item.get("architecture") or {}).get("output_modalities", []) else []),
+            "capabilities": model_capabilities(item),
             "size": item.get("size"),
             "digest": item.get("digest"),
             "modified_at": item.get("modified_at"),
@@ -505,6 +506,41 @@ def provider_health(request: Request, provider_id: str):
         return {"ok": True, "models": names, "model_details": model_details, "missing_models": missing, "pull_commands": [f"ollama pull {name}" for name in missing], "recommendations": RECOMMENDED_OLLAMA_MODELS if record["type"] == "ollama" else [], "capabilities": capabilities}
     except (requests.RequestException, ValueError) as exc:
         return {"ok": False, "models": [], "model_details": [], "missing_models": [], "pull_commands": [], "recommendations": RECOMMENDED_OLLAMA_MODELS if record["type"] == "ollama" else [], "detail": str(exc)}
+
+
+@router.post("/{provider_id}/test-model")
+def test_provider_model(request: Request, provider_id: str, payload: dict):
+    """Explicit small inference probe; never used by periodic status polling."""
+    from math import isfinite
+    record = _provider(request.app.state.osii_root.resolve(), provider_id)
+    if not record:
+        raise HTTPException(404, "model provider not found")
+    model, capability = payload.get("model"), payload.get("capability")
+    if not isinstance(model, str) or not model.strip() or len(model) > 200 or capability not in {"chat", "embedding"}:
+        raise HTTPException(422, "Choose a listed model and capability")
+    token, _ = resolve_env_value(str(record.get("credential_env") or "OPENAI_API_KEY"))
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    ollama = record["type"] == "ollama"
+    path = ("/api/embed" if ollama else "/embeddings") if capability == "embedding" else ("/api/chat" if ollama else "/chat/completions")
+    body = {"model": model, "input": ["OSII connection test"]} if capability == "embedding" else {
+        "model": model, "messages": [{"role": "user", "content": "Reply OK."}],
+        **({"stream": False, "options": {"num_predict": 8}} if ollama else {"max_tokens": 8})}
+    try:
+        response = requests.post(record["base_url"] + path, headers=headers, json=body, timeout=(3, 20))
+        response.raise_for_status()
+        result = response.json()
+        if capability == "embedding":
+            vector = (result.get("embeddings") or [None])[0] if ollama else (result.get("data") or [{}])[0].get("embedding")
+            if not (isinstance(vector, list) and vector and all(isinstance(x, (int, float)) and not isinstance(x, bool) and isfinite(x) for x in vector)):
+                raise ValueError("No usable numeric embedding vector returned")
+            return {"ok": True, "model": model, "capability": capability, "dimensions": len(vector)}
+        message = result.get("message") if ollama else (result.get("choices") or [{}])[0].get("message")
+        if not isinstance(message, dict) or not (message.get("content") or message.get("reasoning_content")):
+            raise ValueError("No generated text returned")
+        return {"ok": True, "model": model, "capability": capability}
+    except (requests.RequestException, ValueError, TypeError, AttributeError, IndexError) as exc:
+        from osii.processor_sdk.diagnostics import redact
+        return {"ok": False, "model": model, "capability": capability, "detail": redact(str(exc))}
 
 
 @router.put("/{provider_id}/credential")

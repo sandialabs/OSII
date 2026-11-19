@@ -79,6 +79,8 @@ def _install_diagnostics(app: FastAPI, descriptor: ProcessorDescriptor) -> None:
 
 
 def create_processor_app(processor: Extractor | Synthesizer | Embedder | Enricher) -> FastAPI:
+    from .access_logs import quiet_status_logs
+    quiet_status_logs()
     app = FastAPI(
         title=processor.descriptor.display_name,
         version=processor.descriptor.version,
@@ -155,6 +157,8 @@ def create_openai_processor_app(
             f"descriptor must declare {model_capability!r} as a model requirement"
         )
 
+    from .access_logs import quiet_status_logs
+    quiet_status_logs()
     app = FastAPI(title=descriptor.display_name, version=descriptor.version)
 
     _install_diagnostics(app, descriptor)

@@ -340,7 +340,7 @@ def _migrate_legacy_settings(osii_root: Path, value: dict[str, Any]) -> dict[str
 
 def load_tools_config(osii_root: Path | None = None) -> dict[str, Any]:
     path = processors_path()
-    # Copy a valid legacy file once; retain the original and all unknown fields.
+    # Migrate valid legacy settings atomically, retaining all unknown fields.
     legacy = config_directory() / "tools.toml"
     if not path.exists() and legacy.exists():
         value = _read_toml(legacy, default_tools_config())
@@ -349,6 +349,7 @@ def load_tools_config(osii_root: Path | None = None) -> dict[str, Any]:
             return value
         try:
             save_tools_config(value)
+            legacy.unlink()
         except OSError as exc:
             _CONFIG_ERRORS[path] = f"Could not copy legacy configuration to {path.name}: {exc}"
             return value

@@ -7,7 +7,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip,
   Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel,
-  IconButton, LinearProgress, MenuItem, Paper, Snackbar, Stack, Switch, TextField, Tooltip, Typography,
+  IconButton, LinearProgress, MenuItem, Paper, Snackbar, Stack, Switch, Tab, Tabs, TextField, Tooltip, Typography,
 } from "@mui/material";
 import type { AlertColor } from "@mui/material";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
@@ -76,7 +76,7 @@ function ConnectionEndpointStatus({ provider, generation }: { provider: ModelPro
     queryFn: ({ signal }) => apiJson<{ models: ModelOption[] }>("/api/admin/model-providers/discover", {
       method: "POST", signal, json: { provider_id: provider.id, type: provider.type, base_url: provider.base_url },
     }),
-    staleTime: 30_000, refetchInterval: 60_000, retry: false,
+    staleTime: 30_000, refetchInterval: 30_000, retry: false,
   });
   const label = health.isError ? "Endpoint unavailable" : health.data ? "Endpoint reachable" : "Checking endpoint…";
   const detail = health.isError ? (health.error instanceof Error ? health.error.message : "Connection check failed")
@@ -90,9 +90,9 @@ export function ProcessorsPage() {
   const [searchParams] = useSearchParams();
   const requestedStep = searchParams.get("step");
   const focusedWorkflowStep = useRef<string | null>(null);
-  const setup = useQuery({ queryKey: ["admin", "setup"], queryFn: getSetupSummary, refetchInterval: 5000 });
-  const providerData = useQuery({ queryKey: ["admin", "model-providers"], queryFn: listModelProviders, refetchInterval: 5000 });
-  const processors = useQuery({ queryKey: ["admin", "processors"], queryFn: listProcessorEndpoints, refetchInterval: 5000 });
+  const setup = useQuery({ queryKey: ["admin", "setup"], queryFn: getSetupSummary, refetchInterval: 30_000 });
+  const providerData = useQuery({ queryKey: ["admin", "model-providers"], queryFn: listModelProviders, refetchInterval: 30_000 });
+  const processors = useQuery({ queryKey: ["admin", "processors"], queryFn: listProcessorEndpoints, refetchInterval: 30_000 });
   const settings = useQuery({ queryKey: ["admin", "processor-settings"], queryFn: getProcessorSettings });
   const extractorRoutes = useQuery({ queryKey: ["admin", "extractor-routes"], queryFn: getExtractorRoutes });
 
@@ -105,24 +105,23 @@ export function ProcessorsPage() {
   const [apiKey, setApiKey] = useState("");
   const [catalogQueried, setCatalogQueried] = useState(false);
   const [catalogModels, setCatalogModels] = useState<ModelOption[]>([]);
-  const [discoveringModels, setDiscoveringModels] = useState(false);
-  const discoveryVersion = useRef(0);
-  useEffect(() => { discoveryVersion.current += 1; setCatalogModels([]); setCatalogQueried(false); }, [connectionOpen, providerForm.base_url, providerForm.type, apiKey]);
-  const findModels = async () => {
-    const version = discoveryVersion.current;
-    setDiscoveringModels(true);
-    try {
-      const result = await apiJson<{ models: ModelOption[] }>("/api/admin/model-providers/discover", {
-        method: "POST", json: { type: providerForm.type, base_url: providerForm.base_url, api_key: apiKey, provider_id: editingProviderId || "" },
-      });
-      if (version === discoveryVersion.current) {
-        setCatalogModels(result.models); setCatalogQueried(true);
-        notify(`Found ${result.models.length} available models. Choose one below; nothing has been saved or invoked.`);
-      }
-    } catch (error) { if (version === discoveryVersion.current) notify((error as Error).message, "error"); }
-    finally { setDiscoveringModels(false); }
-  };
+  useEffect(() => { setCatalogModels([]); setCatalogQueried(false); }, [connectionOpen, providerForm.base_url, providerForm.type]);
+  useEffect(() => {
+    if (!connectionOpen || !editingProviderId) return;
+    const saved = providerData.data?.providers.find(p => p.id === editingProviderId);
+    if (!saved || saved.base_url !== providerForm.base_url) return;
+    let cancelled = false;
+    void apiJson<{models: ModelOption[]}>("/api/admin/model-providers/discover", {method: "POST", json: {provider_id: saved.id, type: saved.type, base_url: saved.base_url}})
+      .then(result => { if (!cancelled) {setCatalogModels(result.models); setCatalogQueried(true); setProviderHealth(current => ({...current, [saved.id]: {ok: true, models: result.models.map(m => m.id), model_details: [], missing_models: [], pull_commands: [], recommendations: []}})); setConnectionStatus(`Saved · Connected · ${result.models.length} models`);} })
+      .catch(error => { if (!cancelled) {setConnectionStatus(`Saved · Check failed: ${(error as Error).message}`); notify((error as Error).message, "error");} });
+    return () => { cancelled = true; };
+  }, [connectionOpen, editingProviderId, providerForm.base_url]);
   const [providerHealth, setProviderHealth] = useState<Record<string, ModelProviderHealth>>({});
+  const modelTestVersion = useRef(0);
+  const [modelTests, setModelTests] = useState<Record<string, {ok: boolean; detail?: string; dimensions?: number}>>({});
+  useEffect(() => { modelTestVersion.current += 1; setModelTests({}); }, [providerForm.base_url, apiKey, connectionOpen]);
+  const [connectionPanel, setConnectionPanel] = useState(0);
+  const [connectionStatus, setConnectionStatus] = useState("");
   const [savingConnection, setSavingConnection] = useState(false);
   const [serviceBusy, setServiceBusy] = useState<string | null>(null);
   const [serviceLogs, setServiceLogs] = useState<{ title: string; lines: string[] } | null>(null);
@@ -132,24 +131,12 @@ export function ProcessorsPage() {
   const [routeDraft, setRouteDraft] = useState<ExtractorRoute[] | null>(null);
   const [tikaEndpoint, setTikaEndpoint] = useState<string | null>(null);
   const [sourceHelp, setSourceHelp] = useState<CapabilityReadiness | null>(null);
+  const [modelHelp, setModelHelp] = useState(false);
   const [routingHelp, setRoutingHelp] = useState(false);
   const [savingRoutes, setSavingRoutes] = useState(false);
   const [processorForm, setProcessorForm] = useState({
     base_url: "http://", model_connection: "",
   });
-
-  useEffect(() => {
-    if (!connectionOpen || providerForm.type !== "ollama" || !providerForm.id) return;
-    let cancelled = false;
-    void checkModelProvider(providerForm.id).then((health) => {
-      if (!cancelled) {
-        setProviderHealth((current) => ({ ...current, [providerForm.id]: health }));
-      }
-    }).catch(() => {
-      // The dialog's normal connection check reports details after Save.
-    });
-    return () => { cancelled = true; };
-  }, [connectionOpen, providerForm.id, providerForm.type]);
 
   const refreshSetup = async () => {
     await Promise.all([
@@ -184,12 +171,16 @@ export function ProcessorsPage() {
     return provider;
   };
   const openNewConnection = () => {
+    setConnectionPanel(0);
+    setConnectionStatus("");
     setEditingProviderId(null);
     setProviderForm(newConnectionProvider("openai"));
     setApiKey("");
     setConnectionOpen(true);
   };
   const openExistingConnection = (provider: ModelProvider) => {
+    setConnectionPanel(0);
+    setConnectionStatus("Saved connection · Checking model catalog…");
     setEditingProviderId(provider.id);
     setProviderForm(provider);
     setApiKey("");
@@ -212,26 +203,47 @@ export function ProcessorsPage() {
   const saveConnection = async (event: FormEvent) => {
     event.preventDefault();
     setSavingConnection(true);
+    setConnectionStatus("Saving…");
+    setCatalogQueried(false);
     try {
       await createModelProvider(providerForm);
+      setEditingProviderId(providerForm.id);
       if (apiKey) await saveModelProviderCredential(providerForm.id, apiKey);
-      const health = await checkModelProvider(providerForm.id);
-      setProviderHealth((current) => ({ ...current, [providerForm.id]: health }));
-      const embeddingTest = health.capabilities?.embedding;
-      notify(!health.ok
-        ? `${providerForm.id} was saved, but the connection check failed: ${health.detail ?? "unavailable"}`
-        : embeddingTest?.configured && !embeddingTest.ok
-          ? `${providerForm.id} is connected, but its selected embedding model is not usable: ${embeddingTest.detail}`
-          : embeddingTest?.ok
-            ? `${providerForm.id} is connected; embedding model ${embeddingTest.model} returned ${embeddingTest.dimensions} dimensions.`
-            : `${providerForm.id} is connected.`, !health.ok || (embeddingTest?.configured && !embeddingTest.ok) ? "error" : "success");
+      setProviderForm(current => ({ ...current, credential_present: Boolean(apiKey) || current.credential_present }));
       setApiKey("");
+      setConnectionStatus("Saved · Checking endpoint…");
+      const catalog = await apiJson<{ models: ModelOption[] }>("/api/admin/model-providers/discover", {
+        method: "POST", json: { provider_id: providerForm.id, type: providerForm.type, base_url: providerForm.base_url },
+      });
+      setCatalogModels(catalog.models); setCatalogQueried(true);
+      setConnectionStatus(`Saved · Connected · ${catalog.models.length} models`);
+      setProviderHealth(current => ({...current, [providerForm.id]: {ok: true, models: catalog.models.map(m => m.id), model_details: [], missing_models: [], pull_commands: [], recommendations: []}}));
       await refreshSetup();
     } catch (error) {
+      setConnectionStatus(`Save/check failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+      setProviderHealth(current => ({...current, [providerForm.id]: {ok: false, models: [], model_details: [], missing_models: [], pull_commands: [], recommendations: [], detail: error instanceof Error ? error.message : "Connection check failed"}}));
       notify(error instanceof Error ? error.message : "Could not save the connection.", "error");
     } finally {
       setSavingConnection(false);
     }
+  };
+
+  const selectConnectionModel = async (capability: "chat" | "embedding", model: string) => {
+    const version = modelTestVersion.current;
+    const updated = capability === "chat" ? {...providerForm, chat_model: model, synthesis_model: model}
+      : {...providerForm, embedding_model: model};
+    setProviderForm(updated);
+    setSavingConnection(true);
+    try {
+      await createModelProvider(updated);
+      if (!model) { await refreshSetup(); return; }
+      const result = await apiJson<{ok: boolean; detail?: string; dimensions?: number}>(`/api/admin/model-providers/${encodeURIComponent(updated.id)}/test-model`, {
+        method: "POST", json: {model, capability},
+      });
+      if (version === modelTestVersion.current) setModelTests(current => ({...current, [`${capability}:${model}`]: result}));
+      await refreshSetup();
+    } catch (error) { notify((error as Error).message, "error"); }
+    finally { setSavingConnection(false); }
   };
 
   const checkConnection = async (provider: ModelProvider) => {
@@ -258,8 +270,10 @@ export function ProcessorsPage() {
       await deleteModelProviderCredential(provider.id);
       notify(`${provider.id}: saved API key removed.`);
       await refreshSetup();
+      return true;
     } catch (error) {
       notify(error instanceof Error ? error.message : "Could not remove the saved key.", "error");
+      return false;
     }
   };
 
@@ -467,7 +481,7 @@ export function ProcessorsPage() {
   }, [requestedStep, providerData.data, data]);
   const configurationErrors = Object.entries(data?.configuration?.errors ?? {});
   const savedEndpointMatches = providerData.data?.providers.some(provider => provider.id === editingProviderId && provider.base_url === providerForm.base_url.replace(/\/$/, ""));
-  const discoveredModels = catalogQueried ? catalogModels : (savedEndpointMatches ? providerHealth[providerForm.id]?.models ?? [] : []).map(id => ({ id, name: id, capabilities: [] }));
+  const discoveredModels = catalogQueried ? catalogModels : (savedEndpointMatches ? providerHealth[providerForm.id]?.model_details ?? [] : []).map(model => ({ id: model.name, name: model.display_name || model.name, capabilities: model.capabilities || [] }));
 
   const capabilityMethods = (kind: keyof typeof CAPABILITY_COPY): CapabilityReadiness[] => {
     if (!data) return [];
@@ -672,31 +686,38 @@ export function ProcessorsPage() {
       <Button variant="contained" color="secondary" onClick={() => navigate("/intake")} disabled={!data?.extraction_ready}>Continue to Intake →</Button>
     </Stack>
 
-    <Dialog open={connectionOpen} onClose={() => setConnectionOpen(false)} fullWidth maxWidth="sm"><Box component="form" onSubmit={(event) => void saveConnection(event)}>
+    <Dialog open={modelHelp} onClose={() => setModelHelp(false)} maxWidth="sm" fullWidth><DialogTitle>Model capabilities</DialogTitle><DialogContent>Language models generate chat, summaries, and wikis. Embedding models turn text into numeric vectors for semantic search. OSII uses capability information from your endpoint. When it supplies only names, capabilities remain unknown until you select and test a model. Listed does not mean verified. Tests use a small request and may incur provider charges. Default assignments are configured outside this connection dialog.</DialogContent><DialogActions><Button onClick={() => setModelHelp(false)}>Close</Button></DialogActions></Dialog>
+    <Dialog open={connectionOpen} onClose={() => setConnectionOpen(false)} fullWidth maxWidth="sm"><Box component="form" sx={{display: "flex", flexDirection: "column", maxHeight: "90vh"}} onSubmit={(event) => void saveConnection(event)}>
       <DialogTitle>{editingProviderId ? "Configure connection" : "Add connection"}</DialogTitle><DialogContent>
       {connectionOpen && !serviceLogs ? renderNotice() : null}
       <Stack spacing={1.5} sx={{ pt: 0.5 }}>
-        <TextField select label="Connection" value={providerForm.type} disabled={Boolean(editingProviderId)} onChange={(event) => { setProviderForm(newConnectionProvider(event.target.value as ModelProvider["type"])); setApiKey(""); }} helperText="Use your endpoint's URL, model names, and API key. For a local model server, choose Ollama."><MenuItem value="openai">OpenAI-compatible endpoint</MenuItem><MenuItem value="ollama">Ollama (local model server)</MenuItem></TextField>
-        <TextField label="Connection name" required disabled={Boolean(editingProviderId)} value={providerForm.id} onChange={(event) => setProviderForm({ ...providerForm, id: event.target.value.trim().toLowerCase() })} helperText="A stable name such as OpenRouter or Corporate." />
-        <EndpointFields required onDiscover={() => void findModels()} discovering={discoveringModels} baseUrl={providerForm.base_url} onBaseUrl={base_url => setProviderForm({ ...providerForm, base_url })}
+        {catalogQueried && <Tabs value={connectionPanel} onChange={(_, value: number) => setConnectionPanel(value)} aria-label="Connection setup"><Tab label="Connection" /><Tab label={`Models (${catalogModels.length})`} /></Tabs>}
+        {connectionStatus && <Alert severity={connectionStatus.toLowerCase().includes("failed") ? "error" : "info"}>{connectionStatus}</Alert>}
+        {connectionPanel === 0 && <>
+        {!editingProviderId && <TextField select label="Connection" value={providerForm.type} disabled={Boolean(editingProviderId)} onChange={(event) => { setProviderForm(newConnectionProvider(event.target.value as ModelProvider["type"])); setApiKey(""); }}><MenuItem value="openai">OpenAI-compatible endpoint</MenuItem><MenuItem value="ollama">Ollama (local model server)</MenuItem></TextField>}
+        {!editingProviderId && <TextField label="Connection name" required disabled={Boolean(editingProviderId)} value={providerForm.id} onChange={(event) => setProviderForm({ ...providerForm, id: event.target.value.trim().toLowerCase() })} />}
+        {editingProviderId && <Typography variant="body2">{providerForm.id} · {providerForm.type === "ollama" ? "Ollama" : "OpenAI-compatible"}</Typography>}
+        <EndpointFields required baseUrl={providerForm.base_url} onBaseUrl={base_url => setProviderForm({ ...providerForm, base_url })}
           apiKey={apiKey} onApiKey={setApiKey} credentialPresent={providerForm.credential_present}
           credentialWritable={providerForm.credential_writable !== false} showCredential={providerForm.type !== "ollama"}
           urlHelp={providerForm.type === "ollama" ? "Ollama server address, such as http://localhost:11434." : "Use the OpenAI-compatible API base address."}
           credentialHelp={providerForm.credential_help} />
+        <Button type="submit" variant="contained" disabled={savingConnection}>{savingConnection ? "Saving and checking…" : "Save and check"}</Button>
+        {providerForm.credential_present && <Button size="small" onClick={() => void forgetCredential(providerForm).then(removed => { if (removed) {setProviderForm(current => ({...current, credential_present: false})); setModelTests({});} })}>Remove saved key</Button>}
+        </>}
+        {catalogQueried && connectionPanel === 1 && <>
+        <Typography variant="caption" sx={{overflowWrap: "anywhere"}}>{providerForm.base_url}</Typography>
+        <Stack direction="row" alignItems="center" justifyContent="space-between"><Typography fontWeight={700}>Available models</Typography><IconButton aria-label="About model capabilities" onClick={() => setModelHelp(true)}><HelpOutlineIcon /></IconButton></Stack>
+        <Typography variant="caption">Choose a model to save and test it. Tests make a small request to your endpoint.</Typography>
         {providerForm.type === "ollama" && <Alert severity="info" icon={false}>Install and start Ollama yourself. OSII can inspect installed models and download the approved starters.</Alert>}
-        <ModelPicker label="Language model" value={providerForm.chat_model} options={discoveredModels.filter(model => !model.capabilities.length || model.capabilities.includes("chat"))}
-          onChange={model => setProviderForm(current => ({ ...current, chat_model: model, synthesis_model: model }))} helperText="Choose an available model for chat, summaries, and wiki generation." />
-        <FormControlLabel control={<Switch checked={Boolean(providerForm.default_chat)} disabled={!providerForm.chat_model} onChange={(event) => setProviderForm({ ...providerForm, default_chat: event.target.checked })} />} label="Use this connection by default for chat and synthesis" />
-        <ModelPicker label="Embedding model (optional)" value={providerForm.embedding_model} options={discoveredModels.filter(model => !model.capabilities.length || model.capabilities.includes("embedding"))}
-          onChange={model => setProviderForm(current => ({ ...current, embedding_model: model }))} helperText="Choose a model for semantic search. Keyword search remains available without it." />
-        <FormControlLabel control={<Switch checked={Boolean(providerForm.default_embedding)} disabled={!providerForm.embedding_model} onChange={(event) => setProviderForm({ ...providerForm, default_embedding: event.target.checked })} />} label="Use this connection by default for semantic embeddings" />
-        {providerHealth[providerForm.id] ? <Alert severity={!providerHealth[providerForm.id].ok || (providerHealth[providerForm.id].capabilities?.embedding?.configured && !providerHealth[providerForm.id].capabilities?.embedding?.ok) ? "error" : "success"}>
-          {!providerHealth[providerForm.id].ok
-            ? providerHealth[providerForm.id].detail
-            : providerHealth[providerForm.id].capabilities?.embedding?.configured
-              ? providerHealth[providerForm.id].capabilities?.embedding?.detail
-              : `Connected. Found ${providerHealth[providerForm.id].models.length} model(s). Select an embedding model to validate embeddings.`}
-        </Alert> : null}
+        <ModelPicker disabled={savingConnection} label="Language model" value={providerForm.chat_model} options={discoveredModels.filter(model => !model.capabilities.length || model.capabilities.includes("chat"))}
+          onChange={model => void selectConnectionModel("chat", model)} helperText="Choose an available model for chat, summaries, and wiki generation." />
+        <ModelPicker disabled={savingConnection} label="Embedding model (optional)" value={providerForm.embedding_model} options={discoveredModels.filter(model => !model.capabilities.length || model.capabilities.includes("embedding"))}
+          onChange={model => void selectConnectionModel("embedding", model)} helperText="Choose a model for semantic search. Keyword search remains available without it." />
+        {([['chat', providerForm.chat_model], ['embedding', providerForm.embedding_model]] as const).filter(([, model]) => model).map(([capability, model]) => {
+          const result = modelTests[`${capability}:${model}`];
+          return <Stack key={capability} direction="row" spacing={1} alignItems="center"><Chip size="small" color={result ? result.ok ? "success" : "error" : "default"} label={`${capability}: ${result ? result.ok ? "Verified" : "Test failed" : "Untested"}`} /><Typography variant="caption">{result?.detail || (result?.dimensions ? `${result.dimensions} dimensions` : model)}</Typography><Button size="small" disabled={savingConnection} onClick={() => void selectConnectionModel(capability, model)}>Test</Button></Stack>;
+        })}
         {providerForm.type === "ollama" ? <Stack spacing={1}><Typography variant="body2" fontWeight={700}>Small starter models</Typography>{(providerData.data?.ollama_recommendations ?? []).map((recommendation) => {
           const job = pullJobs[`${providerForm.id}:${recommendation.model}`];
           const active = job?.status === "queued" || job?.status === "running";
@@ -713,7 +734,8 @@ export function ProcessorsPage() {
           );
           return <Paper key={recommendation.model} variant="outlined" sx={{ p: 1.25 }}><Stack spacing={0.5}><Stack direction="row" justifyContent="space-between" spacing={1}><Stack><Typography variant="body2" fontWeight={700}>{recommendation.display_name}</Typography><Typography variant="caption" color="text.secondary">{recommendation.model} · {recommendation.size_label} · {recommendation.publisher}</Typography></Stack>{installedName ? <Stack direction="row" spacing={0.75} alignItems="center"><Chip size="small" color="success" label={selected ? "Installed · selected" : "Installed"} />{!selected ? <Button size="small" variant="outlined" onClick={() => void selectInstalledModel(providerForm, recommendation, installedName)}>Use this model</Button> : null}</Stack> : <Button size="small" variant="outlined" disabled={active || !health} onClick={() => void installModel(providerForm, recommendation)}>{active ? "Downloading…" : health ? "Download" : "Checking…"}</Button>}</Stack>{active ? <LinearProgress variant={progress === undefined ? "indeterminate" : "determinate"} value={progress} /> : null}{job?.status === "error" ? <Typography variant="caption" color="error">{job.detail}</Typography> : null}{installedName && recommendation.capability === "embedding" ? <Typography variant="caption" color="text.secondary">The model enables semantic processing. Existing documents still need a semantic-embedding run from Intake.</Typography> : null}</Stack></Paper>;
         })}</Stack> : null}
-      </Stack></DialogContent><DialogActions><Button onClick={() => setConnectionOpen(false)}>Close</Button><Button type="submit" variant="contained" disabled={savingConnection}>{savingConnection ? "Saving and checking…" : "Save and check connection"}</Button></DialogActions>
+        </>}
+      </Stack></DialogContent><DialogActions><Button onClick={() => setConnectionOpen(false)}>Close</Button></DialogActions>
     </Box></Dialog>
 
     <Dialog open={Boolean(serviceLogs)} onClose={() => setServiceLogs(null)} fullWidth maxWidth="md"><DialogTitle>{serviceLogs?.title} logs</DialogTitle><DialogContent>{serviceLogs ? renderNotice() : null}<Box component="pre" sx={{ bgcolor: "grey.950", color: "grey.100", p: 1.5, borderRadius: 1, maxHeight: 420, overflow: "auto", whiteSpace: "pre-wrap", fontSize: "0.75rem" }}>{serviceLogs?.lines.join("\n") || "No recent output."}</Box></DialogContent><DialogActions><Button onClick={() => setServiceLogs(null)}>Close</Button></DialogActions></Dialog>

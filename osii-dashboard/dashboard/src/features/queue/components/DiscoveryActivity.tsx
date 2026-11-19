@@ -1,3 +1,4 @@
+import { queuePollInterval } from "../../../domain/workflow";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -53,7 +54,7 @@ export function useDiscoveryRuns() {
         ).values(),
       ].sort((a, b) => b.id - a.id);
     },
-    refetchInterval: 3000,
+    refetchInterval: query => queuePollInterval(query.state.data),
   });
 }
 export function ScanCard({

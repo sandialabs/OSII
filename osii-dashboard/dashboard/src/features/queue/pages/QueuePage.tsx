@@ -1,3 +1,4 @@
+import { queuePollInterval } from "../../../domain/workflow";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, IconButton, LinearProgress, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
@@ -61,7 +62,7 @@ export function QueuePage() {
   const initialized = useRef(false);
   const defaults = useQuery({queryKey: ["intake", "defaults"], queryFn: () => apiJson<Defaults>("/api/intake/defaults"), staleTime: Infinity});
   const readiness = useQuery({queryKey: ["intake", "readiness"], queryFn: getIntakeReadiness, refetchInterval: 30_000});
-  const runs = useQuery({queryKey: ["processing-runs"], queryFn: listProcessingRuns, refetchInterval: 2500});
+  const runs = useQuery({queryKey: ["processing-runs"], queryFn: listProcessingRuns, refetchInterval: query => queuePollInterval(query.state.data?.runs)});
   const scans = useDiscoveryRuns();
   const changeRecipe = (value: Recipe) => {
     initialized.current = true;
@@ -142,7 +143,7 @@ export function QueuePage() {
     } catch (error) {setNotice({severity: "error", text: (error as Error).message});}
     finally {setControlling(null);}
   };
-  const logs = useQuery({queryKey: ["processing-runs", logId, "logs"], queryFn: () => getProcessingRunLogs(logId!), enabled: Boolean(logId) && section === "activity", refetchInterval: 2000});
+  const logs = useQuery({queryKey: ["processing-runs", logId, "logs"], queryFn: () => getProcessingRunLogs(logId!), enabled: Boolean(logId) && section === "activity", refetchInterval: runs.data?.runs.some(run => run.id === logId && ["queued", "pending", "running"].includes(run.status)) ? 3000 : false});
   const activeCount = (runs.data?.runs.filter(run => active(run.status)).length ?? 0) + (scans.data?.filter(run => ["queued", "running"].includes(run.status)).length ?? 0);
   const blocked = !count || preview.isFetching || preview.isError || starting || testing || readiness.isLoading || runs.data?.worker?.available === false || readiness.data?.source?.osii_writable === false ||
     (!extract && !synthesize && !embed && !enrich) || (extract && unavailable.length > 0) || (synthesize && !effectiveSynthesizer) || (embed && !embedder?.available) ||

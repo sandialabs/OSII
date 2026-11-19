@@ -230,7 +230,7 @@ def test_processors_filename_migrates_legacy_once_and_preserves_unknown_sections
     assert tools_path() == processors_path()  # old public import remains supported
     assert loaded['extension'] == {'custom': 'kept'}
     assert loaded['processor_settings']['tika']['chunk_chars'] == 1200
-    assert legacy.read_text() == original
+    assert not legacy.exists()
     loaded['tools']['wiki']['enabled'] = False
     save_tools_config(loaded)
     legacy.write_text(original.replace('1200', '9999'))

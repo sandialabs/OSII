@@ -454,3 +454,46 @@ def test_optional_key_file_does_not_block_setup_or_local_replacement(client, mon
     assert saved.status_code == 200
     assert _endpoint("chat").api_key == "replacement-from-setup"
     assert key_file.exists() == key_file_exists
+
+
+@pytest.mark.parametrize("capability,payload,ok", [
+    ("embedding", {"data": [{"embedding": [0.1, 0.2]}]}, True),
+    ("embedding", {"data": [{"embedding": []}]}, False),
+    ("embedding", {"data": [{"embedding": [float("nan")]}]}, False),
+    ("embedding", {"data": [{"embedding": ["text"]}]}, False),
+    ("chat", {"choices": [{"message": {"content": "OK"}}]}, True),
+    ("chat", {"choices": []}, False),
+])
+def test_explicit_model_probe_preserves_defaults(client, monkeypatch, capability, payload, ok):
+    from osii.configuration import load_models_config
+    client.put("/api/admin/model-providers/probe", json={"type": "openai", "base_url": "https://test.invalid/v1"})
+    before = load_models_config()
+    calls = []
+    monkeypatch.setattr("requests.post", lambda url, **kw: calls.append((url, kw)) or FakeResponse(payload=payload))
+    result = client.post("/api/admin/model-providers/probe/test-model", json={"model": "unknown-model", "capability": capability})
+    assert result.status_code == 200
+    assert result.json()["ok"] is ok
+    assert len(calls) == 1
+    assert calls[0][0].endswith("/embeddings" if capability == "embedding" else "/chat/completions")
+    assert load_models_config() == before
+
+
+def test_explicit_model_probe_validates_input(client):
+    assert client.post("/api/admin/model-providers/absent/test-model", json={"model": "x", "capability": "chat"}).status_code == 404
+    client.put("/api/admin/model-providers/probe", json={"type": "openai", "base_url": "https://test.invalid/v1"})
+    assert client.post("/api/admin/model-providers/probe/test-model", json={"model": "", "capability": "chat"}).status_code == 422
+
+
+def test_status_access_filter_retains_errors_and_actions():
+    import logging
+    from osii.processor_sdk.access_logs import StatusAccessFilter
+    filter_ = StatusAccessFilter()
+    def visible(method, path, status):
+        return filter_.filter(logging.LogRecord("uvicorn.access", logging.INFO, "", 0, "%s %s %s %s %s", ("client", method, path, "1.1", status), None))
+    assert not visible("GET", "/api/runs", 200)
+    assert not visible("GET", "/health", 200)
+    assert not visible("POST", "/api/admin/model-providers/discover", 200)
+    assert visible("GET", "/api/runs", 500)
+    assert visible("POST", "/api/admin/model-providers/discover", 401)
+    assert visible("POST", "/api/intake", 200)
+    assert visible("GET", "/api/objects", 200)
