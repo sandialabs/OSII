@@ -52,7 +52,7 @@ for source_file in source_files:
 # stack includes a separate, full-page Tesseract service. It has different
 # system dependencies from the store and can be replaced independently.
 #
-# From the repository root, start the normal stack:
+# From a separate OSII application checkout, start the normal stack:
 #
 # ```bash
 # make dev
@@ -86,7 +86,7 @@ if pdf_files and ocr_descriptor and ocr_descriptor.get("name") != OCR_PROCESSOR:
     print(f"Expected {OCR_PROCESSOR}; check the service running on {OCR_URL}.")
 
 if ocr_ready and ocr_descriptor:
-    # The notebook process is separate from the application containers. Add
+    # The notebook process is separate from the application services. Add
     # the discovered endpoint explicitly so the dispatcher can select it.
     os.environ["OSII_ROOT"] = str(paths.osii_root)
     processor_urls = [

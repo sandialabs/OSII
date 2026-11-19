@@ -52,7 +52,7 @@ Always review the resulting diff. Never hand-edit notebook JSON.
 
 ## Environment clarity
 
-- The canonical notebook kernel is `osii-demo-notebooks/.venv`, created from
+- The canonical notebook kernel is `.venv`, created from
   this directory with Python 3.12 and `requirements.txt`.
 - `osii-env` is launcher-managed application-service state for `make dev` and
   `scripts/osii.ps1 dev`; do not tell notebook users to activate it or select it

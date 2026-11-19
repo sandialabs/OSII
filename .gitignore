@@ -65,7 +65,6 @@ coverage.xml
 venv/
 env/
 ENV/
-.python-version
 
 # IDEs and editors
 .vscode/

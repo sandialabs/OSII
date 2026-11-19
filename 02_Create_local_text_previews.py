@@ -16,7 +16,7 @@
 # grounded Markdown. It does not re-open the original PDF and it does not write
 # the store. Those limits make it independently testable and safe to replace.
 #
-# Start the normal stack from the repository root:
+# Start the normal stack from a separate OSII application checkout:
 #
 # ```bash
 # make dev

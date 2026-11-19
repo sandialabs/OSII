@@ -9,36 +9,26 @@
 # %% [markdown]
 # ## Start the dataset demonstration
 #
-# From the OSII Core repository root, import the public example corpus:
+# In a separate OSII application checkout, prepare the sample datasets and
+# start the normal services:
 #
 # ```bash
 # make demo-data
+# make dev
 # ```
 #
-# Then start the optional tabular processors. This notebook directly calls the
-# extractor on port 8097; start both services when you also want the dashboard
-# collection-table workflow.
+# Windows PowerShell uses `.\scripts\osii.ps1 demo-data` followed by
+# `.\scripts\osii.ps1 dev`. The CSV extractor listens on port 8097;
+# wait for <http://127.0.0.1:8097/health> before continuing.
 #
-# ```bash
-# make toolbox-run TOOL=tabular
-# ```
-# On Windows PowerShell, import the files with:
-#
-# ```powershell
-# .\scripts\osii.ps1 demo-data
-# .\scripts\osii.ps1 toolbox-run -Tool tabular
-# ```
-#
-# Wait for <http://127.0.0.1:8097/health> to return `{"status":"ok"}`.
-# For dashboard use, register both processor URLs in **Setup** or add them to
-# `OSII_PROCESSORS` before starting OSII.
-#
-# The Iris and Wine data are bundled with scikit-learn. The import step creates
-# temporary ZIP archives and unpacks ordinary CSV partitions beneath
-# `osii-data/source/example-datasets/`; it does not download dataset contents.
+# Set `OSII_DEMO_DATA_DIR` to that checkout's
+# `osii-data/source/example-datasets` folder, or copy the exported datasets to
+# this branch's `demo-workspace/example-datasets/`. Original datasets are
+# bundled with scikit-learn; the export does not download their contents.
 
 # %%
 from pathlib import Path
+import os
 import base64
 import hashlib
 
@@ -50,19 +40,16 @@ from osii.processor_sdk import (
 )
 
 
-def repository_root() -> Path:
-    """Find the checkout from Jupyter, an IDE, or a terminal."""
-    for candidate in (Path.cwd(), *Path.cwd().parents):
-        if (candidate / "osii-core").is_dir() and (candidate / "osii-processor-modules").is_dir():
-            return candidate
-    raise RuntimeError("Open this notebook from inside an OSII repository checkout.")
+from _demo_support import demo_paths
 
-
-IRIS_CSV = repository_root() / "osii-data/source/example-datasets/iris/data/setosa.csv"
+DATASETS = Path(os.environ.get(
+    "OSII_DEMO_DATA_DIR", str(demo_paths().workspace / "example-datasets")
+)).expanduser()
+IRIS_CSV = DATASETS / "iris/data/setosa.csv"
 EXTRACTOR_URL = "http://127.0.0.1:8097"
 
 if not IRIS_CSV.is_file():
-    raise RuntimeError("Run `make demo-data` from the repository root, then rerun this cell.")
+    raise RuntimeError("Run `make demo-data` in the OSII application checkout and set OSII_DEMO_DATA_DIR to its example-datasets folder.")
 
 print("Source:", IRIS_CSV.resolve())
 print("Bytes:", IRIS_CSV.stat().st_size)
@@ -80,8 +67,8 @@ try:
 except ProcessorClientError:
     descriptor = None
     print(
-        "CSV extractor is offline. Run `make toolbox-run TOOL=tabular` "
-        "or `.\\scripts\\osii.ps1 toolbox-run -Tool tabular`, then rerun this cell."
+        "CSV extractor is offline. Run `make dev` "
+        "or `.\\scripts\\osii.ps1 dev` in the application checkout, then rerun this cell."
     )
 
 if descriptor:
@@ -147,7 +134,7 @@ if response:
 # %% [markdown]
 # ## What to inspect
 #
-# - Original CSV partitions remain under `osii-data/source`.
+# - Original CSV partitions remain in the chosen example-datasets folder.
 # - Grounded text rows and extraction artifacts live under each object's
 #   canonical `.osii/objects/...` sidecar.
 # - The merged table belongs to the collection's `enrichments` directory.

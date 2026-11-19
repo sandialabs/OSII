@@ -18,7 +18,7 @@
 # index. OSII records them so a workflow cannot silently mix incompatible
 # vectors after a model change.
 #
-# Start the normal stack from the repository root:
+# Start the normal stack from a separate OSII application checkout:
 #
 # ```bash
 # make dev

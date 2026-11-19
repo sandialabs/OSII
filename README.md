@@ -1,205 +1,86 @@
-# Learn OSII through Python
+# OSII demo notebooks
 
-This series is the code-first introduction to OSII. It is for a researcher,
-engineer, or subject-matter expert who wants to understand the architecture by
-building a small, inspectable library one step at a time.
+Learn OSII through small Python and Jupyter examples. This optional branch
+contains the demonstrations, their helper, and a sample PDF. Install OSII Core
+as a Python dependency; the application and dashboard are separate downloads.
 
-The examples are ordinary Python files with Jupytext `# %%` cells. You can run
-them as scripts, step through them in an IDE, or open their generated notebook
-counterparts in JupyterLab. The `.py` files are the reviewable source of truth.
+## Download and install
 
-## The idea behind OSII
-
-OSII starts from a simple observation: source files often live much longer than
-the application, model, or analysis pipeline currently being used on them.
-Useful intelligence about those files therefore should not be trapped inside a
-single UI, vector database, model provider, or agent framework.
-
-OSII builds a portable, inspectable sidecar beside the originals:
-
-```text
-your documents                  OSII sidecar
----------------                 ------------
-report.pdf       ----------->   .osii/objects/.../text.txt
-notes.docx                       .osii/objects/.../provenance.toml
-experiment.csv                  .osii/collections/...
-                                 .osii/enrichments/...
-```
-
-That boundary leads to four design choices:
-
-1. **Grounding before generation.** Extracted text, source locations, and
-   provenance remain available for inspection and citation.
-2. **Canonical data before indexes.** BM25, FAISS, SQLite, and model outputs are
-   useful, but they are derived and rebuildable. Ordinary `.osii` files remain
-   authoritative.
-3. **Replaceable computation.** Extractors, synthesizers, embedders, and
-   enrichers are independent processors. OSII core validates their responses
-   and owns persistence.
-4. **One vocabulary for people and agents.** Objects, scopes, provenance, and
-   standard artifacts can be used by the dashboard, Python, REST, MCP, or a
-   future agent workflow without inventing a new storage model each time.
-
-The result is a set of composable building blocks. A research team can replace
-OCR without replacing search, add a domain table enricher without forking the
-core, or let an agent combine existing scopes and artifacts without handing it
-unrestricted access to a user's filesystem.
-
-## Two Python packages, two responsibilities
-
-The monorepo installs two packages used in this series:
-
-- `osii` contains the core store, extraction commit logic, scopes, artifacts,
-  indexing, and search. The current research API is explicit: some examples
-  import focused modules such as `osii.domain.scopes.collections` rather than a
-  single top-level convenience object.
-- `osii.processor_sdk` is the stable public extension surface. It provides
-  typed requests and responses plus one-method interfaces for extractors,
-  synthesizers, embedders, and enrichers.
-
-The first part of the series teaches the core concepts. The final three
-examples teach the friendly SDK surface you should copy when adding your own
-domain logic.
-
-## Set up the notebook environment once
-
-Use Python 3.12, the OSII host-development baseline. Run these commands from
-this directory because `requirements.txt` contains paths relative to the
-monorepo:
+Clone only this branch:
 
 ```bash
+git clone --single-branch --branch osii-demo-notebooks git@github.com:heidikmkv/osii-private.git osii-demo-notebooks
 cd osii-demo-notebooks
+```
+
+You can also download a ZIP after selecting `osii-demo-notebooks` on GitHub once
+the branch is published. Installation requires Python 3.12, Git, and repository
+access. `requirements.txt` pins OSII Core to the revision used by these examples.
+
+On macOS/Linux:
+
+```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-python -m ipykernel install --user --name osii-demo --display-name "OSII demo"
-jupyter lab
 ```
 
 On Windows PowerShell:
 
 ```powershell
-cd osii-demo-notebooks
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+```
+
+Then, on either platform:
+
+```bash
 python -m ipykernel install --user --name osii-demo --display-name "OSII demo"
+python manage_notebooks.py to-notebooks
 jupyter lab
 ```
 
-Choose the **OSII demo** kernel in Jupyter.
+Choose **OSII demo** as the kernel. The `.py` files are the reviewable sources;
+the conversion command refreshes their notebook companions. You can also run
+individual Python files directly. Keep this `.venv` separate from the running
+application's managed environment.
 
-There are intentionally two environments in a full development checkout:
+## Follow the series
 
-| Environment | Owner | Purpose |
-|---|---|---|
-| `osii-demo-notebooks/.venv` | You/Jupyter | Interactive examples and the notebook kernel |
-| `osii-env` | `make dev` or `scripts/osii.ps1 dev` | Automatically managed environment for the running OSII application services |
+| Steps | What you learn |
+| --- | --- |
+| 00 | Create a store and inspect canonical sidecars |
+| 01–02 | Extract grounded text and create a cited preview |
+| 03–04 | Build a collection and search without a model |
+| 05–07 | Add embeddings, standard artifacts, and optional models |
+| 08–10 | Write an extractor, synthesizer, and enricher with the SDK |
+| 11 | Read CSV datasets through a separately running processor |
 
-Do not choose `osii-env` as the notebook kernel. You normally do not activate
-or edit it; the development launcher creates and updates it. Optional processor
-services also remain separate processes reached over HTTP.
+Put your own files in `demo-workspace/documents/`. Extra documents and generated
+state are ignored by Git. Originals remain unchanged; results are written to
+`demo-workspace/.osii/`.
 
-## The learning path
+## Connect optional services
 
-Run the core walkthrough in order. For step 01, choose one extraction path.
+Some lessons call processors over HTTP. Install and start the OSII application
+separately using its [startup guide](https://github.com/heidikmkv/osii-private/blob/main/docs/operations/runbook-development.md).
+Run `make dev`, or `.\scripts\osii.ps1 dev` on Windows, from that application
+checkout. Native Tesseract is required for the scanned sample PDF. Wait for
+`http://127.0.0.1:8080/health` before running step 01.
 
-| Step | Question answered |
-|---|---|
-| `00_Start_here` | What is an OSII store, and which parts are canonical? |
-| `01_Extract_documents_with_Tesseract` | How does local extraction become grounded OSII data? |
-| `02_Create_local_text_previews` | Why is synthesis separate from extraction? |
-| `03_Browse_and_create_a_collection` | How do objects and scopes become agent-ready context? |
-| `04_Build_and_search_a_lexical_index` | How does zero-model retrieval remain grounded? |
-| `05_Build_local_embeddings` | How can vector retrieval be added without becoming canonical? |
-| `06_Create_standard_enrichments` | How do domain products stay portable and UI-independent? |
-| `07_Connect_an_optional_model_or_processor` | Where do optional models and transfer fit? |
+For step 11, run `make demo-data` in the application checkout, then use `make dev`
+to start the CSV processor on port 8097. Windows uses `.\scripts\osii.ps1 demo-data`
+and `.\scripts\osii.ps1 dev`. Set `OSII_DEMO_DATA_DIR` to the resulting
+`example-datasets` directory, or place a copy under `demo-workspace/example-datasets/`.
+Model-backed lessons need an explicitly configured endpoint; they may make
+billable requests. Services and model weights are not included in this branch.
 
-Then use the extension track as copyable starting points:
+## Edit the walkthrough
 
-| Step | Extension built |
-|---|---|
-| `08_Write_a_custom_extractor` | Source bytes to grounded text segments |
-| `09_Write_a_custom_synthesizer` | Existing text to cited Markdown |
-| `10_Write_a_custom_enricher` | Existing text to a standard entity-list artifact |
-| `11_Explore_tabular_datasets` | CSV rows to source and collection table artifacts |
+Edit the paired `.py` sources and run `python manage_notebooks.py to-notebooks`.
+To bring deliberate Jupyter edits back into Python, run
+`python manage_notebooks.py to-python`. Review the conversion diff.
 
-Examples 08–10 run the processor directly in Python before wrapping it as an
-HTTP app. This keeps domain logic easy to test: the network boundary is an
-adapter, not the place where the research algorithm has to live. Example 11
-then shows how a notebook consumes an independently deployed processor.
-
-The dataset example uses the optional tabular processor in this repository's
-[`osii-processor-modules/`](../osii-processor-modules/README.md). From the Core repository, run `make demo-data` or
-`.\scripts\osii.ps1 demo-data`, then start the processor module and configure
-its URLs in `OSII_PROCESSORS` before using the live endpoint.
-
-## Add your own documents
-
-Put files in `demo-workspace/documents/`, beside the bundled `purcell.pdf`.
-Additional files there are ignored by Git. OSII reads the originals in place
-and writes all derived data under `demo-workspace/.osii/`.
-
-The bundled PDF is scanned. The normal OSII stack includes the baseline
-full-page Tesseract Processor API service. From the repository root, start it
-with the rest of the local services:
-
-```bash
-make dev
-```
-
-On Windows PowerShell, run `.\scripts\osii.ps1 dev`. Wait until
-<http://127.0.0.1:8080/health> returns `{"status":"ok"}`. The extraction
-notebook discovers and registers this endpoint for its own Python process. The
-experimental OpenCV region-OCR processor remains an optional
-[Processor modules](../osii-processor-modules/README.md) deployment.
-
-For an OpenAI-compatible model endpoint, set the endpoint and credential in
-`.env`, then start the normal stack. It provides model-backed synthesis,
-embeddings, and chat; extraction remains a local or Processor API capability:
-
-```powershell
-$env:OPENAI_BASE_URL = "https://models.example.test/v1"
-$env:OPENAI_API_KEY = "your-api-key-here"
-.\scripts\osii.ps1 dev
-```
-
-Outside the corporate environment, use the deterministic OpenAI-compatible emulator and
-point the same adapter at `http://127.0.0.1:8096/api/v1`. Exact macOS and
-PowerShell commands are in
-[`osii-core/services/model-provider-bridge/README.md`](../osii-core/services/model-provider-bridge/README.md).
-
-`make dev` or `.\scripts\osii.ps1 dev` starts the complete editable stack.
-
-## Convert the reviewable sources
-
-With the notebook environment active:
-
-```bash
-python manage_notebooks.py to-notebooks
-```
-
-To bring human notebook edits back into percent-format Python:
-
-```bash
-python manage_notebooks.py to-python
-```
-
-Always review the resulting diff. Notebook JSON is a generated/human-facing
-artifact; the paired Python files are the normal place for code review.
-
-## What remains canonical
-
-- Original source files remain outside `.osii` and are never edited.
-- Portable `.osii` TOML, JSONL, text, and standard artifacts are authoritative.
-- `.osii/state/catalog.sqlite3`, BM25, and FAISS indexes are rebuildable.
-- Processor services return typed results; OSII core commits the sidecar.
-- A model may propose a useful artifact, but provenance determines what can be
-  defended later by a person or an agent.
-
-For deeper design material, continue with
-[Architecture](../docs/concepts/architecture.md),
-[Choose an extension](../docs/extending/index.md), and
-[Processor API v1](../docs/reference/processor-api/index.md).
+Continue with the [Processor API](https://github.com/heidikmkv/osii-private/blob/main/docs/reference/processor-api/index.md)
+when building an independent processor.
