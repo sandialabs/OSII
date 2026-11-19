@@ -1,4 +1,4 @@
-# OSII coding documentation assistant
+# OSII MCP
 
 `osii-mcp` connects coding harnesses to an OSII library of PDF manuals, legacy
 software documentation, research reports, and other reference material. It
@@ -66,45 +66,50 @@ library's evidence):
 }
 ```
 
-## Run with a coding harness
+## Download and run
 
-From the OSII monorepo root, install/run the workspace package with `uv`:
-
-```bash
-OSII_ROOT=/absolute/path/to/.osii uv run --package osii-mcp osii-mcp --stdio
-```
-
-Windows PowerShell:
-
-```powershell
-$env:OSII_ROOT="C:\path\to\.osii"
-uv run --package osii-mcp osii-mcp --stdio
-```
-
-Configure a local harness's MCP command as `uv` with arguments
-`["run", "--directory", "/absolute/path/to/osii", "--package", "osii-mcp", "osii-mcp", "--stdio"]`
-and an `OSII_ROOT` environment value pointing to the processed library. STDIO
-does not require a bearer token and reserves stdout for MCP protocol messages.
-When installed independently, the command is `osii-mcp --stdio`; the installed
-`osii` package must also be available.
-
-For HTTP, retain the existing bearer-token configuration:
+This optional branch contains only the MCP client. It accesses a local,
+processed sidecar library through OSII Core's Python interfaces. It does not
+implement the hosted server's account permissions.
 
 ```bash
-OSII_ROOT=/absolute/path/to/.osii ATLAS_MCP_TOKEN=replace-me uv run --package osii-mcp osii-mcp
+git clone --single-branch --branch osii-mcp git@github.com:heidikmkv/osii-private.git osii-mcp
+cd osii-mcp
+uv sync --python 3.12
 ```
+
+OSII Core is a pinned Git dependency. You need Git and repository access to
+install it. The application and dashboard are not included in this branch.
+For an existing editable Core checkout, use
+`uv pip install --python .venv/bin/python -e /path/to/osii/osii-core`
+(Windows: `.venv/Scripts/python.exe`). Use `uv run --no-sync` afterward to retain
+that development override.
+
+For a local coding harness, configure command `uv`, arguments
+`["run", "--directory", "/absolute/path/to/osii-mcp", "osii-mcp", "--stdio"]`,
+and an `OSII_ROOT` environment value pointing to the processed `.osii` directory.
+STDIO needs no bearer token and reserves stdout for protocol messages.
+
+To run it directly on macOS/Linux:
+
+```bash
+OSII_ROOT=/absolute/path/to/.osii uv run osii-mcp --stdio
+```
+
+On Windows PowerShell:
 
 ```powershell
-$env:OSII_ROOT="C:\path\to\.osii"
-$env:ATLAS_MCP_TOKEN="replace-me"
-uv run --package osii-mcp osii-mcp
+$env:OSII_ROOT = "C:/path/to/.osii"
+uv run osii-mcp --stdio
 ```
 
-The standalone default is `http://127.0.0.1:8021/mcp`; `MCP_HOST` and `MCP_PORT`
-override it. `DEBUG=true` retains the existing development authentication bypass.
-The host `make dev` workflow starts MCP on port 8022. Restart that terminal
-after upgrading. Wiki saving requires write access to the OSII store and writes
-only derived wiki artifacts. Compose deployment is archived.
+For HTTP, set `ATLAS_MCP_TOKEN` to a private token and omit `--stdio`. The default
+endpoint is `http://127.0.0.1:8021/mcp`; `MCP_HOST` and `MCP_PORT` override it.
+`DEBUG=true` disables HTTP token checks for local development. OSII's application
+launcher does not start MCP; run and stop this tool separately.
+
+Wiki saving requires write access to the sidecar library. The server writes
+derived wiki artifacts through Core; it does not ingest source files.
 
 ## Storage, freshness and limits
 
@@ -146,8 +151,8 @@ omitted by default to save the harness's context. Page text is limited to
 ## Verify
 
 ```bash
-uv run --package osii-mcp --extra dev python -m pytest osii-mcp/tests osii-core/tests/test_documentation_wiki.py -q
+uv run --extra dev python -m pytest tests -q
 ```
 
 The tests include a real STDIO MCP client that reads evidence, saves a page,
-reuses it without a source search, and verifies revision-conflict handling.
+reuses it, and checks revision conflicts. They create temporary libraries.

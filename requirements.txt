@@ -1,3 +1,2 @@
-fastmcp>=2.0.0
-osii
-pytest>=8.0.0
+# Install this package and its development dependencies.
+-e .[dev]
