@@ -35,7 +35,7 @@ export function IntakeDefaults({path}: {path?: string}) {
     </Stack> : null}
     {message ? <Alert severity={message.severity} onClose={() => setMessage(null)}>{message.text}</Alert> : null}
   </Stack><Dialog open={help} onClose={() => setHelp(false)} fullWidth maxWidth="sm"><DialogTitle>Intake defaults</DialogTitle><DialogContent><Stack spacing={1}>
-    <Typography>Choose the starting preset and embedding chunk sizes. You can change them for each run. Saving does not queue files or change an existing run or open selection.</Typography>
+    <Typography><strong>All processes</strong> is the starting preset: extraction, synthesis, embeddings, and enrichment. Choose the starting preset and embedding chunk sizes. You can change them for each run. Saving does not queue files or change an existing run or open selection.</Typography>
     <Typography>Readers, writing models, enrichment methods, and their settings are configured in the sections below. Saved defaults replace older OSII_INTAKE settings from the startup environment for the fields you save.</Typography>
     <Typography variant="body2" sx={{overflowWrap: "anywhere"}}>Saved in: <code>{path ?? "processors.toml"}</code></Typography>
   </Stack></DialogContent><DialogActions><Button onClick={() => setHelp(false)}>Close</Button></DialogActions></Dialog></Paper>;

@@ -26,14 +26,14 @@ PRESETS = [
     {"id": "text", "label": "Read text only", "synthesize": False, "build_embeddings": False, "enrich": False},
     {"id": "search", "label": "Read + semantic search", "synthesize": False, "build_embeddings": True, "enrich": False},
     {"id": "summary-search", "label": "Read + summaries + search", "synthesize": True, "build_embeddings": True, "enrich": False},
-    {"id": "full", "label": "Read + summaries + search + enrichment", "synthesize": True, "build_embeddings": True, "enrich": True},
+    {"id": "full", "label": "All processes", "synthesize": True, "build_embeddings": True, "enrich": True},
 ]
 
 
 def intake_defaults(environment: Mapping[str, str] | None = None, settings: Mapping[str, Any] | None = None) -> dict:
     env = os.environ if environment is None else environment
     env = {**env, **{ENV_FIELDS[name]: str(value) for name, value in (settings or {}).items() if name in ENV_FIELDS}}
-    preset_id = env.get("OSII_INTAKE_PRESET", "summary-search")
+    preset_id = env.get("OSII_INTAKE_PRESET", "full")
     preset = next((p for p in PRESETS if p["id"] == preset_id), None)
     if preset is None:
         raise ValueError("OSII_INTAKE_PRESET must be text, search, summary-search, or full")

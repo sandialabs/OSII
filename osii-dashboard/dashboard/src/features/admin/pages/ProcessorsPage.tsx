@@ -7,7 +7,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip,
   Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel,
-  IconButton, LinearProgress, MenuItem, Paper, Snackbar, Stack, Switch, Tab, Tabs, TextField, Tooltip, Typography,
+  IconButton, LinearProgress, MenuItem, Paper, Snackbar, Stack, Switch, TextField, Tooltip, Typography,
 } from "@mui/material";
 import type { AlertColor } from "@mui/material";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
@@ -32,6 +32,7 @@ import type { WorkflowStepId } from "../../../domain/workflow";
 
 import { apiJson } from "../../../api/client";
 import { ModelPicker, type ModelOption } from "../../models/components/ModelPicker";
+import { suggestedConnectionName, sameEndpoint } from "../../models/connectionName";
 import { EndpointFields } from "../../models/components/EndpointFields";
 
 const DEFAULT_EMBEDDING_MODEL = "all-minilm";
@@ -120,7 +121,11 @@ export function ProcessorsPage() {
   const modelTestVersion = useRef(0);
   const [modelTests, setModelTests] = useState<Record<string, {ok: boolean; detail?: string; dimensions?: number}>>({});
   useEffect(() => { modelTestVersion.current += 1; setModelTests({}); }, [providerForm.base_url, apiKey, connectionOpen]);
-  const [connectionPanel, setConnectionPanel] = useState(0);
+  const [nameEdited, setNameEdited] = useState(false);
+  const [allowDuplicate, setAllowDuplicate] = useState(false);
+  useEffect(() => { setAllowDuplicate(false); }, [providerForm.base_url, connectionOpen]);
+  const friendlyName = nameEdited ? providerForm.display_name ?? "" : suggestedConnectionName(providerForm.base_url, providerForm.chat_model || providerForm.embedding_model);
+  const duplicateConnection = !editingProviderId ? providerData.data?.providers.find(p => p.type === providerForm.type && sameEndpoint(p.base_url, providerForm.base_url)) : undefined;
   const [connectionStatus, setConnectionStatus] = useState("");
   const [savingConnection, setSavingConnection] = useState(false);
   const [serviceBusy, setServiceBusy] = useState<string | null>(null);
@@ -171,7 +176,8 @@ export function ProcessorsPage() {
     return provider;
   };
   const openNewConnection = () => {
-    setConnectionPanel(0);
+    setNotice(null);
+    setNameEdited(false);
     setConnectionStatus("");
     setEditingProviderId(null);
     setProviderForm(newConnectionProvider("openai"));
@@ -179,7 +185,8 @@ export function ProcessorsPage() {
     setConnectionOpen(true);
   };
   const openExistingConnection = (provider: ModelProvider) => {
-    setConnectionPanel(0);
+    setNotice(null);
+    setNameEdited(Boolean(provider.display_name));
     setConnectionStatus("Saved connection · Checking model catalog…");
     setEditingProviderId(provider.id);
     setProviderForm(provider);
@@ -202,11 +209,12 @@ export function ProcessorsPage() {
 
   const saveConnection = async (event: FormEvent) => {
     event.preventDefault();
+    if (duplicateConnection && !allowDuplicate) return;
     setSavingConnection(true);
     setConnectionStatus("Saving…");
     setCatalogQueried(false);
     try {
-      await createModelProvider(providerForm);
+      await createModelProvider({...providerForm, display_name: friendlyName});
       setEditingProviderId(providerForm.id);
       if (apiKey) await saveModelProviderCredential(providerForm.id, apiKey);
       setProviderForm(current => ({ ...current, credential_present: Boolean(apiKey) || current.credential_present }));
@@ -228,10 +236,25 @@ export function ProcessorsPage() {
     }
   };
 
+  const saveConnectionName = async () => {
+    if (!editingProviderId) { notify("Save and check the endpoint first.", "info"); return; }
+    setSavingConnection(true);
+    try {
+      const saved = providerData.data?.providers.find(provider => provider.id === editingProviderId);
+      await createModelProvider({...saved ?? providerForm, display_name: friendlyName});
+      setProviderForm(current => ({...current, display_name: friendlyName}));
+      setNameEdited(true);
+      await refreshSetup();
+      notify("Connection name saved.");
+    } catch (error) { notify((error as Error).message, "error"); }
+    finally { setSavingConnection(false); }
+  };
+
   const selectConnectionModel = async (capability: "chat" | "embedding", model: string) => {
     const version = modelTestVersion.current;
-    const updated = capability === "chat" ? {...providerForm, chat_model: model, synthesis_model: model}
+    const selected = capability === "chat" ? {...providerForm, chat_model: model, synthesis_model: model}
       : {...providerForm, embedding_model: model};
+    const updated = {...selected, display_name: nameEdited ? friendlyName : suggestedConnectionName(selected.base_url, selected.chat_model || selected.embedding_model)};
     setProviderForm(updated);
     setSavingConnection(true);
     try {
@@ -570,7 +593,7 @@ export function ProcessorsPage() {
             <TextField select size="small" label="Writing model endpoint" value={binding} onChange={event => void changeProcessorBinding(processor, event.target.value)} sx={{minWidth: 280}}>
               <MenuItem value="">Automatic · {processor.resolved_models?.chat ?? "connect a language model"}</MenuItem>
               {binding && !languageConnections.some(provider => provider.id === binding) ? <MenuItem value={binding}>{binding} · unavailable</MenuItem> : null}
-              {languageConnections.map(provider => <MenuItem key={provider.id} value={provider.id}>{provider.id} · {provider.chat_model} · {provider.base_url}</MenuItem>)}
+              {languageConnections.map(provider => <MenuItem key={provider.id} value={provider.id}>{provider.display_name || provider.id} · {provider.chat_model} · {provider.base_url}</MenuItem>)}
             </TextField>
             {processor.model_error ? <Typography variant="caption" color="error">{processor.model_error}</Typography> : null}
             <Button size="small" onClick={() => openNewConnection()}>Connect model</Button>
@@ -630,7 +653,7 @@ export function ProcessorsPage() {
         {(data?.providers ?? []).filter((provider) => provider.enabled && !(provider.type === "ollama" && provider.implicit)).map((provider) => <Stack key={provider.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1} alignItems={{ sm: "center" }}>
           <Stack spacing={0.75} minWidth={0}>
             <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-              <Typography variant="body2" fontWeight={700}>{provider.id}</Typography>
+              <Typography variant="body2" fontWeight={700}>{provider.display_name || provider.id}</Typography>
               <ConnectionEndpointStatus provider={provider} generation={data?.configuration.generation} />
               {provider.default_chat ? <Chip size="small" label="Default language" /> : null}
               {provider.default_embedding ? <Chip size="small" label="Default embedding" /> : null}
@@ -668,12 +691,12 @@ export function ProcessorsPage() {
         </Stack></AccordionDetails></Accordion>
 
         <Accordion variant="outlined" disableGutters><AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>Connection maintenance</Typography></AccordionSummary><AccordionDetails><Stack spacing={1.25}>
-          {(data?.providers ?? []).map((provider) => <Paper key={provider.id} variant="outlined" sx={{ p: 1.5 }}><Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}><Stack><Typography variant="body2" fontWeight={700}>{provider.id}</Typography><Typography variant="caption" color="text.secondary">{provider.base_url} · priority {provider.priority} · {provider.enabled ? "enabled" : "disabled"}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => openExistingConnection(provider)}>Edit</Button><Button size="small" onClick={() => void checkConnection(provider)}>Test</Button>{provider.credential_present && provider.credential_source === "repo_env" ? <Button size="small" color="error" onClick={() => void forgetCredential(provider)}>Forget key</Button> : null}<Button size="small" color="error" onClick={() => void removeConnection(provider)}>Remove</Button></Stack></Stack></Paper>)}
+          {(data?.providers ?? []).map((provider) => <Paper key={provider.id} variant="outlined" sx={{ p: 1.5 }}><Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}><Stack><Typography variant="body2" fontWeight={700}>{provider.display_name || provider.id}</Typography><Typography variant="caption" color="text.secondary">{provider.base_url} · priority {provider.priority} · {provider.enabled ? "enabled" : "disabled"}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => openExistingConnection(provider)}>Edit</Button><Button size="small" onClick={() => void checkConnection(provider)}>Test</Button>{provider.credential_present && provider.credential_source === "repo_env" ? <Button size="small" color="error" onClick={() => void forgetCredential(provider)}>Forget key</Button> : null}<Button size="small" color="error" onClick={() => void removeConnection(provider)}>Remove</Button></Stack></Stack></Paper>)}
         </Stack></AccordionDetails></Accordion>
 
         <Accordion variant="outlined" disableGutters><AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>Custom Processor API services</Typography></AccordionSummary><AccordionDetails><Stack spacing={1.5}>
           <Typography variant="body2" color="text.secondary">Paste a running service&apos;s base address. OSII reads its descriptor and learns its name, capability, scopes, outputs, and model needs automatically.</Typography>
-          <Box component="form" onSubmit={(event) => void addProcessor(event)}><Stack spacing={1}><TextField size="small" label="Running processor URL" required value={processorForm.base_url} onChange={(event) => setProcessorForm({ ...processorForm, base_url: event.target.value })} helperText="For example, http://127.0.0.1:8099" /><TextField size="small" select label="Writing model" value={processorForm.model_connection} onChange={(event) => setProcessorForm({ ...processorForm, model_connection: event.target.value })}><MenuItem value="">Library default</MenuItem>{(providerData.data?.providers ?? []).filter((provider) => provider.chat_model).map((provider) => <MenuItem key={provider.id} value={provider.id}>{provider.id} · {provider.chat_model}</MenuItem>)}</TextField><Button type="submit" variant="contained" sx={{ alignSelf: "flex-start" }}>Discover and register</Button></Stack></Box>
+          <Box component="form" onSubmit={(event) => void addProcessor(event)}><Stack spacing={1}><TextField size="small" label="Running processor URL" required value={processorForm.base_url} onChange={(event) => setProcessorForm({ ...processorForm, base_url: event.target.value })} helperText="For example, http://127.0.0.1:8099" /><TextField size="small" select label="Writing model" value={processorForm.model_connection} onChange={(event) => setProcessorForm({ ...processorForm, model_connection: event.target.value })}><MenuItem value="">Library default</MenuItem>{(providerData.data?.providers ?? []).filter((provider) => provider.chat_model).map((provider) => <MenuItem key={provider.id} value={provider.id}>{provider.display_name || provider.id} · {provider.chat_model}</MenuItem>)}</TextField><Button type="submit" variant="contained" sx={{ alignSelf: "flex-start" }}>Discover and register</Button></Stack></Box>
           {(processors.data?.processors ?? []).map((processor) => {
             const binding = processor.model_access?.mode === "gateway" ? Object.values(processor.model_access.bindings ?? {})[0] : null;
             return <Stack key={processor.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}><Stack><Typography variant="body2" fontWeight={700}>{processor.display_name}</Typography><Typography variant="caption" color="text.secondary">{processor.kind} · {processor.base_url} · {binding ? `Language model: ${binding}` : processor.model_requirements?.chat ? "Library default" : "No model required"}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => void testProcessor(processor, false)}>Health</Button><Button size="small" variant="outlined" onClick={() => void testProcessor(processor, true)}>Descriptor</Button><Button size="small" color="error" onClick={() => void removeProcessor(processor)}>Remove</Button></Stack></Stack>;
@@ -686,34 +709,28 @@ export function ProcessorsPage() {
       <Button variant="contained" color="secondary" onClick={() => navigate("/intake")} disabled={!data?.extraction_ready}>Continue to Intake →</Button>
     </Stack>
 
-    <Dialog open={modelHelp} onClose={() => setModelHelp(false)} maxWidth="sm" fullWidth><DialogTitle>Model capabilities</DialogTitle><DialogContent>Language models generate chat, summaries, and wikis. Embedding models turn text into numeric vectors for semantic search. OSII uses capability information from your endpoint. When it supplies only names, capabilities remain unknown until you select and test a model. Listed does not mean verified. Tests use a small request and may incur provider charges. Default assignments are configured outside this connection dialog.</DialogContent><DialogActions><Button onClick={() => setModelHelp(false)}>Close</Button></DialogActions></Dialog>
+    <Dialog open={modelHelp} onClose={() => setModelHelp(false)} maxWidth="sm" fullWidth><DialogTitle>Endpoints and models</DialogTitle><DialogContent><Stack spacing={1.5}><Typography><strong>Endpoints can serve different functions.</strong> Language models generate chat, summaries, and wikis. Embedding models support semantic search.</Typography><Typography><strong>Choose a model suited to your task.</strong> Research the model and your provider’s documentation to understand its strengths, limitations, and supported functions. Appearing in a list does not guarantee that it will work; use <strong>Test</strong> to check it. Tests make small requests and may incur provider charges.</Typography><Typography><strong>Using Ollama?</strong> Download it from <a href="https://ollama.com/download" target="_blank" rel="noreferrer">ollama.com/download</a> and start it before connecting. You also need installed models; OSII can download the starter models below.</Typography></Stack></DialogContent><DialogActions><Button onClick={() => setModelHelp(false)}>Close</Button></DialogActions></Dialog>
     <Dialog open={connectionOpen} onClose={() => setConnectionOpen(false)} fullWidth maxWidth="sm"><Box component="form" sx={{display: "flex", flexDirection: "column", maxHeight: "90vh"}} onSubmit={(event) => void saveConnection(event)}>
-      <DialogTitle>{editingProviderId ? "Configure connection" : "Add connection"}</DialogTitle><DialogContent>
+      <DialogTitle sx={{display: "flex", alignItems: "center", justifyContent: "space-between"}}>{editingProviderId ? "Configure connection" : "Add connection"}<IconButton aria-label="About endpoints and models" onClick={() => setModelHelp(true)}><HelpOutlineIcon /></IconButton></DialogTitle><DialogContent>
       {connectionOpen && !serviceLogs ? renderNotice() : null}
       <Stack spacing={1.5} sx={{ pt: 0.5 }}>
-        {catalogQueried && <Tabs value={connectionPanel} onChange={(_, value: number) => setConnectionPanel(value)} aria-label="Connection setup"><Tab label="Connection" /><Tab label={`Models (${catalogModels.length})`} /></Tabs>}
         {connectionStatus && <Alert severity={connectionStatus.toLowerCase().includes("failed") ? "error" : "info"}>{connectionStatus}</Alert>}
-        {connectionPanel === 0 && <>
         {!editingProviderId && <TextField select label="Connection" value={providerForm.type} disabled={Boolean(editingProviderId)} onChange={(event) => { setProviderForm(newConnectionProvider(event.target.value as ModelProvider["type"])); setApiKey(""); }}><MenuItem value="openai">OpenAI-compatible endpoint</MenuItem><MenuItem value="ollama">Ollama (local model server)</MenuItem></TextField>}
-        {!editingProviderId && <TextField label="Connection name" required disabled={Boolean(editingProviderId)} value={providerForm.id} onChange={(event) => setProviderForm({ ...providerForm, id: event.target.value.trim().toLowerCase() })} />}
-        {editingProviderId && <Typography variant="body2">{providerForm.id} · {providerForm.type === "ollama" ? "Ollama" : "OpenAI-compatible"}</Typography>}
         <EndpointFields required baseUrl={providerForm.base_url} onBaseUrl={base_url => setProviderForm({ ...providerForm, base_url })}
           apiKey={apiKey} onApiKey={setApiKey} credentialPresent={providerForm.credential_present}
           credentialWritable={providerForm.credential_writable !== false} showCredential={providerForm.type !== "ollama"}
           urlHelp={providerForm.type === "ollama" ? "Ollama server address, such as http://localhost:11434." : "Use the OpenAI-compatible API base address."}
           credentialHelp={providerForm.credential_help} />
-        <Button type="submit" variant="contained" disabled={savingConnection}>{savingConnection ? "Saving and checking…" : "Save and check"}</Button>
+        {duplicateConnection && !allowDuplicate && <Alert severity="info"><strong>This endpoint is already connected</strong> as {duplicateConnection.display_name || duplicateConnection.id}.<Stack direction="row" spacing={1}><Button onClick={() => openExistingConnection(duplicateConnection)}>Use existing connection</Button><Button onClick={() => setAllowDuplicate(true)}>Create separate connection</Button></Stack></Alert>}
+        <Button type="submit" variant="contained" disabled={savingConnection || Boolean(duplicateConnection && !allowDuplicate)}>{savingConnection ? "Saving and checking…" : "Save and check"}</Button>
         {providerForm.credential_present && <Button size="small" onClick={() => void forgetCredential(providerForm).then(removed => { if (removed) {setProviderForm(current => ({...current, credential_present: false})); setModelTests({});} })}>Remove saved key</Button>}
-        </>}
-        {catalogQueried && connectionPanel === 1 && <>
-        <Typography variant="caption" sx={{overflowWrap: "anywhere"}}>{providerForm.base_url}</Typography>
-        <Stack direction="row" alignItems="center" justifyContent="space-between"><Typography fontWeight={700}>Available models</Typography><IconButton aria-label="About model capabilities" onClick={() => setModelHelp(true)}><HelpOutlineIcon /></IconButton></Stack>
-        <Typography variant="caption">Choose a model to save and test it. Tests make a small request to your endpoint.</Typography>
+        {catalogQueried && <>
+        <Typography fontWeight={700}>Models</Typography>
         {providerForm.type === "ollama" && <Alert severity="info" icon={false}>Install and start Ollama yourself. OSII can inspect installed models and download the approved starters.</Alert>}
         <ModelPicker disabled={savingConnection} label="Language model" value={providerForm.chat_model} options={discoveredModels.filter(model => !model.capabilities.length || model.capabilities.includes("chat"))}
-          onChange={model => void selectConnectionModel("chat", model)} helperText="Choose an available model for chat, summaries, and wiki generation." />
+          onChange={model => void selectConnectionModel("chat", model)} helperText="Chat, summaries, and wikis" />
         <ModelPicker disabled={savingConnection} label="Embedding model (optional)" value={providerForm.embedding_model} options={discoveredModels.filter(model => !model.capabilities.length || model.capabilities.includes("embedding"))}
-          onChange={model => void selectConnectionModel("embedding", model)} helperText="Choose a model for semantic search. Keyword search remains available without it." />
+          onChange={model => void selectConnectionModel("embedding", model)} helperText="Semantic search" />
         {([['chat', providerForm.chat_model], ['embedding', providerForm.embedding_model]] as const).filter(([, model]) => model).map(([capability, model]) => {
           const result = modelTests[`${capability}:${model}`];
           return <Stack key={capability} direction="row" spacing={1} alignItems="center"><Chip size="small" color={result ? result.ok ? "success" : "error" : "default"} label={`${capability}: ${result ? result.ok ? "Verified" : "Test failed" : "Untested"}`} /><Typography variant="caption">{result?.detail || (result?.dimensions ? `${result.dimensions} dimensions` : model)}</Typography><Button size="small" disabled={savingConnection} onClick={() => void selectConnectionModel(capability, model)}>Test</Button></Stack>;
@@ -735,7 +752,8 @@ export function ProcessorsPage() {
           return <Paper key={recommendation.model} variant="outlined" sx={{ p: 1.25 }}><Stack spacing={0.5}><Stack direction="row" justifyContent="space-between" spacing={1}><Stack><Typography variant="body2" fontWeight={700}>{recommendation.display_name}</Typography><Typography variant="caption" color="text.secondary">{recommendation.model} · {recommendation.size_label} · {recommendation.publisher}</Typography></Stack>{installedName ? <Stack direction="row" spacing={0.75} alignItems="center"><Chip size="small" color="success" label={selected ? "Installed · selected" : "Installed"} />{!selected ? <Button size="small" variant="outlined" onClick={() => void selectInstalledModel(providerForm, recommendation, installedName)}>Use this model</Button> : null}</Stack> : <Button size="small" variant="outlined" disabled={active || !health} onClick={() => void installModel(providerForm, recommendation)}>{active ? "Downloading…" : health ? "Download" : "Checking…"}</Button>}</Stack>{active ? <LinearProgress variant={progress === undefined ? "indeterminate" : "determinate"} value={progress} /> : null}{job?.status === "error" ? <Typography variant="caption" color="error">{job.detail}</Typography> : null}{installedName && recommendation.capability === "embedding" ? <Typography variant="caption" color="text.secondary">The model enables semantic processing. Existing documents still need a semantic-embedding run from Intake.</Typography> : null}</Stack></Paper>;
         })}</Stack> : null}
         </>}
-      </Stack></DialogContent><DialogActions><Button onClick={() => setConnectionOpen(false)}>Close</Button></DialogActions>
+        <TextField size="small" label="Connection name" value={friendlyName} onChange={event => {setNameEdited(true); setProviderForm(current => ({...current, display_name: event.target.value}));}} />
+      </Stack></DialogContent><DialogActions><Button onClick={() => setConnectionOpen(false)}>Close</Button><Button disabled={savingConnection || !editingProviderId || Boolean(duplicateConnection && !allowDuplicate)} onClick={() => void saveConnectionName()}>Save name</Button></DialogActions>
     </Box></Dialog>
 
     <Dialog open={Boolean(serviceLogs)} onClose={() => setServiceLogs(null)} fullWidth maxWidth="md"><DialogTitle>{serviceLogs?.title} logs</DialogTitle><DialogContent>{serviceLogs ? renderNotice() : null}<Box component="pre" sx={{ bgcolor: "grey.950", color: "grey.100", p: 1.5, borderRadius: 1, maxHeight: 420, overflow: "auto", whiteSpace: "pre-wrap", fontSize: "0.75rem" }}>{serviceLogs?.lines.join("\n") || "No recent output."}</Box></DialogContent><DialogActions><Button onClick={() => setServiceLogs(null)}>Close</Button></DialogActions></Dialog>

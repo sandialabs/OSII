@@ -60,6 +60,7 @@ def _load(osii_root) -> list[dict[str, Any]]:
         model = str(connection.get("model") or "")
         records.append({
             "id": str(alias),
+            "display_name": str(connection.get("display_name") or ""),
             "type": "ollama" if connection.get("type") == "ollama-local" else "openai",
             "base_url": str(connection.get("base_url") or "").rstrip("/"),
             "enabled": bool(connection.get("enabled", True)),
@@ -133,6 +134,7 @@ def _save(osii_root, records: list[dict[str, Any]]) -> None:
         provider_type = "ollama-local" if record.get("type") == "ollama" else "openai-compatible"
         common = {
             "type": provider_type,
+            "display_name": str(record.get("display_name") or ""),
             "base_url": str(record.get("base_url") or "").rstrip("/"),
             "enabled": bool(record.get("enabled", True)),
             "priority": int(record.get("priority", 100)),
@@ -193,8 +195,12 @@ def _validate(payload: dict[str, Any], provider_id: str | None = None) -> dict[s
     credential_env = str(payload.get("credential_env") or "").strip()
     if credential_env and not re.fullmatch(r"[A-Z_][A-Z0-9_]*", credential_env):
         raise HTTPException(status_code=422, detail="credential_env must be an environment-variable name, not a credential")
+    display_name = str(payload.get("display_name") or "").strip()
+    if len(display_name) > 200:
+        raise HTTPException(422, "Connection name must be at most 200 characters")
     return {
         "id": identifier,
+        "display_name": display_name,
         "type": provider_type,
         **({"preset": preset} if preset else {}),
         "base_url": base_url,

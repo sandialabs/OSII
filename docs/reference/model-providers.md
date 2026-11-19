@@ -262,12 +262,17 @@ Processor mounts are `/ollama/embedder`, `/ollama/synthesizer`,
 ## Connection setup and configuration ownership
 
 Add a connection using its name, API base URL and optional key, then **Save and check**.
-The compact dialog separates **Connection** and **Models** tabs. The Connection
-tab retains the endpoint and a saved-key mask with replacement/removal controls.
+The dialog keeps endpoint, saved-key controls, **Save and check**, and model
+selection together. A friendly **Connection name** at the bottom is suggested
+from the endpoint hostname and chosen model. Configure lets you edit that name
+without changing stable connection IDs, credential references, or bindings.
+Adding an already-connected endpoint offers the existing connection; making a
+separate connection requires an explicit choice. Existing duplicates are not deleted.
 Save and check saves credentials and reads the endpoint's model catalog; it does not establish
 that every listed model works. Choose a listed language or embedding model to save
-and test that capability with one small inference request. Unknown capabilities
-remain labeled until tested; OSII maintains no model-name allowlist. Tests may
+and test that capability with one small inference request. OSII uses provider capability metadata to filter choices without maintaining
+a model-name allowlist. Missing metadata does not add repetitive labels; test
+the selected model to check that it works. Tests may
 incur provider charges. Manual model entry is no longer offered.
 
 Corporate installations should prepopulate `models.toml` with endpoint URLs,
@@ -288,3 +293,7 @@ every 3 seconds. Completed logs stop polling. Hidden tabs use React Query's
 foreground-only polling and refresh on focus. Worker recovery heartbeats remain
 unchanged. Routine successful status GETs are quiet in terminal access logs;
 failed requests, warnings, exceptions and lifecycle messages remain visible.
+
+New Intake sessions default to **All processes**: extraction, synthesis, embeddings
+and enrichment. Explicit saved presets and per-run choices remain supported.
+The endpoint help button explains model selection and installing/starting Ollama.

@@ -827,6 +827,7 @@ export type ProcessorEndpoint = {
 
 export type ModelProvider = {
   id: string;
+  display_name?: string;
   type: "ollama" | "openai";
   preset?: "corporate";
   base_url: string;

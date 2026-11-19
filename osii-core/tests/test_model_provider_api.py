@@ -497,3 +497,28 @@ def test_status_access_filter_retains_errors_and_actions():
     assert visible("POST", "/api/admin/model-providers/discover", 401)
     assert visible("POST", "/api/intake", 200)
     assert visible("GET", "/api/objects", 200)
+
+
+def test_connection_display_name_is_editable_without_changing_identity(client, monkeypatch):
+    from osii.configuration import load_models_config
+    monkeypatch.setenv("OPENAI_API_KEY", "test-name-secret")
+    payload = {"type": "openai", "base_url": "https://openrouter.ai/api/v1", "chat_model": "chat", "embedding_model": "embedding", "enabled": True, "credential_env": "OPENAI_API_KEY"}
+    first = client.put("/api/admin/model-providers/rename-test", json=payload).json()["provider"]
+    before = load_models_config()
+    result = client.put("/api/admin/model-providers/rename-test", json={**first, "display_name": "Corporate · Research"})
+    assert result.status_code == 200
+    providers = client.get("/api/admin/model-providers").json()["providers"]
+    renamed = next(p for p in providers if p["id"] == "rename-test")
+    assert renamed["display_name"] == "Corporate · Research"
+    assert renamed["credential_present"]
+    assert "test-name-secret" not in result.text
+    after = load_models_config()
+    assert before["defaults"] == after["defaults"]
+    assert before["models"].keys() == after["models"].keys()
+    assert after["models"]["rename-test-embedding"]["display_name"] == "Corporate · Research"
+    assert renamed["chat_model"] == "chat" and renamed["embedding_model"] == "embedding"
+
+
+def test_connection_display_name_length_is_bounded(client):
+    response = client.put("/api/admin/model-providers/rename-test", json={"type": "openai", "base_url": "https://test.invalid/v1", "display_name": "x" * 201})
+    assert response.status_code == 422

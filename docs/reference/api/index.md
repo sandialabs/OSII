@@ -1173,3 +1173,7 @@ optional `dimensions` for embeddings, or `detail` on failure. It does not change
 default assignments or write library artifacts. Clients must invoke it only on
 explicit selection or testing, never periodic status refreshes. Existing health
 and provider configuration endpoints remain compatible.
+
+Model provider GET/PUT payloads support optional `display_name` (up to 200
+characters), persisted in `models.toml`. Updating it changes the friendly label
+without renaming stable provider IDs, defaults, credentials, or processor bindings.

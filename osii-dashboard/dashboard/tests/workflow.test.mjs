@@ -107,3 +107,14 @@ test("queue polling is slow when idle and fast through active transitions", () =
     assert.equal(queuePollInterval([{status: "completed"}, {status}]), 3000);
   }
 });
+
+
+test("connection labels use a friendly host and model without renaming IDs", async () => {
+  const {suggestedConnectionName, sameEndpoint} = await import("../src/features/models/connectionName.ts");
+  assert.equal(suggestedConnectionName("https://api.company.example/v1", "vendor/model-one"), "Company · model-one");
+  assert.equal(suggestedConnectionName("http://localhost:11434", "model"), "Local · model");
+  assert.equal(suggestedConnectionName(""), "Connection");
+  assert.ok(sameEndpoint("https://EXAMPLE.com/v1/", "https://example.com/v1"));
+  assert.ok(!sameEndpoint("https://example.com/v1", "https://example.com/v2"));
+  assert.ok(!sameEndpoint("", ""));
+});

@@ -54,3 +54,10 @@ def test_invalid_saved_defaults_do_not_overwrite_configuration(client, payload):
     before = processors_path().read_bytes()
     assert client.put('/api/intake/defaults', json=payload).status_code == 422
     assert processors_path().read_bytes() == before
+
+
+def test_fresh_intake_defaults_enable_all_processes():
+    defaults = intake_defaults({})
+    assert defaults["preset"] == "full"
+    assert all(defaults[key] for key in ("synthesize", "build_embeddings", "enrich"))
+    assert next(p for p in defaults["presets"] if p["id"] == "full")["label"] == "All processes"
