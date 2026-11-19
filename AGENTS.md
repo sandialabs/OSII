@@ -109,7 +109,7 @@ The agent's job is to execute the human's command—nothing more.
   proportionate to the change.
 - Do not read, edit, format, or rewrite `.ipynb` files unless the human names
   the notebook. Use paired `.py` sources; use
-  `osii-demo-notebooks/manage_notebooks.py` for intentional conversions.
+  `manage_notebooks.py` on the `osii-demo-notebooks` branch for intentional conversions.
 - Automatically stage and commit completed, validated task changes locally.
   Use focused commits, preserve unrelated work, and do not ask the user to
   copy-paste commit commands. This is standing authorization for local commits.

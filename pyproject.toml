@@ -7,7 +7,6 @@ requires-python = ">=3.11,<3.14"
 exclude = ["osii-processor-modules/*"]
 members = [
   "osii-core",
-  "osii-mcp",
   "osii-core/services/local-extractor",
   "osii-core/services/local-tesseract",
   "osii-core/services/local-synthesizer",

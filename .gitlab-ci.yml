@@ -11,4 +11,3 @@ checks:
   script:
     - make test
     - make docs
-    - uv run --frozen --python 3.12 --package osii-mcp --extra dev python -m pytest osii-mcp/tests -q

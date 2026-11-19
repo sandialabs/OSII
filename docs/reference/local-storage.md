@@ -8,7 +8,8 @@ You can explicitly select PostgreSQL for the **whole local Workbench**, not
 just Python reads: Intake, incremental browsing, source/PDF viewing, extraction
 variants, synthesis, standard enrichment products, edits and histories,
 collections, search, chat, research, Activity and pause/cancel/retry controls.
-The API and worker use the same backend; the dashboard and MCP remain API clients.
+The API and worker use the same backend; the dashboard remains an API client.
+The optional MCP tool reads sidecar libraries and does not support this PostgreSQL backend.
 This does **not** turn local OSII into the hosted server or add users or login.
 
 ## What lives where?

@@ -68,16 +68,9 @@ new processing and explains which source needs attention. Existing canonical
 artifacts remain local and usable after the source reconnects. Use **Rescan
 source paths** if files were reorganized on the share.
 
-## Deployment status
+## Runtime storage
 
-Workstation container deployments are archived on
-`archive/workstation-deployment-2026-11-03`. Use the host workflow above.
-OSII does not mount shares or accept share credentials.
-
-## Current scope
-
-One running OSII process has one active documents root. Different shares can
-use different local runtime directories without moving either originals or
-artifacts, but switching between several live Libraries in one dashboard is a
-separate multi-Library feature. This shared-drive workflow establishes the
-safe path and storage behavior that feature will use.
+Keep runtime databases and indexes on local disk. OSII reads originals through
+the mounted path and does not manage share credentials. Use distinct local
+runtime directories for distinct source libraries. For resumable discovery and
+bounded processing, follow [File inventory](large-volumes.md).

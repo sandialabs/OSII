@@ -230,16 +230,15 @@ def test_service_plan_uses_nested_components_without_concurrent_uv_sync():
         {
             "OSII_API_PORT": "8511",
             "OSII_DASHBOARD_PORT": "5173",
-            "OSII_ENABLE_MCP": "true",
-            "OSII_MCP_PORT": "8022",
+            "OSII_ENABLE_MCP": "true",  # Legacy settings cannot restart the separate tool.
             "OSII_EMBEDDINGS_PORT": "8085",
         },
         core_only=False,
     )
 
     by_name = {service.name: service for service in services}
+    assert "mcp" not in by_name
     assert by_name["api"].working_directory == ROOT / "osii-core"
-    assert by_name["mcp"].working_directory == ROOT / "osii-mcp"
     assert by_name["extractor"].working_directory == (
         ROOT / "osii-core" / "services" / "local-extractor"
     )
@@ -354,7 +353,7 @@ def test_optional_postgres_dependency_setup_and_private_core_environment(monkeyp
     env={"OSII_STORAGE_BACKEND":backend,"DATABASE_URL":"postgresql://private:secret@host/library","UV_PROJECT_ENVIRONMENT":str(tmp_path/"osii-env")}
     DEV_STACK.prepare_dependencies("uv","npm",env,core_only=True)
     assert ("postgres" in calls[0])==(backend=="postgres")
-    for name in ("api","worker","inventory-worker","mcp","dashboard","readable-wiki","extractor","model-bridge"):
+    for name in ("api","worker","inventory-worker","dashboard","readable-wiki","extractor","model-bridge"):
         service=DEV_STACK.Service(name,("python",),tmp_path,0)
         child=DEV_STACK.service_environment(service,env)
         assert ("DATABASE_URL" in child)==(name in {"api","worker"})
@@ -553,11 +552,6 @@ if __name__ == '__main__':
 """)
     result = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=50)
     assert result.returncode == 0, result.stderr
-
-
-def test_mcp_is_opt_in_and_no_port_is_claimed_by_default():
-    assert not any(s.name == "mcp" for s in DEV_STACK.service_commands("uv", "npm", {}, core_only=False))
-    assert any(s.name == "mcp" for s in DEV_STACK.service_commands("uv", "npm", {"OSII_ENABLE_MCP": "true"}, core_only=True))
 
 
 def test_runtime_probe_uses_the_services_exact_environment(monkeypatch, tmp_path):

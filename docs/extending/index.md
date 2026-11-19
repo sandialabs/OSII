@@ -99,47 +99,6 @@ shared `ScopeBatchResults` component loads result metadata by page and opens
 individual results on demand.
 
 
-### Workbench landing page
 
-Home (`/`) presents six document tools; Files (`/files`) retains the flat library.
-Analyze Library opens the overview, whose **All tools** link opens the processor
-workbench. Search supports lexical retrieval without embeddings. Chat and report
-tiles require saved text and a configured AI model; Topic Explorer requires
-current compatible embeddings and can explore a partially indexed library.
-Gray tools show what is missing. A configured model is not a connection test.
-
-Setup appears until **Done with setup** is saved for this library. Hosted Setup
-is administrator-only. It remains accessible in the sidebar after dismissal.
-`GET /api/workbench/home` supplies metadata-only readiness;
-`POST /api/admin/setup/dismiss` persists dismissal (administrator and CSRF checks
-apply on the hosted service). Home does not read source text, load vector payloads,
-compute projections, or invoke models. Shared tile/navigation definitions and
-UI components consume product adapters; they do not access storage directly.
-
-
-### Shared Tools and Setup screens
-
-`/tools` is the document-tool landing page, using the Home tiles and readiness
-contract. Library-wide operation selection and saved results remain at
-`/tools/workbench`, linked as **Open processing workbench**.
-
-Local and hosted Setup share `SetupLayout`, `CapabilitySection`, and
-`ReadinessPanel`: model connections, four OSII component drawers, and advanced
-diagnostics. Product adapters retain their own persistence and permissions.
-Hosted source selection stays inside the read-only mounted root; local file-type
-routing and launcher lifecycle controls remain local capabilities. Registering a
-Processor API address never installs or starts it.
-
-
-### Toolbox and processor terminology
-
-The **Toolbox** is the frontend collection of tools such as Browse, Search, Chat,
-reports, library analysis, and topic exploration (`/tools` remains its URL).
-Backend components are **processors**, implementing extraction, synthesis,
-embedding, or enrichment. Their independent source modules live under
-`osii-processor-modules/`; existing processor IDs and saved provenance are retained.
-
-Browse uses the same `BrowseExplorer`, `BrowseGrid`, breadcrumbs, and folder-detail
-components in local and hosted products. Adapters own catalog queries and URL
-state; hosted source files stay read-only. List/icon views, name filtering and
-sorting apply to the current folder; server catalogs remain paginated.
+For frontend routes, shared controls, and artifact views, follow the
+[frontend extension guide](frontend-tools.md).

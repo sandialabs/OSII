@@ -95,7 +95,7 @@ New work belongs behind Processor API v1.
 5. Register the service in Setup, test it, and select it for an Intake action.
 
 For an executable client and commit-adapter example, run
-`osii-demo-notebooks/03_Create_local_text_previews.py`. For a model-backed
+`02_Create_local_text_previews.py` on the `osii-demo-notebooks` branch. For a model-backed
 knowledge product, see the [LLM wiki walkthrough](../tutorials/llm-wiki.md).
 
 

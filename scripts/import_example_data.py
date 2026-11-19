@@ -22,13 +22,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DESTINATION = REPOSITORY_ROOT / "osii-data" / "source"
-PURCELL_SOURCE = (
-    REPOSITORY_ROOT
-    / "osii-demo-notebooks"
-    / "demo-workspace"
-    / "documents"
-    / "purcell.pdf"
-)
+PURCELL_SOURCE = REPOSITORY_ROOT / "scripts" / "demo-data" / "purcell.pdf"
 
 
 def configured_destination() -> Path:

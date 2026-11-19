@@ -72,3 +72,7 @@ and [extension guides](docs/extending/index.md) for processors and frontend tool
 Use the `osii-server` branch for an authenticated library shared by a team;
 `archive/workstation-deployment-2026-11-03` preserves earlier workstation
 packaging workflows.
+
+Optional [Python demos](docs/tutorials/python-demonstrations.md) and the agent
+interface are separate downloads on the `osii-demo-notebooks` and `osii-mcp`
+branches. Each branch contains only that tool.

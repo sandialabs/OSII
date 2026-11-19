@@ -1,8 +1,6 @@
 # File inventory and progressive processing
 
-Intake includes resumable discovery and frozen staging selections. The
-[shared-drive Intake plan](../planning/shared-drive-intake.md) records the
-implementation scope and remaining corporate-scale validation.
+Intake includes resumable discovery and frozen staging selections.
 
 File inventory is included in normal OSII-local on one workstation or SSH-accessible
 node, using a
@@ -25,7 +23,7 @@ OSII_START_PROCESSOR_MODULES=false
 
 Run `make dev`, or `.\scripts\osii.ps1 dev` on Windows, and open **Intake →
 Add files** in the normal dashboard. The regular API, sidecar intake worker, metadata inventory
-worker, MCP, and other tools run together. No branch or storage-mode switch is
+worker, and dashboard run together. No branch or storage-mode switch is
 needed. `OSII_START_PROCESSOR_MODULES=false` is an optional startup setting, not an
 inventory requirement.
 
@@ -121,7 +119,7 @@ completed chunk checkpoints, and preserves vectors for the rest of the library.
 On an embedding failure, use **Queue & activity → Retry embeddings** to continue without
 repeating completed extraction, summaries, enrichment, or embedding requests.
 Source reads, extraction, summaries, and enrichment use only the frozen members.
-The [incremental embeddings decision](../concepts/adr-incremental-embeddings.md)
+The [incremental embeddings decision](../reference/retrieval-jobs.md)
 describes snapshot consistency, legacy indexes, and checkpoint recovery.
 Staged Intake writes normal document sidecars and a metadata-only frozen manifest;
 it avoids legacy whole-folder rehashing and does not claim that this batch is a
@@ -286,108 +284,6 @@ database size, and peak resident memory. Synthetic rows validate database scale,
 not SMB throughput. Repeat discovery on representative shared storage before
 claiming production capacity. The benchmark's memory measurement uses POSIX
 `resource`; the application and automated tests support Windows independently.
-
-Initial macOS development measurements on 5 November 2026, with temporary local
-storage, are a baseline rather than a corporate-drive capacity claim:
-
-| Inventory | Peak RSS | Filtered 100-row page | Full totals | Stratified selection |
-| --- | ---: | ---: | ---: | ---: |
-| 1 million synthetic entries | 56.1 MiB | 0.7 ms | 0.2 s | 1.4 s |
-| 5 million synthetic entries | 58.6 MiB | 1.0 ms | 11.2 s | 12.7 s |
-
-The five-million-entry database occupied about 1.46 GiB. Real traversal of
-100,000 empty local files took 1.8 seconds with 56.5 MiB peak RSS, excluding
-fixture creation. These checks do not measure extraction or network storage.
-
-
-## Verification on 9 November 2026
-
-A scan of `/Volumes/home/hk` on the NAS at `192.168.1.150` observed 2,135 PDFs,
-3,912,740,792 known logical bytes, and five directory tasks with no metadata
-failures. The mounted protocol was SMB (`smbfs`), not NFS. Scan acknowledgement
-was 6 ms. A second scan was paused after 507 observations, survived an inventory
-worker restart, and resumed through Intake to the same complete totals. A health
-request during the scan returned in about 0.6 ms. These are warm/cached single-
-workstation observations, not corporate throughput guarantees.
-
-The browser froze and restored a one-file selection and started text-only Intake.
-That PDF completed into normal document sidecars and was returned by keyword
-search. No summaries, embeddings, or other model calls were requested. Automated
-fault tests cover denied entry metadata, incomplete coverage, a stopped reader,
-checkpoint replay, stale files, malformed PDFs, lost handoff acknowledgement,
-explicit rebinding, migration backup, and processing pause/resume. Real network
-disconnection and a kernel-blocked NFS call were not induced on this NAS.
-
-The updated synthetic million-row benchmark completed with a 0.9 ms late page,
-0.19 s aggregate summary, 1.56 s bounded sample, and 56.6 MiB peak process RSS;
-the database was about 328 MiB. This checks SQL paging/filtering/staging memory,
-not mixed ACLs or filesystem traversal throughput. Validate representative NFS
-branches and compare reader counts before a 35 TB rollout.
-
-
-## Intake flow verification on 10 November 2026
-
-The revised UI was checked against `/Volumes/home/hk`, mounted from
-`192.168.1.150` using SMB (`smbfs`). Opening Intake issued no directory-browse,
-inventory-entry, or aggregate-summary requests. Explicit directory browsing
-returned the root's three visible entries. A new metadata scan was paused and
-resumed through Intake and finished with 2,142 observed entries, zero failed
-directories, and zero metadata errors. A directly selected PDF completed a
-text-only processing run without requesting model calls.
-
-Browser checks covered stable selection after filtering, selection restoration
-and checked membership, historical logs collapsed by default and opened on
-demand, desktop/mobile layout, and conditional mount recovery. Mocked scan status
-verified the incomplete-scan acknowledgement without rebinding the real NAS.
-Automated tests cover cursor paging, cancellation/disconnect/timeout cleanup,
-permission boundaries, hidden-entry inspection limits, restart checkpoints,
-malformed PDFs, and retries that preserve completed files and embedding phases.
-Actual share disconnection, mixed corporate ACLs, multi-day traversal, and 35 TB
-capacity remain unvalidated by this smoke test.
-
-
-### OCR, synthesis, embeddings, and retry verification
-
-A three-file batch selected through Intake completed against the same SMB share
-on 10 November 2026. Run `4d80259408af7e40f211bcf0329b797b` used full-page
-Tesseract OCR, `ollama.synthesizer` with `llama3.2:1b`, and `all-minilm`
-384-dimensional embeddings. The new OCR versions were explicitly made primary;
-all earlier extraction-version files and the original PDF hashes were retained.
-
-| PDF | Pages | OCR regions with confidence | Embedding chunks |
-| --- | ---: | ---: | ---: |
-| `purcell.pdf` | 9 | 5,751 | 118 |
-| `RTPXLMUSUTMAO6D4NP6PXTDMTPMEAVC6.pdf` | 1 | 108 | 2 |
-| `UFEU6A6X2AEU2ACABZLV35NF45HHUKMB.pdf` | 5 | 427 | 18 |
-
-The latter two files are under `pdfs-environment/gardening-and-landscaping`.
-All three completed OCR, synthesis, and embedding with no remaining run errors.
-The index contained 138 new chunks plus six previously embedded control chunks;
-the control vectors matched their original float32 hashes exactly. Semantic and
-lexical search for “community school gardens” returned the school-gardens bill
-with page and character-span grounding. Browser checks confirmed the 108 OCR
-boxes overlay the one-page original, plaintext/Mathpix views work, and summaries
-are rendered with editing controls. Synthesis provenance references the new OCR
-versions and stores the descriptive-title/basic-metadata fields. This checks
-pipeline behavior and persistence, not the factual quality of the small model's
-suggestions; unverified metadata for the resource-list PDF remained blank with
-an evidence-validation qualifier.
-
-Controlled failures used an isolated runtime, an independent inventory backup,
-and the same three NAS originals and live processor/model endpoints. A synthesis
-failure was retried with only three total OCR calls, while completed summaries
-retained their timestamps and all 138 embeddings were reused. An embedding
-failure was then injected after eight chunks were committed. After interrupting
-and recovering the worker, retry reused those eight chunks, completed all three
-documents, and preserved original OCR/summary artifacts and six unrelated vectors.
-The failed pass left the previous published index intact. Fault injection did
-not alter the live library's model configuration, original PDFs, or paused bulk
-intake.
-
-Regression tests also cover recovered files joining the embedding set and
-changed source bytes producing a new content identity. Derived catalog schema 4
-allows multiple content-addressed revisions at one source path; upgrading that
-cache rebuilds it from sidecars without changing the canonical inventory.
 
 ## Slow shares and Intake diagnostics
 

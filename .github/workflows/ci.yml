@@ -31,8 +31,6 @@ jobs:
         run: uv run --frozen --python 3.12 --package osii --extra postgres --extra dev python -m pytest --noconftest osii-core/tests/test_library_reads.py osii-core/tests/test_processing_commits.py osii-core/tests/test_library_authoring.py osii-core/tests/test_retrieval_jobs.py osii-core/tests/test_text_authoring.py osii-core/tests/test_local_postgres.py -q
       - name: Shared RAG strategies
         run: uv run --frozen --python 3.12 --package osii --extra rag-haystack --extra dev python -m pytest osii-core/rag-tests osii-core/tests/test_rag_experiments_api.py -q
-      - name: MCP
-        run: uv run --frozen --python 3.12 --package osii-mcp --extra dev python -m pytest osii-mcp/tests -q
       - name: Processor contracts
         run: |
           for service in local-extractor local-tesseract local-synthesizer local-embedder local-enricher model-provider-bridge; do
@@ -68,7 +66,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.1.0
       - name: Windows bootstrap and worker imports
-        run: uv run --frozen --python 3.12 --package osii --extra dev python -m pytest --noconftest osii-core/tests/test_dev_stack_supervisor.py -q -k "worker_spawn or powershell or runtime_probe or mcp_is_opt_in"
+        run: uv run --frozen --python 3.12 --package osii --extra dev python -m pytest --noconftest osii-core/tests/test_dev_stack_supervisor.py -q -k "worker_spawn or powershell or runtime_probe"
       - name: Windows Python and OCR processor contracts
         shell: pwsh
         run: |
