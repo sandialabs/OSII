@@ -41,7 +41,6 @@ def main() -> None:
     cache_home = Path(os.getenv("XDG_CACHE_HOME", Path.home() / ".cache"))
     candidates = [
         ("root Python environment", ROOT / ".venv"),
-        ("notebook Python environment", ROOT / "osii-demo-notebooks" / ".venv"),
         ("dashboard node_modules", ROOT / "osii-dashboard" / "dashboard" / "node_modules"),
         ("staged OSII models", ROOT / "osii-data" / "models"),
         ("OSII derived data", ROOT / "osii-data" / ".osii"),

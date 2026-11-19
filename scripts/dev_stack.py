@@ -39,7 +39,6 @@ SERVICE_DISPLAY_NAMES = {
     "api": "OSII backend API and grounded chat",
     "worker": "sequential intake worker",
     "inventory-worker": "file metadata inventory worker",
-    "mcp": "MCP server for agents",
     "dashboard": "dashboard web interface",
 }
 
@@ -220,11 +219,9 @@ def build_environment(core_only: bool) -> dict[str, str]:
 
     api_port = env.get("OSII_API_PORT", "8511")
     embeddings_port = env.get("OSII_EMBEDDINGS_PORT", "8085")
-    mcp_port = env.get("OSII_MCP_PORT", "8022")
     workspace_python_path = os.pathsep.join(
         (
             str(REPOSITORY_ROOT / "osii-core"),
-            str(REPOSITORY_ROOT / "osii-mcp"),
         )
     )
     if env.get("PYTHONPATH"):
@@ -242,9 +239,7 @@ def build_environment(core_only: bool) -> dict[str, str]:
             # A visible name avoids macOS marking every .pth file beneath a
             # dot-prefixed .venv as hidden and skipping editable packages.
             "UV_PROJECT_ENVIRONMENT": str(REPOSITORY_ROOT / "osii-env"),
-            # The MCP package declares `osii` as a workspace dependency. Keep
-            # editable source importable even when an older uv-created .pth
-            # file is present in the shared development environment.
+            # Keep the editable Core source importable.
             "PYTHONPATH": workspace_python_path,
             "SHARED_VOLUME_ROOT": str(source_root),
             "SHARED_VOLUME_HOST_PATH": str(source_root),
@@ -255,9 +250,6 @@ def build_environment(core_only: bool) -> dict[str, str]:
             "OSII_INVENTORY_DB": str(inventory_database),
             "UPLOAD_ORIGINALS_ROOT": str(uploads_root),
             "OSII_BACKEND_BASE_URL": f"http://127.0.0.1:{api_port}",
-            "MCP_HOST": "127.0.0.1",
-            "MCP_PORT": mcp_port,
-            "DEBUG": "true",
             "OSII_CONFIG_DIR": str(configuration_root),
             "OSII_ACTIVE_PROFILE": env.get("OSII_ACTIVE_PROFILE", "development"),
             "OSII_ENV_FILE": str(configuration_root / "secrets.env"),
@@ -333,7 +325,6 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str], *, core_only: b
             "osii",
             "--extra", "rag-haystack",
             "--package",
-            "osii-mcp",
             "--package", "osii-local-extractor",
             "--package", "osii-local-tesseract",
             "--package", "osii-local-synthesizer",
@@ -398,7 +389,6 @@ def service_commands(
 ) -> list[Service]:
     api_port = env.get("OSII_API_PORT", "8511")
     dashboard_port = env.get("OSII_DASHBOARD_PORT", "5173")
-    mcp_port = env.get("OSII_MCP_PORT", "8022")
     embeddings_port = env.get("OSII_EMBEDDINGS_PORT", "8085")
 
     services = [
@@ -450,19 +440,6 @@ def service_commands(
              "watchfiles", "--filter", "python", "--target-type", "function", "osii.volume.worker.main", "osii/volume"),
             REPOSITORY_ROOT / "osii-core",
             0,
-        ),
-        Service(
-            "mcp",
-            (
-                uv,
-                "run",
-                "--no-sync",
-                "--package",
-                "osii-mcp",
-                "osii-mcp",
-            ),
-            REPOSITORY_ROOT / "osii-mcp",
-            int(mcp_port),
         ),
         Service(
             "dashboard",
@@ -905,7 +882,6 @@ def run(
         if env.get("OSII_SOURCE_KIND") == "shared":
             print("[ready] Shared-drive mode: originals are read in place; artifacts remain in the local OSII data folder.")
         print(f"[dev] API health: http://localhost:{api_port}/health")
-        print(f"[dev] MCP: http://localhost:{env.get('OSII_MCP_PORT', '8022')}/mcp")
         print("[ready] Keep this terminal open. Press Ctrl+C once to stop OSII.")
         if not core_only:
             if shutil.which("tesseract") is None:

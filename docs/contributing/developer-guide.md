@@ -17,7 +17,6 @@ The main repository boundaries are:
 - `osii-core/processor-sdk`: copyable processor examples and contract tests;
 - `osii-core/services`: guaranteed local, independently addressable processor hosts;
 - `osii-dashboard/dashboard`: React and TypeScript user interface;
-- `osii-mcp`: agent-facing OSII tools;
 - `osii-processor-modules`: optional processors with independent dependencies and images.
 
 ## Design invariants
@@ -107,3 +106,6 @@ missing manifests, and missing offline test declarations. `--test` runs each
 module's declared contract tests independently. Toolbox is frontend UI;
 processor modules are backend implementations. Historical `toolbox.*` Processor
 API IDs remain compatible and are not directory references.
+
+Optional downloads live on the `osii-demo-notebooks` and `osii-mcp` branches.
+Their source trees contain only the respective tool.

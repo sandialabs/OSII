@@ -27,69 +27,59 @@ markdown_extensions:
 
 nav:
   - Start here: index.md
-  - Four processor APIs:
-      - Start here — Python and HTTP: reference/processor-api/index.md
-      - Extractor — read the source: reference/processor-api/extraction.md
-      - Synthesizer — explain the evidence: reference/processor-api/synthesis.md
-      - Embedder — represent text: reference/processor-api/embedding.md
-      - Enricher — add knowledge: reference/processor-api/enrichment.md
-      - Canonical outputs: reference/processor-api/canonical-outputs.md
-      - Standard artifacts: reference/processor-api/standard-artifacts.md
-  - Install and use:
-      - Windows standalone installer: operations/standalone.md
-      - What are you trying to do?: operations/runbooks.md
-      - Start from source: operations/runbook-development.md
-      - Optional local PostgreSQL: reference/local-storage.md
+  - Use OSII:
+      - Install the desktop app: operations/standalone.md
+      - Develop from source: operations/runbook-development.md
+      - Model connections: operations/model-endpoints.md
+      - Work without a model: operations/local-first.md
+      - Shared source folders: operations/shared-drives.md
       - File inventory: operations/large-volumes.md
-      - Model endpoints: operations/model-endpoints.md
-      - Python walkthrough: tutorials/python-demonstrations.md
-      - Single-file walkthrough: tutorials/single-file.md
-      - Generate an LLM wiki: tutorials/llm-wiki.md
-      - Example enrichments: tutorials/example-enrichments.md
+      - Labels, transfer, and deletion: operations/sensitive-data.md
+      - Process one file: tutorials/single-file.md
+      - Generate a wiki: tutorials/llm-wiki.md
+      - Keyword and entity examples: tutorials/example-enrichments.md
       - Tabular datasets: tutorials/tabular-datasets.md
-      - CLI cheat sheet: reference/cli.md
+      - Optional Python notebooks: tutorials/python-demonstrations.md
   - Understand OSII:
-      - Standalone desktop decision: concepts/adr-standalone-desktop.md
       - Architecture: concepts/architecture.md
-      - Workbench tools decision: concepts/adr-workbench-tools.md
-      - Inventory database decision: concepts/adr-volume-store.md
-      - Incremental embeddings decision: concepts/adr-incremental-embeddings.md
       - Extraction: concepts/extraction.md
-      - Tables and tabular extraction: concepts/tabular-extraction.md
+      - Tables: concepts/tabular-extraction.md
       - Collections and enrichments: concepts/collections-and-enrichments.md
-      - Extraction versions: reference/extraction-versions.md
       - Synthesis: concepts/synthesis.md
-      - Retrieval chunking: concepts/retrieval-chunking.md
-      - Agent traces research: concepts/agent-traces-research.md
-      - Store structure: reference/osii-store.md
-      - Rebuildable catalog: reference/catalog.md
-      - Shared library reads: reference/library-reads.md
-      - Shared processing commits: reference/processing-commits.md
-      - Shared authoring and collections: reference/library-authoring.md
-      - Shared retrieval and jobs: reference/retrieval-jobs.md
-      - Storage boundaries and implementation plan: concepts/adr-storage-boundaries.md
+      - Retrieval chunks: concepts/retrieval-chunking.md
   - Extend OSII:
       - Choose an extension: extending/index.md
-      - Discoverable processor modules: extending/processor-modules.md
-      - Frontend tools and topic explorer: extending/frontend-tools.md
-      - Hello table enricher: extending/hello-enricher.md
+      - Build a first enricher: extending/hello-enricher.md
       - Processor development: extending/processor-development.md
-      - RAG strategies and reranking: extending/rag-strategies.md
-  - Operate offline:
-      - Local-first operation: operations/local-first.md
-      - Shared drives and Samba: operations/shared-drives.md
-      - Commercial vLLM testing: operations/commercial-vllm-testing.md
-      - Guaranteed local processors: operations/local-processors.md
+      - Processor modules: extending/processor-modules.md
+      - Frontend workflows: extending/frontend-tools.md
+      - Topic Explorer: extending/topic-explorer.md
+      - RAG strategies: extending/rag-strategies.md
+  - Reference:
+      - CLI commands: reference/cli.md
+      - REST API: reference/api/index.md
+      - API resource model: reference/api/resource-model.md
+      - Search semantics: reference/api/search-semantics.md
+      - API compatibility: reference/api/compatibility.md
+      - Processor API:
+          - Python and HTTP: reference/processor-api/index.md
+          - Extraction: reference/processor-api/extraction.md
+          - Synthesis: reference/processor-api/synthesis.md
+          - Embedding: reference/processor-api/embedding.md
+          - Enrichment: reference/processor-api/enrichment.md
+          - Canonical outputs: reference/processor-api/canonical-outputs.md
+          - Standard artifacts: reference/processor-api/standard-artifacts.md
+      - Baseline processors: operations/local-processors.md
       - Extractor routing: reference/extractor-routing.md
-      - Sensitive data and transfer: operations/sensitive-data.md
-  - Planning:
-      - Corporate hosted service: planning/hosted-service.md
-  - API and formats:
-      - REST API:
-          - Overview: reference/api/index.md
-          - Resource model: reference/api/resource-model.md
-          - Search semantics: reference/api/search-semantics.md
-          - Compatibility: reference/api/compatibility.md
+      - Model providers: reference/model-providers.md
+      - Extraction versions: reference/extraction-versions.md
       - Collection format: reference/collection-file-format.md
-      - Model-provider capabilities: reference/model-providers.md
+      - Collection suggestions: reference/collection-suggestions.md
+      - Sidecar layout: reference/osii-store.md
+      - Rebuildable catalog: reference/catalog.md
+      - Local storage: reference/local-storage.md
+      - Library reads: reference/library-reads.md
+      - Processing commits: reference/processing-commits.md
+      - Authoring: reference/library-authoring.md
+      - Retrieval and jobs: reference/retrieval-jobs.md
   - Contribute: contributing/developer-guide.md

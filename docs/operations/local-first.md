@@ -1,331 +1,45 @@
-# Local and intermittently connected operation
+# Working without a model
 
-OSII has a useful guaranteed baseline with no container runtime, network call,
-credential, or model cache.
+After dependencies are installed, OSII can extract text, browse documents, run
+keyword search, and create simple derived products without a model connection.
+Initial dependency installation and optional processor setup may need network
+access. OCR requires native Tesseract and its language data.
 
-| Capability | Guaranteed baseline | Optional enhancement |
-|---|---|---|
-| Extraction | native text-layer formats; packaged baseline also includes full-page Tesseract OCR | Tika, OpenCV region OCR, domain processor |
-| Synthesis | cited extractive Markdown preview | selected Ollama, OpenAI-compatible, or OpenAI-compatible chat model |
-| Embedding | none required; lexical hashing remains an advanced compatibility method | selected OpenAI-compatible, Ollama, or OpenAI-compatible embedding model |
-| Search | BM25 | provider/model-specific semantic FAISS index |
-| Enrichment | statistics and keywords table | optional processor modules wiki enrichers; domain Processor API service |
-| Chat | grounded extractive answer | selected model provider |
-| Browse/API/MCP | local dashboard, backend, and MCP | same contracts |
+| Capability | Model-free behavior | Optional model-backed behavior |
+| --- | --- | --- |
+| Extraction | Text-layer PDF, Office, and plain-text readers; Tesseract OCR | A separately selected document processor |
+| Synthesis | Cited source-excerpt preview | Generated narrative from a selected chat model |
+| Search | BM25 keyword retrieval | Semantic or hybrid retrieval with a matching vector index |
+| Enrichment | Statistics and keyword artifacts | Wikis and domain analysis |
+| Chat | Extractive answer | Model-generated grounded answer |
 
-## Start OSII without containers
+Lexical hashing is an optional compatibility embedder. It tests vector plumbing
+and shared-wording similarity; it is not a semantic language model.
 
-The normal path runs directly on macOS, Linux, or Windows. It creates and
-updates its own `osii-env` environment; do not activate an environment first.
-For a first look with bundled example files, use one command:
+## Choose processing explicitly
 
-```bash
-make demo
-```
+Use **Setup** to select readers and any model connections. In **Intake**, choose
+text-only processing when you want no model calls. Selecting summaries or
+embeddings requires the corresponding configured method. Starting a service or
+saving a connection does not process your documents.
 
-```powershell
-.\scripts\osii.ps1 demo
-```
+Keep extracted text and search indexes separate. A new embedding model requires
+a compatible index. Installing a model does not re-embed an existing library.
+Use [model endpoints](model-endpoints.md) for connection setup and
+[extraction versions](../reference/extraction-versions.md) for OCR upgrades.
 
-For your own files already placed in `osii-data/source`, use:
+## When a service is unavailable
 
-Corporate developers should first [copy and review `.env` once](runbook-development.md#first-start-in-a-corporate-checkout).
-That checklist also explains model defaults and connecting optional processors.
+- Chat and synthesis follow their configured provider order and report which
+  provider produced the result. An extractive result is identified as such.
+- Semantic search reports keyword fallback when query embeddings are unavailable.
+- Embedding retries preserve their checkpoint and model identity; they do not
+  silently switch models in the same index.
+- OCR needs a working extractor. A running HTTP service alone does not prove
+  that its native executable and language data are available.
 
-```bash
-make dev
-```
+Pause, resume, cancel, and retry are available in Activity. Controls take effect
+between safe stages; an in-flight provider request may finish first.
 
-```powershell
-.\scripts\osii.ps1 dev
-```
-
-It starts the API (including grounded chat), worker, MCP, dashboard, five baseline processors, and
-the lightweight provider bridge from editable source. The processors are the
-Python text-layer PDF/Office extractor, ordinary full-page Tesseract OCR, the
-no-AI cited source-excerpt preview, lexical token/word-pair hashing vectors,
-and deterministic document statistics/frequent keywords. Bare-metal Tesseract
-requires its native executable on the host. The bridge makes no
-generation request until that capability is used. Setup performs model
-discovery and, when an embedding model is selected, validates one real vector
-so a model that merely appears in `/models` is not incorrectly offered to
-Intake.
-
-This is the complete guaranteed baseline. It does not silently install or
-launch optional system software. After the dashboard opens, use **Setup** to
-connect the team's model endpoint.
-
-Workstation container workflows are archived; use `make dev`.
-
-The host launcher starts the dashboard only after `http://127.0.0.1:8511/health`
-responds. This is especially important on Windows, where several simultaneous
-`uv run` processes can initialize more slowly. A backend failure therefore
-produces a specific terminal error instead of a dashboard that repeatedly
-reports Vite proxy failures.
-
-On Windows, Ctrl+C terminates the complete child-process trees created by
-Uvicorn reloaders, watchfiles, MCP, and npm/Vite. This prevents an apparently
-stopped development stack from leaving ports 5173, 8022, 8080, 8085, 8092–8095, or
-8511 occupied. The repository README includes a scoped recovery command for
-processes left behind by older checkouts; it excludes Ollama and containerized
-OCR services.
-
-Host Python 3.12 dependencies live in the ignored `osii-env/` directory. OSII uses
-that visible name because current macOS Python releases can skip editable
-package path files beneath a hidden `.venv` directory.
-
-Normal `make dev` reads model connections from the checkout's ignored
-`osii-data/config/models.toml` file, unless a configuration or runtime directory
-is explicitly selected. Use **Setup → Add LLM** for an OpenAI-compatible
-endpoint, or choose Ollama in the connection dropdown to
-use a separately installed Ollama service. **OSII does not install or launch
-Ollama:** manage the separate application yourself when you use it, then open it or run `ollama serve`. In
-**Setup → Model connections**, OSII queries `/api/tags` and shows
-the installed models beside the endpoint configuration. The two approved US
-starter models are:
-
-- `all-minilm`, a roughly 46 MB Microsoft-origin embedding model.
-- `llama3.2:1b`, a roughly 1.3 GB Meta chat and synthesis model.
-
-Select **Download** to ask Ollama to pull a missing starter model and show its
-progress. When the pull finishes, the card changes to **Installed**, OSII selects
-and validates that model, and the Download action disappears. Existing documents
-still need an **Additional processing → Build semantic embeddings** run from
-Intake; installing a model does not silently reprocess the library. OSII bundles
-no model weights. Downloads are limited to
-`OSII_OLLAMA_ALLOWED_MODELS`; corporate administrators can extend that list
-with other approved models.
-
-The dashboard starter buttons deliberately cover only the small recommended
-models. Use `ollama list` to inspect everything installed and `ollama pull
-<model>` for other models permitted in your environment, then select **Check
-connection & models** again.
-
-BM25 is the automatic no-model retrieval fallback. Lexical hashing remains an
-explicit vector-plumbing/shared-wording option and is never labeled semantic.
-
-The equivalent manual command remains available, for example:
-
-```bash
-ollama pull all-minilm
-```
-
-Disable the Ollama provider in Setup to return chat, synthesis, and embedding
-to their guaranteed local baselines. A configured OpenAI-compatible provider
-replaces Ollama capability by capability, without changing the rest of OSII.
-
-## Setup and local service control
-
-Setup is organized around **Extractors, Synthesizers, Embedders, and
-Enrichers**. These drawers start closed; open one at a time to inspect its full
-inventory and descriptor-defined settings. Each closed header keeps the selected
-method and availability count visible. **AI model connections** sit above the
-drawers because one OpenAI-compatible or Ollama connection can supply both a
-synthesizer and an embedder. AI is optional; bundled model-free methods support
-the first Intake without a model connection. In packaged deployments, the
-launcher selects optional services and Setup configures how to use them.
-
-Inside the **Extractors** drawer, **Extraction routing** assigns extension groups
-to a primary extractor and ordered fallbacks. A worker tries the primary first and records
-its failure before proceeding left-to-right through the fallbacks. Intake shows
-only a compact readiness result and always uses the saved Setup routing.
-
-Connection checks, service controls, route saves, and settings changes report
-their results in a bottom-right notification that remains visible while the page
-is scrolled. Success messages dismiss after eight seconds; errors remain until
-dismissed or replaced by a later result. A notification also remains visible above
-an open connection dialog. Detailed service output is still available through
-**Advanced & diagnostics → Local capability services → Logs**.
-
-The host launcher includes a loopback-only capability supervisor. The backend
-uses a per-run private token to ask it for status or to start, stop, and restart
-the extractor, preview synthesizer, compatibility embedder, enricher,
-model-provider bridge, Apache Tika, and Tesseract OCR. The browser never sends
-commands, paths, or executable names; it can invoke only those fixed service
-IDs. Processes found on the expected ports but not started by the current OSII
-launcher are shown as **Running externally** and are never stopped by OSII.
-
-API, worker, dashboard, MCP, and chat remain owned by the top-level development
-launcher because stopping the management plane from its own page would make
-recovery confusing. Container deployments report capability health but disable
-local lifecycle controls.
-
-For host development, **Setup → AI model connections** can save an API key in the
-checkout's ignored `osii-data/config/secrets.env`. The file is plaintext and
-must not be committed or shared. Installed launchers instead use their writable
-profile workspace. Only the key's environment-variable name enters
-`models.toml`; neither the key nor its name needs to enter `.osii`. The backend and model-provider bridge reread the file as needed.
-Process environment values take precedence, and file writes are disabled in
-container or administrator-managed deployments.
-
-The normal `local.tesseract-page-ocr` processor runs each complete page through
-Tesseract and is part of `osii-baseline-processors`. The separate
-**Tesseract OCR with OpenCV regions** experiment lives in `osii-processor-modules/`; see
-[image publishing](publishing-images.md). Run and register it explicitly when
-you need tunable contour detection and normalized region boxes for Source and
-Split View overlays. Its default host port is 8081 so it can run beside the
-baseline page OCR on port 8080.
-
-On ordinary laptop-width screens, Split View places the source and grounded
-text side by side and wraps each pane's controls within its own column. On
-narrow screens, the panes stack so neither source content nor text is squeezed.
-
-## Add and reprocess documents
-
-### Follow the setup and intake guide
-
-**Setup** and **Intake** share a six-checkpoint guide: choose a source folder,
-connect a document reader, validate an embedding model, connect a language
-model, read documents, and build a matching semantic index. Select a checkpoint
-or the **Next** action to reach the relevant settings or intake step. The guide
-tracks the whole recorded library, not only the currently selected files.
-
-A running endpoint alone is not enough. OSII tests an actual embedding vector
-and checks that the selected chat model is listed by its endpoint; the first
-chat request still tests generation. Changing the embedding model requires a
-matching index. Partial, stale, or incompatible vectors do not complete the
-index checkpoint. Summaries and enrichments are optional, not prerequisites
-for search and chat.
-
-You can deliberately choose **Use text-only intake** while setting up models.
-Source browsing and keyword search remain available, but that choice does not
-enable semantic search or AI-generated answers. Intake does not silently turn
-off selected AI processing when a model is unavailable. **Activity** shows file
-processing progress and a separate semantic-index phase.
-
-### Understand the collection at a glance
-
-The **Library** landing page and each named **Collection** show an overview:
-file count, recorded total and average source-file size, saved-text coverage,
-file formats, creation/modification timelines, and current semantic-index
-coverage. These statistics describe registered documents in OSII, not every
-unprocessed file in the source folder. Missing sizes are excluded from the
-average and explicitly counted.
-
-New intake records filesystem birth time when the operating system supplies
-it. That is not an authored document date, and copying a file can change it.
-Older or unsupported records remain missing; OSII does not substitute Unix
-`ctime` or intake time. Use **Last modified** when creation dates are missing.
-
-**Reveal topics** runs the existing bundled, model-free noun/adjective keyword
-enricher for this scope. Saved phrases are statistical clues, not verified
-themes; selecting one searches its sources. No model download or automatic
-AI summary is required.
-
-The Intake page separates **Add files**, **Process library**, and **Activity**.
-File-extension routing is intentionally not edited there; use **Setup →
-Extraction routing** so the same policy applies consistently to every run.
-Use Process library after installing a model to add embeddings or summaries to
-documents that were extracted earlier. Use **Upgrade extraction** when a better
-extractor becomes available; OSII preserves both extraction versions and lets
-you decide whether the new result becomes primary. See
-[Extraction versions and downstream lineage](../reference/extraction-versions.md).
-
-Use the optional **Expert context** field for facts that are not reliably
-inferable from the files themselves, such as experiment naming conventions,
-control groups, units, or domain terminology. The context applies to every
-document matched from the selected files or folders, appears in the final
-review and Activity history, is saved in the intake manifest, and is passed to
-extractors, synthesizers, and enrichers that support it.
-
-Intake browses only within `OSII_SOURCE_DIR`. This boundary prevents a browser
-session from walking the entire host filesystem. A mounted shared/network drive
-works when `OSII_SOURCE_DIR` points to that mount and the OSII process can read
-it. For a clearer read-only-source/local-artifact workflow, use `make
-dev-shared SHARED_DRIVE_PATH="/mounted/share"` or `.\scripts\osii.ps1
-dev-shared -SourceDir '\\server\share'`; see [Shared drives and
-Samba](shared-drives.md). If folders are reorganized afterward, use **Document scope → Rescan source
-paths**. OSII hashes current files, previews exact-content matches, and can
-remap moved originals without re-running extraction; changed and new files are
-left for a normal Intake run.
-
-### Pause, resume, cancel, and inspect timing
-
-Open **Intake → Activity** to control durable processing runs. **Pause** takes
-effect after the file currently being processed, leaving completed documents
-intact and freeing the single worker to claim another queued run. This makes it
-safe to queue a small priority selection while a large batch is pausing.
-**Resume** returns the paused run to the queue without repeating completed
-files. **Cancel** is terminal and likewise takes effect after the current file;
-it does not interrupt an extractor while that extractor is writing one
-document.
-
-Activity records start, finish, and processing duration for every attempted
-file. Each run shows wall-clock elapsed time, measured processor time, average
-time per completed file, and a simple remaining-time estimate. Expand **File
-processing times** for fastest, slowest, and individual file durations. The
-estimate is observational rather than a guarantee because file sizes and
-selected processors can vary substantially.
-
-Select **View log** on a run to show its complete, live-updating log in the
-scrollable terminal panel at the bottom of Activity. A worker failure that
-happens before the first file begins is reconciled from the durable queue into
-an **error** run with the actual exception. Terminal runs no longer offer
-pause, resume, or cancel actions.
-
-The worker publishes a heartbeat while idle and while processing a long file.
-If Windows terminates it, OSII marks the worker unavailable instead of silently
-waiting. A replacement worker automatically returns interrupted work to the
-queue after the abandoned lease expires; **Recover queue** performs the same
-safe check on demand. A true error run offers **Retry failed run**, which resets
-only failed items and preserves files that already completed.
-
-## Generate an LLM wiki
-
-LLM wiki generation is not implemented in Core. Start one or both optional
-wiki enrichers from `osii-processor-modules`, register their Processor API endpoints in
-Setup, and assign a chat-model connection. Generate a wiki from a document,
-folder, collection, or the whole library. The operation runs in the background,
-records the processor and model provenance, and never substitutes the
-extractive preview while labeling the result as an LLM wiki. See the
-[LLM wiki walkthrough](../tutorials/llm-wiki.md).
-
-Two additional dependency-free examples produce a frequency-ranked table of
-lemmatized noun/adjective 2-, 3-, and 4-grams and a grounded list of named
-entity candidates. Both use standard Processor API artifact formats; see
-[Example keyword and entity enrichments](../tutorials/example-enrichments.md).
-
-Model connections created in Setup use OSII's HTTP-only adapter for embeddings,
-synthesis, and chat. Extraction remains local through native Python, Tika,
-Tesseract, or a domain Processor API service. No provider-specific package is
-installed; the adapter calls documented bearer-authenticated OpenAI-compatible
-endpoints.
-
-## Failure behavior
-
-- Chat and synthesis follow the configured order and visibly report the
-  provider actually used. Their final fallback is extractive.
-- Embedding retries and resumes its own checkpoint. It never substitutes a
-  different provider or model into an existing vector index.
-- Semantic search falls back to BM25 when query embedding is unavailable.
-- Scanned documents remain pending with an actionable Tesseract/OCR status when
-  no OCR extractor is available.
-
-Semantic indexes live under provider/model-specific directories and record
-provider, model, digest when supplied, dimensions, normalization, chunking,
-and creation time. Changing model or dimensions creates a different vector
-space and requires a rebuild. Hashing is never labeled semantic.
-
-The normal retrieval baseline uses sentence/paragraph-aligned windows of 768
-characters with about 128 characters of overlap. Intake exposes the strategy,
-size, and overlap. Both BM25 and vector search consume the same manifest, and
-search carries page/segment provenance into document navigation. See
-[retrieval chunking and overlap](../concepts/retrieval-chunking.md).
-
-## External services
-
-Use `make dev` for the application. Connect the team's model endpoint in Setup.
-Optional processors and Tika must already be running before registering their
-URLs. Workstation container orchestration is archived on
-`archive/workstation-deployment-2026-11-03`.
-
-## Storage and disk diagnostics
-
-Canonical text, manifests, provenance, synthesis, enrichments, and collection
-membership remain inspectable `.osii` files. `.osii/state/catalog.sqlite3` is a
-derived WAL-mode read catalog and may be deleted and rebuilt. Operational queue
-state remains in `jobs.sqlite3`.
-
-`make doctor` reports common
-ignored disk consumers—including Python environments, `node_modules`, model
-caches, OSII data, and Podman storage—and never deletes them.
+See the [startup guide](runbook-development.md) for installation and troubleshooting,
+and the [wiki tutorial](../tutorials/llm-wiki.md) for optional generated products.

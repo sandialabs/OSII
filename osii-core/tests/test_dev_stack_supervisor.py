@@ -230,15 +230,15 @@ def test_service_plan_uses_nested_components_without_concurrent_uv_sync():
         {
             "OSII_API_PORT": "8511",
             "OSII_DASHBOARD_PORT": "5173",
-            "OSII_MCP_PORT": "8022",
+            "OSII_ENABLE_MCP": "true",  # Legacy settings cannot restart the separate tool.
             "OSII_EMBEDDINGS_PORT": "8085",
         },
         core_only=False,
     )
 
     by_name = {service.name: service for service in services}
+    assert "mcp" not in by_name
     assert by_name["api"].working_directory == ROOT / "osii-core"
-    assert by_name["mcp"].working_directory == ROOT / "osii-mcp"
     assert by_name["extractor"].working_directory == (
         ROOT / "osii-core" / "services" / "local-extractor"
     )
@@ -279,7 +279,7 @@ def test_toolbox_opt_out_retains_manual_controls_and_core_only_omits_services():
     assert len(tools) == 7 and all(not s.start_automatically for s in tools)
     assert all("--no-sync" not in s.command for s in tools)
     core = DEV_STACK.service_commands("uv", "npm", {}, core_only=True)
-    assert {s.name for s in core} == {"api", "worker", "inventory-worker", "mcp", "dashboard"}
+    assert {s.name for s in core} == {"api", "worker", "inventory-worker", "dashboard"}
     by_name = {s.name: s for s in core}
     assert "osii.main:app" in by_name["api"].command
     assert "osii.worker.main" in by_name["worker"].command
@@ -353,7 +353,7 @@ def test_optional_postgres_dependency_setup_and_private_core_environment(monkeyp
     env={"OSII_STORAGE_BACKEND":backend,"DATABASE_URL":"postgresql://private:secret@host/library","UV_PROJECT_ENVIRONMENT":str(tmp_path/"osii-env")}
     DEV_STACK.prepare_dependencies("uv","npm",env,core_only=True)
     assert ("postgres" in calls[0])==(backend=="postgres")
-    for name in ("api","worker","inventory-worker","mcp","dashboard","readable-wiki","extractor","model-bridge"):
+    for name in ("api","worker","inventory-worker","dashboard","readable-wiki","extractor","model-bridge"):
         service=DEV_STACK.Service(name,("python",),tmp_path,0)
         child=DEV_STACK.service_environment(service,env)
         assert ("DATABASE_URL" in child)==(name in {"api","worker"})

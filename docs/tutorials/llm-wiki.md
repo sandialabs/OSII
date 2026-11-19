@@ -83,7 +83,7 @@ for the distinction between extraction outputs and enrichment artifact types.
 
 ## Reuse and improve knowledge from a coding harness
 
-The `osii-mcp` documentation assistant also supports a harness-driven wiki loop.
+The optional `osii-mcp` branch's documentation assistant also supports a harness-driven wiki loop.
 Search with `search_documentation`, inspect original passages with
 `get_documentation_evidence`, then capture reusable coding guidance or
 experimental lessons with `save_wiki_page`. The connected harness supplies the

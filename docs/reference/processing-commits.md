@@ -191,4 +191,4 @@ These low-level commits do not choose a backend. The
 [local Workbench composition](local-storage.md) now provides explicit selection
 and library import. Broader legacy adoption and inventory migration remain
 separate work. See the
-[storage decision and staged plan](../concepts/adr-storage-boundaries.md).
+[storage contract](local-storage.md).

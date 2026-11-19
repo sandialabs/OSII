@@ -115,4 +115,4 @@ retain the same descriptors, typed requests, provenance, and standard table
 output.
 
 For direct Python use, continue with
-[`11_Explore_tabular_datasets.py`](https://github.com/sandialabs/OSII/blob/main/osii-demo-notebooks/11_Explore_tabular_datasets.py).
+[`11_Explore_tabular_datasets.py`](https://github.com/heidikmkv/osii-private/blob/osii-demo-notebooks/11_Explore_tabular_datasets.py).

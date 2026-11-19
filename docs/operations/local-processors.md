@@ -1,16 +1,9 @@
 # Guaranteed local processors
 
-`make dev` (macOS/Linux) and `.\scripts\osii.ps1 dev` (Windows PowerShell)
-start five independent Processor API v1 services. Four need no container,
+The local source-development launcher starts five independent Processor API v1 services. Four need no container,
 internet connection, corporate gateway, or downloaded model. The fifth is
 ordinary page-by-page Tesseract OCR and requires the native `tesseract`
-executable on a bare-metal host. The packaged baseline image contains that
-executable and its checked language data.
-
-For packaged deployment, these five services and the lightweight model-provider
-bridge share one `osii-baseline-processors` image. Each container selects one
-command, so the HTTP contracts and process boundaries remain independent. See
-[Publish OSII images to Quay](publishing-images.md).
+executable on a bare-metal host.
 
 | Capability | Stable name | Port | Baseline behavior |
 |---|---|---:|---|
@@ -21,8 +14,8 @@ command, so the HTTP contracts and process boundaries remain independent. See
 | Enricher | `local.stats-keywords` | 8094 | Standard table artifact with counts and keywords |
 
 Each exposes `/health`, `/v1/descriptor`, its `/v1/...` operation, `/docs`,
-`/redoc`, and `/openapi.json`. `make dev` starts all five together; packaged
-deployments run the same contracts as separate containers.
+`/redoc`, and `/openapi.json`. Source development starts these services
+through `make dev`; hosted deployment configures its processors separately.
 
 The native extractor reads existing source text and cannot OCR a scanned PDF.
 Select `local.tesseract-page-ocr` for those files. It returns one segment per
@@ -39,8 +32,7 @@ The experimental OpenCV/Tesseract region extractor and
 tabular processors live in `osii-processor-modules/` in
 this repository. Their dependencies remain separate from Core's lockfile and
 default host runtime. Use the per-tool Python source commands and register the
-running Processor API endpoint in Setup. Container builds and component export
-are archived on `archive/workstation-deployment-2026-11-03`.
+running Processor API endpoint in Setup.
 
 ## Minimal API examples
 

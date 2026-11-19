@@ -193,5 +193,5 @@ A failed embedding phase makes the run retryable rather than reporting a finishe
 index. Activity exposes selected-document progress and per-document errors.
 Retrying reuses successful chunk responses, including successes after a failed
 chunk, and does not repeat completed original-file processing. See the
-[incremental embeddings decision](../../concepts/adr-incremental-embeddings.md)
+[retrieval and jobs reference](../retrieval-jobs.md)
 for persistence and compatibility details.

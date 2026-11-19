@@ -173,20 +173,6 @@ Extractor routing is externalized because:
 
 ---
 
-## Likely future evolution
-
-Possible extensions:
-- route by MIME type
-- route by glob pattern
-- route by path prefix/folder
-- route by file size threshold
-- route by structured predicates
-- route by grouped multi-file patterns
-
-If that happens, preserve backward compatibility by:
-- keeping extension-based routes valid
-- adding optional fields instead of replacing the current schema
-
 ## Setup controls and tool configuration
 
 The routing section displays the active `tools.toml` path. **Load TOML** accepts

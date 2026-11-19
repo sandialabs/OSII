@@ -5,7 +5,7 @@ selection, or iterative question answering. These extend **Core RAG**, not the
 processor modules. Start in OSII-local; the same contracts transfer to the hosted server.
 
 For the research behind inspecting intermediate searches and evaluating their
-quality, see [Agent traces and evaluation for multi-step RAG](../concepts/agent-traces-research.md).
+quality, see [Agent traces and evaluation for multi-step RAG](../extending/rag-strategies.md).
 
 ## Boundaries and code locations
 
@@ -247,7 +247,6 @@ IDs, score validity, ties, and absent/failed endpoints. Test with deterministic
 adapters first. Once real data exists, compare strategies on the same collection
 revision and labelled questions; synthetic examples verify plumbing, not quality.
 
-See [standalone RAG experiments](../operations/runbook-development.md#standalone-shared-rag-experiments)
-for the offline Haystack demo and authenticated Core API client, and
-[shared product architecture](../concepts/architecture.md#shared-product-direction-local-and-hosted)
-for storage, model-profile, and frontend boundaries.
+Run `python -m osii.rag.strategies --demo` with the `rag-haystack` extra for
+a deterministic offline example. See [architecture](../concepts/architecture.md)
+for storage and frontend boundaries.

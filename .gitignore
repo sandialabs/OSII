@@ -59,7 +59,6 @@ data_volume/
 .ipynb_checkpoints/
 .cache/
 *.ipynb
-!osii-demo-notebooks/[0-9][0-9]_*.ipynb
 
 # Editors and operating systems
 .DS_Store
@@ -79,3 +78,7 @@ repo_for_ai.txt
 
 # Local implementation plans
 plans/
+
+# Keep planning and research notes out of published documentation.
+/planning/
+/docs/planning/

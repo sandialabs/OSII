@@ -1,37 +1,14 @@
-# OSII API overview
+# OSII API reference
 
-## Purpose
+Use the resource routes below to browse scopes, inspect documents and source
+spans, manage collections, search, and queue processing. New integrations should
+prefer `/api/objects`, `/api/scopes`, `/api/collections`, and `/api/search` over
+the compatibility routes under `/api/osii`.
 
-This document provides a practical overview of the current AI-Ready-Ingest backend API.
-
-It is intended for developers and downstream consumers who need to:
-
-- discover backend capabilities
-- inspect canonical corpus resources
-- manage curated collections
-- access grounded text spans
-- retrieve derived enrichments
-- perform search over extracted content
-- run ingestion and embedding workflows
-
-This overview is descriptive and implementation-aligned. Exact request and response schemas should be defined in `openapi.yaml`.
-
-## API direction
-
-The backend API is resource-oriented and centered on core backend capabilities.
-
-User-facing dashboard rendering does not live in this repository.
-
-Downstream consumers should use:
-
-- scope resources
-- collection resources
-- object resources
-- text-span resources
-- enrichment resources
-- search resources
-
-Compatibility read routes under `/api/osii/...` still exist, but new integrations should prefer the newer resource-oriented route families.
+The running API's `/docs` and `/openapi.json` provide exact request and response
+schemas. Hosted deployments require an administrator session to inspect them.
+See the [resource model](resource-model.md) and
+[search semantics](search-semantics.md) for identifiers and result interpretation.
 
 ## Base assumptions
 
@@ -1043,18 +1020,6 @@ Removed route families include:
 - dashboard/workbench HTML routes
 
 See `compatibility.md` for migration-oriented notes.
-
-## Next step
-
-Use this overview together with:
-
-- `resource-model.md`
-- `search-semantics.md`
-- `compatibility.md`
-- `openapi.yaml`
-
-The Markdown documents explain behavior and conventions. The OpenAPI document should define exact schemas, parameters, and response contracts.
-
 
 ## Research reports
 
