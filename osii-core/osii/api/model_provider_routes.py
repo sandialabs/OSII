@@ -261,18 +261,6 @@ def _provider(osii_root: Path, provider_id: str) -> dict[str, Any] | None:
     return record
 
 
-def _allowed_ollama_models() -> set[str]:
-    configured = {
-        item.strip()
-        for item in os.getenv(
-            "OSII_OLLAMA_ALLOWED_MODELS",
-            f"{DEFAULT_OLLAMA_EMBEDDING_MODEL},{DEFAULT_OLLAMA_CHAT_MODEL}",
-        ).split(",")
-        if item.strip()
-    }
-    return configured
-
-
 def _model_details(payload: dict[str, Any]) -> list[dict[str, Any]]:
     models = payload.get("models") or payload.get("data") or []
     from osii.model_catalog import model_capabilities
@@ -602,9 +590,10 @@ def pull_model(request: Request, provider_id: str, payload: dict):
         raise HTTPException(status_code=404, detail="model provider not found")
     if record.get("type") != "ollama":
         raise HTTPException(status_code=422, detail="model downloads are supported only for Ollama")
-    model = str(payload.get("model") or "").strip()
-    if model not in _allowed_ollama_models():
-        raise HTTPException(status_code=403, detail="model is not in OSII_OLLAMA_ALLOWED_MODELS")
+    model = payload.get("model")
+    if not isinstance(model, str) or not model.strip():
+        raise HTTPException(status_code=422, detail="Enter an Ollama model name")
+    model = model.strip()
     with PULL_JOBS_LOCK:
         existing = next((job for job in PULL_JOBS.values() if job["provider_id"] == provider_id and job["model"] == model and job["status"] in {"queued", "running"}), None)
         if existing:

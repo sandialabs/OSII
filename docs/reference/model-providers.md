@@ -134,9 +134,9 @@ First-run selections are Ollama's
 Both are US-origin defaults sized for an ordinary workstation. If either is
 absent, Setup can explicitly call Ollama's documented
 [`/api/pull`](https://docs.ollama.com/api/pull) endpoint and show download
-progress. The default download allowlist contains only those two names and can be extended through
-`OSII_OLLAMA_ALLOWED_MODELS`. OSII installs no Ollama Python package and
-bundles no server or weights.
+progress. The starter models are suggestions, not restrictions. OSII accepts any Ollama
+model name for an explicit download request; Ollama reports registry/download
+errors. OSII installs no Ollama Python package and bundles no server or weights.
 
 Ollama reports some registry and model errors inside its streaming response
 even when the HTTP request itself succeeded. OSII treats those updates as
@@ -297,3 +297,11 @@ failed requests, warnings, exceptions and lifecycle messages remain visible.
 New Intake sessions default to **All processes**: extraction, synthesis, embeddings
 and enrichment. Explicit saved presets and per-run choices remain supported.
 The endpoint help button explains model selection and installing/starting Ollama.
+
+
+Ollama model choices are unrestricted. The **? Endpoints and models** help explains
+what Ollama is, links to [installation](https://ollama.com/download), the
+[model library](https://ollama.com/library), and the
+[getting-started guide](https://docs.ollama.com/quickstart). Install and start Ollama,
+follow a model’s download instructions (such as `ollama pull model-name`), then
+**Save and check** to refresh installed models and test your selection in OSII.

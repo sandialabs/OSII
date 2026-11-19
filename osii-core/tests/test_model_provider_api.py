@@ -340,7 +340,7 @@ def test_openai_health_validates_selected_embedding_model(client, monkeypatch):
     }
 
 
-def test_ollama_models_are_discovered_and_allowlisted_pull_runs(client, monkeypatch):
+def test_ollama_models_are_discovered_and_any_named_model_can_be_pulled(client, monkeypatch):
     monkeypatch.setattr(
         "osii.api.model_provider_routes.requests.post",
         lambda *_, **__: FakeResponse(payload={"embeddings": [[0.1, 0.2, 0.3]]}),
@@ -374,8 +374,16 @@ def test_ollama_models_are_discovered_and_allowlisted_pull_runs(client, monkeypa
         time.sleep(0.01)
     assert job["status"] == "complete"
 
-    denied = client.post("/api/admin/model-providers/minilm/models/pull", json={"model": "deepseek-r1"})
-    assert denied.status_code == 403
+    for model in ("deepseek-r1", "user/custom-model:tag", "some-future-model:latest"):
+        started = client.post("/api/admin/model-providers/minilm/models/pull", json={"model": model})
+        assert started.status_code == 200
+        assert started.json()["model"] == model
+
+
+@pytest.mark.parametrize("model", [None, "", "  ", 12, ["model"]])
+def test_ollama_pull_requires_a_model_name(client, model):
+    result = client.post("/api/admin/model-providers/minilm/models/pull", json={"model": model})
+    assert result.status_code == 422
 
 
 def test_ollama_pull_stream_error_is_reported(client, monkeypatch):
