@@ -133,3 +133,5 @@ tls-ca-bundle.pem
 
 # Template
 **/mcp-server-template/
+# Local Core configuration created by this optional tool or its tests.
+/osii-data/
