@@ -28,7 +28,7 @@ def test_flow_sample_uses_ordered_fallbacks_and_invalidates_after_edit(client, t
     assert report['ok'] is True  # native fails, ordered Tika fallback succeeds
     assert report['results'][0]['attempts'][0]['processor'] == 'local.native-text'
     assert report['results'][0]['attempts'][1]['processor'] == 'tika'
-    assert calls[0]['sample'] == 'purcell-first-page'
+    assert calls[0]['sample'] == 'nist-cloud-definition'
     assert get_flow(temp_osii_root, 'bundled')['test']['ok']
     settings = load_tools_config()
     settings['processor_settings'] = {'tika': {'chunk_chars': 2345}}
@@ -114,3 +114,58 @@ def test_collection_processing_missing_originals_leaves_history_unchanged(client
     assert response.status_code == 409
     assert response.json()['detail']['file_ids'] == ['missing-original']
     assert list_collection_documents(temp_osii_root, collection['id']) == ['missing-original']
+
+
+def test_standard_pdf_sample_has_text_on_every_page():
+    import pymupdf
+    from osii.domain.processing.flows import TEXT_LAYER_SAMPLE, TEXT_LAYER_SAMPLE_PAGE
+    with pymupdf.open(TEXT_LAYER_SAMPLE) as pdf:
+        assert len(pdf) == 7
+        assert all(len(page.get_text().strip()) > 100 for page in pdf)
+        text = pdf[TEXT_LAYER_SAMPLE_PAGE].get_text()
+        assert 'Cloud computing is a model' in text
+        assert len(text) > 2000
+
+
+def test_preflight_sends_the_bundled_text_layer_sample(client, monkeypatch):
+    import base64
+    import pymupdf
+    from osii.processor_sdk import ProcessorClient
+    monkeypatch.setattr('osii.processors.remote.resolve_remote_processor', lambda *a: {'base_url': 'http://test-reader', 'name': 'local.native-text', 'capabilities': {'file_extensions': ['.pdf']}})
+    monkeypatch.setattr(ProcessorClient, '_get', lambda *a: {})
+    checked = []
+    def extract(self, request):
+        with pymupdf.open(stream=base64.b64decode(request.document.content_base64), filetype='pdf') as pdf:
+            assert len(pdf) == 1
+            text = pdf[0].get_text()
+            assert 'Cloud computing is a model' in text
+            checked.append(text)
+        return SimpleNamespace(segments=[SimpleNamespace(text=text)])
+    monkeypatch.setattr(ProcessorClient, 'extract', extract)
+    response = client.post('/api/intake/preflight', json={'processors': [{'name': 'local.native-text', 'kind': 'extractor'}], 'sample': 'nist-cloud-definition'})
+    assert response.status_code == 200
+    assert response.json()['results'][0]['ok'] is True
+    assert checked
+
+
+def test_missing_bundled_sample_is_a_clear_failure(client, monkeypatch, tmp_path):
+    from osii.processor_sdk import ProcessorClient
+    monkeypatch.setattr('osii.processors.remote.resolve_remote_processor', lambda *a: {'base_url': 'http://test-reader', 'name': 'local.native-text', 'capabilities': {'file_extensions': ['.pdf']}})
+    monkeypatch.setattr(ProcessorClient, '_get', lambda *a: {})
+    monkeypatch.setattr('osii.domain.processing.flows.TEXT_LAYER_SAMPLE', tmp_path / 'missing.pdf')
+    response = client.post('/api/intake/preflight', json={'processors': [{'name': 'local.native-text', 'kind': 'extractor'}], 'sample': 'nist-cloud-definition'})
+    result = response.json()['results'][0]
+    assert result['ok'] is False
+    assert 'Bundled sample PDF is missing' in result['diagnostics']['error']
+
+
+def test_changing_sample_invalidates_an_old_flow_report(client, temp_osii_root, tmp_path, monkeypatch):
+    from osii.domain.processing import flows
+    before = get_flow(temp_osii_root, 'bundled')
+    settings = load_tools_config()
+    settings['processing_flow_tests'] = {'bundled': {'fingerprint': before['fingerprint'], 'ok': True, 'results': [], 'tested_at': 'earlier'}}
+    save_tools_config(settings)
+    assert get_flow(temp_osii_root, 'bundled')['test'] is not None
+    replacement = tmp_path / 'different.pdf'; replacement.write_bytes(b'changed sample')
+    monkeypatch.setattr(flows, 'TEXT_LAYER_SAMPLE', replacement)
+    assert get_flow(temp_osii_root, 'bundled')['test'] is None

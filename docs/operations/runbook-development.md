@@ -241,9 +241,9 @@ without shell variable interpolation. This selects a configuration file, not a
 user account. OSII-local has no login.
 
 Use **Setup → Processing flows** to configure named reader/fallback chains,
-synthesis, and enrichment. **Test sample** uses the bundled Purcell PDF's first
-page and tiny text/model requests. It records endpoint diagnostics and a
-configuration fingerprint. Results open immediately with numbered steps and
+synthesis, and enrichment. **Test sample** uses the definition page (physical
+page 6) of the bundled text-layer NIST cloud-computing PDF and tiny text/model
+requests. It records endpoint diagnostics and a configuration fingerprint. Results open immediately with numbered steps and
 visible failures. Use **View errors** beside a flow to reopen its saved report,
 even after refreshing, and **Copy report** for full diagnostics.
 Changing the flow, models, or processor settings

@@ -477,10 +477,17 @@ def test_intake_processors(request: Request, payload: dict):
                         page = pdf.new_page()
                         page.insert_text((72, 72), "OSII endpoint test document.")
                         raw_content = pdf.tobytes() if extension == ".pdf" else page.get_pixmap(dpi=150).tobytes("png")
-                    sample = Path(__file__).resolve().parents[3] / "scripts/demo-data/purcell.pdf"
-                    if payload.get("sample") == "purcell-first-page" and sample.is_file():
+                    from osii.domain.processing.flows import TEXT_LAYER_SAMPLE, TEXT_LAYER_SAMPLE_PAGE, TEXT_LAYER_SAMPLE_ID
+                    requested_sample = payload.get("sample")
+                    if requested_sample in {TEXT_LAYER_SAMPLE_ID, "purcell-first-page"}:
+                        sample = TEXT_LAYER_SAMPLE if requested_sample == TEXT_LAYER_SAMPLE_ID else Path(__file__).resolve().parents[3] / "scripts/demo-data/purcell.pdf"
+                        page_index = TEXT_LAYER_SAMPLE_PAGE if requested_sample == TEXT_LAYER_SAMPLE_ID else 0
+                        if not sample.is_file():
+                            raise FileNotFoundError(f"Bundled sample PDF is missing: {sample.name}. Restore it from scripts/demo-data.")
                         with pymupdf.open(sample) as original, pymupdf.open() as one_page:
-                            one_page.insert_pdf(original, from_page=0, to_page=0)
+                            if requested_sample == TEXT_LAYER_SAMPLE_ID and not original[page_index].get_text().strip():
+                                raise ValueError("Bundled standard sample has no text layer; restore the NIST test PDF")
+                            one_page.insert_pdf(original, from_page=page_index, to_page=page_index)
                             raw_content = one_page.tobytes() if extension == ".pdf" else one_page[0].get_pixmap(dpi=150).tobytes("png")
                 else:
                     raw_content = b"name,value\nosii,1\n" if extension == ".csv" else b"OSII endpoint test document."
@@ -564,7 +571,7 @@ def test_processing_flow(request: Request, flow_id: str):
     for route in flow["routes"]:
         attempts = []
         for name in [route["extractor"], *route.get("fallbacks", [])]:
-            report = test_intake_processors(request, {"processors": [{"name": name, "kind": "extractor"}], "sample": "purcell-first-page"})
+            report = test_intake_processors(request, {"processors": [{"name": name, "kind": "extractor"}], "sample": "nist-cloud-definition"})
             attempts.extend(report["results"])
         results.append({"step": "extract", "route": route["name"], "extensions": route["extensions"],
                         "ok": any(item["ok"] is True for item in attempts), "attempts": attempts})
@@ -574,7 +581,7 @@ def test_processing_flow(request: Request, flow_id: str):
     report = test_intake_processors(request, {"embed": True})
     results.extend({**item, "step": "embed"} for item in report["results"])
     report = {"fingerprint": flow["fingerprint"], "tested_at": report["tested_at"],
-              "sample": "Bundled Purcell PDF (first page) and tiny text samples", "ok": all(item["ok"] is True for item in results), "results": results}
+              "sample": "NIST cloud-computing definition (PDF page 6) and tiny text samples", "ok": all(item["ok"] is True for item in results), "results": results}
     settings = load_tools_config()
     # Don't stamp a changed configuration with an earlier successful test.
     current = get_flow(root, flow_id)

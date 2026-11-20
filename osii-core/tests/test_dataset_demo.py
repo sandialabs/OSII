@@ -44,3 +44,18 @@ def test_example_dataset_archive_is_safely_unpackable(tmp_path: Path, monkeypatc
     configured = tmp_path / "configured-source"
     monkeypatch.setenv("OSII_SOURCE_DIR", str(configured))
     assert importer.configured_destination() == configured
+
+
+def test_example_import_uses_text_layer_pdf_and_keeps_existing_ocr_files(tmp_path, monkeypatch):
+    import pymupdf
+    importer = _load_module('osii_import_standard_pdf_test', REPOSITORY_ROOT / 'scripts/import_example_data.py')
+    monkeypatch.setattr(importer, '_load_datasets', lambda: [])
+    originals = tmp_path / 'example-documents'
+    originals.mkdir()
+    existing = originals / 'purcell.pdf'
+    existing.write_bytes(b'existing user copy must remain unchanged')
+    written = importer.install_example_data(tmp_path)
+    assert written[0].name == 'nist-cloud-computing.pdf'
+    with pymupdf.open(written[0]) as pdf:
+        assert all(page.get_text().strip() for page in pdf)
+    assert existing.read_bytes() == b'existing user copy must remain unchanged'

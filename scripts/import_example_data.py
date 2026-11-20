@@ -22,7 +22,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DESTINATION = REPOSITORY_ROOT / "osii-data" / "source"
-PURCELL_SOURCE = REPOSITORY_ROOT / "scripts" / "demo-data" / "purcell.pdf"
+PDF_SAMPLE_SOURCE = REPOSITORY_ROOT / "scripts" / "demo-data" / "nist-cloud-computing.pdf"
 
 
 def configured_destination() -> Path:
@@ -162,11 +162,11 @@ def install_example_data(destination: Path) -> list[Path]:
     documents_dir.mkdir(parents=True, exist_ok=True)
     datasets_dir.mkdir(parents=True, exist_ok=True)
 
-    if not PURCELL_SOURCE.is_file():
-        raise FileNotFoundError(f"Bundled PDF not found: {PURCELL_SOURCE}")
-    purcell_target = documents_dir / "purcell.pdf"
-    shutil.copy2(PURCELL_SOURCE, purcell_target)
-    written = [purcell_target]
+    if not PDF_SAMPLE_SOURCE.is_file():
+        raise FileNotFoundError(f"Bundled PDF not found: {PDF_SAMPLE_SOURCE}")
+    pdf_target = documents_dir / PDF_SAMPLE_SOURCE.name
+    shutil.copy2(PDF_SAMPLE_SOURCE, pdf_target)
+    written = [pdf_target]
 
     with tempfile.TemporaryDirectory(prefix="osii-example-data-") as temporary:
         temporary_dir = Path(temporary)

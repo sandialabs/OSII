@@ -1,11 +1,17 @@
 """Named, snapshot-able processing choices shared by Setup and durable jobs."""
 from copy import deepcopy
 from hashlib import sha256
+from pathlib import Path
 import json
 from osii.configuration import load_tools_config, load_models_config
 from osii.domain.processing.extractor_selection import default_extractor_routes, load_extractor_routes
 from osii.domain.processing.defaults import configured_intake_defaults
 from osii.domain.model_provider_config import selected_processor
+
+
+TEXT_LAYER_SAMPLE = Path(__file__).resolve().parents[4] / "scripts/demo-data/nist-cloud-computing.pdf"
+TEXT_LAYER_SAMPLE_PAGE = 5  # physical PDF page 6: the definition, not its cover
+TEXT_LAYER_SAMPLE_ID = "nist-cloud-definition"
 
 
 def processing_flows(root):
@@ -26,9 +32,13 @@ def processing_flows(root):
     settings = load_tools_config()
     for identifier, value in settings.get("processing_flows", {}).items():
         values[identifier] = {**common, **value}
+    try:
+        sample_hash = sha256(TEXT_LAYER_SAMPLE.read_bytes()).hexdigest()
+    except OSError:
+        sample_hash = "missing"
     result = []
     for identifier, value in values.items():
-        fingerprint = sha256(json.dumps({"flow": value, "models": load_models_config(root),
+        fingerprint = sha256(json.dumps({"sample": [TEXT_LAYER_SAMPLE_ID, sample_hash, TEXT_LAYER_SAMPLE_PAGE], "flow": value, "models": load_models_config(root),
             "settings": settings.get("processor_settings", {}), "processors": settings.get("tools", {})}, sort_keys=True).encode()).hexdigest()
         report = settings.get("processing_flow_tests", {}).get(identifier)
         result.append({"id": identifier, **deepcopy(value), "fingerprint": fingerprint,

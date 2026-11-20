@@ -1187,12 +1187,14 @@ without renaming stable provider IDs, defaults, credentials, or processor bindin
   `synthesizer_name`, `enricher_name`, `chunk_size`, and `chunk_overlap` in
   `processors.toml`. Route validation enforces declared input types. Tests are
   invalidated on edits. The bundled and advanced-OCR flows can be customized.
-- `POST /api/processing-flows/{id}/test` tests each reader/fallback with the first
-  page of bundled `scripts/demo-data/purcell.pdf` where appropriate, then tiny
+- `POST /api/processing-flows/{id}/test` tests each reader/fallback with the
+  definition page (physical page 6) of bundled
+  `scripts/demo-data/nist-cloud-computing.pdf` where appropriate, then tiny
   synthesis, enrichment, and embedding requests. Reports include runtime/error
   diagnostics. A chain passes when at least one reader passes; failed optional
   fallbacks remain visible. Other steps must all pass. No library artifacts are
-  written. Configuration fingerprints prevent attaching a test to edited settings.
+  written. Configuration fingerprints include the bundled sample’s content and page,
+  preventing reuse of results after sample or settings changes.
 - `POST /api/runs` accepts optional `processing_flow_id`. Such jobs always run
   extraction, synthesis, enrichment, and embeddings, with route/method/settings
   snapshots in durable payloads and `processing_flow` in run reports. They do not
