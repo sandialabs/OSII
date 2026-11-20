@@ -10,11 +10,11 @@ export function EndpointFields({ baseUrl, onBaseUrl, apiKey, onApiKey,
 }) {
   return <Stack spacing={1.5}>
     <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "start" }}>
-    <TextField fullWidth label="Endpoint URL" required={required} value={baseUrl} onChange={e => onBaseUrl(e.target.value)}
+    <TextField size="small" fullWidth label="Endpoint URL" required={required} value={baseUrl} onChange={e => onBaseUrl(e.target.value)}
       helperText={urlHelp ?? "API base address, including /v1 or /v2 where required. Leave empty to disable."} />
     {onDiscover && <Button color="secondary" variant="outlined" disabled={discovering || !baseUrl.trim()} onClick={onDiscover} sx={{ flexShrink: 0, mt: 1 }}>{discovering ? "Finding models…" : "Find available models"}</Button>}
     </Stack>
-    {showCredential && <TextField type="password" autoComplete="new-password" label="API key"
+    {showCredential && <TextField size="small" type="password" autoComplete="new-password" label="API key"
       InputLabelProps={{shrink: credentialPresent || Boolean(apiKey)}} placeholder={credentialPresent ? "•••••••• (saved)" : undefined} value={apiKey} onChange={e => onApiKey(e.target.value)} disabled={!credentialWritable}
       helperText={credentialPresent ? `Saved key. Type to replace.${credentialHelp ? " " + credentialHelp : ""}` : credentialHelp} />}
   </Stack>;

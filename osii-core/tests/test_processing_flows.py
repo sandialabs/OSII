@@ -24,6 +24,7 @@ def test_flow_sample_uses_ordered_fallbacks_and_invalidates_after_edit(client, t
         return {'tested_at': '2026-11-19T00:00:00Z', 'results': [{'processor': target['name'], 'ok': target['name'] != 'local.native-text'} for target in targets]}
     monkeypatch.setattr(intake_routes, 'test_intake_processors', probe)
     report = client.post('/api/processing-flows/bundled/test').json()
+    assert {step.get('step') for step in report['results']} == {'extract', 'synthesize', 'enrich', 'embed'}
     assert report['ok'] is True  # native fails, ordered Tika fallback succeeds
     assert report['results'][0]['attempts'][0]['processor'] == 'local.native-text'
     assert report['results'][0]['attempts'][1]['processor'] == 'tika'

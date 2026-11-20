@@ -306,3 +306,38 @@ what Ollama is, links to [installation](https://ollama.com/download), the
 [getting-started guide](https://docs.ollama.com/quickstart). Install and start Ollama,
 follow a model’s download instructions (such as `ollama pull model-name`), then
 **Save and check** to refresh installed models and test your selection in OSII.
+
+
+### Finding connections and test results
+
+Connection names identify the endpoint service, independently of its models.
+Suggestions use a word from the URL hostname (with generic API/WWW prefixes
+removed), never a corporate service-name list or a selected model name. Existing
+custom names and stable IDs are preserved. Writing and embedding models each
+have a single row containing selection, **Test**, and inline verification/error
+feedback. Credentials remain masked and replaceable.
+
+Setup's primary view contains connections and compact processing-flow cards.
+Detailed processor tuning is under **Processor settings & diagnostics**. Each
+flow has **Test sample** and **View results** or **View errors** beside its status.
+Testing opens a focused results dialog; saved reports remain accessible after
+refresh. The dialog shows numbered stages, readable processor errors and service
+addresses, with full tracebacks/runtime details behind **Technical details** and
+**Copy report**. A recovered reader failure is labeled **Ready · fallback used**;
+a genuinely failed flow is **Needs attention**. Changing the flow or relevant
+configuration invalidates its test result rather than showing stale success.
+
+Models sharing the same protocol, normalized endpoint URL, and credential
+reference are presented under one connection card. Legacy model aliases (for
+example, `base` and `minilm`) remain distinct internally: editing/testing a model
+uses its own alias, so defaults, processor bindings, and saved indexes keep their
+identities. Different credential references are never grouped. Renaming or
+editing the shared endpoint updates its grouped configuration entries; the
+confirmation for removing a connection identifies the group being removed.
+
+Earlier automatic hostname-plus-model labels display as endpoint names when they
+match the currently configured model; unrelated custom names stay intact. New
+connections receive their own generated credential reference in private secret
+storage, so setting a key does not replace another endpoint's key. This requires
+no extra root `.env` entries. Explicit legacy credential references remain
+compatible. **Test** sends a probe without rewriting model configuration.

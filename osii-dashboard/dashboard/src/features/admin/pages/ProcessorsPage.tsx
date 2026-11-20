@@ -1,3 +1,4 @@
+import { ConnectionModelRow } from "../../models/components/ConnectionModelRow";
 import { ProcessingFlows } from "../components/ProcessingFlows";
 import { IntakeDefaults } from "../components/IntakeDefaults";
 import { ProcessorStartupSettings } from "../components/ProcessorStartupSettings";
@@ -32,8 +33,8 @@ import { WorkflowProgress } from "../../../components/discovery/WorkflowProgress
 import type { WorkflowStepId } from "../../../domain/workflow";
 
 import { apiJson } from "../../../api/client";
-import { ModelPicker, type ModelOption } from "../../models/components/ModelPicker";
-import { suggestedConnectionName, sameEndpoint } from "../../models/connectionName";
+import { type ModelOption } from "../../models/components/ModelPicker";
+import { suggestedConnectionName, sameEndpoint, groupModelConnections } from "../../models/connectionName";
 import { EndpointFields } from "../../models/components/EndpointFields";
 
 const DEFAULT_EMBEDDING_MODEL = "all-minilm";
@@ -99,8 +100,10 @@ export function ProcessorsPage() {
 
   const [notice, setNotice] = useState<{ text: string; severity: AlertColor; id: number } | null>(null);
   const notify = (text: string, severity: AlertColor = "success") => setNotice({ text, severity, id: Date.now() });
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [expandedCapability, setExpandedCapability] = useState<keyof typeof CAPABILITY_COPY | false>(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
+  const [editingMembers, setEditingMembers] = useState<ModelProvider[]>([]);
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [providerForm, setProviderForm] = useState<ModelProvider>(blankProvider("openai"));
   const [apiKey, setApiKey] = useState("");
@@ -113,7 +116,7 @@ export function ProcessorsPage() {
     if (!saved || saved.base_url !== providerForm.base_url) return;
     let cancelled = false;
     void apiJson<{models: ModelOption[]}>("/api/admin/model-providers/discover", {method: "POST", json: {provider_id: saved.id, type: saved.type, base_url: saved.base_url}})
-      .then(result => { if (!cancelled) {setCatalogModels(result.models); setCatalogQueried(true); setProviderHealth(current => ({...current, [saved.id]: {ok: true, models: result.models.map(m => m.id), model_details: [], missing_models: [], pull_commands: [], recommendations: []}})); setConnectionStatus(`Saved · Connected · ${result.models.length} models`);} })
+      .then(result => { if (!cancelled) {setCatalogModels(result.models); setCatalogQueried(true); setProviderHealth(current => ({...current, [saved.id]: {ok: true, models: result.models.map(m => m.id), model_details: [], missing_models: [], pull_commands: [], recommendations: []}})); setConnectionStatus("Saved · Connected");} })
       .catch(error => { if (!cancelled) {setConnectionStatus(`Saved · Check failed: ${(error as Error).message}`); notify((error as Error).message, "error");} });
     return () => { cancelled = true; };
   }, [connectionOpen, editingProviderId, providerForm.base_url]);
@@ -121,11 +124,15 @@ export function ProcessorsPage() {
   const modelTestVersion = useRef(0);
   const [modelTests, setModelTests] = useState<Record<string, {ok: boolean; detail?: string; dimensions?: number}>>({});
   useEffect(() => { modelTestVersion.current += 1; setModelTests({}); }, [providerForm.base_url, apiKey, connectionOpen]);
+  const [nameDirty, setNameDirty] = useState(false);
   const [nameEdited, setNameEdited] = useState(false);
   const [allowDuplicate, setAllowDuplicate] = useState(false);
   useEffect(() => { setAllowDuplicate(false); }, [providerForm.base_url, connectionOpen]);
-  const friendlyName = nameEdited ? providerForm.display_name ?? "" : suggestedConnectionName(providerForm.base_url, providerForm.chat_model || providerForm.embedding_model);
+  const friendlyName = nameEdited ? providerForm.display_name ?? "" : suggestedConnectionName(providerForm.base_url);
   const duplicateConnection = !editingProviderId ? providerData.data?.providers.find(p => p.type === providerForm.type && sameEndpoint(p.base_url, providerForm.base_url)) : undefined;
+  const modelMembers = editingMembers.length ? editingMembers : [providerForm];
+  const modelRows = modelMembers.flatMap(member => (["chat", "embedding"] as const).filter(capability => capability === "chat" ? Boolean(member.chat_model) : Boolean(member.embedding_model)).map(capability => ({member, capability})));
+  for (const capability of ["chat", "embedding"] as const) if (!modelRows.some(row => row.capability === capability)) modelRows.push({member: providerForm, capability});
   const [connectionStatus, setConnectionStatus] = useState("");
   const [savingConnection, setSavingConnection] = useState(false);
   const [serviceBusy, setServiceBusy] = useState<string | null>(null);
@@ -170,23 +177,30 @@ export function ProcessorsPage() {
       while (existingIds.has(`${provider.id}-${suffix}`)) suffix += 1;
       provider.id = `${provider.id}-${suffix}`;
     }
+    if (type === "openai") provider.credential_env = `OSII_PROVIDER_${provider.id.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_API_KEY`;
     return provider;
   };
   const openNewConnection = () => {
     setNotice(null);
+    setNameDirty(false);
     setNameEdited(false);
     setConnectionStatus("");
+    setEditingMembers([]);
     setEditingProviderId(null);
     setProviderForm(newConnectionProvider("openai"));
     setApiKey("");
     setConnectionOpen(true);
   };
   const openExistingConnection = (provider: ModelProvider) => {
+    const group = groupModelConnections(providerData.data?.providers || [provider]).find(group => group.members.some(member => member.id === provider.id));
+    const primary = group?.primary || provider;
+    setEditingMembers(group?.members || [provider]);
     setNotice(null);
-    setNameEdited(Boolean(provider.display_name));
+    setNameDirty(false);
+    setNameEdited(Boolean(group?.members.some(member => member.display_name) || primary.display_name));
     setConnectionStatus("Saved connection · Checking model catalog…");
-    setEditingProviderId(provider.id);
-    setProviderForm(provider);
+    setEditingProviderId(primary.id);
+    setProviderForm({...primary, display_name: group?.name || primary.display_name});
     setApiKey("");
     setConnectionOpen(true);
   };
@@ -197,6 +211,7 @@ export function ProcessorsPage() {
       if (provider) openExistingConnection(provider);
       else document.getElementById("setup-model-connections")?.scrollIntoView({ behavior: "smooth", block: "center" });
     } else if (step === "extractor") {
+      setAdvancedOpen(true);
       setExpandedCapability("extractor");
       document.getElementById("setup-extractor-heading")?.scrollIntoView({ behavior: "smooth", block: "center" });
     } else {
@@ -211,17 +226,26 @@ export function ProcessorsPage() {
     setConnectionStatus("Saving…");
     setCatalogQueried(false);
     try {
-      await createModelProvider({...providerForm, display_name: friendlyName});
-      setEditingProviderId(providerForm.id);
-      if (apiKey) await saveModelProviderCredential(providerForm.id, apiKey);
-      setProviderForm(current => ({ ...current, credential_present: Boolean(apiKey) || current.credential_present }));
+      const saved = await createModelProvider({...providerForm, display_name: friendlyName});
+      let primary = saved.provider;
+      if (apiKey) {
+        await saveModelProviderCredential(primary.id, apiKey);
+        primary = (await listModelProviders()).providers.find(provider => provider.id === primary.id) || primary;
+      }
+      const members = [];
+      for (const member of editingMembers.filter(member => member.id !== primary.id)) {
+        const savedMember = await createModelProvider({...member, base_url: primary.base_url, display_name: friendlyName, credential_env: primary.credential_env});
+        members.push(savedMember.provider);
+      }
+      setEditingMembers([primary, ...members]);
+      setProviderForm(primary); setNameDirty(false); setEditingProviderId(primary.id);
       setApiKey("");
       setConnectionStatus("Saved · Checking endpoint…");
       const catalog = await apiJson<{ models: ModelOption[] }>("/api/admin/model-providers/discover", {
         method: "POST", json: { provider_id: providerForm.id, type: providerForm.type, base_url: providerForm.base_url },
       });
       setCatalogModels(catalog.models); setCatalogQueried(true);
-      setConnectionStatus(`Saved · Connected · ${catalog.models.length} models`);
+      setConnectionStatus("Saved · Connected");
       setProviderHealth(current => ({...current, [providerForm.id]: {ok: true, models: catalog.models.map(m => m.id), model_details: [], missing_models: [], pull_commands: [], recommendations: []}}));
       await refreshSetup();
     } catch (error) {
@@ -237,52 +261,41 @@ export function ProcessorsPage() {
     if (!editingProviderId) { notify("Save and check the endpoint first.", "info"); return; }
     setSavingConnection(true);
     try {
-      const saved = providerData.data?.providers.find(provider => provider.id === editingProviderId);
-      await createModelProvider({...saved ?? providerForm, display_name: friendlyName});
+      const members = editingMembers.length ? editingMembers : [providerForm];
+      for (const member of members) {
+        const saved = providerData.data?.providers.find(provider => provider.id === member.id) || member;
+        await createModelProvider({...saved, display_name: friendlyName});
+      }
+      setEditingMembers(current => current.map(member => ({...member, display_name: friendlyName})));
       setProviderForm(current => ({...current, display_name: friendlyName}));
-      setNameEdited(true);
+      setNameEdited(true); setNameDirty(false);
       await refreshSetup();
       notify("Connection name saved.");
     } catch (error) { notify((error as Error).message, "error"); }
     finally { setSavingConnection(false); }
   };
 
-  const selectConnectionModel = async (capability: "chat" | "embedding", model: string) => {
+  const selectConnectionModel = async (capability: "chat" | "embedding", model: string, member: ModelProvider = providerForm, save = true) => {
     const version = modelTestVersion.current;
-    const selected = capability === "chat" ? {...providerForm, chat_model: model, synthesis_model: model}
-      : {...providerForm, embedding_model: model};
-    const updated = {...selected, display_name: nameEdited ? friendlyName : suggestedConnectionName(selected.base_url, selected.chat_model || selected.embedding_model)};
-    setProviderForm(updated);
+    const source = member.id === providerForm.id ? providerForm : member;
+    const selected = capability === "chat" ? {...source, chat_model: model, synthesis_model: model}
+      : {...source, embedding_model: model};
+    const updated = {...selected, display_name: nameEdited ? friendlyName : suggestedConnectionName(selected.base_url)};
+    if (save) {
+      if (updated.id === providerForm.id) setProviderForm(updated);
+      setEditingMembers(current => current.map(item => item.id === updated.id ? updated : item));
+    }
     setSavingConnection(true);
     try {
-      await createModelProvider(updated);
+      if (save) await createModelProvider(updated);
       if (!model) { await refreshSetup(); return; }
       const result = await apiJson<{ok: boolean; detail?: string; dimensions?: number}>(`/api/admin/model-providers/${encodeURIComponent(updated.id)}/test-model`, {
         method: "POST", json: {model, capability},
       });
-      if (version === modelTestVersion.current) setModelTests(current => ({...current, [`${capability}:${model}`]: result}));
+      if (version === modelTestVersion.current) setModelTests(current => ({...current, [`${updated.id}:${capability}:${model}`]: result}));
       await refreshSetup();
     } catch (error) { notify((error as Error).message, "error"); }
     finally { setSavingConnection(false); }
-  };
-
-  const checkConnection = async (provider: ModelProvider) => {
-    notify(`${provider.id}: checking connection and selected models…`, "info");
-    try {
-      const health = await checkModelProvider(provider.id);
-      setProviderHealth((current) => ({ ...current, [provider.id]: health }));
-      const embeddingTest = health.capabilities?.embedding;
-      notify(!health.ok
-        ? `${provider.id}: ${health.detail ?? "unavailable"}`
-        : embeddingTest?.configured && !embeddingTest.ok
-          ? `${provider.id} is connected, but embeddings failed: ${embeddingTest.detail}`
-          : embeddingTest?.ok
-            ? `${provider.id}: embedding model ${embeddingTest.model} is ready (${embeddingTest.dimensions} dimensions).`
-            : `${provider.id} is connected.`, !health.ok || (embeddingTest?.configured && !embeddingTest.ok) ? "error" : "success");
-      await refreshSetup();
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Connection check failed.", "error");
-    }
   };
 
   const forgetCredential = async (provider: ModelProvider) => {
@@ -298,14 +311,12 @@ export function ProcessorsPage() {
   };
 
   const removeConnection = async (provider: ModelProvider) => {
-    if (!window.confirm(`Remove model connection “${provider.id}”? Existing semantic indexes remain on disk but cannot be extended with this connection.`)) return;
+    const members = editingMembers.length ? editingMembers : [provider];
+    if (!window.confirm(`Remove connection “${friendlyName}” and its saved model selections? Existing indexes remain on disk.`)) return;
     try {
-      await deleteModelProvider(provider.id);
-      notify(`${provider.id} was removed.`);
-      await refreshSetup();
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Could not remove the model connection.", "error");
-    }
+      for (const member of members) await deleteModelProvider(member.id);
+      setConnectionOpen(false); notify("Connection removed."); await refreshSetup();
+    } catch (error) {notify((error as Error).message, "error");}
   };
 
   const runServiceAction = async (service: ManagedCapabilityService, action: "start" | "stop" | "restart") => {
@@ -346,13 +357,17 @@ export function ProcessorsPage() {
       const health = await checkModelProvider(provider.id);
       const installedName = health.models.find((model) => modelNameMatches(model, recommendation.model))
         ?? recommendation.model;
+      const target = editingMembers.find(member => recommendation.capability === "embedding" ? member.embedding_model : member.chat_model) || provider;
       const updatedProvider = recommendation.capability === "embedding"
-        ? { ...provider, implicit: false, embedding_model: installedName }
-        : { ...provider, implicit: false, chat_model: installedName, synthesis_model: installedName };
+        ? { ...target, implicit: false, embedding_model: installedName }
+        : { ...target, implicit: false, chat_model: installedName, synthesis_model: installedName };
       await createModelProvider(updatedProvider);
-      setProviderForm((current) => current.id === provider.id ? { ...current, ...updatedProvider } : current);
-      const validatedHealth = await checkModelProvider(provider.id);
-      setProviderHealth((current) => ({ ...current, [provider.id]: validatedHealth }));
+      setProviderForm((current) => current.id === updatedProvider.id ? { ...current, ...updatedProvider } : current);
+      setEditingMembers(current => current.map(member => member.id === updatedProvider.id ? updatedProvider : member));
+      const validatedHealth = await checkModelProvider(updatedProvider.id);
+      setProviderHealth((current) => ({ ...current, [provider.id]: health, [updatedProvider.id]: validatedHealth }));
+      const catalog = await apiJson<{models: ModelOption[]}>("/api/admin/model-providers/discover", {method: "POST", json: {provider_id: provider.id, type: provider.type, base_url: provider.base_url}});
+      setCatalogModels(catalog.models); setCatalogQueried(true);
       const embeddingTest = validatedHealth.capabilities?.embedding;
       notify(recommendation.capability === "embedding"
         ? embeddingTest?.ok
@@ -371,14 +386,16 @@ export function ProcessorsPage() {
     recommendation: OllamaRecommendation,
     installedName: string,
   ) => {
+    const target = editingMembers.find(member => recommendation.capability === "embedding" ? member.embedding_model : member.chat_model) || provider;
     const updatedProvider = recommendation.capability === "embedding"
-      ? { ...provider, implicit: false, embedding_model: installedName }
-      : { ...provider, implicit: false, chat_model: installedName, synthesis_model: installedName };
+      ? { ...target, implicit: false, embedding_model: installedName }
+      : { ...target, implicit: false, chat_model: installedName, synthesis_model: installedName };
     try {
       await createModelProvider(updatedProvider);
-      setProviderForm((current) => current.id === provider.id ? { ...current, ...updatedProvider } : current);
-      const health = await checkModelProvider(provider.id);
-      setProviderHealth((current) => ({ ...current, [provider.id]: health }));
+      setProviderForm((current) => current.id === updatedProvider.id ? { ...current, ...updatedProvider } : current);
+      setEditingMembers(current => current.map(member => member.id === updatedProvider.id ? updatedProvider : member));
+      const health = await checkModelProvider(updatedProvider.id);
+      setProviderHealth((current) => ({ ...current, [updatedProvider.id]: health }));
       notify(recommendation.capability === "embedding"
         ? `${recommendation.display_name} is selected. Build semantic embeddings in Intake for documents already in OSII.`
         : `${recommendation.display_name} is selected for chat, synthesis, and wikis.`);
@@ -553,49 +570,32 @@ export function ProcessorsPage() {
         <Button variant="contained" color="secondary" disabled={!providerData.data} onClick={openNewConnection}>Add connection</Button>
       </Stack>
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}><Stack spacing={2} divider={<Divider flexItem />}>
-        {(data?.providers ?? []).filter((provider) => provider.enabled && !(provider.type === "ollama" && provider.implicit)).map((provider) => <Stack key={provider.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1} alignItems={{ sm: "center" }}>
-          <Stack spacing={0.75} minWidth={0}>
-            <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-              <Typography variant="body2" fontWeight={700}>{provider.display_name || provider.id}</Typography>
-              <ConnectionEndpointStatus provider={provider} generation={data?.configuration.generation} />
-              {provider.default_chat ? <Chip size="small" label="Default language" /> : null}
-              {provider.default_embedding ? <Chip size="small" label="Default embedding" /> : null}
-            </Stack>
-            <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>{provider.base_url}</Typography>
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              {provider.chat_model || provider.synthesis_model ? <Typography variant="caption">Language · {provider.chat_model || provider.synthesis_model}</Typography> : null}
-              {provider.embedding_model ? <Typography variant="caption">Embedding · {provider.embedding_model}</Typography> : null}
-            </Stack>
-          </Stack>
-          <Stack direction="row" spacing={1} flexShrink={0}><Button size="small" onClick={() => openExistingConnection(provider)}>Configure</Button><Button size="small" onClick={() => void checkConnection(provider)}>Test models</Button></Stack>
+        {groupModelConnections((data?.providers ?? []).filter(provider => provider.enabled && !(provider.type === "ollama" && provider.implicit))).map(group => <Stack key={group.primary.id} direction={{xs: "column", sm: "row"}} justifyContent="space-between" spacing={1} alignItems={{sm: "center"}}>
+          <Stack spacing={0.75} minWidth={0}><Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap><Typography variant="body2" fontWeight={700}>{group.name}</Typography><ConnectionEndpointStatus provider={group.primary} generation={data?.configuration.generation} /></Stack><Typography variant="caption" color="text.secondary" sx={{overflowWrap: "anywhere"}}>{group.primary.base_url}</Typography><Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>{group.members.flatMap(member => [member.chat_model ? `Writing · ${member.chat_model}` : "", member.embedding_model ? `Search · ${member.embedding_model}` : ""].filter(Boolean)).map((label, i) => <Typography variant="caption" key={i}>{label}</Typography>)}</Stack></Stack>
+          <Button size="small" onClick={() => openExistingConnection(group.primary)}>Configure</Button>
         </Stack>)}
         {!data?.providers?.some((provider) => provider.enabled && !(provider.type === "ollama" && provider.implicit)) ? <Typography variant="body2" color="text.secondary">{setup.isError ? "Connections unavailable" : !data ? "Loading connections…" : "No enabled connections"}</Typography> : null}
       </Stack></Paper>
     </Stack>
 
     <Stack spacing={1.25}>
-      <Typography variant="h6" fontWeight={700}>Processing defaults</Typography>
       <ProcessingFlows readers={data?.readiness.extractors ?? []} synthesizers={data?.readiness.synthesizers ?? []} enrichers={data?.readiness.enrichers ?? []} />
-      <IntakeDefaults path={data?.configuration?.files.processors} />
-      {renderCapabilityDrawer("extractor")}
-      {renderCapabilityDrawer("synthesizer")}
-      {renderCapabilityDrawer("embedder")}
-      {renderCapabilityDrawer("enricher")}
     </Stack>
 
 
-    <Accordion variant="outlined" disableGutters elevation={0} sx={{ borderRadius: "12px !important", overflow: "hidden" }}>
-      <AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>Advanced &amp; diagnostics</Typography></AccordionSummary>
+    <Accordion expanded={advancedOpen} onChange={(_, open) => setAdvancedOpen(open)} variant="outlined" disableGutters elevation={0} sx={{ borderRadius: "12px !important", overflow: "hidden" }}>
+      <AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>Processor settings &amp; diagnostics</Typography></AccordionSummary>
       <AccordionDetails><Stack spacing={2}>
+        <IntakeDefaults path={data?.configuration?.files.processors} />
+        {renderCapabilityDrawer("extractor")}
+        {renderCapabilityDrawer("synthesizer")}
+        {renderCapabilityDrawer("embedder")}
+        {renderCapabilityDrawer("enricher")}
         {data?.configuration ? <Stack spacing={0.75}><Typography variant="body2" fontWeight={700}>Active configuration · {data.configuration.active_profile}</Typography><Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere" }}><code>{data.configuration.directory}</code></Typography><Typography variant="body2" color="text.secondary">Development defaults to the checkout&apos;s ignored osii-data/config/ directory. Installed launchers use a writable profile workspace. OSII_CONFIG_DIR overrides either location. Originals and portable .osii artifacts are separate.</Typography>{Object.entries(data.configuration.files).map(([name, path]) => <Stack key={name} direction="row" spacing={1} alignItems="center"><Typography variant="caption" sx={{ overflowWrap: "anywhere", flex: 1 }}><code>{path}</code></Typography><Button size="small" sx={{ flexShrink: 0 }} onClick={() => void copyConfigurationPath(path)}>Copy path</Button></Stack>)}</Stack> : null}
         <Accordion variant="outlined" disableGutters><AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>Service status</Typography></AccordionSummary><AccordionDetails><Stack divider={<Divider flexItem />}>
           <Typography variant="body2" color="text.secondary">The launcher normally starts and stops container services. The controls below apply only to a local development session.</Typography>
           {(data?.services ?? []).map((service) => <ServiceRow key={service.id} service={service} busy={serviceBusy === service.id} onAction={(action) => void runServiceAction(service, action)} onLogs={() => void showLogs(service)} />)}
           {!data?.service_control_available ? <Alert severity="info">Lifecycle controls are available with <code>make dev</code> or <code>.\scripts\osii.ps1 dev</code>. This deployment reports health only.</Alert> : null}
-        </Stack></AccordionDetails></Accordion>
-
-        <Accordion variant="outlined" disableGutters><AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>Connection maintenance</Typography></AccordionSummary><AccordionDetails><Stack spacing={1.25}>
-          {(data?.providers ?? []).map((provider) => <Paper key={provider.id} variant="outlined" sx={{ p: 1.5 }}><Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}><Stack><Typography variant="body2" fontWeight={700}>{provider.display_name || provider.id}</Typography><Typography variant="caption" color="text.secondary">{provider.base_url} · priority {provider.priority} · {provider.enabled ? "enabled" : "disabled"}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => openExistingConnection(provider)}>Edit</Button><Button size="small" onClick={() => void checkConnection(provider)}>Test</Button>{provider.credential_present && provider.credential_source === "repo_env" ? <Button size="small" color="error" onClick={() => void forgetCredential(provider)}>Forget key</Button> : null}<Button size="small" color="error" onClick={() => void removeConnection(provider)}>Remove</Button></Stack></Stack></Paper>)}
         </Stack></AccordionDetails></Accordion>
 
         <Accordion variant="outlined" disableGutters><AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>Custom Processor API services</Typography></AccordionSummary><AccordionDetails><Stack spacing={1.5}>
@@ -613,11 +613,12 @@ export function ProcessorsPage() {
       <Button variant="contained" color="secondary" onClick={() => navigate("/intake")} disabled={!data?.extraction_ready}>Continue to Intake →</Button>
     </Stack>
 
-    <Dialog open={modelHelp} onClose={() => setModelHelp(false)} maxWidth="sm" fullWidth><DialogTitle>Endpoints and models</DialogTitle><DialogContent><Stack spacing={1.5}><Typography><strong>Endpoints can serve different functions.</strong> Language models generate chat, summaries, and wikis. Embedding models support semantic search.</Typography><Typography><strong>Choose a model suited to your task.</strong> Research the model and your provider’s documentation to understand its strengths, limitations, and supported functions. Appearing in a list does not guarantee that it will work; use <strong>Test</strong> to check it. Tests make small requests and may incur provider charges.</Typography><Typography><strong>What is Ollama?</strong> Ollama runs AI models on your computer and exposes an endpoint OSII can connect to. <a href="https://ollama.com/download" target="_blank" rel="noreferrer">Download Ollama</a>, install it, and open the app (or run <code>ollama serve</code>) before connecting OSII.</Typography><Typography><strong>Find a model:</strong> Browse the <a href="https://ollama.com/library" target="_blank" rel="noreferrer">Ollama model library</a> for available models, supported functions, sizes, and download instructions. Choose a local model that fits your computer’s memory. OSII does not restrict model choices.</Typography><Typography><strong>Get started:</strong> Follow the model’s download instructions (for example, <code>ollama pull model-name</code>), then use <strong>Save and check</strong> to refresh installed models. Select a language model for writing or an embedding model for semantic search, then <strong>Test</strong> it. See the <a href="https://docs.ollama.com/quickstart" target="_blank" rel="noreferrer">Ollama getting-started guide</a> for more help.</Typography></Stack></DialogContent><DialogActions><Button onClick={() => setModelHelp(false)}>Close</Button></DialogActions></Dialog>
+    <Dialog open={modelHelp} onClose={() => setModelHelp(false)} maxWidth="sm" fullWidth><DialogTitle>Endpoints and models</DialogTitle><DialogContent><Stack spacing={1.5}><Typography><strong>One connection, many models.</strong> A connection stores a server address and API key. Give it a service name, such as a word suggested from its URL. Each model keeps its own name below. Selecting another model does not require another connection.</Typography><Typography><strong>Endpoints can serve different functions.</strong> Language models generate chat, summaries, and wikis. Embedding models support semantic search. Other models may read images and pages or rank search results; using those functions also requires a compatible OSII processor.</Typography><Typography><strong>Choose a model suited to your task.</strong> Research the model and your provider’s documentation to understand its strengths, limitations, and supported functions. Appearing in a list does not guarantee that it will work; use <strong>Test</strong> to check it. Tests make small requests and may incur provider charges.</Typography><Typography><strong>What is Ollama?</strong> Ollama runs AI models on your computer and exposes an endpoint OSII can connect to. <a href="https://ollama.com/download" target="_blank" rel="noreferrer">Download Ollama</a>, install it, and open the app (or run <code>ollama serve</code>) before connecting OSII.</Typography><Typography><strong>Find a model:</strong> Browse the <a href="https://ollama.com/library" target="_blank" rel="noreferrer">Ollama model library</a> for available models, supported functions, sizes, and download instructions. Choose a local model that fits your computer’s memory. OSII does not restrict model choices.</Typography><Typography><strong>Get started:</strong> Follow the model’s download instructions (for example, <code>ollama pull model-name</code>), then use <strong>Save and check</strong> to refresh installed models. Select a language model for writing or an embedding model for semantic search, then <strong>Test</strong> it. See the <a href="https://docs.ollama.com/quickstart" target="_blank" rel="noreferrer">Ollama getting-started guide</a> for more help.</Typography></Stack></DialogContent><DialogActions><Button onClick={() => setModelHelp(false)}>Close</Button></DialogActions></Dialog>
     <Dialog open={connectionOpen} onClose={() => setConnectionOpen(false)} fullWidth maxWidth="sm"><Box component="form" sx={{display: "flex", flexDirection: "column", maxHeight: "90vh"}} onSubmit={(event) => void saveConnection(event)}>
       <DialogTitle sx={{display: "flex", alignItems: "center", justifyContent: "space-between"}}>{editingProviderId ? "Configure connection" : "Add connection"}<IconButton aria-label="About endpoints and models" onClick={() => setModelHelp(true)}><HelpOutlineIcon /></IconButton></DialogTitle><DialogContent>
       {connectionOpen && !serviceLogs ? renderNotice() : null}
       <Stack spacing={1.5} sx={{ pt: 0.5 }}>
+        <Stack direction="row" spacing={1} alignItems="center"><TextField size="small" fullWidth label="Connection name" value={friendlyName} onChange={event => {setNameEdited(true); setNameDirty(true); setProviderForm(current => ({...current, display_name: event.target.value}));}} />{editingProviderId && nameDirty && <Button sx={{flexShrink: 0}} disabled={savingConnection} onClick={() => void saveConnectionName()}>Save name</Button>}</Stack>
         {connectionStatus && <Alert severity={connectionStatus.toLowerCase().includes("failed") ? "error" : "info"}>{connectionStatus}</Alert>}
         {!editingProviderId && <TextField select label="Connection" value={providerForm.type} disabled={Boolean(editingProviderId)} onChange={(event) => { setProviderForm(newConnectionProvider(event.target.value as ModelProvider["type"])); setApiKey(""); }}><MenuItem value="openai">OpenAI-compatible endpoint</MenuItem><MenuItem value="ollama">Ollama (local model server)</MenuItem></TextField>}
         <EndpointFields required baseUrl={providerForm.base_url} onBaseUrl={base_url => setProviderForm({ ...providerForm, base_url })}
@@ -629,24 +630,19 @@ export function ProcessorsPage() {
         <Button type="submit" variant="contained" disabled={savingConnection || Boolean(duplicateConnection && !allowDuplicate)}>{savingConnection ? "Saving and checking…" : "Save and check"}</Button>
         {providerForm.credential_present && <Button size="small" onClick={() => void forgetCredential(providerForm).then(removed => { if (removed) {setProviderForm(current => ({...current, credential_present: false})); setModelTests({});} })}>Remove saved key</Button>}
         {catalogQueried && <>
-        <Typography fontWeight={700}>Models</Typography>
-        {providerForm.type === "ollama" && <Alert severity="info" icon={false}>Start Ollama to see installed models. The starter downloads below are optional.</Alert>}
-        <ModelPicker disabled={savingConnection} label="Language model" value={providerForm.chat_model} options={discoveredModels.filter(model => !model.capabilities.length || model.capabilities.includes("chat"))}
-          onChange={model => void selectConnectionModel("chat", model)} helperText="Chat, summaries, and wikis" />
-        <ModelPicker disabled={savingConnection} label="Embedding model (optional)" value={providerForm.embedding_model} options={discoveredModels.filter(model => !model.capabilities.length || model.capabilities.includes("embedding"))}
-          onChange={model => void selectConnectionModel("embedding", model)} helperText="Semantic search" />
-        {([['chat', providerForm.chat_model], ['embedding', providerForm.embedding_model]] as const).filter(([, model]) => model).map(([capability, model]) => {
-          const result = modelTests[`${capability}:${model}`];
-          return <Stack key={capability} direction="row" spacing={1} alignItems="center"><Chip size="small" color={result ? result.ok ? "success" : "error" : "default"} label={`${capability}: ${result ? result.ok ? "Verified" : "Test failed" : "Untested"}`} /><Typography variant="caption">{result?.detail || (result?.dimensions ? `${result.dimensions} dimensions` : model)}</Typography><Button size="small" disabled={savingConnection} onClick={() => void selectConnectionModel(capability, model)}>Test</Button></Stack>;
+        <Stack direction="row" justifyContent="space-between" alignItems="center"><Typography fontWeight={700}>Models from this connection</Typography><Typography variant="caption" color="text.secondary">{discoveredModels.length} available</Typography></Stack>
+        {modelRows.map(({member, capability}) => {
+          const model = capability === "chat" ? member.chat_model : member.embedding_model;
+          return <ConnectionModelRow key={`${member.id}:${capability}`} label={capability === "chat" ? "Writing model" : "Embedding model"} help={capability === "chat" ? "Chat, summaries, and wikis" : "Semantic search"} value={model} options={discoveredModels.filter(option => !option.capabilities.length || option.capabilities.includes(capability))} busy={savingConnection} result={modelTests[`${member.id}:${capability}:${model}`]} onChange={model => void selectConnectionModel(capability, model, member)} onTest={() => void selectConnectionModel(capability, model, member, false)} />;
         })}
-        {providerForm.type === "ollama" ? <Stack spacing={1}><Typography variant="body2" fontWeight={700}>Small starter models</Typography>{(providerData.data?.ollama_recommendations ?? []).map((recommendation) => {
+        {providerForm.type === "ollama" ? <Box component="details"><Box component="summary" sx={{cursor: "pointer", fontWeight: 600}}>Download starter models</Box><Stack spacing={1} sx={{pt: 1}}>{(providerData.data?.ollama_recommendations ?? []).map((recommendation) => {
           const job = pullJobs[`${providerForm.id}:${recommendation.model}`];
           const active = job?.status === "queued" || job?.status === "running";
           const progress = job?.total ? Math.min(100, job.completed / job.total * 100) : undefined;
           const health = providerHealth[providerForm.id];
           const installedName = health?.models.find((model) => modelNameMatches(model, recommendation.model));
           const selectedName = recommendation.capability === "embedding"
-            ? providerForm.embedding_model
+            ? modelMembers.find(member => member.embedding_model)?.embedding_model || ""
             : providerForm.chat_model;
           const selected = Boolean(
             installedName
@@ -654,10 +650,9 @@ export function ProcessorsPage() {
             && modelNameMatches(installedName, selectedName),
           );
           return <Paper key={recommendation.model} variant="outlined" sx={{ p: 1.25 }}><Stack spacing={0.5}><Stack direction="row" justifyContent="space-between" spacing={1}><Stack><Typography variant="body2" fontWeight={700}>{recommendation.display_name}</Typography><Typography variant="caption" color="text.secondary">{recommendation.model} · {recommendation.size_label} · {recommendation.publisher}</Typography></Stack>{installedName ? <Stack direction="row" spacing={0.75} alignItems="center"><Chip size="small" color="success" label={selected ? "Installed · selected" : "Installed"} />{!selected ? <Button size="small" variant="outlined" onClick={() => void selectInstalledModel(providerForm, recommendation, installedName)}>Use this model</Button> : null}</Stack> : <Button size="small" variant="outlined" disabled={active || !health} onClick={() => void installModel(providerForm, recommendation)}>{active ? "Downloading…" : health ? "Download" : "Checking…"}</Button>}</Stack>{active ? <LinearProgress variant={progress === undefined ? "indeterminate" : "determinate"} value={progress} /> : null}{job?.status === "error" ? <Typography variant="caption" color="error">{job.detail}</Typography> : null}{installedName && recommendation.capability === "embedding" ? <Typography variant="caption" color="text.secondary">The model enables semantic processing. Existing documents still need a semantic-embedding run from Intake.</Typography> : null}</Stack></Paper>;
-        })}</Stack> : null}
+        })}</Stack></Box> : null}
         </>}
-        <TextField size="small" label="Connection name" value={friendlyName} onChange={event => {setNameEdited(true); setProviderForm(current => ({...current, display_name: event.target.value}));}} />
-      </Stack></DialogContent><DialogActions><Button onClick={() => setConnectionOpen(false)}>Close</Button><Button disabled={savingConnection || !editingProviderId || Boolean(duplicateConnection && !allowDuplicate)} onClick={() => void saveConnectionName()}>Save name</Button></DialogActions>
+      </Stack></DialogContent><DialogActions sx={{justifyContent: "space-between"}}>{editingProviderId ? <Button color="error" disabled={savingConnection} onClick={() => {const saved = providerData.data?.providers.find(provider => provider.id === editingProviderId); if (saved) void removeConnection(saved);}}>Remove connection</Button> : <span />}<Button onClick={() => setConnectionOpen(false)}>Done</Button></DialogActions>
     </Box></Dialog>
 
     <Dialog open={Boolean(serviceLogs)} onClose={() => setServiceLogs(null)} fullWidth maxWidth="md"><DialogTitle>{serviceLogs?.title} logs</DialogTitle><DialogContent>{serviceLogs ? renderNotice() : null}<Box component="pre" sx={{ bgcolor: "grey.950", color: "grey.100", p: 1.5, borderRadius: 1, maxHeight: 420, overflow: "auto", whiteSpace: "pre-wrap", fontSize: "0.75rem" }}>{serviceLogs?.lines.join("\n") || "No recent output."}</Box></DialogContent><DialogActions><Button onClick={() => setServiceLogs(null)}>Close</Button></DialogActions></Dialog>

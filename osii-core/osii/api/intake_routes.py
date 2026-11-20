@@ -570,9 +570,9 @@ def test_processing_flow(request: Request, flow_id: str):
                         "ok": any(item["ok"] is True for item in attempts), "attempts": attempts})
     for kind, name in (("synthesizer", flow["synthesizer_name"]), ("enricher", flow["enricher_name"])):
         report = test_intake_processors(request, {"processors": [{"name": name, "kind": kind}]})
-        results.extend(report["results"])
+        results.extend({**item, "step": "synthesize" if kind == "synthesizer" else "enrich"} for item in report["results"])
     report = test_intake_processors(request, {"embed": True})
-    results.extend(report["results"])
+    results.extend({**item, "step": "embed"} for item in report["results"])
     report = {"fingerprint": flow["fingerprint"], "tested_at": report["tested_at"],
               "sample": "Bundled Purcell PDF (first page) and tiny text samples", "ok": all(item["ok"] is True for item in results), "results": results}
     settings = load_tools_config()

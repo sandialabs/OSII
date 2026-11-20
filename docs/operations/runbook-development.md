@@ -243,7 +243,10 @@ user account. OSII-local has no login.
 Use **Setup → Processing flows** to configure named reader/fallback chains,
 synthesis, and enrichment. **Test sample** uses the bundled Purcell PDF's first
 page and tiny text/model requests. It records endpoint diagnostics and a
-configuration fingerprint. Changing the flow, models, or processor settings
+configuration fingerprint. Results open immediately with numbered steps and
+visible failures. Use **View errors** beside a flow to reopen its saved report,
+even after refreshing, and **Copy report** for full diagnostics.
+Changing the flow, models, or processor settings
 invalidates its displayed test result; passing a sample is not a future
 availability guarantee. Model-backed tests may use provider credits.
 

@@ -1211,3 +1211,7 @@ Scan inventory and recursive discovery UI are archived on
 `/api/volume` history but returns HTTP 410 for inventory mutations. Its normal
 launcher no longer starts `inventory-worker`. Standalone archived volume APIs
 remain available to the archive implementation; no inventory evidence is reset.
+
+Flow sample-test result entries include a `step` identifier (`extract`,
+`synthesize`, `enrich`, or `embed`) for presentation independent of processor
+names. Saved reports lacking these identifiers remain readable by the UI.

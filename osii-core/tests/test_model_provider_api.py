@@ -530,3 +530,23 @@ def test_connection_display_name_is_editable_without_changing_identity(client, m
 def test_connection_display_name_length_is_bounded(client):
     response = client.put("/api/admin/model-providers/rename-test", json={"type": "openai", "base_url": "https://test.invalid/v1", "display_name": "x" * 201})
     assert response.status_code == 422
+
+
+def test_ollama_model_probe_does_not_send_unrelated_openai_key(client, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "unrelated-cloud-secret")
+    calls = []
+    monkeypatch.setattr("requests.post", lambda url, **kw: calls.append((url, kw)) or FakeResponse(payload={"embeddings": [[0.1, 0.2]]}))
+    response = client.post("/api/admin/model-providers/minilm/test-model", json={"model": "all-minilm", "capability": "embedding"})
+    assert response.status_code == 200 and response.json()["ok"]
+    assert calls[0][1]["headers"] == {}
+
+
+def test_explicit_connection_credential_reference_wins_over_legacy_alias(client, monkeypatch):
+    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
+    payload = {"type": "openai", "base_url": "https://corporate.invalid/v1", "credential_env": "OSII_PROVIDER_CORPORATE_API_KEY"}
+    assert client.put("/api/admin/model-providers/openai-compatible", json=payload).status_code == 200
+    assert client.put("/api/admin/model-providers/openai-compatible/credential", json={"api_key": "separate-test-key"}).status_code == 200
+    from osii.domain.env_credentials import resolve_env_value
+    assert resolve_env_value("OSII_PROVIDER_CORPORATE_API_KEY")[0] == "separate-test-key"
+    provider = next(provider for provider in client.get("/api/admin/model-providers").json()["providers"] if provider["id"] == "openai-compatible")
+    assert provider["credential_env"] == "OSII_PROVIDER_CORPORATE_API_KEY"

@@ -238,11 +238,11 @@ def _public(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _saved_credential_name(record: dict[str, Any]) -> str:
-    if record.get("type") == "openai" and record.get("id") == "openai-compatible":
-        return "OPENAI_API_KEY"
     configured = str(record.get("credential_env") or "").strip()
     if configured and configured != "OSII_MODEL_API_KEY":
         return configured
+    if record.get("type") == "openai" and record.get("id") == "openai-compatible":
+        return "OPENAI_API_KEY"
     suffix = re.sub(r"[^A-Z0-9]+", "_", str(record["id"]).upper()).strip("_")
     return f"OSII_PROVIDER_{suffix}_API_KEY"
 
@@ -512,9 +512,9 @@ def test_provider_model(request: Request, provider_id: str, payload: dict):
     model, capability = payload.get("model"), payload.get("capability")
     if not isinstance(model, str) or not model.strip() or len(model) > 200 or capability not in {"chat", "embedding"}:
         raise HTTPException(422, "Choose a listed model and capability")
-    token, _ = resolve_env_value(str(record.get("credential_env") or "OPENAI_API_KEY"))
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
     ollama = record["type"] == "ollama"
+    token = "" if ollama else resolve_env_value(str(record.get("credential_env") or "OPENAI_API_KEY"))[0]
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
     path = ("/api/embed" if ollama else "/embeddings") if capability == "embedding" else ("/api/chat" if ollama else "/chat/completions")
     body = {"model": model, "input": ["OSII connection test"]} if capability == "embedding" else {
         "model": model, "messages": [{"role": "user", "content": "Reply OK."}],

@@ -13,7 +13,7 @@ export function ModelPicker({ label, value, options, onChange, helperText, disab
         isOptionEqualToValue={(a, b) => a.id === b.id} getOptionLabel={model => model.name}
         renderOption={(props, model) => <li {...props} key={model.id}><Box><Typography variant="body2">{model.name}</Typography>
           {model.name !== model.id && <Typography variant="caption" color="text.secondary">{model.id}</Typography>}</Box></li>}
-        renderInput={params => <TextField {...params} label={label} helperText={helperText ?? `${options.length} available models. Save and check the connection to refresh the list.`} />} />}
+        renderInput={params => <TextField {...params} size="small" label={label} helperText={helperText ?? `${options.length} available models. Save and check the connection to refresh the list.`} />} />}
 
   </Stack>;
 }
