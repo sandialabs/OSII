@@ -136,7 +136,7 @@ when the run targets a logical collection. Other scope context can be saved
 through the Python functions below. There is no implicit root/folder/collection
 inheritance or merging: each method uses guidance for its **exact scope**.
 
-Tesseract OCR, Apache Tika, and native text extraction need no expert context
+Tesseract OCR and native text extraction need no expert context
 and do not use it to alter recognized text. Saving it during OCR is still useful
 for later image description, synthesis, or enrichment. Core sends resolved
 guidance explicitly in the Processor API `expert_context` field; the processor

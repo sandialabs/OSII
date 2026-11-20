@@ -57,7 +57,6 @@ library. Processor modules start automatically and are available in **Setup**.
 Set individual `OSII_ENABLE_…` switches in `.env` to omit modules.
 Keep the terminal open; **Ctrl+C** stops OSII. For sample files, use
 `make demo` (Windows: `.\scripts\osii.ps1 demo`). Install Tesseract for OCR;
-Apache Tika and its Java runtime are prepared automatically on first startup;
 configure model connections and processing defaults in **Setup**. The
 [Banyan processor module](osii-processor-modules/banyan/README.md) uses its
 own local Nemotron endpoint configuration. Keep credentials outside Git.

@@ -171,9 +171,9 @@ def test_launcher_imports_without_installed_application_dependencies():
 
 def test_all_existing_processors_keep_their_switches_and_ids():
     processors = discover_processors(ROOT/'osii-processor-modules')
-    assert {row.id for row in processors} == {'tika','banyan','tesseract-opencv','readable-wiki','concept-entity-wiki','csv-extractor','collection-table'}
+    assert {row.id for row in processors} == {'banyan','tesseract-opencv','readable-wiki','concept-entity-wiki','csv-extractor','collection-table'}
     assert next(row for row in processors if row.id == 'banyan').registration_id == 'banyan-nemotron-parse'
-    assert next(row for row in processors if row.id == 'tika').port_env == 'OSII_TIKA_ADAPTER_PORT'
+    assert not any(row.id == 'tika' for row in processors)
 
 
 def test_new_offline_extractor_uses_manifest_file_type_rules(tmp_path, monkeypatch):

@@ -93,7 +93,7 @@ choose **View log** to inspect historical evidence.
    summaries, and Build search embeddings. **Upgrade extraction / OCR** reads
    the same selected files again; **Index existing text** skips extraction.
    Choose a Reader for each file type or keep the file-type default. Wildcard
-   readers such as Tika remain available for any supported input. Unavailable
+   readers remain available for their supported inputs. Unavailable
    methods are shown disabled. **Options → New extraction** controls whether to
    keep the primary text, promote the new extraction, or save another version.
 7. **Test selected endpoints** uses tiny synthetic inputs and returns actual

@@ -40,7 +40,7 @@ def choose_parser(path: Path, routes: list[dict]) -> str:
         exts = route.get("extensions", [])
         if "*" in exts or suffix in [e.lower() for e in exts]:
             return route["extractor"]
-    return "tika"
+    return "local.native-text"
 
 
 def relpath_under(root: Path, path: Path) -> str:

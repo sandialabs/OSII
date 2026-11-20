@@ -147,12 +147,10 @@ a separately installed processor environment.
 
 Modules include OpenCV/Tesseract (`8081`), CSV extraction (`8097`), collection
 tables (`8098`), Readable Wiki (`8099`), Concept/Entity Wiki (`8100`), Banyan
-(`8101`), and Tika (`8102`, managed Apache runtime on `9998`). The first Tika
-startup downloads and verifies its pinned jar; Java is included in its module
-environment. Baseline full-page Tesseract remains on `8080`; native Tesseract
+(`8101`). Baseline full-page Tesseract remains on `8080`; native Tesseract
 is still required for OCR. Nemotron and Wiki models require endpoint configuration.
 
-Set individual `OSII_ENABLE_TIKA=false`, `OSII_ENABLE_BANYAN=false`, or the other
+Set individual `OSII_ENABLE_BANYAN=false` or the other
 `OSII_ENABLE_…` switches in `.env` to omit a module's dependencies and startup.
 Switch names are derived from each manifest service ID; see the
 [manifest contract](../extending/processor-modules.md). Restart the stack after changing
@@ -211,8 +209,9 @@ processor module implementations remain under `osii-processor-modules/` and star
 unless opted out as described above. To deploy a tool independently or connect
 your own processor, start its service using its source instructions, register
 its base URL in Setup's custom Processor API services, then choose its
-extraction/enrichment route. External Tika can be
-configured as an endpoint; the host workflow no longer starts containers.
+extraction/enrichment route. The host workflow does not start containers.
+The former Tika adapter and managed Java runtime are archived on
+`archive/tika-2026-11-19`; `main` does not prepare or start them.
 
 ## Developer checks
 
@@ -276,7 +275,7 @@ Configuration ownership:
 | Module `processor-module.toml` | Identity, command, default port, capabilities, offline request schema, startup schema/defaults |
 | Setup → Model connections | Provider endpoints, model selection, replaceable credentials; saved in `models.toml` and private `secrets.env` |
 | Setup → Processing defaults | Intake preferences, routing, bindings and processor settings; saved in `processors.toml` |
-| Processor → Startup settings | Manifest-defined lifecycle options, such as Tika's bundled runtime, JVM port and cache; restart the service after saving |
+| Processor → Startup settings | Manifest-defined lifecycle options; restart the service after saving |
 
 When `processors.toml` is absent, Core copies valid existing `tools.toml`
 configuration atomically, then removes the migrated file. Existing `processors.toml`
@@ -316,11 +315,8 @@ application/manifest defaults. Module additions need no root-template edit.
 
 For module startup fields, explicit environment values win over saved Setup
 choices, then manifest defaults. Setup shows the names of overriding variables
-without revealing values. Tika's managed JVM settings live in its manifest;
-`OSII_TIKA_MANAGED`, `OSII_TIKA_SERVER_PORT`, and `OSII_TIKA_CACHE_DIR` still
-work for unattended deployments. Restarting a module from Setup rereads its saved
+without revealing values. Restarting a module from Setup rereads its saved
 startup settings. Global enable/port overrides require restarting `make dev`.
-See the [Tika guide](../reference/extractor-routing.md#apache-tika-processor-module).
 
 For an OpenRouter or corporate OpenAI-compatible provider, set its API base URL,
 exact chat and embedding model IDs, and credentials. Shared `OPENAI_BASE_URL`

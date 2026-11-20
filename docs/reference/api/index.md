@@ -1121,20 +1121,6 @@ an existing new file always wins. `[tools]` registration tables and existing
 API payloads remain compatible. Configuration status names the new file
 `processors`; the old Python `tools_path()` import remains an alias.
 
-### Apache Tika processor module configuration
-
-Save the upstream address with `PUT /api/admin/processor-settings/tika` and
-`{"config": {"tika_endpoint": "http://your-tika:9998", "chunk_chars": 4000}}`.
-Both `tika` and `tika_catchall` intake routes use these saved settings. The
-adapter exposes the standard `/v1/descriptor` and `/v1/extract` endpoints;
-`/health` checks the wrapper and `/upstream-health?tika_endpoint=...` checks
-Apache Tika. The normal development stack prepares and manages Apache Tika
-automatically. Its manifest defines startup fields for the managed JVM,
-port, and cache, editable through Setup or the startup-settings API above.
-`OSII_TIKA_MANAGED=false` remains a deployment override for an external runtime.
-An empty `tika_endpoint` follows the managed loopback port automatically. See the
-[Apache Tika adapter guide](../extractor-routing.md#apache-tika-processor-module).
-
 ### Explicit Intake operation tests
 
 `POST /api/intake/preflight` accepts `processors` (up to eight

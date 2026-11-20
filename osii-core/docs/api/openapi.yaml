@@ -1818,9 +1818,9 @@ paths:
                         scope: object
                         mode: extraction
                         domain: generic
-                      - name: tika
-                        display_name: Tika Catchall Extractor
-                        description: Uses bundled Apache Tika for local text extraction.
+                      - name: native_text
+                        display_name: Native text extractor
+                        description: Reads text-layer PDFs, Office documents, and supported text formats.
                         version: '1.0'
                         scope: object
                         mode: extraction

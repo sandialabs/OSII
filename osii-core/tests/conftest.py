@@ -153,3 +153,21 @@ description = "This appears to be a technical report about thermal calibration d
         "root_folder_id": root_folder_id,
         "source_relpath": source_relpath,
     }
+
+
+@pytest.fixture
+def startup_module(tmp_path, monkeypatch):
+    import tomli_w
+    root = tmp_path / "modules"
+    directory = root / "example-cache"
+    directory.mkdir(parents=True)
+    (directory / "pyproject.toml").write_text('[project]\nname="example-cache"\nversion="0.1.0"\n')
+    schema = {"type": "object", "additionalProperties": False, "properties": {
+        "EXAMPLE_CACHE_ENABLED": {"type": "boolean", "default": True},
+        "EXAMPLE_CACHE_PORT": {"type": "integer", "minimum": 1, "maximum": 65535, "default": 9998}}}
+    (directory / "processor-module.toml").write_text(tomli_w.dumps({"schema_version": 1,
+        "id": "example-cache", "processors": [{"id": "example-cache", "processor_id": "example.cache",
+        "kind": "enricher", "display_name": "Example cache", "description": "Lifecycle test fixture",
+        "command": ["run.py"], "port": 18123, "startup_schema": schema}]}))
+    monkeypatch.setenv("OSII_PROCESSOR_MODULES_DIR", str(root))
+    return root

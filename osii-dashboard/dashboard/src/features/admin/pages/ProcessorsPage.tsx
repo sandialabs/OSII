@@ -140,7 +140,6 @@ export function ProcessorsPage() {
   const [pullJobs, setPullJobs] = useState<Record<string, ModelPullJob>>({});
   const [editingCapability, setEditingCapability] = useState<string | null>(null);
   const [capabilityDraft, setCapabilityDraft] = useState<Record<string, unknown>>({});
-  const [tikaEndpoint, setTikaEndpoint] = useState<string | null>(null);
   const [sourceHelp, setSourceHelp] = useState<CapabilityReadiness | null>(null);
   const [modelHelp, setModelHelp] = useState(false);
   const [processorForm, setProcessorForm] = useState({
@@ -525,13 +524,6 @@ export function ProcessorsPage() {
             {processor.model_error ? <Typography variant="caption" color="error">{processor.model_error}</Typography> : null}
             <Button size="small" onClick={() => openNewConnection()}>Connect model</Button>
           </Stack> : null}
-          {item.id === "tika" ? <Stack direction={{xs: "column", sm: "row"}} spacing={1}><TextField size="small" label="Apache Tika endpoint" placeholder="Managed runtime (default)" value={tikaEndpoint ?? String(settings.data?.settings.tika?.tika_endpoint ?? schema?.properties?.tika_endpoint?.default ?? "")} onChange={event => setTikaEndpoint(event.target.value)} sx={{minWidth: 300}} /><Button size="small" onClick={async () => {
-            const endpoint = String(tikaEndpoint ?? settings.data?.settings.tika?.tika_endpoint ?? schema?.properties?.tika_endpoint?.default ?? "");
-            try { if (endpoint.trim()) { const url = new URL(endpoint); if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("invalid"); } }
-            catch { notify("Enter an HTTP(S) base URL without credentials, query, or fragment.", "error"); return; }
-            try { await saveProcessorSettings("tika", {...settings.data?.settings.tika, tika_endpoint: endpoint}); notify("Apache Tika endpoint saved."); await queryClient.invalidateQueries({queryKey: ["admin"]}); }
-            catch (error) { notify(error instanceof Error ? error.message : "Could not save endpoint.", "error"); }
-          }}>Save endpoint</Button></Stack> : null}
           {Object.keys(schema?.properties ?? {}).length ? <Button size="small" sx={{ alignSelf: "flex-start", px: 0 }} onClick={() => editingCapability === item.id ? setEditingCapability(null) : editCapability(item)}>{editingCapability === item.id ? "Hide settings" : "Settings"}</Button> : null}
           {editingCapability === item.id ? <Stack spacing={1}>{Object.entries(schema?.properties ?? {}).map(([name, property]) => <ConfigInput key={name} name={name} property={property} value={capabilityDraft[name]} onChange={(value) => setCapabilityDraft((current) => ({ ...current, [name]: value }))} />)}<Button variant="contained" size="small" onClick={() => void saveCapability(item)} sx={{ alignSelf: "flex-start" }}>Save settings</Button></Stack> : null}
           <ProcessorStartupSettings processorId={item.id} />

@@ -4,7 +4,7 @@ from hashlib import sha256
 from pathlib import Path
 import json
 from osii.configuration import load_tools_config, load_models_config
-from osii.domain.processing.extractor_selection import default_extractor_routes, load_extractor_routes
+from osii.domain.processing.extractor_selection import active_extractor_routes, default_extractor_routes, load_extractor_routes
 from osii.domain.processing.defaults import configured_intake_defaults
 from osii.domain.model_provider_config import selected_processor
 
@@ -24,14 +24,14 @@ def processing_flows(root):
         "bundled": {"name": "Default bundled processes", "routes": bundled, **common},
         "advanced-ocr": {"name": "Advanced OCR", "routes": [
             {"name": "ocr-pdf-images", "extensions": [".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff"],
-             "extractor": "toolbox.tesseract-opencv", "fallbacks": ["local.tesseract-page-ocr", "tika"]}, *bundled], **common},
+             "extractor": "toolbox.tesseract-opencv", "fallbacks": ["local.tesseract-page-ocr"]}, *bundled], **common},
     }
     configured = load_extractor_routes()
     if configured != bundled:
         values["configured"] = {"name": "Saved extraction routing", "routes": configured, **common}
     settings = load_tools_config()
     for identifier, value in settings.get("processing_flows", {}).items():
-        values[identifier] = {**common, **value}
+        values[identifier] = {**common, **value, "routes": active_extractor_routes(value.get("routes", bundled))}
     try:
         sample_hash = sha256(TEXT_LAYER_SAMPLE.read_bytes()).hexdigest()
     except OSError:

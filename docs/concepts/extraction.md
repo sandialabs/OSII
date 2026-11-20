@@ -30,7 +30,7 @@ osii-core/osii/extraction/
   base.py
   common.py
   dispatcher.py
-  tika_service.py
+  native_text_extractor.py
   banyan_service.py
   cli.py
 ```
@@ -48,11 +48,11 @@ An extractor:
 - emits canonical OSII files into the document bundle
 
 Examples:
-- `TikaCatchallExtractor`
+- `NativeTextExtractor`
 - `PdfDefaultExtractor`
 
 Backend tools are implementation details:
-- Apache Tika
+- PyMuPDF
 - Nemotron Parse
 - future OCR/VLM services
 
@@ -140,11 +140,10 @@ Run/process metadata should be tracked at run scope rather than object scope whe
 
 ## Current extractor implementations
 
-### `tika_catchall`
-- generic fallback extractor
-- uses Apache Tika over HTTP
-- chunks returned text into fixed-size text segments
-- does not generate artifacts
+### `native_text`
+- reads text-layer PDFs, Office documents, and supported text formats
+- uses Python parsers without an external service
+- reports when scanned pages require an OCR extractor
 
 ### `pdf_default`
 - PDF-specialized extractor

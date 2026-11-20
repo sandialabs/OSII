@@ -41,7 +41,7 @@ def test_configured_processor_urls_includes_enabled_admin_registry(tmp_path, mon
     assert set(remote.configured_processor_urls()) == {
         "http://processor-a:8000", "http://127.0.0.1:8095/metadata",
         "http://127.0.0.1:8099", "http://127.0.0.1:8100", "http://127.0.0.1:8081",
-        "http://127.0.0.1:8101", "http://127.0.0.1:8102", "http://127.0.0.1:8097", "http://127.0.0.1:8098", "http://custom:8000",
+        "http://127.0.0.1:8101", "http://127.0.0.1:8097", "http://127.0.0.1:8098", "http://custom:8000",
     }
 
 
@@ -59,7 +59,7 @@ def test_openai_provider_uses_standard_embedding_and_synthesis_adapters(tmp_path
 
     assert set(urls) == {
         "http://127.0.0.1:8095/metadata", "http://127.0.0.1:8099", "http://127.0.0.1:8100",
-        "http://127.0.0.1:8081", "http://127.0.0.1:8101", "http://127.0.0.1:8102",
+        "http://127.0.0.1:8081", "http://127.0.0.1:8101",
         "http://127.0.0.1:8097", "http://127.0.0.1:8098",
         "http://model-bridge:8095/openai/embedder", "http://model-bridge:8095/openai/synthesizer",
     }
@@ -247,7 +247,6 @@ def test_invalid_descriptor_is_isolated_from_other_tools(monkeypatch):
 def test_omitted_module_is_not_discovered(tmp_path, monkeypatch):
     monkeypatch.setenv("OSII_ROOT", str(tmp_path))
     monkeypatch.delenv("OSII_PROCESSORS", raising=False)
-    monkeypatch.setenv("OSII_ENABLE_TIKA", "false")
     monkeypatch.setenv("OSII_ENABLE_BANYAN", "false")
     urls = remote.configured_processor_urls()
     assert "http://127.0.0.1:8102" not in urls

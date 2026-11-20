@@ -47,8 +47,7 @@ environment, not by disabling TLS checks.
 Each processing-method entry identifies whether it is bundled Core code, an
 optional service, a configured processor, or a model connection. **Copy path**
 copies the effective TOML location; **Implementation and configuration source**
-shows the code or endpoint setting behind the entry. Apache Tika is a separate
-Apache service supplied by the optional Compose `ocr` profile. Nemotron is an
+shows the code or endpoint setting behind the entry. Nemotron is an
 older PDF compatibility adapter, shown only when `NEMOTRON_BASE_URL` or an
 extraction rule explicitly selects it; OSII does not bundle its model.
 
@@ -187,7 +186,7 @@ the environment-variable name; a locally saved value lives in `secrets.env`.
 `OPENAI_API_KEY` is the conventional default name. Process environment values
 take precedence over the file.
 
-Extraction remains local through the Python extractor, Apache Tika, Tesseract,
+Extraction remains local through the Python extractor, Tesseract,
 or a custom Processor API extractor. `make dev` automatically selects the
 bundled OpenAI-compatible embedding/synthesis/chat adapters when
 `OPENAI_BASE_URL` is configured, and keeps Ollama, BM25, and extractive

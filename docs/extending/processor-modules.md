@@ -125,8 +125,8 @@ save model bindings and processor configuration. Describe processing options in
 the descriptor's `config_schema`: Setup renders the fields, and Core sends saved
 settings with requests. No new environment variable is needed for each processing option.
 Declare offline request fields and defaults in the manifest's `config_schema` as
-well, so Setup remains configurable while the service is stopped. Tika reuses
-that same schema in its live descriptor to avoid two competing definitions.
+well, so Setup remains configurable while the service is stopped. Reuse
+that same schema in the live descriptor to avoid two competing definitions.
 
 Use `startup_schema` only for lifecycle options that must exist before a request,
 not ordinary processing preferences. For example:
@@ -148,7 +148,7 @@ on each service start. Explicit deployment environment values win over saved
 choices, then manifest defaults. Defaults must be non-secret scalar values;
 Core storage/configuration and Python environment controls cannot be declared
 as module startup fields. Keep independent module startup consistent by reading
-its own manifest, as the Tika adapter does; include that manifest in built wheels.
+its own manifest; include that manifest in built wheels.
 Credentials belong in private credential storage or the model gateway, never
 this non-secret schema. No central launcher, API field list, or root `.env.example`
 change is needed.
@@ -159,11 +159,10 @@ live descriptors. Setup reports a clear error if a descriptor name or kind does
 not match the effective module registration. Setup's question-mark help identifies the implementation
 directory, module manifest, and active overrides file.
 
-Adapter liveness and upstream readiness can differ. Tika declares
+Adapter liveness and upstream readiness can differ. A module can declare
 `readiness_path = "/upstream-health"` and
-`readiness_config = ["tika_endpoint"]`; saved addresses are passed to that check.
-The default upstream address remains owned by the module. Other modules can
-supply similar checks without changing Core.
+`readiness_config = ["upstream_endpoint"]`; saved addresses are passed to that
+check. The default upstream address remains owned by the module.
 
 Unknown fields, unsupported schema versions, invalid values, duplicate module,
 service, registration, or processor identities, and conflicting effective ports
@@ -205,7 +204,7 @@ module's declared tests in its isolated environment. CI uses the same command on
 both branches. New modules need no workflow list entry. The runner includes the
 manifest's runtime extras plus the declared test extras. Test paths must stay
 inside the module; tests must use fixtures/mocks rather than live model endpoints
-or corpus data. Tika tests do not download or launch its managed runtime.
+or corpus data. Mock runtime downloads and subprocess startup in offline tests.
 
 ## Hosted deployment
 

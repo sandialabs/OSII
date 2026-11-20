@@ -401,6 +401,11 @@ def configured_tools(osii_root: Path | None = None, profile: str | None = None) 
     tools = dict(builtin_tools_config()["tools"]) if (profile or active_profile()) == DEFAULT_PROFILE else {}
     if isinstance(overrides, dict):
         tools.update({key: {**tools.get(key, {}), **value} if isinstance(value, dict) else value for key, value in overrides.items()})
+    # Keep archived registrations on disk for restoration, but omit them from
+    # active Setup/discovery. Historical extraction bundles are untouched.
+    tools = {key: value for key, value in tools.items()
+             if key not in {"tika", "tika_catchall"}
+             and (not isinstance(value, dict) or value.get("processor_id") not in {"tika", "tika_catchall"})}
     # An explicit deployment opt-out also suppresses a saved registration with
     # the same ID; do not erase the saved choices or their provenance.
     from osii.processor_modules import discover_processors

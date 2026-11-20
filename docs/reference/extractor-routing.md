@@ -4,9 +4,9 @@
 
 Extractor routing determines which extractor processes each source file during an ingest run.
 
-The default route uses `local.native-text` for supported text-bearing formats
-and tries `tika` if that fails. Other formats route to `tika`. An unavailable
-Tika service is reported as such; scanned PDFs need OCR.
+The default route uses `local.native-text` for text-layer PDFs, Office files,
+and supported text formats. Scanned PDFs and images need an OCR flow. Unsupported
+formats produce an explicit error; choose a compatible processor in Setup.
 
 Routing is configured externally so extractor selection is not hardcoded in the run pipeline.
 
@@ -52,7 +52,7 @@ extensions = [".pdf"]
 
 [[routes.extractor]]
 name = "other-native"
-extractor = "tika"
+extractor = "local.native-text"
 fallbacks = []
 extensions = ["*"]
 ```
@@ -114,7 +114,7 @@ extensions = [".pdf"]
 
 [[routes.extractor]]
 name = "other-native"
-extractor = "tika"
+extractor = "local.native-text"
 fallbacks = []
 extensions = ["*"]
 ```
@@ -125,7 +125,6 @@ extensions = ["*"]
 
 Common extractor identifiers:
 - `local.native-text`
-- `tika`
 - `local.tesseract-page-ocr`
 - `toolbox.tesseract-opencv` when that optional service is registered
 
@@ -152,11 +151,6 @@ osii-core/osii/extraction/dispatcher.py
 - sends page images to Nemotron Parse
 - writes one page segment per page
 - writes `Picture` boxes to `artifacts/`
-
-### `tika_catchall`
-- intended as general fallback/default extractor
-- uses Apache Tika over HTTP
-- writes chunked text segments
 
 ---
 
@@ -209,13 +203,19 @@ enabled compatible connection; the resolved alias is displayed. Explicit choices
 remain explicit. Endpoint health is shown by Model Connections; an automatic
 choice cannot guarantee a remote service will remain reachable during a run.
 
-## Apache Tika processor module
+## Archived Tika integration
 
-`osii-processor-modules/tika-adapter` owns the HTTP integration and managed Java
-runtime. `make dev` prepares Apache Tika automatically. Existing `tika` and
-`tika_catchall` routes and settings remain compatible. Set `OSII_ENABLE_TIKA=false`
-in `.env` to omit it; set `OSII_TIKA_MANAGED=false` and configure an endpoint in
-Setup to use an externally managed server instead. Defaults are loopback 8102
-for the adapter and 9998 for Apache Tika. See the
-[startup guide](../operations/runbook-development.md#start-and-check) for caching,
-first-start network access, offline provisioning, and startup switches.
+The former Tika adapter, managed Java runtime, and their tests are preserved on
+`archive/tika-2026-11-19`. They are absent from `main` discovery, startup, and
+Setup. The archived runtime ran Java directly; it did not require Podman.
+
+Previously saved `tika` / `tika_catchall` routes are adapted in memory to their
+remaining fallback chain, or `local.native-text` when none remains. Named flows
+use the same adaptation. The saved configuration and historical extraction
+bundles are preserved; changed effective routes invalidate prior sample tests.
+Retest the flow in Setup. Files outside native text support need a compatible
+processor, and scans need an OCR flow.
+
+Existing queued jobs retain their original route snapshots and run history.
+A paused job requiring the archived reader must be cancelled and queued again
+with an available flow; original results and completed work remain stored.

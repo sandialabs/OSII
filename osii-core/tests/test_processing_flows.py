@@ -22,18 +22,22 @@ def test_flow_sample_uses_ordered_fallbacks_and_invalidates_after_edit(client, t
         calls.append(payload)
         targets = payload.get('processors') or [{'name': 'embedding'}]
         return {'tested_at': '2026-11-19T00:00:00Z', 'results': [{'processor': target['name'], 'ok': target['name'] != 'local.native-text'} for target in targets]}
-    monkeypatch.setattr(intake_routes, 'test_intake_processors', probe)
-    report = client.post('/api/processing-flows/bundled/test').json()
-    assert {step.get('step') for step in report['results']} == {'extract', 'synthesize', 'enrich', 'embed'}
-    assert report['ok'] is True  # native fails, ordered Tika fallback succeeds
-    assert report['results'][0]['attempts'][0]['processor'] == 'local.native-text'
-    assert report['results'][0]['attempts'][1]['processor'] == 'tika'
-    assert calls[0]['sample'] == 'nist-cloud-definition'
-    assert get_flow(temp_osii_root, 'bundled')['test']['ok']
     settings = load_tools_config()
-    settings['processor_settings'] = {'tika': {'chunk_chars': 2345}}
+    settings['processing_flows'] = {'test-fallback': {'name': 'Fallback test', 'routes': [
+        {'name': 'pdf', 'extensions': ['.pdf'], 'extractor': 'local.native-text', 'fallbacks': ['local.tesseract-page-ocr']}]}}
     save_tools_config(settings)
-    assert get_flow(temp_osii_root, 'bundled')['test'] is None
+    monkeypatch.setattr(intake_routes, 'test_intake_processors', probe)
+    report = client.post('/api/processing-flows/test-fallback/test').json()
+    assert {step.get('step') for step in report['results']} == {'extract', 'synthesize', 'enrich', 'embed'}
+    assert report['ok'] is True  # native fails, ordered OCR fallback succeeds
+    assert report['results'][0]['attempts'][0]['processor'] == 'local.native-text'
+    assert report['results'][0]['attempts'][1]['processor'] == 'local.tesseract-page-ocr'
+    assert calls[0]['sample'] == 'nist-cloud-definition'
+    assert get_flow(temp_osii_root, 'test-fallback')['test']['ok']
+    settings = load_tools_config()
+    settings['processor_settings'] = {'local.native-text': {'chunk_chars': 2345}}
+    save_tools_config(settings)
+    assert get_flow(temp_osii_root, 'test-fallback')['test'] is None
 
 
 def test_queued_flow_survives_config_change_and_worker_restart(client, temp_data_root, temp_osii_root, monkeypatch):
@@ -169,3 +173,22 @@ def test_changing_sample_invalidates_an_old_flow_report(client, temp_osii_root, 
     replacement = tmp_path / 'different.pdf'; replacement.write_bytes(b'changed sample')
     monkeypatch.setattr(flows, 'TEXT_LAYER_SAMPLE', replacement)
     assert get_flow(temp_osii_root, 'bundled')['test'] is None
+
+
+def test_archived_tika_saved_flow_and_registration_do_not_return_in_setup(client, temp_osii_root):
+    from osii.configuration import configured_tools, processors_path
+    settings = load_tools_config()
+    settings.update({"tools": {"tika": {"enabled": True, "processor_id": "tika", "runtime": {"mode": "external", "endpoint": "http://127.0.0.1:8102"}}},
+        "processing_flows": {"previous": {"name": "Previous flow", "routes": [
+            {"name": "pdf", "extensions": [".pdf"], "extractor": "tika_catchall", "fallbacks": ["local.native-text"]}]}},
+        "processor_settings": {"tika": {"chunk_chars": 1234}}})
+    save_tools_config(settings)
+    original = processors_path().read_bytes()
+    flow = get_flow(temp_osii_root, "previous")
+    assert flow["routes"][0]["extractor"] == "local.native-text"
+    assert flow["routes"][0]["fallbacks"] == []
+    assert "tika" not in configured_tools(temp_osii_root)
+    assert not any(p["id"] == "tika" for p in client.get("/api/admin/processor-settings/startup").json()["processors"])
+    assert processors_path().read_bytes() == original
+    for flow in client.get("/api/processing-flows").json()["flows"]:
+        assert all(not {"tika", "tika_catchall"} & {route["extractor"], *route.get("fallbacks", [])} for route in flow["routes"])

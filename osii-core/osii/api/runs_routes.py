@@ -97,7 +97,7 @@ def choose_parser_chain(path: Path, routes: list[dict]) -> list[str]:
             chain = [str(route["extractor"])]
             chain.extend(str(item) for item in route.get("fallbacks", []) if item)
             return list(dict.fromkeys(chain))
-    return ["tika"]
+    return ["local.native-text"]
 
 
 class FallbackSynthesizer:

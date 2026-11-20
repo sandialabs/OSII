@@ -8,13 +8,12 @@ backend processor modules.
 | Module | Purpose |
 | --- | --- |
 | [banyan](banyan/README.md) | Nemotron PDF/image extraction with element provenance |
-| [tika-adapter](tika-adapter/README.md) | General document extraction, with managed Apache Tika and Java |
 | [osii-tesseract](osii-tesseract/README.md) | Tesseract/OpenCV region OCR |
 | [llm-wiki-enrichers](llm-wiki-enrichers/README.md) | Readable and concept/entity wikis |
 | [tabular-dataset-processors](tabular-dataset-processors/README.md) | CSV extraction and collection tables |
 
 `make dev` and `.\scripts\osii.ps1 dev` prepare independent environments and
-start enabled modules. Set `OSII_ENABLE_TIKA=false`, `OSII_ENABLE_BANYAN=false`,
+start enabled modules. Set `OSII_ENABLE_BANYAN=false`
 or another module's `OSII_ENABLE_…` switch in `.env` to omit its dependency setup,
 service registration, and startup. Shared dependencies remain when another
 enabled processor uses the same project. The existing switches are illustrated in `.env.example`; new switches are derived
@@ -42,3 +41,6 @@ upstream subtree history remains in Git. Copy that directory's `.env.example`
 to `.env` to configure Nemotron; existing private configuration moves with it.
 See [extending OSII](../docs/extending/index.md) for registration and frontend
 integration. Starting a module does not invoke a model or process documents.
+
+The former Tika adapter and managed Java runtime are preserved on
+`archive/tika-2026-11-19`. They are not registered or started on `main`.
