@@ -289,11 +289,12 @@ def run_worker(
     enricher_config: dict | None = None,
     collection_id: str | None = None,
     staging: dict | None = None,
+    routes_snapshot: list[dict] | None = None,
 ) -> None:
     attempt_started = monotonic()
     try:
         ensure_osii_store_layout(osii_store)
-        parser_routes = load_parser_routes(parser_routes_path)
+        parser_routes = routes_snapshot if routes_snapshot is not None else load_parser_routes(parser_routes_path)
 
         run = get_run(run_id)
         if run is None:
@@ -628,6 +629,13 @@ def _start_staged_run(request: Request, payload: dict):
 
 
 def _start_run(request: Request, payload: dict):
+    flow = None
+    if payload.get("processing_flow_id"):
+        from osii.domain.processing.flows import get_flow, flow_payload
+        flow = get_flow(request.app.state.osii_root.resolve(), payload["processing_flow_id"])
+        if flow is None:
+            raise HTTPException(404, "Processing flow not found")
+        payload = {**payload, **flow_payload(flow)}
     staging = None
     staged_run_id = None
     if payload.get("inventory_selection_id") is not None:
@@ -758,7 +766,7 @@ def _start_run(request: Request, payload: dict):
             for file in preview["available_files"]:
                 resolve_requested_path(request, file["path"])
         add_processed_counts(preview, resolved_files, data_volume_root, osii_store)
-        add_extractor_plan(preview, resolved_files, extractor_overrides)
+        add_extractor_plan(preview, resolved_files, extractor_overrides, **({"routes_snapshot": flow["routes"]} if flow else {}))
         # Intake review computes the detailed plan through /api/resolve. Starting
         # the durable run must not reread every original just to repeat that plan;
         # hashing and extraction belong to the worker. Folder I/O runs in FastAPI's
@@ -779,6 +787,10 @@ def _start_run(request: Request, payload: dict):
         raise HTTPException(status_code=409, detail="No eligible documents matched this processing plan.")
 
     collection: dict | None = None
+    if workflow == "library" and payload.get("target_collection_id"):
+        collection = get_collection(osii_store, payload["target_collection_id"])
+        if collection is None:
+            raise HTTPException(404, "Collection not found")
     collection_name: str | None = None
     collection_description: str | None = None
     collection_request = payload.get("collection")
@@ -793,7 +805,7 @@ def _start_run(request: Request, payload: dict):
             raise HTTPException(status_code=422, detail="collection.name must be a string")
         if collection_description is not None and not isinstance(collection_description, str):
             raise HTTPException(status_code=422, detail="collection.description must be a string or null")
-    if build_embeddings:
+    if build_embeddings and flow is None:
         embedding_status = embedding_readiness(osii_store)
         if not embedding_status["available"]:
             raise HTTPException(
@@ -831,6 +843,7 @@ def _start_run(request: Request, payload: dict):
     run["workflow"] = workflow
     run["expert_context"] = context or None
     run["collection_id"] = collection["id"] if collection else None
+    run["processing_flow"] = flow
     run["operations"] = {
         "extractor_overrides": extractor_overrides,
         "extract": run_extraction,
@@ -859,6 +872,15 @@ def _start_run(request: Request, payload: dict):
         kind: {"alias": name, "model": processor_model(name, kind, osii_root=osii_store) or ""}
         for kind, name in (("embedder", embedder), ("synthesizer", synthesizer_name)) if name
     }
+    from osii.configuration import load_models_config
+    model_config = load_models_config(osii_store)
+    for kind, target in run["model_targets"].items():
+        capability = "embedding" if kind == "embedder" else "synthesis"
+        alias = model_config.get("defaults", {}).get(capability)
+        connection = model_config.get("models", {}).get(alias, {})
+        if target["alias"] in {"openai.embedder", "openai.synthesizer", "ollama.embedder", "ollama.synthesizer"}:
+            target["endpoint"] = connection.get("base_url")
+            target["endpoint_type"] = connection.get("type")
     save_run(run)
 
     parser_routes_path = extractor_routes_path()
@@ -885,6 +907,7 @@ def _start_run(request: Request, payload: dict):
             "shared_root": str(shared_root),
             "upload_root": str(upload_root),
             "parser_routes_path": str(parser_routes_path),
+            "routes_snapshot": flow["routes"] if flow else load_parser_routes(parser_routes_path),
             "shared_root_host_path": shared_root_host_path,
             "synthesizer_name": synthesizer_name,
             "synthesizer_config": synthesizer_config,

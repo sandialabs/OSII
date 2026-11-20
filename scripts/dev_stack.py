@@ -37,7 +37,6 @@ SERVICE_DISPLAY_NAMES = {
     "model-bridge": "Ollama/OpenAI-compatible HTTP adapter (not Ollama itself)",
     "api": "OSII backend API and grounded chat",
     "worker": "sequential intake worker",
-    "inventory-worker": "file metadata inventory worker",
     "dashboard": "dashboard web interface",
 }
 
@@ -429,13 +428,6 @@ def service_commands(
                 "--target-type", "function", "osii.worker.main",
                 "osii",
             ),
-            REPOSITORY_ROOT / "osii-core",
-            0,
-        ),
-        Service(
-            "inventory-worker",
-            (uv, "run", "--no-sync", "--package", "osii", "python", "-m",
-             "watchfiles", "--filter", "python", "--target-type", "function", "osii.volume.worker.main", "osii/volume"),
             REPOSITORY_ROOT / "osii-core",
             0,
         ),

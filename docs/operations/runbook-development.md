@@ -240,16 +240,30 @@ changing environment settings. Paths are checkout-relative; values are literal,
 without shell variable interpolation. This selects a configuration file, not a
 user account. OSII-local has no login.
 
-Use **Setup → Processing defaults → Intake defaults** to choose `text`,
-`search`, `summary-search`, or `full` and the embedding chunk size/overlap.
-Without a saved or environment choice, the application retains its
-`summary-search` default (read + summaries + embeddings). Connect and test both
-model capabilities first, or choose `text` for model-free processing. Existing
-`OSII_INTAKE_PRESET=search` settings retain their read + search behavior.
-Saving initializes future Intake sessions; it does not change an open selection,
-queue work, or modify existing runs. Each run can override these choices.
-Reader routing, synthesis/enrichment methods, model bindings, endpoints, and
-processor request settings are configured in the adjacent Setup sections.
+Use **Setup → Processing flows** to configure named reader/fallback chains,
+synthesis, and enrichment. **Test sample** uses the bundled Purcell PDF's first
+page and tiny text/model requests. It records endpoint diagnostics and a
+configuration fingerprint. Changing the flow, models, or processor settings
+invalidates its displayed test result; passing a sample is not a future
+availability guarantee. Model-backed tests may use provider credits.
+
+**Intake & Queue always starts with All processes**: extract, synthesize, enrich,
+then embed. Select files and a flow, then queue. It does not ask users to rebuild
+reader rules or repeat endpoint tests after file selection. Paths and selected
+membership survive navigation to Setup in the same browser. The lightweight
+selection preview reads metadata only. Flow-backed queue submissions defer
+provider operation tests to the worker; errors remain retryable in the queue.
+Legacy APIs retain explicit operation flags and saved preset compatibility.
+
+Use a collection's **Processing status** panel to process existing text or reread
+originals while preserving extraction history. Current semantic vectors depend
+on the selected embedding model; this panel reports read, synthesis, enrichment,
+and embedding coverage. Queue cards contain process information, files,
+backends, errors, logs, and a copyable run report. Products are viewed on Files
+and Collections, not embedded in queue cards.
+
+Large-volume scanning is archived on `archive/large-volume-discovery-2026-11-19`.
+The beta launcher does not start its worker. Inventory history remains intact.
 
 Configuration ownership:
 

@@ -1177,3 +1177,37 @@ and provider configuration endpoints remain compatible.
 Model provider GET/PUT payloads support optional `display_name` (up to 200
 characters), persisted in `models.toml`. Updating it changes the friendly label
 without renaming stable provider IDs, defaults, credentials, or processor bindings.
+
+
+### Beta Intake and named processing flows
+
+- `GET /api/processing-flows` lists built-in and saved named flows, routing order,
+  method choices, fingerprint, and any matching sample-test report.
+- `PUT /api/processing-flows/{id}` saves `name`, ordered `routes`,
+  `synthesizer_name`, `enricher_name`, `chunk_size`, and `chunk_overlap` in
+  `processors.toml`. Route validation enforces declared input types. Tests are
+  invalidated on edits. The bundled and advanced-OCR flows can be customized.
+- `POST /api/processing-flows/{id}/test` tests each reader/fallback with the first
+  page of bundled `scripts/demo-data/purcell.pdf` where appropriate, then tiny
+  synthesis, enrichment, and embedding requests. Reports include runtime/error
+  diagnostics. A chain passes when at least one reader passes; failed optional
+  fallbacks remain visible. Other steps must all pass. No library artifacts are
+  written. Configuration fingerprints prevent attaching a test to edited settings.
+- `POST /api/runs` accepts optional `processing_flow_id`. Such jobs always run
+  extraction, synthesis, enrichment, and embeddings, with route/method/settings
+  snapshots in durable payloads and `processing_flow` in run reports. They do not
+  repeat model preflight while queueing. Older callers and explicit flags remain
+  compatible when no flow ID is supplied. Runtime provider outages can still fail
+  work; existing retries preserve completed phases and vectors.
+- `POST /api/resolve` accepts `metadata_only: true` for lightweight file previews
+  without hashing originals, resolving processor rules, or invoking models.
+- `POST /api/collections/{id}/process` accepts `processing_flow_id` and `mode`
+  (`missing` or `reprocess`). It resolves only collection members and queues a
+  library workflow tagged with the collection ID. Missing originals return a
+  diagnostic HTTP 409 without changing historical results.
+
+Scan inventory and recursive discovery UI are archived on
+`archive/large-volume-discovery-2026-11-19`. Main preserves read access to
+`/api/volume` history but returns HTTP 410 for inventory mutations. Its normal
+launcher no longer starts `inventory-worker`. Standalone archived volume APIs
+remain available to the archive implementation; no inventory evidence is reset.

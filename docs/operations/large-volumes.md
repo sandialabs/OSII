@@ -1,6 +1,11 @@
 # File inventory and progressive processing
 
-Intake includes resumable discovery and frozen staging selections.
+> **Archived feature:** resumable discovery, Scan inventory, and scan/staging UI
+> are preserved on `archive/large-volume-discovery-2026-11-19`. The instructions
+> below describe that branch, not the current beta `main` workflow. Main uses
+> **Intake & Queue** with direct file selection and uploads. It does not start the
+> discovery worker or accept inventory mutation requests (HTTP 410). Historical
+> inventory data remains readable and is never deleted or rebuilt by this change.
 
 File inventory is included in normal OSII-local on one workstation or SSH-accessible
 node, using a

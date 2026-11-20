@@ -134,7 +134,7 @@ def test_inventory_never_reads_contents_or_creates_sidecars(library, monkeypatch
     }
 
 
-def test_inventory_is_available_in_normal_local_app_without_user_auth(
+def test_archived_inventory_is_readable_but_scans_are_disabled_without_user_auth(
     test_app, monkeypatch
 ):
     from osii.main import inventory_app
@@ -156,20 +156,18 @@ def test_inventory_is_available_in_normal_local_app_without_user_auth(
         assert client.post("/api/auth/login", json={}).status_code == 404
         assert client.get("/api/auth/me").status_code == 404
         sources = client.get("/api/volume/sources").json()["items"]
-        source = next(s for s in sources if s["root"] == str(root))
-        response = client.post(f"/api/volume/sources/{source['id']}/scan")
-        assert response.status_code == 200
+        assert sources == []  # Main does not even register discovery locations.
+        response = client.post("/api/volume/sources/1/scan")
+        assert response.status_code == 410
+        assert "archived" in response.json()["detail"]
         store = inventory_app.state.volume_store
         assert store.path == database_path(test_app.state.osii_root)
-        assert work(store)["status"] == "done"
-        entries = client.get("/api/volume/entries").json()["items"]
-        assert len(entries) == 1 and entries[0]["path"] == "report.txt"
-        assert entries[0]["extraction_id"] is None
+        assert client.get("/api/volume/entries").json()["items"] == []
         assert client.get("/api/browse").status_code == 200
         assert marker.read_text() == "existing sidecar evidence"
         assert not (root / ".osii").exists()
     with TestClient(test_app) as client:
-        assert client.get("/api/volume/summary").json()["files"] == 1
+        assert client.get("/api/volume/summary").json()["files"] == 0
         assert marker.read_text() == "existing sidecar evidence"
 
 

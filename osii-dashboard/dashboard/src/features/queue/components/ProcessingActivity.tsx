@@ -1,17 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip, LinearProgress, Paper, Stack, Typography } from "@mui/material";
 import ExpandMoreOutlinedIcon from "@mui/icons-material/ExpandMoreOutlined";
-import { ScopeBatchResults } from "../../files/components/ScopeBatchResults";
 import type { ProcessingRun } from "../../../api/types";
 
 export type ProcessingAction = "start" | "pause" | "resume" | "cancel" | "retry";
 const active = (status: string) => ["pending", "queued", "running", "pausing", "cancelling"].includes(status);
 function diagnosticReport(run: ProcessingRun) {
   return {run_id: run.id, queue_job_id: run.queue_job_id, workflow: run.workflow,
-    status: run.status, created_at: run.created_at, selection: run.selection,
+    processing_flow: run.processing_flow, status: run.status, created_at: run.created_at, selection: run.selection,
     operations: run.operations, models: run.model_targets, embedding: run.embedding_target,
     indexing_status: run.indexing_status, indexing_progress: run.indexing_progress,
-    error: run.error, indexing_error: run.indexing_error, diagnostics: run.diagnostics, items: run.items};
+    error: run.error, indexing_error: run.indexing_error, diagnostics: run.diagnostics, logs: run.logs, items: run.items};
 }
 
 export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRunId, setSelectedLogRunId, controllingRun, controlRun, displayedLogLines, refreshLogs, logError = false, onRestage }: {
@@ -21,6 +20,8 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
   displayedLogLines: string[]; refreshLogs: () => unknown; logError?: boolean;
   onRestage?: (run: ProcessingRun) => void;
 }) {
+  const [showOlder, setShowOlder] = useState(false);
+  const visibleRuns = showOlder ? recentRuns : [...recentRuns.filter(run => active(run.status)), ...recentRuns.filter(run => !active(run.status)).slice(0, 5)];
   const [opened, setOpened] = useState<Set<string>>(new Set());
   const [diagnostics, setDiagnostics] = useState<Set<string>>(new Set());
   const [copyMessage, setCopyMessage] = useState<{id: string; text: string} | null>(null);
@@ -41,7 +42,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
       <Chip size="small" color={workerAvailable === false ? "error" : workerAvailable ? "success" : "default"} label={workerAvailable === false ? "Worker unavailable" : workerAvailable ? "Worker connected" : "Checking worker"} />
     </Stack>
     {!recentRuns.length && <Typography color="text.secondary">No processing runs yet.</Typography>}
-    {recentRuns.map(run => {
+    {visibleRuns.map(run => {
       const errors = (run.items ?? []).filter(item => item.error);
       const failed = run.status === "error" || run.indexing_status === "error" || errors.length > 0;
       const expanded = active(run.status) || opened.has(run.id);
@@ -58,17 +59,19 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
         if (!show && selectedLogRunId === run.id) setSelectedLogRunId(null);
       }}>
         <AccordionSummary expandIcon={<ExpandMoreOutlinedIcon />}><Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Typography fontWeight={600}>{run.tool_label || (run.workflow === "tool" ? "Tool run" : "File processing")}</Typography>
+          <Typography fontWeight={600}>{run.processing_flow?.name || run.tool_label || (run.workflow === "tool" ? "Tool run" : "File processing")}</Typography>
           <Chip size="small" color={failed ? "warning" : run.status === "done" ? "success" : "default"} label={run.status === "done" && failed ? "Completed with issues" : run.status === "error" ? "Failed" : run.status} />
           <Typography variant="body2">{run.completed ?? 0}/{run.total ?? 0} finished{errors.length ? ` · ${errors.length} failed` : ""}</Typography>
           <Typography variant="caption" color="text.secondary">{new Date(run.created_at).toLocaleString()}</Typography>
         </Stack></AccordionSummary>
         {expanded && <AccordionDetails><Stack spacing={1.5}>
+          <Typography variant="caption">Run {run.id} · Job {run.queue_job_id || "—"}</Typography>
+          {run.processing_flow && <Typography variant="body2"><strong>Flow:</strong> {run.processing_flow.name} · Extract → synthesize → enrich → embed</Typography>}
+          <Box component="details"><Box component="summary" sx={{cursor: "pointer", fontWeight: 600}}>Files & processes ({run.items?.length ?? run.selection?.paths.length ?? 0})</Box><Stack spacing={1} sx={{pt: 1}}>{run.items?.map((item, i) => <Box key={i}><Typography variant="body2" fontWeight={600}>{item.display} · {item.status}</Typography><Typography variant="caption">Reader: {item.extractor || "—"} · Synthesis: {item.synthesizer || run.operations?.synthesize || "—"} · Enrichment: {item.enricher || run.operations?.enrich || "—"}</Typography></Box>)}</Stack></Box>
           {selectedModels.length > 0 && <Typography variant="body2" color="text.secondary">{selectedModels.join(" · ")}</Typography>}
           {runningFile && <Typography variant="body2">{runningFile.current_step || "Processing"}: {runningFile.display}{runningProcessor ? ` · ${runningProcessor}` : ""}</Typography>}
           {active(run.status) && <LinearProgress aria-label={`File progress for run ${run.id}`} variant={(run.total ?? 0) > 0 ? "determinate" : "indeterminate"} value={Math.min(100, (run.completed ?? 0) / Math.max(1, run.total ?? 0) * 100)} />}
           {run.indexing_status && run.operations?.embed && <Stack spacing={0.5}><Typography variant="body2">Embeddings: {run.indexing_status}{run.indexing_progress ? ` · ${run.indexing_progress.completed_documents}/${run.indexing_progress.total_documents} documents` : ""}</Typography>{run.indexing_status === "running" && <LinearProgress aria-label="Building embeddings" />}</Stack>}
-          {run.batch_progress && <ScopeBatchResults runId={run.id} progress={run.batch_progress} />}
           {run.status === "pausing" && <Alert severity="info">Pausing after the current file or provider request.</Alert>}
           {run.status === "cancelling" && <Alert severity="info">Cancelling after the current file or provider request.</Alert>}
           {run.error && <Alert severity="error" sx={{overflowWrap: "anywhere"}}>{run.error}</Alert>}
@@ -84,7 +87,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
             {canCancel && <Button color="error" disabled={Boolean(controllingRun)} onClick={() => void controlRun(run, "cancel")}>Cancel</Button>}
             {canRetry && <Button variant="contained" disabled={Boolean(controllingRun)} onClick={() => void controlRun(run, "retry")}>{run.error_phase === "embedding" || run.indexing_status === "error" ? "Retry embeddings" : "Retry failed files"}</Button>}
             {onRestage && <Button onClick={() => onRestage(run)}>Use selection again</Button>}
-            <Button onClick={() => void copy(run)}>Copy diagnostics</Button>
+            <Button onClick={() => void copy(run)}>Copy run report</Button>
             <Button onClick={() => setDiagnostics(previous => {const next = new Set(previous); if (next.has(run.id)) next.delete(run.id); else next.add(run.id); return next;})}>{diagnostics.has(run.id) ? "Hide selections & diagnostics" : "Selections & diagnostics"}</Button>
             <Button onClick={() => setSelectedLogRunId(selectedLogRunId === run.id ? null : run.id)}>{selectedLogRunId === run.id ? "Hide log" : "View log"}</Button>
           </Stack>
@@ -94,5 +97,7 @@ export function ProcessingActivity({ recentRuns, workerAvailable, selectedLogRun
         </Stack></AccordionDetails>}
       </Accordion>;
     })}
+    {recentRuns.length > visibleRuns.length && <Button onClick={() => setShowOlder(true)}>Show older runs ({recentRuns.length - visibleRuns.length})</Button>}
+    {showOlder && recentRuns.filter(run => !active(run.status)).length > 5 && <Button onClick={() => setShowOlder(false)}>Hide older runs</Button>}
   </Stack></Paper>;
 }

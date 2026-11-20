@@ -727,6 +727,7 @@ export type IntakeResolveResponse = {
 };
 
 export type ProcessingRun = {
+  processing_flow?: {id: string; name: string; routes: Record<string, unknown>[]; fingerprint: string; test?: unknown} | null;
   selection?: {inventory_selection_id?: number; paths: string[]; include_subfolders: boolean; include_patterns: string[]; exclude_patterns: string[]};
   diagnostics?: Array<Record<string, unknown>>;
   batch_progress?: BatchProgress;
@@ -742,7 +743,7 @@ export type ProcessingRun = {
   tool_id?: string;
   tool_label?: string;
   scope?: ScopeDescribeRequest;
-  model_targets?: Record<string, { alias: string; model: string; endpoint_type?: string }>;
+  model_targets?: Record<string, { alias: string; model: string; endpoint?: string; endpoint_type?: string }>;
   input_summary?: { member_ids: string[]; text_chars: number; truncated_documents: number };
   expert_context?: string | null;
   operations?: {

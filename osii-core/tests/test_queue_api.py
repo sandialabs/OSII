@@ -715,7 +715,7 @@ def test_preview_directory_failure_is_actionable(client, temp_data_root, monkeyp
     monkeypatch.setattr(intake_routes, 'expand_queue_to_files', denied)
     response = client.post('/api/resolve', json={'queue_paths': [str(temp_data_root)]})
     assert response.status_code == 503
-    assert 'File inventory' in response.json()['detail']
+    assert 'Browse files' in response.json()['detail']
     assert 'PermissionError' in response.json()['detail']
     assert 'private platform details' not in response.text
 

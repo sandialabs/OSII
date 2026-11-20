@@ -47,7 +47,7 @@ from osii.domain.storage.backend import BackendSettings, LibraryBackend
 storage_settings = BackendSettings.from_environment()
 
 
-inventory_app = create_inventory_app(api_prefix="")
+inventory_app = create_inventory_app(api_prefix="", discovery_enabled=False)
 
 
 @asynccontextmanager
@@ -212,7 +212,7 @@ async def health():
 async def runtime():
     return {"storage_mode": "local", "user_authentication": False,
             "storage_backend": storage_settings.kind,
-            "capabilities": ["metadata_inventory", storage_settings.kind + "_processing"]}
+            "capabilities": [storage_settings.kind + "_processing"]}
 
 @app.get("/artifact/{file_path:path}", name="download_artifact")
 async def download_artifact(file_path: str, request: Request):

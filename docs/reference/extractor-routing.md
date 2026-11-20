@@ -12,6 +12,20 @@ Routing is configured externally so extractor selection is not hardcoded in the 
 
 ---
 
+## Named flows in Setup
+
+For the beta UI, use **Setup → Processing flows**. Every flow has a name,
+ordered file-type routes, primary reader and ordered fallbacks, synthesis and
+enrichment methods, and embedding chunk sizes. **Save & test sample** saves it
+under `[processing_flows.<id>]` in `processors.toml` and exercises bundled samples.
+Select that name in **Intake & Queue**. All processing steps run by default.
+A queued job holds a route snapshot; editing Setup cannot reorder its readers.
+The first matching extension wins; fallback order runs left to right.
+
+The top-level `[routes.extractor]` format below remains compatible for existing
+API callers. If customized, it appears as **Saved extraction routing** among
+named flows. It is not a second routing editor in the beta Setup interface.
+
 ## Config file
 
 Location:

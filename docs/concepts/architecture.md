@@ -105,3 +105,25 @@ Read the [library read contracts](../reference/library-reads.md),
 [processing commits](../reference/processing-commits.md),
 [authoring interfaces](../reference/library-authoring.md), and
 [retrieval and jobs](../reference/retrieval-jobs.md) when changing those boundaries.
+
+
+## Beta processing flows and queue
+
+The beta UI separates setup, intake, queue diagnostics, and collection maintenance.
+A named flow in `processors.toml` declares ordered extension rules and reader
+fallbacks, synthesis/enrichment methods, and embedding chunk settings. Setup tests
+sample operations and records a configuration fingerprint; Intake selects one
+flow and runs all stages. File selection does not resolve routing or invoke models.
+Queued SQLite payloads snapshot reader order and resolved request settings;
+workers and retries use those snapshots. Editing a flow affects later jobs.
+Existing embedding identity checks and checkpoints still protect vector reuse.
+
+The durable local queue remains the execution boundary. This change adds no broker
+or external queue dependency. The queue UI shows operational evidence and copyable
+errors; generated products belong to Files and Collections. Collection reprocessing
+uses an explicit collection-scoped endpoint and the same worker.
+
+Large-volume discovery is preserved on `archive/large-volume-discovery-2026-11-19`.
+The beta main launcher omits its worker and rejects inventory writes, while leaving
+historical evidence readable. This is a presentation/lifecycle reduction, not an
+inventory schema migration or a deletion of canonical data.

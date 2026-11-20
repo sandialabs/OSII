@@ -279,12 +279,12 @@ def test_toolbox_opt_out_retains_manual_controls_and_core_only_omits_services():
     assert len(tools) == 7 and all(not s.start_automatically for s in tools)
     assert all("--no-sync" not in s.command for s in tools)
     core = DEV_STACK.service_commands("uv", "npm", {}, core_only=True)
-    assert {s.name for s in core} == {"api", "worker", "inventory-worker", "dashboard"}
+    assert {s.name for s in core} == {"api", "worker", "dashboard"}
     by_name = {s.name: s for s in core}
     assert "osii.main:app" in by_name["api"].command
     assert "osii.worker.main" in by_name["worker"].command
     assert "--target-type" in by_name["worker"].command
-    assert "osii.volume.worker.main" in by_name["inventory-worker"].command
+    assert "inventory-worker" not in by_name
 
 
 def test_toolbox_environment_registers_custom_ports_without_changing_routes(monkeypatch, tmp_path):

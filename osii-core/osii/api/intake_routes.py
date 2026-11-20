@@ -350,24 +350,25 @@ def resolve_queue(request: Request, payload: dict):
     except OSError as exc:
         raise HTTPException(status_code=503, detail=(
             f"Could not finish listing this folder ({type(exc).__name__}). "
-            "Check share access, choose a narrower folder, or use File inventory for resumable discovery."
+            "Check share access or choose individual files using Browse files."
         )) from exc
     if getattr(request.app.state, "filesystem_mode", "local") == "mounted":
         for file in preview["available_files"]:
             resolve_requested_path(request, file["path"])
-    add_processed_counts(preview, resolved_files, shared_root.parent, request.app.state.osii_root)
-    add_extractor_plan(preview, resolved_files, extractor_overrides)
-    add_processing_plan(
-        preview,
-        resolved_files,
-        request.app.state.osii_root,
-        data_volume_root=shared_root.parent,
-        run_extraction=bool(payload.get("run_extraction", True)),
-        extract_mode=str(payload.get("extract_mode") or "missing"),
-        synthesize=bool(payload.get("synthesizer_name")),
-        embed=bool(payload.get("build_embeddings", False)),
-        enrich=bool(payload.get("enricher_name")),
-    )
+    if payload.get("metadata_only") is not True:
+        add_processed_counts(preview, resolved_files, shared_root.parent, request.app.state.osii_root)
+        add_extractor_plan(preview, resolved_files, extractor_overrides)
+        add_processing_plan(
+            preview,
+            resolved_files,
+            request.app.state.osii_root,
+            data_volume_root=shared_root.parent,
+            run_extraction=bool(payload.get("run_extraction", True)),
+            extract_mode=str(payload.get("extract_mode") or "missing"),
+            synthesize=bool(payload.get("synthesizer_name")),
+            embed=bool(payload.get("build_embeddings", False)),
+            enrich=bool(payload.get("enricher_name")),
+        )
 
     displays = {item["path"]: item["display"] for item in preview["available_files"]}
     return {
@@ -432,7 +433,7 @@ def test_intake_processors(request: Request, payload: dict):
     """Explicit tiny operation tests; no corpus reads or canonical writes."""
     import base64
     import pymupdf
-    from osii.processor_sdk import ProcessorClient, ExtractionRequest, DocumentInput, SynthesisRequest, ScopeInput
+    from osii.processor_sdk import ProcessorClient, ExtractionRequest, DocumentInput, SynthesisRequest, ScopeInput, EnrichmentRequest
     from osii.processor_sdk.diagnostics import failure
     from osii.processors.remote import resolve_remote_processor, _model_context, _revoke_model_context
     from osii.domain.processor_settings import merged_processor_settings
@@ -442,13 +443,13 @@ def test_intake_processors(request: Request, payload: dict):
     if not isinstance(targets, list) or len(targets) > 8:
         raise HTTPException(422, "Test up to eight selected processors at a time")
     if any(not isinstance(target, dict) or not isinstance(target.get("name"), str)
-           or not target["name"] or target.get("kind") not in {"extractor", "synthesizer"} for target in targets):
-        raise HTTPException(422, "Specify a registered extractor or synthesizer")
+           or not target["name"] or target.get("kind") not in {"extractor", "synthesizer", "enricher"} for target in targets):
+        raise HTTPException(422, "Specify a registered extractor, synthesizer, or enricher")
     results = []
     root = request.app.state.osii_root.resolve()
     for target in targets:
         name, kind = str(target.get("name", "")), target.get("kind")
-        if kind not in {"extractor", "synthesizer"}:
+        if kind not in {"extractor", "synthesizer", "enricher"}:
             raise HTTPException(422, "Unsupported processor test kind")
         context = None
         endpoint = None
@@ -476,6 +477,11 @@ def test_intake_processors(request: Request, payload: dict):
                         page = pdf.new_page()
                         page.insert_text((72, 72), "OSII endpoint test document.")
                         raw_content = pdf.tobytes() if extension == ".pdf" else page.get_pixmap(dpi=150).tobytes("png")
+                    sample = Path(__file__).resolve().parents[3] / "scripts/demo-data/purcell.pdf"
+                    if payload.get("sample") == "purcell-first-page" and sample.is_file():
+                        with pymupdf.open(sample) as original, pymupdf.open() as one_page:
+                            one_page.insert_pdf(original, from_page=0, to_page=0)
+                            raw_content = one_page.tobytes() if extension == ".pdf" else one_page[0].get_pixmap(dpi=150).tobytes("png")
                 else:
                     raw_content = b"name,value\nosii,1\n" if extension == ".csv" else b"OSII endpoint test document."
                 content = base64.b64encode(raw_content).decode("ascii")
@@ -485,7 +491,9 @@ def test_intake_processors(request: Request, payload: dict):
                 if not response.segments:
                     raise ValueError("Extractor returned no text for the test document")
             else:
-                client.synthesize(SynthesisRequest(request_id=request_id,
+                operation = client.synthesize if kind == "synthesizer" else client.enrich
+                model = SynthesisRequest if kind == "synthesizer" else EnrichmentRequest
+                operation(model(request_id=request_id,
                     scope=ScopeInput(scope_type="object", scope_id=request_id,
                         documents=[DocumentInput(filename="osii-test.txt", text="OSII endpoint test document.")]),
                     config=config, model_context=context))
@@ -498,3 +506,80 @@ def test_intake_processors(request: Request, payload: dict):
         result = embedding_readiness(root)
         results.append({"processor": "Selected embedding model", "ok": bool(result.get("available")), "detail": result.get("detail"), "result": result})
     return {"results": results, "tested_at": __import__("datetime").datetime.now(__import__("datetime").UTC).isoformat()}
+
+
+@router.get("/processing-flows")
+def list_processing_flows(request: Request):
+    from osii.domain.processing.flows import processing_flows
+    return {"flows": processing_flows(request.app.state.osii_root.resolve())}
+
+
+@router.put("/processing-flows/{flow_id}")
+def save_processing_flow(request: Request, flow_id: str, payload: dict):
+    from osii.configuration import load_tools_config, save_tools_config
+    from osii.api.extractor_routes import validate_routes
+    from osii.domain.processing.flows import get_flow
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", flow_id):
+        raise HTTPException(422, "Use a short flow ID with letters, numbers, and hyphens")
+    name = payload.get("name")
+    if not isinstance(name, str) or not name.strip() or len(name) > 120:
+        raise HTTPException(422, "Enter a flow name (up to 120 characters)")
+    if not isinstance(payload.get("routes"), list) or not payload["routes"] or len(payload["routes"]) > 32:
+        raise HTTPException(422, "Choose 1 to 32 file-type rules")
+    errors, warnings = validate_routes({"routes": payload.get("routes")})
+    if errors:
+        raise HTTPException(422, errors)
+    from osii.indexing.chunking import validate_chunking_settings
+    from osii.domain.processing.defaults import configured_intake_defaults
+    defaults = configured_intake_defaults()
+    size, overlap = payload.get("chunk_size", defaults["chunk_size"]), payload.get("chunk_overlap", defaults["chunk_overlap"])
+    if type(size) is not int or type(overlap) is not int:
+        raise HTTPException(422, "Chunk size and overlap must be integers")
+    try:
+        validate_chunking_settings("sentence_window", size, overlap)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    for key in ("synthesizer_name", "enricher_name"):
+        if key in payload and (not isinstance(payload[key], str) or not payload[key].strip()):
+            raise HTTPException(422, "Select a synthesizer and enricher for all processes")
+    settings = load_tools_config()
+    settings.setdefault("processing_flows", {})[flow_id] = {key: payload[key] for key in (
+        "name", "routes", "synthesizer_name", "enricher_name", "chunk_size", "chunk_overlap") if key in payload}
+    settings.get("processing_flow_tests", {}).pop(flow_id, None)
+    save_tools_config(settings)
+    return {"flow": get_flow(request.app.state.osii_root.resolve(), flow_id), "warnings": warnings}
+
+
+@router.post("/processing-flows/{flow_id}/test")
+def test_processing_flow(request: Request, flow_id: str):
+    from osii.configuration import load_tools_config, save_tools_config
+    from osii.domain.processing.flows import get_flow
+    root = request.app.state.osii_root.resolve()
+    flow = get_flow(root, flow_id)
+    if flow is None:
+        raise HTTPException(404, "Processing flow not found")
+    results = []
+    # Test ordered chains independently; failure of an optional fallback is
+    # recorded without invalidating a chain that has a working reader.
+    for route in flow["routes"]:
+        attempts = []
+        for name in [route["extractor"], *route.get("fallbacks", [])]:
+            report = test_intake_processors(request, {"processors": [{"name": name, "kind": "extractor"}], "sample": "purcell-first-page"})
+            attempts.extend(report["results"])
+        results.append({"step": "extract", "route": route["name"], "extensions": route["extensions"],
+                        "ok": any(item["ok"] is True for item in attempts), "attempts": attempts})
+    for kind, name in (("synthesizer", flow["synthesizer_name"]), ("enricher", flow["enricher_name"])):
+        report = test_intake_processors(request, {"processors": [{"name": name, "kind": kind}]})
+        results.extend(report["results"])
+    report = test_intake_processors(request, {"embed": True})
+    results.extend(report["results"])
+    report = {"fingerprint": flow["fingerprint"], "tested_at": report["tested_at"],
+              "sample": "Bundled Purcell PDF (first page) and tiny text samples", "ok": all(item["ok"] is True for item in results), "results": results}
+    settings = load_tools_config()
+    # Don't stamp a changed configuration with an earlier successful test.
+    current = get_flow(root, flow_id)
+    if current and current["fingerprint"] == flow["fingerprint"]:
+        from osii.configuration import _drop_nulls
+        settings.setdefault("processing_flow_tests", {})[flow_id] = _drop_nulls(report)
+        save_tools_config(settings)
+    return report

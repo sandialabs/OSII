@@ -1,7 +1,6 @@
 import { lazy, type ComponentType } from "react";
 import MoveToInboxOutlined from "@mui/icons-material/MoveToInboxOutlined";
 import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
-import FolderOutlined from "@mui/icons-material/FolderOutlined";
 import BuildOutlined from "@mui/icons-material/BuildOutlined";
 import { sharedNavigation } from "./layout/workbenchNavigation";
 import type { NavigationItem } from "./layout/WorkbenchLayout";
@@ -20,10 +19,8 @@ const pages: Record<string, ComponentType> = {
 };
 export const workbenchTools: readonly WorkbenchTool[] = [
   ...sharedNavigation.map(item => ({ ...item, Page: pages[item.id] })),
-  { id: "intake", path: "/intake", label: "Intake", group: "start", icon: MoveToInboxOutlined,
+  { id: "intake", path: "/intake", label: "Intake & Queue", group: "start", icon: MoveToInboxOutlined,
     Page: lazy(() => import("../features/queue/pages/QueuePage").then(m => ({ default: m.QueuePage }))) },
-  { id: "inventory", path: "/inventory", label: "Scan inventory", group: "start", icon: FolderOutlined,
-    Page: lazy(() => import("../features/volume/VolumePage")) },
   { id: "setup", path: "/admin/processors", label: "Setup", group: "setup", icon: SettingsOutlined,
     Page: lazy(() => import("../features/admin/pages/ProcessorsPage").then(m => ({ default: m.ProcessorsPage }))) },
   { id: "tool-workbench", path: "/tools/workbench", label: "Processing workbench", group: "tools", icon: BuildOutlined, navigation: false,

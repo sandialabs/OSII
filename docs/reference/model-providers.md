@@ -294,8 +294,9 @@ foreground-only polling and refresh on focus. Worker recovery heartbeats remain
 unchanged. Routine successful status GETs are quiet in terminal access logs;
 failed requests, warnings, exceptions and lifecycle messages remain visible.
 
-New Intake sessions default to **All processes**: extraction, synthesis, embeddings
-and enrichment. Explicit saved presets and per-run choices remain supported.
+The beta Intake UI always starts with **All processes**: extraction, synthesis, embeddings
+and enrichment. Choose a named flow in Intake; configure and sample-test its
+reader/fallback order and methods in Setup. Legacy API presets remain compatible.
 The endpoint help button explains model selection and installing/starting Ollama.
 
 

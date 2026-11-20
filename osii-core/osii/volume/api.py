@@ -22,7 +22,7 @@ class SourceRequest(BaseModel):
     name: str = ""
 
 
-def create_app(path: Path | None = None, *, api_prefix: str = "/api/volume") -> FastAPI:
+def create_app(path: Path | None = None, *, api_prefix: str = "/api/volume", discovery_enabled: bool = True) -> FastAPI:
     store = VolumeStore(path or database_path())
 
     @asynccontextmanager
@@ -32,7 +32,7 @@ def create_app(path: Path | None = None, *, api_prefix: str = "/api/volume") -> 
         source_root = getattr(
             app.state, "source_root", os.getenv("SHARED_VOLUME_ROOT", "")
         )
-        if source_root:
+        if discovery_enabled and source_root:
             root = Path(source_root).expanduser().absolute()
             # A remount must not prevent opening the UI needed to recover it.
             # Existing locations are verified by explicit scans, never bootstrap.
@@ -48,6 +48,13 @@ def create_app(path: Path | None = None, *, api_prefix: str = "/api/volume") -> 
 
     app = FastAPI(title="OSII file inventory API", lifespan=lifespan)
     app.state.volume_store = store
+    if not discovery_enabled:
+        @app.middleware("http")
+        async def archived_discovery(request, call_next):
+            if request.method not in {"GET", "HEAD", "OPTIONS"}:
+                return JSONResponse(status_code=410, content={"detail": "Large-volume discovery is archived on archive/large-volume-discovery-2026-11-19. Use Intake & Queue to select files directly."})
+            return await call_next(request)
+
     app.add_middleware(
         TrustedHostMiddleware,
         allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"],

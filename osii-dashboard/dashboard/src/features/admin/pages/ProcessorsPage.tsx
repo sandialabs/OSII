@@ -1,3 +1,4 @@
+import { ProcessingFlows } from "../components/ProcessingFlows";
 import { IntakeDefaults } from "../components/IntakeDefaults";
 import { ProcessorStartupSettings } from "../components/ProcessorStartupSettings";
 import { ServiceRow } from "../components/ServiceRow";
@@ -19,13 +20,13 @@ import {
   checkModelProvider, checkProcessorEndpoint, controlCapabilityService,
   createModelProvider, createProcessorEndpoint, deleteModelProvider, deleteModelProviderCredential, deleteProcessorEndpoint,
   getCapabilityServiceLogs, getOllamaPullStatus, getProcessorSettings,
-  getSetupSummary, getExtractorRoutes, listModelProviders, listProcessorEndpoints, pullOllamaModel,
-  saveExtractorRoutes, saveModelProviderCredential, saveProcessorSettings, updateProcessorEndpoint,
+  getSetupSummary, listModelProviders, listProcessorEndpoints, pullOllamaModel,
+  saveModelProviderCredential, saveProcessorSettings, updateProcessorEndpoint,
 } from "../../../api/queue";
 import type {
   CapabilityReadiness, ManagedCapabilityService, ModelProvider,
   ModelProviderHealth, ModelPullJob, OllamaRecommendation,
-  ProcessorConfigProperty, ProcessorEndpoint, ExtractorRoute,
+  ProcessorConfigProperty, ProcessorEndpoint,
 } from "../../../api/types";
 import { WorkflowProgress } from "../../../components/discovery/WorkflowProgress";
 import type { WorkflowStepId } from "../../../domain/workflow";
@@ -38,7 +39,7 @@ import { EndpointFields } from "../../models/components/EndpointFields";
 const DEFAULT_EMBEDDING_MODEL = "all-minilm";
 const DEFAULT_CHAT_MODEL = "llama3.2:1b";
 const CAPABILITY_COPY = {
-  extractor: ["Extractors", "Turn source files into grounded text and artifacts. File-type routing is configured below."],
+  extractor: ["Extractors", "Readers available to named processing flows."],
   synthesizer: ["Synthesizers", "Use a language model to create grounded summaries and wiki text."],
   embedder: ["Embedders", "Connect an embedding model for semantic search and related documents."],
   enricher: ["Enrichers", "Create keywords, entities, tables, graphs, and other reusable knowledge products."],
@@ -95,7 +96,6 @@ export function ProcessorsPage() {
   const providerData = useQuery({ queryKey: ["admin", "model-providers"], queryFn: listModelProviders, refetchInterval: 30_000 });
   const processors = useQuery({ queryKey: ["admin", "processors"], queryFn: listProcessorEndpoints, refetchInterval: 30_000 });
   const settings = useQuery({ queryKey: ["admin", "processor-settings"], queryFn: getProcessorSettings });
-  const extractorRoutes = useQuery({ queryKey: ["admin", "extractor-routes"], queryFn: getExtractorRoutes });
 
   const [notice, setNotice] = useState<{ text: string; severity: AlertColor; id: number } | null>(null);
   const notify = (text: string, severity: AlertColor = "success") => setNotice({ text, severity, id: Date.now() });
@@ -133,12 +133,9 @@ export function ProcessorsPage() {
   const [pullJobs, setPullJobs] = useState<Record<string, ModelPullJob>>({});
   const [editingCapability, setEditingCapability] = useState<string | null>(null);
   const [capabilityDraft, setCapabilityDraft] = useState<Record<string, unknown>>({});
-  const [routeDraft, setRouteDraft] = useState<ExtractorRoute[] | null>(null);
   const [tikaEndpoint, setTikaEndpoint] = useState<string | null>(null);
   const [sourceHelp, setSourceHelp] = useState<CapabilityReadiness | null>(null);
   const [modelHelp, setModelHelp] = useState(false);
-  const [routingHelp, setRoutingHelp] = useState(false);
-  const [savingRoutes, setSavingRoutes] = useState(false);
   const [processorForm, setProcessorForm] = useState({
     base_url: "http://", model_connection: "",
   });
@@ -453,48 +450,6 @@ export function ProcessorsPage() {
     }
   };
 
-  const currentRoutes = routeDraft ?? (extractorRoutes.data?.routes ?? []).map((route) => ({
-    ...route,
-    fallbacks: route.fallbacks ?? [],
-  }));
-  const updateRoute = (index: number, update: Partial<ExtractorRoute>) => {
-    setRouteDraft(currentRoutes.map((route, routeIndex) => (
-      routeIndex === index ? { ...route, ...update } : route
-    )));
-  };
-  const addRoute = () => {
-    const defaultExtractor = data?.methods.extractor.id || capabilityMethods("extractor")[0]?.id || "native_text";
-    const next = [...currentRoutes];
-    const catchAllIndex = next.findIndex((route) => route.extensions.includes("*"));
-    const newRoute: ExtractorRoute = {
-      name: `file-type-${next.length + 1}`,
-      extractor: defaultExtractor,
-      fallbacks: [],
-      extensions: [".ext"],
-    };
-    next.splice(catchAllIndex < 0 ? next.length : catchAllIndex, 0, newRoute);
-    setRouteDraft(next);
-  };
-  const persistRoutes = async () => {
-    setSavingRoutes(true);
-    try {
-      const result = await saveExtractorRoutes(currentRoutes);
-      if (!result.ok) throw new Error(result.errors?.join(" ") || "Extractor routes were not saved.");
-      setRouteDraft(null);
-      notify(result.warnings?.length
-        ? `Extractor routes saved. ${result.warnings.join(" ")}`
-        : "Extractor routes and fallback order saved.", result.warnings?.length ? "warning" : "success");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["admin", "extractor-routes"] }),
-        queryClient.invalidateQueries({ queryKey: ["intake"] }),
-      ]);
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Could not save extractor routes.", "error");
-    } finally {
-      setSavingRoutes(false);
-    }
-  };
-
   const data = setup.data;
   useEffect(() => {
     if (!providerData.data || !data || !requestedStep || focusedWorkflowStep.current === requestedStep) return;
@@ -517,52 +472,11 @@ export function ProcessorsPage() {
       .filter((item) => !["firstN", "recursive"].includes(item.id));
   };
 
-  const routeChoiceSupported = (id: string, route: ExtractorRoute) => {
-    const item = capabilityMethods("extractor").find(item => item.id === id || item.aliases?.includes(id));
-    const extensions = item?.descriptor?.capabilities?.file_extensions;
-    return !extensions?.length || extensions.includes("*") || route.extensions.every(ext => extensions.includes(ext));
-  };
-  const routeChoiceStyle = (id: string) => ({ color: capabilityMethods("extractor").find(item => item.id === id || item.aliases?.includes(id))?.available ? "text.primary" : "text.disabled" });
-  const renderExtractionRouting = () => (
-    <Paper variant="outlined" sx={{ p: 2, mt: 3, borderTop: "4px solid", borderTopColor: "secondary.main", bgcolor: "action.hover" }}><Stack spacing={1.5}>
-      <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1} alignItems={{ md: "center" }}>
-        <Stack spacing={0.5}><Stack direction="row" alignItems="center"><Typography variant="h6" fontWeight={700}>Extraction routing defaults</Typography><IconButton aria-label="About extraction routing defaults" onClick={() => setRoutingHelp(true)}><HelpOutlineIcon /></IconButton></Stack><Typography variant="body2" color="text.secondary">Choose a reader and fallback order for each file type.</Typography><Typography variant="caption" sx={{ overflowWrap: "anywhere" }}>Saved to: <code>{extractorRoutes.data?.path ?? "Loading configuration path…"}</code></Typography></Stack>
-        <Stack direction="row" spacing={1}><Button component="label" variant="outlined">Load TOML<input hidden type="file" accept=".toml" onChange={async (event) => {
-          const file = event.target.files?.[0]; event.target.value = "";
-          if (!file) return;
-          try {
-            if (file.size > 1024 * 1024) throw new Error("Choose a TOML file no larger than 1 MiB.");
-            const result = await apiJson<{ok: boolean; routes: ExtractorRoute[]; errors?: string[]; warnings?: string[]}>("/api/extractor-routes/import", {method: "POST", json: {toml: await file.text()}});
-            if (!result.ok) throw new Error(result.errors?.join(" ") || "Invalid routing TOML.");
-            setRouteDraft(result.routes); notify("TOML loaded. Review the rules, then Save routes.");
-          } catch (error) { notify(error instanceof Error ? error.message : "Could not load TOML.", "error"); }
-        }} /></Button><Button variant="outlined" onClick={addRoute}>Add file-type rule</Button><Button variant="contained" disabled={!routeDraft || savingRoutes} onClick={() => void persistRoutes()}>{savingRoutes ? "Saving…" : "Save routes"}</Button></Stack>
-      </Stack>
-      {extractorRoutes.isLoading ? <LinearProgress /> : null}
-      {currentRoutes.map((route, index) => {
-        const availableIds = capabilityMethods("extractor").map((item) => item.id);
-        const choices = Array.from(new Set([route.extractor, ...route.fallbacks, ...availableIds]));
-        return <Paper key={`${route.name}-${index}`} variant="outlined" sx={{ p: 1.5 }}><Stack spacing={1}>
-          <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ md: "center" }} flexWrap="wrap" useFlexGap>
-            <TextField size="small" label="File extensions" value={route.extensions.join(", ")} onChange={(event) => updateRoute(index, { extensions: event.target.value.split(",").map((value) => value.trim().toLowerCase()).filter(Boolean) })} helperText="Comma-separated, or * for everything else" sx={{ minWidth: 250 }} />
-            <TextField select size="small" label="Primary extractor" value={route.extractor} onChange={(event) => updateRoute(index, { extractor: event.target.value, fallbacks: route.fallbacks.filter((item) => item !== event.target.value) })} sx={{ minWidth: 230 }}>{choices.map((id) => <MenuItem key={id} value={id} disabled={!routeChoiceSupported(id, route)} sx={routeChoiceStyle(id)}>{capabilityMethods("extractor").find((item) => item.id === id || item.aliases?.includes(id))?.display_name ?? id}</MenuItem>)}</TextField>
-            <Typography aria-hidden color="text.secondary" fontSize="1.4rem">→</Typography>
-            <TextField select size="small" label="First fallback" value={route.fallbacks[0] ?? ""} onChange={(event) => updateRoute(index, { fallbacks: event.target.value ? [event.target.value, ...route.fallbacks.slice(1).filter((id) => id !== event.target.value)] : [] })} sx={{ minWidth: 220 }}><MenuItem value="">No fallback</MenuItem>{choices.filter((id) => id !== route.extractor).map((id) => <MenuItem key={id} value={id} disabled={!routeChoiceSupported(id, route)} sx={routeChoiceStyle(id)}>{capabilityMethods("extractor").find((item) => item.id === id || item.aliases?.includes(id))?.display_name ?? id}</MenuItem>)}</TextField>
-            <Typography aria-hidden color="text.secondary" fontSize="1.4rem">→</Typography>
-            <TextField select size="small" label="Second fallback" disabled={!route.fallbacks[0]} value={route.fallbacks[1] ?? ""} onChange={(event) => updateRoute(index, { fallbacks: event.target.value ? [route.fallbacks[0], event.target.value, ...route.fallbacks.slice(2).filter((id) => id !== event.target.value)] : route.fallbacks.slice(0, 1) })} sx={{ minWidth: 220 }}><MenuItem value="">No second fallback</MenuItem>{choices.filter((id) => id !== route.extractor && id !== route.fallbacks[0]).map((id) => <MenuItem key={id} value={id} disabled={!routeChoiceSupported(id, route)} sx={routeChoiceStyle(id)}>{capabilityMethods("extractor").find((item) => item.id === id || item.aliases?.includes(id))?.display_name ?? id}</MenuItem>)}</TextField>
-          </Stack>
-          <Button size="small" color="error" sx={{ alignSelf: "flex-end" }} onClick={() => setRouteDraft(currentRoutes.filter((_, routeIndex) => routeIndex !== index))}>Remove rule</Button>
-        </Stack></Paper>;
-      })}
-      {!currentRoutes.length && !extractorRoutes.isLoading ? <Alert severity="warning">No extraction routes are configured.</Alert> : null}
-    </Stack></Paper>
-  );
-
   const renderCapabilityDrawer = (kind: keyof typeof CAPABILITY_COPY) => {
     const selected = data?.methods[kind];
     const methods = capabilityMethods(kind);
     const defaultLabel = !selected ? "Checking configured methods…"
-      : kind === "extractor" ? `${currentRoutes.length} file-type rules · ${selected.display_name}`
+      : kind === "extractor" ? `Reader services · ${selected.display_name}`
         : kind === "embedder" && (!selected.available || selected.id === "bm25") ? "Connect an embedding model · BM25 fallback available"
           : `${BUNDLED_FALLBACKS.has(selected.id) ? "Fallback" : "Default"} · ${selected.display_name}${selected.model && !selected.display_name.includes(selected.model) ? ` · ${selected.model}` : ""}`;
     return <CapabilitySection key={kind} kind={kind} expanded={expandedCapability === kind}
@@ -574,15 +488,11 @@ export function ProcessorsPage() {
         const processor = processors.data?.processors.find(p => p.processor_id === item.id || p.id === item.id);
         const binding = processor?.model_access?.bindings?.chat ?? "";
         const languageConnections = (providerData.data?.providers ?? []).filter(provider => provider.enabled && provider.chat_model);
-        const isSelected = kind === "extractor"
-          ? currentRoutes.some((route) => [route.extractor, ...route.fallbacks].some(
-            (id) => id === item.id || item.aliases?.includes(id),
-          ))
-          : selected?.id === item.id || item.aliases?.includes(selected?.id ?? "");
+        const isSelected = kind !== "extractor" && (selected?.id === item.id || Boolean(item.aliases?.includes(selected?.id ?? "")));
         return <Box key={item.id} sx={{ color: item.available ? "text.primary" : "text.disabled", bgcolor: item.available ? "transparent" : "action.hover", px: 1, py: 1, borderBottom: "1px solid", borderColor: "divider", "&:last-child": { borderBottom: 0 } }}><Stack spacing={0.6}>
           <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
             <Typography variant="body2" fontWeight={700}>{item.display_name}</Typography>
-            {isSelected ? <Chip size="small" color="primary" label={kind === "extractor" ? "In routing" : "Default"} /> : null}
+            {isSelected ? <Chip size="small" color="primary" label="Default" /> : null}
             {item.origin ? <Chip size="small" variant="outlined" label={item.origin.label} /> : null}
             <Chip size="small" color={item.available ? "success" : "default"} label={item.available ? "Available" : "Unavailable"} />
           </Stack>
@@ -612,7 +522,6 @@ export function ProcessorsPage() {
         </Stack></Box>;
       })}
       {!methods.length ? <Typography variant="body2" color="text.secondary">Checking methods…</Typography> : null}
-      {kind === "extractor" ? renderExtractionRouting() : null}
     </CapabilitySection>;
   };
 
@@ -632,12 +541,6 @@ export function ProcessorsPage() {
 
   return <SetupLayout>
     <Dialog open={Boolean(sourceHelp)} onClose={() => setSourceHelp(null)} fullWidth maxWidth="sm"><DialogTitle>{sourceHelp?.display_name}</DialogTitle><DialogContent><Stack spacing={1} sx={{overflowWrap: "anywhere"}}><Typography>{sourceHelp?.description}</Typography><Typography variant="body2">Processor: <code>{sourceHelp?.id}</code></Typography>{sourceHelp?.base_url ? <Typography variant="body2">Service address: <code>{sourceHelp.base_url}</code></Typography> : null}<Typography variant="body2">Registration source: <code>{sourceHelp?.origin?.implementation}</code></Typography><Typography variant="body2">Configuration overrides: <code>{sourceHelp?.origin?.configuration_file}</code></Typography>{sourceHelp?.origin?.manifest ? <Typography variant="body2">Module manifest: <code>{sourceHelp.origin.manifest}</code></Typography> : null}{sourceHelp?.origin?.endpoint_source ? <Typography variant="body2">Endpoint configuration: {sourceHelp.origin.endpoint_source}</Typography> : null}<Typography variant="body2">Built-in registrations provide defaults. The configuration file stores your overrides, so it can be nearly empty. Independently deployed tool code lives in osii-processor-modules/; Core adapters live in osii-core/osii/extraction/. Model-backed tools use the Writing model endpoint selector in their service row.</Typography></Stack></DialogContent><DialogActions><Button onClick={() => setSourceHelp(null)}>Close</Button></DialogActions></Dialog>
-    <Dialog open={routingHelp} onClose={() => setRoutingHelp(false)} maxWidth="sm" fullWidth><DialogTitle>Extraction routing defaults</DialogTitle><DialogContent><Stack spacing={2}>
-      <Typography>Rules are checked from top to bottom. The first matching file extension chooses the primary extractor. If it fails, OSII tries the fallbacks from left to right. Put the * catch-all last.</Typography>
-      <Typography>These are Intake defaults; an explicit reader choice for a batch overrides them. Each reader must support all file types in its rule, including fallbacks. Unavailable services are gray; their saved rules remain so a temporary outage does not change your configuration.</Typography>
-      <Typography>Save routes writes the active processors.toml shown in this section. Load TOML reads [[routes.extractor]] rules for review; it does not save or replace other tool settings until you click Save routes.</Typography>
-      <Typography>To add your own extractor, start with the code in <code>osii-core/osii/extraction/</code> and the independent tools in <code>osii-processor-modules/</code>. Read <code>docs/reference/extractor-routing.md</code> and <code>docs/reference/processor-api/extraction.md</code>. Build a tool that follows OSII’s Processor API: it receives selected files, declares the file types it accepts, and returns text and source locations. Register its service address in Setup.</Typography>
-    </Stack></DialogContent><DialogActions><Button onClick={() => setRoutingHelp(false)}>Close</Button></DialogActions></Dialog>
     <WorkflowProgress readiness={data?.readiness} checking={setup.isLoading} failed={setup.isError} onStep={followWorkflowStep} />
 
     {!connectionOpen && !serviceLogs ? renderNotice() : null}
@@ -672,6 +575,7 @@ export function ProcessorsPage() {
 
     <Stack spacing={1.25}>
       <Typography variant="h6" fontWeight={700}>Processing defaults</Typography>
+      <ProcessingFlows readers={data?.readiness.extractors ?? []} synthesizers={data?.readiness.synthesizers ?? []} enrichers={data?.readiness.enrichers ?? []} />
       <IntakeDefaults path={data?.configuration?.files.processors} />
       {renderCapabilityDrawer("extractor")}
       {renderCapabilityDrawer("synthesizer")}

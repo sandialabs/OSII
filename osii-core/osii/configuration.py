@@ -137,7 +137,7 @@ def _read_toml(path: Path, fallback: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(value, dict):
         _CONFIG_ERRORS[path] = "The TOML document must be a table."
         return _CONFIG_CACHE.get(path, fallback)
-    expected = ("models", "defaults") if path == models_path() else ("tools", "routes", "processor_settings", "intake", "processor_startup")
+    expected = ("models", "defaults") if path == models_path() else ("tools", "routes", "processor_settings", "intake", "processor_startup", "processing_flows", "processing_flow_tests")
     invalid = next((name for name in expected if name in value and not isinstance(value[name], dict)), None)
     if invalid:
         _CONFIG_ERRORS[path] = f"The [{invalid}] section must be a TOML table."

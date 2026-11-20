@@ -18,8 +18,7 @@ an AI model.
 
 ## What you can do
 
-- Choose files directly or discover shared-drive metadata with resumable scans,
-  then select a bounded set to process.
+- Browse selected folders or upload files, then queue a named processing flow.
 - Extract text, add OCR alongside it, and inspect text or mathematical Markdown
   with source locations.
 - Browse files and collections, search by keywords or document meaning, and ask
@@ -62,9 +61,10 @@ Apache Tika and its Java runtime are prepared automatically on first startup;
 configure model connections and processing defaults in **Setup**. The
 [Banyan processor module](osii-processor-modules/banyan/README.md) uses its
 own local Nemotron endpoint configuration. Keep credentials outside Git.
-Use Intake to select files, choose processing, and queue the work. The same flow
-reads new files or upgrades existing text and OCR. The startup guide covers
-provider profiles and configurable processing defaults.
+Use **Intake & Queue** to select files and run all processing steps. Configure and
+sample-test named flows in **Setup**. Inspect processing status and reprocess
+existing documents from their collection. The startup guide covers provider
+profiles and processing configuration.
 
 See the [startup guide](docs/operations/runbook-development.md) for setup and
 troubleshooting, [architecture](docs/concepts/architecture.md) for the design,
