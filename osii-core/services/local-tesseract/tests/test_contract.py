@@ -5,7 +5,7 @@ import base64
 from fastapi.testclient import TestClient
 import pymupdf
 
-from app import main
+from osii_local_tesseract import main
 
 
 client = TestClient(main.app)

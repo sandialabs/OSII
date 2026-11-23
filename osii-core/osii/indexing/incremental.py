@@ -15,6 +15,7 @@ import time
 import tomllib
 
 import faiss
+from osii.indexing.faiss_io import read_index, write_index
 import numpy as np
 import tomli_w
 
@@ -85,7 +86,7 @@ def _existing(directory: Path, model: str, provider: str):
         raise IncompatibleIndexError(
             "Existing vectors belong to another provider/model; select its connection or build a separate index"
         )
-    index = faiss.read_index(str(names[0]))
+    index = read_index(names[0])
     rows = [
         json.loads(line)
         for line in names[1].read_text(encoding="utf-8").splitlines()
@@ -482,7 +483,7 @@ def _embed_selected(
                     index.add(vector.reshape(1, -1))
                     final_rows.append(mapped)
             snapshot = new_snapshot(directory)
-            faiss.write_index(index, str(snapshot / "segments.faiss"))
+            write_index(index, snapshot / "segments.faiss")
             (snapshot / "segments.mapping.jsonl").write_text(
                 "".join(json.dumps(row) + "\n" for row in final_rows), encoding="utf-8"
             )

@@ -28,6 +28,7 @@ markdown_extensions:
 nav:
   - Start here: index.md
   - Use OSII:
+      - Install the desktop app: operations/standalone.md
       - Start from source: operations/runbook-development.md
       - Model connections: operations/model-endpoints.md
       - Work without a model: operations/local-first.md

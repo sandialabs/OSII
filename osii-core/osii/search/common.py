@@ -2,6 +2,7 @@ from pathlib import Path
 import json
 
 import faiss
+from osii.indexing.faiss_io import read_index
 import numpy as np
 from osii.model_clients import create_embedding_client
 
@@ -19,7 +20,7 @@ def load_faiss_index(osii_root: Path, *, directory: Path | None = None):
     )
     if not path.exists():
         raise RuntimeError(f"FAISS index not found: {path}")
-    return faiss.read_index(str(path))
+    return read_index(path)
 
 
 def load_mapping(osii_root: Path, *, directory: Path | None = None) -> list[dict]:

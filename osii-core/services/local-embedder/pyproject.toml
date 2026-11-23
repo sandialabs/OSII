@@ -16,4 +16,4 @@ dev = ["httpx>=0.27,<1", "pytest>=8,<9"]
 osii = { path = "../..", editable = true }
 
 [tool.hatch.build.targets.wheel]
-packages = ["app"]
+packages = ["osii_local_embedder"]

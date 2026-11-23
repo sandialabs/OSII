@@ -75,7 +75,9 @@ def new_snapshot(directory: Path) -> Path:
 def publish_snapshot(directory: Path, snapshot: Path) -> None:
     # Each file is closed and fsynced before the pointer can name the generation.
     for name in ("segments.faiss", "segments.mapping.jsonl", "segments.meta.toml"):
-        with (snapshot / name).open("rb") as handle:
+        # Windows FlushFileBuffers (used by os.fsync) needs a writable handle.
+        # These are our newly written snapshot files, not read-only originals.
+        with (snapshot / name).open("r+b") as handle:
             os.fsync(handle.fileno())
     _sync_directory(snapshot)
     _sync_directory(snapshot.parent)

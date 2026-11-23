@@ -78,6 +78,15 @@ The agent's job is to execute the human's command—nothing more.
 
 ## Current delivery scope
 
+- `osii-standalone` is the explicitly requested Windows 11 x64 desktop delivery:
+  Electron, a PyInstaller one-folder Python runtime, bundled Tesseract, and the
+  compiled dashboard. Preserve its offline per-user installer, private loopback
+  session, library lock and native Windows packaging tests. Do not add container
+  engines, registries, runtime package installation, Java or model weights.
+  Signed broad distribution additionally requires clean standard-user Windows
+  acceptance; unsigned builds are pilots. Keep shared fixes small for transfer
+  back to `main`; do not overwrite work in the original checkout.
+
 - `main` is the standalone application, using sidecars by default with optional,
   explicitly initialized PostgreSQL storage. Never auto-import or silently fall
   back between stores. The canonical inventory SQLite stays independent.

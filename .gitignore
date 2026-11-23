@@ -70,6 +70,8 @@ Thumbs.db
 
 # Local logs and generated reports
 /release/
+/osii-desktop/resources/
+/output/playwright/
 *.log
 coverage.xml
 repo_for_ai.txt

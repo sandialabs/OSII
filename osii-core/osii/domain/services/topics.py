@@ -8,6 +8,7 @@ from pathlib import Path
 import tomllib
 
 import faiss
+from osii.indexing.faiss_io import read_index
 import numpy as np
 
 from osii.domain.storage.store import provenance_path
@@ -50,7 +51,7 @@ def load_document_space(osii_root: Path, scope: dict) -> DocumentSpace:
         if before[0][0] > MAX_INDEX_BYTES or before[1][0] > MAX_MAPPING_BYTES:
             raise TopicIndexUnavailable("This index exceeds the explorer's 1 GiB vector / 512 MiB mapping limits.")
         meta = tomllib.loads(paths[2].read_text(encoding="utf-8"))["embeddings"]
-        index = faiss.read_index(str(paths[0]))
+        index = read_index(paths[0])
         if not isinstance(index, faiss.IndexFlatIP) or index.ntotal > MAX_INDEX_CHUNKS or not 1 <= index.d <= 8192:
             raise TopicIndexUnavailable("The explorer requires a flat inner-product index with at most 1,000,000 chunks and 8,192 dimensions.")
         if index.d != meta["dimension"] or index.ntotal != meta["count"]:

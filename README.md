@@ -1,17 +1,18 @@
-# OSII — local
+# OSII Standalone
 
 > Keep the evidence. Grow the intelligence.
 
 OSII (the On-Store Intelligence Index) turns documents and datasets into a
-library you can browse, search, enrich, and ask questions about. The `main`
-branch is OSII-local: a standalone application for working with files on your
-computer or a shared drive mounted on it.
+library you can browse, search, enrich, and ask questions about.
+OSII Standalone is a Windows desktop application for files on your computer
+or an already-connected shared drive. Its installer includes Python, the
+dashboard, native document extraction, and full-page OCR.
 It runs without user accounts or a login; OSII-server provides hosted user access.
 
 The source material is the evidence. OSII keeps originals unchanged and saves
-extracted content and provenance in portable `.osii` sidecars by default. An
-[optional PostgreSQL backend](docs/reference/local-storage.md) supports the same
-local Workbench, with explicit, non-destructive one-way import. Search indexes
+extracted content and provenance in portable `.osii` sidecars. An optional
+PostgreSQL backend remains available for [source deployments](docs/reference/local-storage.md).
+The desktop application uses sidecars. Search indexes
 are rebuildable, processors are replaceable, and model interpretations remain
 traceable to their sources. Basic extraction and keyword search work without
 an AI model.
@@ -39,6 +40,17 @@ The **Toolbox** contains frontend workflows. Backend **processor modules**
 
 ## Get started
 
+Run the Windows x64 `OSII-Standalone-Setup.exe` from the project's release
+artifacts, open **OSII Standalone** from the Start menu, and choose **Create
+library** or **Open existing library**. Select your document folder and start
+working. Basic extraction, OCR and keyword search work offline; model
+connections are optional. No terminal or separately installed development tools
+are required. Builds labeled **pilot** are unsigned validation builds.
+
+See [installation, existing libraries and updates](docs/operations/standalone.md).
+
+### Develop from source
+
 Install **uv**, **Node.js 22.18+**, and **make** on macOS/Linux. Copy
 `.env.example` to `.env`, set `OSII_SOURCE_DIR` to an existing folder, and run:
 
@@ -53,7 +65,7 @@ On Windows, install uv and Node.js and run:
 ```
 
 Open [the dashboard](http://localhost:5173), process your files, and explore the
-library. Processor modules start automatically and are available in **Setup**.
+library. Source-development processor modules start automatically and are available in **Setup**.
 Set individual `OSII_ENABLE_…` switches in `.env` to omit modules.
 Keep the terminal open; **Ctrl+C** stops OSII. For sample files, use
 `make demo` (Windows: `.\scripts\osii.ps1 demo`). Install Tesseract for OCR;

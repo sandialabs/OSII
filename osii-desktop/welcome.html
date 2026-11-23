@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'">
+  <title>OSII Standalone</title>
+  <link rel="stylesheet" href="welcome.css">
+  <script src="welcome.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><div class="brand">OSII<span>STANDALONE</span></div><p class="eyebrow">YOUR FILES. YOUR EVIDENCE.</p></header>
+    <h1>Open your library.</h1>
+    <p class="intro">Keep the evidence. Grow the intelligence.</p>
+    <div id="status" role="status" aria-live="polite">Starting OSII…</div>
+    <div id="error" role="alert" hidden></div>
+    <section id="saved-section" hidden aria-labelledby="saved-heading"><h2 id="saved-heading">Your libraries</h2><div id="saved"></div></section>
+    <section class="panel" aria-labelledby="library-heading">
+      <div class="section-heading"><h2 id="library-heading">Choose a library</h2><button class="help" id="help" aria-label="About libraries and included capabilities">?</button></div>
+      <div class="choices" role="group" aria-label="Library type">
+        <button id="new-mode" class="choice selected" aria-pressed="true">Create library</button>
+        <button id="existing-mode" class="choice" aria-pressed="false">Open existing library</button>
+      </div>
+      <form id="profile-form">
+        <fieldset id="fields" disabled>
+          <label for="name">Library name</label><input id="name" required maxlength="120" value="My library" autocomplete="off">
+          <label for="source">Document folder</label><div class="folder"><input id="source" required placeholder="Choose a folder or paste a shared-drive path" autocomplete="off"><button type="button" data-choose="source">Choose…</button></div>
+          <div id="existing-fields" hidden>
+            <label for="library">Existing .osii library folder</label><div class="folder"><input id="library" autocomplete="off"><button type="button" data-choose="library">Choose…</button></div>
+            <label for="config">Existing configuration folder <span class="optional">optional</span></label><div class="folder"><input id="config" placeholder="Leave empty for fresh settings" autocomplete="off"><button type="button" data-choose="config">Choose…</button></div>
+            <p class="note">Close OSII-local before opening its library here.</p>
+          </div>
+          <button type="submit" class="primary" id="submit">Create and open library</button>
+        </fieldset>
+      </form>
+    </section>
+    <footer><span>Extraction, OCR and keyword search work offline.</span><button id="diagnostics">Export diagnostics</button><span id="version"></span></footer>
+  </main>
+  <dialog id="help-dialog" aria-labelledby="help-title"><h2 id="help-title">A library keeps your work</h2>
+    <p>OSII reads original documents where they are. A new library stores extracted text, provenance, collections and processing state separately on local disk.</p>
+    <p>To continue existing work, choose its .osii folder. Optionally select its configuration folder to reuse model connections and settings. Stop the other OSII application first.</p>
+    <p>PDF, DOCX, PPTX, XLSX, common text formats and full-page OCR are included. Semantic search and AI answers use a model connection you can add later in Setup.</p>
+    <p>This installer does not include Java/Tika, PostgreSQL or specialist processor runtimes. Existing external processors can be connected through Setup. Dataset text extraction is included; specialist dataset analysis is separate.</p>
+    <button id="close-help" class="primary">Got it</button>
+  </dialog>
+</body>
+</html>
