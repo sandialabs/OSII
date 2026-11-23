@@ -82,3 +82,6 @@ plans/
 # Keep planning and research notes out of published documentation.
 /planning/
 /docs/planning/
+
+# Private agent preferences
+/AGENTS.override.md
