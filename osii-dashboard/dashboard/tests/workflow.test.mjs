@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { libraryWorkflowSteps } from "../src/domain/workflow.ts";
+import { libraryWorkflowSteps, queuePollInterval } from "../src/domain/workflow.ts";
+
+test("queue polling is slow when idle and fast through active transitions", () => {
+  assert.equal(queuePollInterval(), 30_000);
+  assert.equal(queuePollInterval([]), 30_000);
+  assert.equal(queuePollInterval([{ status: "completed" }, { status: "error" }, { status: "paused" }]), 30_000);
+  for (const status of ["queued", "pending", "running", "pausing", "cancelling"]) {
+    assert.equal(queuePollInterval([{ status: "completed" }, { status }]), 3000);
+  }
+});
 
 const ready = () => ({
   defaults: { extractor: "local.native-text", embedder: "openai.embedder" },

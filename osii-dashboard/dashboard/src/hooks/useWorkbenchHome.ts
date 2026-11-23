@@ -2,7 +2,7 @@ import { documentTools } from "../domain/workbench";
 import { useQuery } from "@tanstack/react-query";
 import { getWorkbenchHome } from "../api/workbench";
 export function useWorkbenchHome() {
-  return useQuery({ queryKey: ["workbench-home"], queryFn: getWorkbenchHome, staleTime: 10_000, refetchInterval: 15_000 });
+  return useQuery({ queryKey: ["workbench-home"], queryFn: getWorkbenchHome, staleTime: 10_000, refetchInterval: 30_000 });
 }
 
 export function useWorkbenchAvailability() {

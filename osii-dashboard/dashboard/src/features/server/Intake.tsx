@@ -31,6 +31,7 @@ import {
   type ProcessingAction,
 } from "../queue/components/ProcessingActivity";
 import type { ProcessingRun } from "../../api/types";
+import { queuePollInterval } from "../../domain/workflow";
 import type { ProcessorStatus } from "./ProcessorAdmin";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import { api, type Doc } from "./api";
@@ -167,13 +168,16 @@ export function Intake({
     setNextCursor(r.next_cursor);
   };
   const fail = (e: unknown) => setError((e as Error).message);
+  const runPollInterval = queuePollInterval(runs);
   useEffect(() => {
     void refreshProcessors().catch(fail);
     void loadDocs().catch(fail);
     void refresh().catch(fail);
-    const timer = window.setInterval(() => void refresh().catch(fail), 2500);
-    return () => window.clearInterval(timer);
   }, []);
+  useEffect(() => {
+    const timer = window.setInterval(() => void refresh().catch(fail), runPollInterval);
+    return () => window.clearInterval(timer);
+  }, [runPollInterval]);
   const invalidate = () => {
     revision.current += 1;
     setPreview(null);
