@@ -15,6 +15,8 @@
 - Give each page or view one defined scope and primary action. Use layout,
   headings, and controls to show the order. Keep copy short and put optional
   explanation behind a labeled question-mark button. Avoid nested drawers.
+  Use the left menu or Toolbox to open tools. Keep related controls on one row
+  when space permits.
 - Use the shared library product names and show what each tool reads and writes
   through Core. File pages show saved products and their provenance. Give
   processing its own workspace. A tool that consumes original bytes must

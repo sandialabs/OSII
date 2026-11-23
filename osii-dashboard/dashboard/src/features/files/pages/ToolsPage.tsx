@@ -26,14 +26,16 @@ export function ToolsWorkbench() {
   const catalog = useQuery({ queryKey: ["tool-catalog"], queryFn: getToolCatalog, staleTime: 30_000 });
   const [action, setAction] = useState("wiki.write");
   const [scope, setScope] = useState<ScopeDescribeRequest>({ scope_type: "root" });
+  const browsesSavedProducts = action === "wiki.write" || action === "analyze";
   const ready = scope.scope_type === "root" || Boolean(scope.scope_type === "object" ? scope.file_id : scope.scope_type === "collection" ? scope.collection_id : scope.folder_id);
   const methods = catalog.data?.methods.filter(item => item.action === action) ?? [];
   useEffect(() => {
+    if (browsesSavedProducts) return;
     const compatible = catalog.data?.methods.filter(item => item.action === action && item.execution === "scope");
     if (!compatible?.length || compatible.some(item => item.scopes.includes(scope.scope_type))) return;
     const kind = compatible[0].scopes[0];
     setScope(kind === "object" ? { scope_type: "object", file_id: "" } : kind === "collection" ? { scope_type: "collection", collection_id: "" } : kind === "folder" ? { scope_type: "folder", folder_id: "" } : { scope_type: "root" });
-  }, [action, catalog.data]);
+  }, [action, browsesSavedProducts, catalog.data]);
   return <Stack spacing={3} sx={{ maxWidth: 1100, mx: "auto" }}>
     <Typography component="h1" variant="h4" fontWeight={750}>Library-wide processing</Typography>
     <Button component={Link} to="/tools">← Toolbox</Button>
@@ -48,14 +50,16 @@ export function ToolsWorkbench() {
       {Object.entries(labels).map(([id, label]) => <MenuItem key={id} value={id}>{label}</MenuItem>)}
     </TextField>
     <LibraryFlow reads={[action === "text.read" ? "source" : "text"]} writes={outputs[action] ?? ["artifacts"]} />
-    {methods.some(item => item.execution === "scope") ? <Card variant="outlined"><CardContent><Stack spacing={2}>
+    {browsesSavedProducts || methods.some(item => item.execution === "scope") ? <Card variant="outlined"><CardContent><Stack spacing={2}>
       <Typography variant="h6" fontWeight={700}>{labels[action]}</Typography>
       <ScopePicker value={scope} onChange={setScope} />
       {ready ? <ToolActionPanel key={`${action}:${JSON.stringify(scope)}`} scope={scope} action={action} /> : <Typography color="text.secondary">Choose documents, or run tools directly from a document or collection.</Typography>}
       {ready ? action === "wiki.write" ? <ScopeWikiPanel scope={scope} title="Wiki" showActions={false} /> : <ScopeEnrichmentsPanel scope={scope} showActions={false} /> : null}
     </Stack></CardContent></Card> : <Button component={Link} to="/intake" variant="contained" sx={{ alignSelf: "flex-start" }}>Open Intake</Button>}
-    <Divider />
-    <Typography variant="h6" fontWeight={700}>Available methods</Typography>
+    {methods.length > 0 ? <>
+      <Divider />
+      <Typography variant="h6" fontWeight={700}>Available methods</Typography>
+    </> : null}
     {methods.map(method => <Card key={method.id} variant="outlined"><CardContent><Stack spacing={1}>
       <Stack direction="row" justifyContent="space-between" spacing={1}><Typography fontWeight={700}>{method.label}</Typography><Chip size="small" label={method.execution === "scope" ? "Scope tool" : "Intake step"} /></Stack>
       <Typography variant="caption" color="text.secondary">{method.id} · {method.version} · {method.scopes.join(" / ")}</Typography>
@@ -64,7 +68,7 @@ export function ToolsWorkbench() {
       </Typography>}
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>{method.outputs.map(output => <Chip key={output} size="small" label={output.replace(/_/g, " ")} />)}</Stack>
     </Stack></CardContent></Card>)}
-    {!catalog.isPending && !methods.length ? <Alert severity="info">Connect a compatible method in Setup.</Alert> : null}
+    {!browsesSavedProducts && !catalog.isPending && !methods.length ? <Alert severity="info">Connect a compatible method in Setup.</Alert> : null}
   </Stack>;
 }
 

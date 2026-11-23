@@ -33,15 +33,17 @@ For source-only development commands and OpenAI-compatible routing, see
 
 ## Generate and compare
 
-Open a processed document's **Wiki** tab, a collection's **Wikis & products**
-section, or **Library wikis & products → Wiki** on Files. Choose either method and select
-**Generate wiki**. Saved Wiki Markdown outputs are discovered by
+In the left menu under **Toolbox**, open **Processing workbench** and select **Write a wiki**.
+Set **Scope** to **Library** for a library-wide wiki, or choose a folder,
+collection, or document. Pick a method and select **Generate wiki**. Saved wikis
+appear below the controls and can be opened even when a wiki processor is offline.
+Saved Wiki Markdown outputs are discovered by
 their standard `artifact_type`, not by a hard-coded processor name or filename,
 so another SME's conforming wiki enricher appears in the same view.
 
-The concept/entity processor also returns structured artifacts. Open the
-regular **Other products** view to browse and sort those outputs through the
-generic entity-list and table renderers.
+The concept/entity processor also returns structured artifacts. Select **Analyze**
+in the processing workbench and choose the same scope to browse and sort the
+outputs under **Saved products**.
 
 Processor settings, including the prompt, temperature, and input budget, are
 descriptor-driven and appear in Setup. The chosen model connection is a tool

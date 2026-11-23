@@ -90,7 +90,7 @@ export function ScopeWikiPanel({ scope, title, showActions = true }: {
       {(enrichments.data?.enrichments ?? []).filter((entry): entry is EnrichmentListEntryFile => entry.kind === "file" && entry.artifact_type === "scope_batch_run").map(entry => <SavedBatchRun key={entry.name} scope={scope} filename={entry.name} />)}
       {wikiEntries.map((entry) => <WikiArtifactCard key={entry.name} scope={scope} entry={entry} />)}
       {!enrichments.isLoading && wikiEntries.length === 0 && !(enrichments.data?.enrichments ?? []).some(entry => entry.kind === "file" && entry.artifact_type === "scope_batch_run") ? (
-        <Alert severity="info">No wiki yet. Choose a method above to create one.</Alert>
+        <Alert severity="info">No saved wikis.</Alert>
       ) : null}
     </Stack>
   );
