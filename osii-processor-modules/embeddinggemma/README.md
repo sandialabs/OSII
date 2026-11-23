@@ -5,7 +5,9 @@ llama.cpp server when first used, sends bounded text requests over an
 authenticated loopback connection, and returns normalized 256-dimensional
 vectors. Core owns the index and originals. The processor accepts documents by
 default and applies the search-query prompt when an input has
-`metadata.purpose = "query"`.
+`metadata.purpose = "query"`. Its descriptor opts in through the
+`x-osii-embedding-input-purpose` annotation in the existing configuration
+schema.
 
 For source development, obtain a [llama.cpp CPU build](https://github.com/ggml-org/llama.cpp/releases/tag/b12651)
 and compatible [text-only EmbeddingGemma 2 GGUF weights](https://huggingface.co/unsloth/embeddinggemma-2-GGUF).

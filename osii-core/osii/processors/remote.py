@@ -523,7 +523,7 @@ class ProcessorEmbeddingClient:
         identifiers = [f"input-{index}" for index in range(len(texts))]
         metadata = (
             {"purpose": "query"}
-            if query and (self.descriptor.get("capabilities") or {}).get("embedding_input_purpose")
+            if query and (self.descriptor.get("config_schema") or {}).get("x-osii-embedding-input-purpose") is True
             else {}
         )
         model_context = _model_context(
