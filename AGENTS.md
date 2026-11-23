@@ -23,6 +23,7 @@
   declare supported source types and check compatibility before running.
 - Preserve source identity, stored records, and processing provenance. Keep
   credentials, library data, and generated outputs out of version control.
+  Run intake tests with synthetic fixtures against an isolated library.
   Use Toolbox for frontend tools and processors for backend modules.
 - Keep the source launcher working on macOS and Windows. OSII-local runs on
   loopback without user accounts and uses sidecars by default. PostgreSQL is
