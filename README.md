@@ -1,5 +1,9 @@
 # OSII Standalone
 
+> To install OSII on Windows, use the [installer in GitHub Releases](https://github.com/sandialabs/OSII/releases).
+> To develop OSII or build a new installer, switch to `main` and follow its README.
+> This branch records the earlier standalone delivery.
+
 > Keep the evidence. Grow the intelligence.
 
 OSII (the On-Store Intelligence Index) turns documents and datasets into a
