@@ -25,7 +25,7 @@ library chooser; only one library is open at a time.
 
 ## Continue an existing library
 
-Stop OSII-local first, including its workers. Choose **Open existing library**,
+Stop OSII Dev first, including its workers. Choose **Open existing library**,
 select its `.osii` directory, and select the matching document folder. Optionally
 choose its existing configuration directory to reuse model settings and
 `secrets.env`; otherwise the desktop profile gets fresh settings. No `.env` is
@@ -38,7 +38,7 @@ message; the app does not migrate or replace them. Use the matching source
 version and its explicit backup/migration workflow before trying again.
 
 This branch's source launcher and desktop app share a library ownership lock.
-Older OSII-local versions do not understand that lock and must be stopped
+Older OSII Dev versions do not understand that lock and must be stopped
 manually before switching applications.
 
 ## Included capabilities
@@ -47,7 +47,7 @@ manually before switching applications.
 | --- | --- |
 | Native extraction | Text-layer PDF, DOCX, PPTX, XLSX, RTF and common text/data files |
 | OCR | Full-page Tesseract for PDF, PNG, JPEG and TIFF; English, French, German, Spanish, Japanese, Korean, Simplified Chinese and Arabic |
-| Without a model | Metadata inventory, keyword search, extractive previews and grounded answers, statistics and keywords |
+| Without a model | Direct file intake, keyword search, extractive previews and grounded answers, statistics and keywords |
 | With an optional endpoint | Semantic search, model-backed synthesis/chat, and existing model-dependent workflows |
 | Preserved product interfaces | Browsing, collections, editing, provenance, reports and exports; Topic Explorer retains its existing requirements |
 | Not bundled | Java/Tika, PostgreSQL, Banyan, OpenCV region OCR, specialist dataset analysis, Haystack, Ollama and LLM/embedding weights |
@@ -85,7 +85,7 @@ compatible; it never reverses a migration.
 ## Build an installer
 
 These requirements apply to the **maintainer's build machine only**: Windows
-11 x64, uv, Node.js 22.18+, and 7-Zip. Use a checkout of `osii-standalone`.
+11 x64, uv, Node.js 22.18+, and 7-Zip. Use a checkout of `main`.
 GitHub's **Standalone Windows** workflow performs the same build and tests.
 
 ```powershell
@@ -115,7 +115,7 @@ runtime contains dependency notices and Electron includes its own notices.
 ## Validation and release gates
 
 CI builds and tests the actual frozen distribution and installs the resulting
-NSIS artifact. It checks native formats/OCR/FAISS, isolated metadata scanners,
+NSIS artifact. It checks native formats/OCR/FAISS, direct file intake,
 real processor HTTP calls, optional model/semantic/chat behavior, private API
 and IPC boundaries, shutdown/restart, and data-preserving reinstall/uninstall.
 The frozen tests clear dependency-tool paths. They do not establish that a

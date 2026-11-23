@@ -488,7 +488,7 @@ def test_local_saved_key_rotation_reaches_generation_headers(monkeypatch, tmp_pa
 
 
 def test_local_replacement_overrides_optional_missing_key_file(monkeypatch, tmp_path):
-    from app.env_credentials import resolve_secret
+    from osii_model_provider_bridge.env_credentials import resolve_secret
     monkeypatch.setenv("OPENAI_API_KEY_FILE", str(tmp_path / "provider-key"))
     monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
     secrets = tmp_path / "secrets.env"

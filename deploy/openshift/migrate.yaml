@@ -1,0 +1,84 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: osii-migrate
+parameters:
+  - name: CORE_IMAGE
+    required: true
+  - name: JOB_NAME
+    value: osii-migrate
+objects:
+  - apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: ${JOB_NAME}
+      labels:
+        app: osii
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 300
+      template:
+        metadata:
+          labels:
+            app: osii
+            component: osii-migrate
+        spec:
+          serviceAccountName: osii
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: migrate
+              image: ${CORE_IMAGE}
+              command: [python3.12, -m, osii.server.cli, migrate]
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: osii-database
+                      key: url
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: "1"
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: temp
+                  mountPath: /tmp
+          volumes:
+            - name: temp
+              emptyDir: {}
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: osii-migrate-egress
+    spec:
+      podSelector:
+        matchLabels:
+          component: osii-migrate
+      policyTypes: [Egress]
+      egress:
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: openshift-dns
+          ports:
+            - {protocol: UDP, port: 53}
+            - {protocol: TCP, port: 53}
+            - {protocol: UDP, port: 5353}
+            - {protocol: TCP, port: 5353}
+        - to:
+            - podSelector:
+                matchLabels:
+                  component: osii-database
+          ports:
+            - {protocol: TCP, port: 5432}

@@ -1,13 +1,16 @@
 """One-folder runtime. Build from the monorepo root on the target OS."""
 from pathlib import Path
-import json
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata, is_module_or_submodule
 
 root = Path(SPECPATH).parent
 payload = root / "osii-desktop" / "resources"
 services = ["osii_local_extractor", "osii_local_tesseract", "osii_local_synthesizer",
             "osii_local_embedder", "osii_local_enricher", "osii_model_provider_bridge"]
-hidden = collect_submodules("osii") + collect_submodules("uvicorn")
+hosted_packages = ("osii.server", "osii.persistence")
+hidden = collect_submodules("osii", filter=lambda name: not any(
+    is_module_or_submodule(name, package) for package in hosted_packages
+))
+hidden += collect_submodules("uvicorn")
 for service in services:
     hidden += collect_submodules(service)
 data = collect_data_files("osii") + collect_data_files("bm25s")
@@ -23,7 +26,7 @@ data.append((str(payload / "THIRD_PARTY_NOTICES.txt"), "."))
 
 a = Analysis([str(root / "scripts" / "standalone_runtime.py")],
     pathex=[str(root / "osii-core")], binaries=[], datas=data, hiddenimports=hidden,
-    excludes=["pytest", "IPython", "tkinter", "haystack", "torch", "cv2", "sqlalchemy", "psycopg"],
+    excludes=[*hosted_packages, "pytest", "IPython", "tkinter", "haystack", "torch", "cv2", "sqlalchemy", "psycopg"],
     noarchive=False)
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="osii-runtime",

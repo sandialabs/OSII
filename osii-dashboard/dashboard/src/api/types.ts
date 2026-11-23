@@ -1075,7 +1075,9 @@ export type ChatRequest = {
 export type ChatResponse = {
   profile_id: string;
   model: string | null;
-  experiment: import("../features/chat/types").RagTrace | null;
+  experiment?: import("../features/chat/types").RagTrace | null;
+  error?: string | null;
+  agent_trace?: import("../features/chat/traceTypes").AgentTrace;
   answer: string;
   citations: ChatCitation[];
   provider: string;

@@ -6,7 +6,7 @@ links to their evidence.
 
 ## Get started
 
-1. [Start OSII](operations/runbook-development.md).
+1. [Install OSII Standalone for Windows](operations/standalone.md). For source work use [OSII Dev](operations/runbook-development.md), or see the [hosted server guide](operations/runbook-server.md).
 2. Open **Setup** to check document readers and connect any models you want to use.
 3. In **Intake**, select files, choose processing, test the selected endpoints,
    and queue the work. Choose text-only processing to work without a model.

@@ -30,6 +30,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+server = [
+  "SQLAlchemy>=2.0,<3",
+  "psycopg[binary]>=3.2,<4",
+  "alembic>=1.14,<2",
+  "argon2-cffi>=23,<26",
+  "setuptools>=77,<83",
+]
 standalone-build = [
   "pyinstaller==6.22.3",
   "truststore>=0.10,<1",
@@ -55,3 +62,6 @@ include = ["osii", "osii.*", "osii_processor_sdk"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.setuptools.package-data]
+"osii.persistence" = ["migrations/*.py", "migrations/versions/*.py"]

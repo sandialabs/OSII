@@ -21,7 +21,7 @@ The agent's job is to execute the human's command—nothing more.
   locations, scopes, provenance, and portable `.osii` sidecars. Catalogs,
   indexes, caches, and model output are derived and rebuildable.
 - OSII-local has no user authentication, accounts, roles, or login screen.
-  Hosted user authentication belongs exclusively to `osii-server`. Keep local
+  Hosted user authentication belongs exclusively to the server profile. Keep local
   processes on loopback; processor/provider credentials and private internal
   service tokens are separate from user authentication.
 - File metadata inventory is part of normal OSII-local, not a separate branch
@@ -87,12 +87,18 @@ The agent's job is to execute the human's command—nothing more.
   acceptance; unsigned builds are pilots. Keep shared fixes small for transfer
   back to `main`; do not overwrite work in the original checkout.
 
-- `main` is the standalone application, using sidecars by default with optional,
-  explicitly initialized PostgreSQL storage. Never auto-import or silently fall
-  back between stores. The canonical inventory SQLite stays independent.
-  `osii-server` is developed separately for hosted accounts and OpenShift. Keep
-  portable fixes isolated for transfer between the branches; never merge server
-  persistence or hosted startup into main implicitly.
+- Develop shared Core and dashboard behavior on `main`. Build OSII Standalone
+  for Windows from the local API and default dashboard. Build OSII Server with
+  its own API, worker, and hosted dashboard mode. Keep account administration and
+  authorization in the server profile and shared controls behind explicit inputs.
+  The older product branches are retained for earlier releases.
+- Local uses sidecars by default and permits explicitly initialized PostgreSQL
+  in source development. Server requires its hosted PostgreSQL schema. Keep
+  stable storage contracts, and require explicit migration. Local inventory
+  evidence stays separate from rebuildable indexes.
+- Windows installers must remain self-contained and preserve existing libraries.
+  Validate the packaged application on Windows. Use the unsigned pilot label
+  until signing and clean standard-user acceptance are complete.
 
 - The supported startup path on main is `make dev` (Windows:
   `.\\scripts\\osii.ps1 dev`). Keep automatic dependency setup, logs, health
@@ -100,8 +106,7 @@ The agent's job is to execute the human's command—nothing more.
 - Product direction is one shared OpenShift deployment, independent model capability
   endpoints, and one shared database. This does not authorize an implicit
   database migration or claim that hosted authentication is implemented.
-- Desktop installers, workstation catalogs, Compose, component splitting, and
-  image publishing are archived on `archive/workstation-deployment-2026-11-03`.
+- Historical container-based workstation deployment is archived on `archive/workstation-deployment-2026-11-03`.
   Do not reintroduce them without an explicit human request.
 - Preserve Core, dashboard, SDK, and processor boundaries while simplifying
   delivery. Optional tools stay optional. Do not replace existing persistence
