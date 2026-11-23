@@ -43,7 +43,7 @@ try {
             if (-not (Test-Path $program)) { throw "Missing installed executable: $program" }
             New-NetFirewallRule -DisplayName $firewallGroup -Group $firewallGroup -Program $program `
                 -Profile Any -Direction Outbound -Action Block `
-                -RemoteAddress @('0.0.0.0-126.255.255.255', '128.0.0.0-255.255.255.255', '::/0') | Out-Null
+                -RemoteAddress @('Internet', 'Intranet', 'LocalSubnet') | Out-Null
         }
         if (@(Get-NetFirewallRule -PolicyStore ActiveStore -Group $firewallGroup).Count -ne $programs.Count) {
             throw 'External-network restrictions were not applied'
