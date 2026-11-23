@@ -21,7 +21,7 @@ The agent's job is to execute the human's command—nothing more.
   locations, scopes, provenance, and portable `.osii` sidecars. Catalogs,
   indexes, caches, and model output are derived and rebuildable.
 - OSII-local has no user authentication, accounts, roles, or login screen.
-  Hosted user authentication belongs exclusively to `osii-server`. Keep local
+  Hosted user authentication belongs exclusively to the server profile. Keep local
   processes on loopback; processor/provider credentials and private internal
   service tokens are separate from user authentication.
 - File metadata inventory is part of normal OSII-local, not a separate branch
@@ -76,33 +76,44 @@ The agent's job is to execute the human's command—nothing more.
   changes. Keep examples and demonstrations small and inspectable; do not
   create new example material unless explicitly requested.
 
+## Branches and merges
+
+- Use `main` for current OSII Dev, Windows Standalone, and hosted Server work.
+  Start new feature branches from `origin/main` in their own worktrees when
+  working in parallel. Keep the existing branch folders in place for Codex.
+- To sync a feature branch, run `git fetch origin` from its worktree. Confirm the
+  checked-out branch and that the worktree is clean with `git status --short --branch`,
+  then run `git merge origin/main`. Resolve conflicts in that feature branch.
+  Review the merge against the current behavior of each affected delivery profile
+  and run its relevant checks before pushing to `origin`.
+- Treat `osii-standalone` and `osii-server` as maintenance branches for the
+  earlier Windows and hosted releases. Land shared fixes on `main`, then backport
+  only the needed commits and prerequisites with `git cherry-pick -x <commit>`
+  when an older release needs them. Adapt and test each backport against the
+  receiving branch. Merge the full `origin/main` history into a maintenance
+  branch only for an explicitly requested baseline upgrade.
+- Keep desktop packaging and loopback behavior with the desktop profile.
+  Keep hosted authorization, PostgreSQL, and deployment behavior with the
+  server profile. A merge does not authorize a database migration or deployment.
+
 ## Current delivery scope
 
-- `osii-standalone` is the explicitly requested Windows 11 x64 desktop delivery:
-  Electron, a PyInstaller one-folder Python runtime, bundled Tesseract, and the
-  compiled dashboard. Preserve its offline per-user installer, private loopback
-  session, library lock and native Windows packaging tests. Do not add container
-  engines, registries, runtime package installation, Java or model weights.
-  Signed broad distribution additionally requires clean standard-user Windows
-  acceptance; unsigned builds are pilots. Keep shared fixes small for transfer
-  back to `main`; do not overwrite work in the original checkout.
-
-- `main` is the standalone application, using sidecars by default with optional,
-  explicitly initialized PostgreSQL storage. Never auto-import or silently fall
-  back between stores. The canonical inventory SQLite stays independent.
-  `osii-server` is developed separately for hosted accounts and OpenShift. Keep
-  portable fixes isolated for transfer between the branches; never merge server
-  persistence or hosted startup into main implicitly.
+- This branch maintains the earlier Windows 11 x64 desktop release. Preserve
+  its offline installer, private loopback session, bundled OCR, library lock, and
+  native Windows packaging tests. Keep user startup free of runtime package
+  installs, container engines, registries, Java, and model weights. Validate
+  the installer for backports that affect Windows startup, processing, or
+  packaging. Use the unsigned pilot label until signing and clean standard-user
+  acceptance are complete.
+- Use local sidecar storage for the desktop release. Preserve existing library
+  data and keep the canonical inventory SQLite database independent.
 
 - The supported startup path on main is `make dev` (Windows:
   `.\\scripts\\osii.ps1 dev`). Keep automatic dependency setup, logs, health
   checks, and Ctrl+C shutdown working. Do not add alternative startup menus.
-- Product direction is one shared OpenShift deployment, independent model capability
-  endpoints, and one shared database. This does not authorize an implicit
-  database migration or claim that hosted authentication is implemented.
-- Desktop installers, workstation catalogs, Compose, component splitting, and
-  image publishing are archived on `archive/workstation-deployment-2026-11-03`.
-  Do not reintroduce them without an explicit human request.
+- Historical container-based workstation deployment is archived on
+  `archive/workstation-deployment-2026-11-03`. Restore it only when explicitly
+  requested.
 - Preserve Core, dashboard, SDK, and processor boundaries while simplifying
   delivery. Optional tools stay optional. Do not replace existing persistence
   or delete user data as part of deployment cleanup.
