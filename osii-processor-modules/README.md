@@ -11,6 +11,7 @@ backend processor modules.
 | [osii-tesseract](osii-tesseract/README.md) | Tesseract/OpenCV region OCR |
 | [llm-wiki-enrichers](llm-wiki-enrichers/README.md) | Readable and concept/entity wikis |
 | [tabular-dataset-processors](tabular-dataset-processors/README.md) | CSV extraction and collection tables |
+| [embeddinggemma](embeddinggemma/README.md) | Opt-in CPU embeddings for local semantic search |
 
 `make dev` and `.\scripts\osii.ps1 dev` prepare independent environments and
 start enabled modules. Set `OSII_ENABLE_BANYAN=false`

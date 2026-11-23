@@ -53,7 +53,8 @@ OSII_COLLECTION_DATA_CARD_PORT=18110
 
 Users put these overrides in the root `.env`; no change to Core, the launcher,
 or the central `.env.example` is needed. Document the generated switches in the
-module's README or configuration template. An absent enable switch means enabled.
+module's README or configuration template. An absent enable switch uses the
+manifest default, which is enabled for most modules.
 A false switch omits dependency preparation, service registration, and startup;
 saved overrides and processing history remain intact. When several processors
 share a project, its environment remains if another processor still needs it.
