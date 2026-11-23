@@ -150,6 +150,7 @@ class Supervisor:
             from osii_embeddinggemma import MODEL_ID, PROCESSOR_ID
             engine, model = embedding_assets()
             env.update(OSII_DEFAULT_EMBEDDER=PROCESSOR_ID, EMBEDDING_MODEL=MODEL_ID,
+                       OSII_BUNDLED_EMBEDDER_URL=f"http://127.0.0.1:{ports['embeddinggemma']}",
                        OSII_EMBEDDINGGEMMA_ENGINE=str(engine), OSII_EMBEDDINGGEMMA_WEIGHTS=str(model))
         return env
 

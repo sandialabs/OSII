@@ -18,6 +18,10 @@ function windowsProcessMemory(rootId) {
 async function main() {
   const useEmbeddingGemma = Boolean(process.env.OSII_DESKTOP_EXECUTABLE || process.env.OSII_SMOKE_BUNDLED_EMBEDDING);
   const semanticQuery = 'How do I keep perishables cold on the road?';
+  function assertSemanticMatch(results) {
+    assert.equal(results.retrieval_mode_used, 'semantic', JSON.stringify(results));
+    assert.equal(results.results[0]?.filename, 'evidence.txt', JSON.stringify(results));
+  }
   const temporary = process.env.OSII_SMOKE_DIRECTORY || await fs.mkdtemp(path.join(os.tmpdir(), 'OSII smoke — '));
   await fs.mkdir(temporary, { recursive: true });
   const documents = path.join(temporary, 'Documents with spaces');
@@ -90,6 +94,7 @@ async function main() {
     if (useEmbeddingGemma) {
       assert.equal(setup.methods.embedder.model, 'embeddinggemma-2-text-256-v1', JSON.stringify(setup.methods));
       assert.equal(setup.methods.embedder.available, true);
+      if (saved) assertSemanticMatch(await api('/api/search', 'POST', { query: semanticQuery, mode: 'semantic' }));
     }
     assert.ok(setup.services.some(service => service.id === 'ocr' && service.ownership === 'osii'));
     metrics.dashboardReadySeconds = (Date.now() - started) / 1000;
@@ -132,9 +137,7 @@ async function main() {
       searchPage.searchParams.set('q', semanticQuery);
       searchPage.searchParams.set('mode', 'semantic');
       await page.goto(searchPage.href);
-      const results = await (await matched).json();
-      assert.equal(results.retrieval_mode_used, 'semantic', JSON.stringify(results));
-      assert.equal(results.results[0]?.filename, 'evidence.txt', JSON.stringify(results));
+      assertSemanticMatch(await (await matched).json());
       await page.getByText('evidence.txt', { exact: true }).first().waitFor();
     }
     const chat = await api('/api/chat', 'POST', { query: 'What calibration result was measured?', scope: { scope_type: 'root' } });
@@ -160,9 +163,7 @@ async function main() {
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: 'calibration', mode: 'lexical' }) })).json());
     assert.ok(reopened.results.length > 0, JSON.stringify(reopened));
     if (useEmbeddingGemma) {
-      const semantic = await api('/api/search', 'POST', { query: semanticQuery, mode: 'semantic' });
-      assert.equal(semantic.retrieval_mode_used, 'semantic');
-      assert.equal(semantic.results[0]?.filename, 'evidence.txt');
+      assertSemanticMatch(await api('/api/search', 'POST', { query: semanticQuery, mode: 'semantic' }));
     }
     assert.deepEqual(errors, []);
     await fs.writeFile(path.join(output, 'standalone-metrics.json'), JSON.stringify(metrics, null, 2) + '\n');
