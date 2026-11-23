@@ -1,0 +1,25 @@
+schema_version = 1
+id = "whisper"
+
+[[processors]]
+id = "whisper"
+processor_id = "local.whisper"
+kind = "extractor"
+display_name = "Whisper speech to text"
+description = "Transcribes audio locally and keeps start and end times for each segment."
+command = ["-m", "uvicorn", "osii_whisper.main:app"]
+port = 8115
+enabled_by_default = false
+readiness_path = "/ready"
+
+[processors.capabilities]
+file_extensions = [".wav", ".mp3", ".m4a", ".flac", ".ogg", ".opus", ".webm"]
+
+[processors.config_schema]
+type = "object"
+additionalProperties = false
+
+[processors.config_schema.properties.language]
+type = "string"
+title = "Spoken language code (blank to detect)"
+default = ""

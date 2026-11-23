@@ -1,0 +1,16 @@
+schema_version = 1
+id = "vlm-endpoint"
+
+[[processors]]
+id = "vlm-endpoint"
+processor_id = "external.vlm-endpoint"
+kind = "extractor"
+display_name = "Vision model document reader"
+description = "Reads images and short PDFs using a configured OpenAI-compatible vision endpoint."
+command = ["-m", "uvicorn", "osii_vlm_endpoint.main:app"]
+port = 8116
+enabled_by_default = false
+readiness_path = "/ready"
+
+[processors.capabilities]
+file_extensions = [".pdf", ".png", ".jpg", ".jpeg", ".webp"]

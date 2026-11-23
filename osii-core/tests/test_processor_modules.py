@@ -171,9 +171,27 @@ def test_launcher_imports_without_installed_application_dependencies():
 
 def test_all_existing_processors_keep_their_switches_and_ids():
     processors = discover_processors(ROOT/'osii-processor-modules')
-    assert {row.id for row in processors} == {'banyan','tesseract-opencv','readable-wiki','concept-entity-wiki','csv-extractor','collection-table'}
+    assert {'banyan','tesseract-opencv','readable-wiki','concept-entity-wiki','csv-extractor','collection-table'} <= {row.id for row in processors}
     assert next(row for row in processors if row.id == 'banyan').registration_id == 'banyan-nemotron-parse'
     assert not any(row.id == 'tika' for row in processors)
+
+
+@pytest.mark.parametrize(('service', 'descriptor', 'extension'), [
+    ('whisper', 'local.whisper', '.wav'),
+    ('vlm-endpoint', 'external.vlm-endpoint', '.pdf'),
+])
+def test_opt_in_extractors_can_be_routed_in_intake(service, descriptor, extension, monkeypatch):
+    from osii.api.extractor_routes import validate_routes
+
+    modules = ROOT / 'osii-processor-modules'
+    monkeypatch.setenv('OSII_PROCESSOR_MODULES_DIR', str(modules))
+    processor = next(row for row in discover_processors(modules) if row.id == service)
+    assert not processor.is_enabled({})
+    monkeypatch.setenv(processor.enable_env, 'true')
+    monkeypatch.setattr('osii.api.processor_admin_routes._cached_descriptor', lambda *a: {})
+    monkeypatch.setattr('osii.configuration.load_tools_config', lambda *a: {})
+    route = {'name': service, 'extractor': descriptor, 'extensions': [extension]}
+    assert not validate_routes({'routes': [route]})[0]
 
 
 def test_new_offline_extractor_uses_manifest_file_type_rules(tmp_path, monkeypatch):
