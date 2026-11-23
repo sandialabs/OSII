@@ -36,6 +36,7 @@ def execute_scan(store, settings, job, worker, stopping, report):
                 break
             for path, task in list(active.items()):
                 process, output, last = task
+                timed_out = False
                 try:
                     message = output.get(timeout=0.05)
                 except queue.Empty:
@@ -47,7 +48,7 @@ def execute_scan(store, settings, job, worker, stopping, report):
                             "Directory reader timed out; reconnect the share and resume",
                             None,
                         )
-                        timeouts += 1
+                        timed_out = True
                     elif not process.is_alive():
                         message = (
                             "error",
@@ -60,13 +61,17 @@ def execute_scan(store, settings, job, worker, stopping, report):
                 if message[0] == "batch":
                     inventory.write_batch(scan, job, worker, message[1], message[2])
                 else:
-                    inventory.finish_directory(scan, job, worker, path, message)
                     reaped = stop_reader(process, output)
                     del active[path]
                     if not reaped:
                         raise ValueError(
                             "A filesystem reader remains blocked; restore the mount before resuming"
                         )
+                    requeued = inventory.finish_directory(
+                        scan, job, worker, path, message, timed_out=timed_out
+                    )
+                    if timed_out and not requeued:
+                        timeouts += 1
                 if timeouts >= job["payload"].get("readers", 2):
                     raise ValueError(
                         "Source circuit breaker opened after repeated reader timeouts; reconnect and resume"

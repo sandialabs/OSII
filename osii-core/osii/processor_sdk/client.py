@@ -63,7 +63,8 @@ class ProcessorClient:
             with urllib.request.urlopen(http_request, timeout=self.timeout) as response:
                 result = json.load(response)
         except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")[:2000]
+            with exc:
+                body = exc.read(8000).decode("utf-8", errors="replace")[:2000]
             raise ProcessorClientError(
                 f"processor request failed: HTTP {exc.code}: {body or exc.reason}"
             ) from exc

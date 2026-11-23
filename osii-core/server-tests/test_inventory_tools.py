@@ -97,6 +97,28 @@ def test_scan_metadata_only_replay_filters_missing_and_selection(app, monkeypatc
     assert inv.selection_entries(frozen["id"])["items"][0]["size_bytes"] == 5
 
 
+def test_directory_timeout_retries_preserve_prior_inventory(app):
+    root = app.state.settings.source_root
+    (root / "saved.txt").write_text("already observed")
+    inv = inventory(app)
+    source = inv.register(str(root.resolve()))
+    complete_scan(app, inv, source)
+    store = app.state.store
+    inv.start(source["id"], ScanOptions())
+    job = store.claim("scanner")
+    scan, _ = inv.scan_context(job, "scanner")
+    message = ("error", "Directory reader timed out", None)
+
+    for requeued in (True, True, False):
+        assert inv.claim_directory(scan, job, "scanner") == ""
+        assert inv.finish_directory(scan, job, "scanner", "", message, timed_out=True) is requeued
+
+    assert inv.claim_directory(scan, job, "scanner") is None
+    failed, pending = inv.finish_scan(scan, job, "scanner")
+    assert failed and not pending
+    assert inv.summary(Filters(source_id=source["id"]))["files"] == 1
+
+
 def test_pause_recovery_partial_and_fencing(app):
     root = app.state.settings.source_root
     (root / "first.txt").write_text("one")

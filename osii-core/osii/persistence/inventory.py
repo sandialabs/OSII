@@ -913,7 +913,7 @@ class PostgresInventory:
                 )
             )
 
-    def finish_directory(self, scan, job, worker, path, message):
+    def finish_directory(self, scan, job, worker, path, message, *, timed_out=False):
         from sqlalchemy import text
 
         error = (
@@ -925,6 +925,28 @@ class PostgresInventory:
         )
         with self.store.transaction() as c:
             self._scan_owner(c, job, worker)
+            if timed_out:
+                attempts = c.execute(
+                    update(directories)
+                    .where(
+                        directories.c.scan_id == scan["id"],
+                        directories.c.path == path,
+                        directories.c.status == "running",
+                        directories.c.attempts < 3,
+                    )
+                    .values(status="pending", updated=time.time())
+                    .returning(directories.c.attempts)
+                ).scalar_one_or_none()
+                if attempts is not None:
+                    c.execute(
+                        insert(events).values(
+                            scan_id=scan["id"],
+                            created=time.time(),
+                            path=path,
+                            message=f"Slow source share. Retrying directory after timeout ({attempts}/2).",
+                        )
+                    )
+                    return True
             if not error:
                 # Absence is evidence only after a complete, stable enumeration.
                 c.execute(
@@ -961,6 +983,8 @@ class PostgresInventory:
                         message=error,
                     )
                 )
+
+        return False
 
     def finish_scan(self, scan, job, worker, error=None):
         with self.store.transaction() as c:
