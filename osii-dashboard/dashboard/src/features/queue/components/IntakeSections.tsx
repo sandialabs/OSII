@@ -1,5 +1,5 @@
 import { Tab, Tabs } from "@mui/material";
-export type IntakeSection = "add" | "process" | "activity";
+export type IntakeSection = "add" | "activity";
 export function IntakeSections({
   value,
   onChange,
@@ -17,8 +17,7 @@ export function IntakeSections({
       allowScrollButtonsMobile
       aria-label="Intake sections"
     >
-      <Tab value="add" label="Add files" />
-      <Tab value="process" label="Process library" />
+      <Tab value="add" label="Prepare files" />
       <Tab
         value="activity"
         label={`Queue & activity${activeCount ? ` (${activeCount} active)` : ""}`}

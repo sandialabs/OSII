@@ -51,7 +51,6 @@ def _health_only_services(readiness: dict[str, Any]) -> list[dict[str, Any]]:
         for item in readiness.get(group, [])
     }
     definitions = (
-        ("tika", "Apache Tika", "Adds broad document-format text extraction."),
         ("local.native-text", "Python document extractor", "Reads text-layer PDFs, Office files, and text formats."),
         ("local.tesseract-page-ocr", "Tesseract OCR — full page", "Runs ordinary Tesseract once per complete PDF or image page."),
         ("local.extractive-preview", "Source excerpt preview", "Creates a cited preview without an AI model."),

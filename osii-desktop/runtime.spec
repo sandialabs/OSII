@@ -1,6 +1,5 @@
 """One-folder runtime. Build from the monorepo root on the target OS."""
 from pathlib import Path
-import json
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 
 root = Path(SPECPATH).parent
@@ -11,6 +10,8 @@ hidden = collect_submodules("osii") + collect_submodules("uvicorn")
 for service in services:
     hidden += collect_submodules(service)
 data = collect_data_files("osii") + collect_data_files("bm25s")
+for file in ("nist-cloud-computing.pdf", "README.md"):
+    data.append((str(root / "scripts" / "demo-data" / file), "scripts/demo-data"))
 for package in ("osii", "jsonschema", "jsonschema_specifications", "referencing", "tqdm"):
     data += copy_metadata(package)
 data.append((str(payload / "ocr"), "ocr"))

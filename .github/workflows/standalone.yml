@@ -1,7 +1,7 @@
 name: Standalone Windows
 on:
   push:
-    branches: [osii-standalone]
+    branches: [osii-standalone, 'osii-standalone-sync/**']
     tags: ['standalone-v*']
   workflow_dispatch:
 permissions:

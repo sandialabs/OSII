@@ -145,3 +145,34 @@ async def delete_collection_member(request: Request, collection_id: str, file_id
         return {"error": "unknown collection_id"}
 
     return remove_document_from_collection(osii_root, collection_id, file_id)
+
+
+@router.post("/{collection_id}/process")
+async def process_collection(request: Request, collection_id: str, payload: dict):
+    """Explicit reprocessing belongs to collection status, never simple Intake."""
+    from starlette.concurrency import run_in_threadpool
+    from osii.api.runs_routes import _start_run
+    from osii.domain.artifacts.source_files import get_source_file_path
+    def prepare():
+        root = request.app.state.osii_root.resolve()
+        if get_collection(root, collection_id) is None:
+            raise HTTPException(404, "Collection not found")
+        members = list_collection_documents(root, collection_id)
+        if not members or len(members) > 10000:
+            raise HTTPException(422, "Choose a collection with 1 to 10,000 documents")
+        paths, missing = [], []
+        for file_id in members:
+            path = get_source_file_path(root, request.app.state.shared_volume_root, request.app.state.upload_originals_root, file_id)
+            if path is None:
+                missing.append(file_id)
+            else:
+                paths.append(str(path))
+        if missing:
+            raise HTTPException(409, {"message": "Original files unavailable. Existing collection results are unchanged.", "file_ids": missing})
+        mode = payload.get("mode", "missing")
+        if mode not in {"missing", "reprocess"}:
+            raise HTTPException(422, "Choose missing or reprocess")
+        return _start_run(request, {"workflow": "library", "queue_paths": paths, "include_subfolders": False,
+            "processing_flow_id": payload.get("processing_flow_id", "bundled"), "extract_mode": mode,
+            "extraction_policy": "auto", "target_collection_id": collection_id})
+    return await run_in_threadpool(prepare)

@@ -1,3 +1,4 @@
+import { CollectionProcessingStatus } from "../components/CollectionProcessingStatus";
 // src/features/collections/pages/CollectionPage.tsx
 import { useEffect, useState } from "react";
 import {
@@ -184,6 +185,7 @@ export function CollectionPage() {
           </Stack>
         </Stack>
 
+        <CollectionProcessingStatus collectionId={collectionId} />
         <ScopeSection key={collectionId} id={`collection:${collectionId}:overview`} title="At a glance"><ScopeOverviewPanel scope={{ scope_type: "collection", collection_id: collectionId }} /></ScopeSection>
 
         <ScopeSection key={`${collectionId}:products`} id={`collection:${collectionId}:products`} title="Wikis & products">

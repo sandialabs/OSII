@@ -208,8 +208,9 @@ def add_extractor_plan(
     preview: dict,
     resolved_files: list[Path],
     extractor_overrides: dict[str, str] | None = None,
+    routes_snapshot: list[dict] | None = None,
 ) -> dict:
-    routes = load_extractor_routes()
+    routes = routes_snapshot if routes_snapshot is not None else load_extractor_routes()
     overrides = {
         str(extension).lower(): str(extractor)
         for extension, extractor in (extractor_overrides or {}).items()

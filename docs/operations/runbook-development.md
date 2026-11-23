@@ -140,17 +140,20 @@ Python dependencies and dashboard dependencies, then starts the application,
 baseline processors, and enabled processor modules on the host. Module dependencies
 are prepared once per project in that project's ignored `osii-env/`, separately
 from Core. Later starts reuse those environments and npm dependencies.
+Each Python service checks FastAPI and the Processor SDK in its own runtime
+before starting. Operation-test diagnostics include that runtime’s executable,
+package versions, and module paths. A passing Core import alone does not verify
+a separately installed processor environment.
 
 Modules include OpenCV/Tesseract (`8081`), CSV extraction (`8097`), collection
 tables (`8098`), Readable Wiki (`8099`), Concept/Entity Wiki (`8100`), Banyan
-(`8101`), and Tika (`8102`, managed Apache runtime on `9998`). The first Tika
-startup downloads and verifies its pinned jar; Java is included in its module
-environment. Baseline full-page Tesseract remains on `8080`; native Tesseract
+(`8101`). Baseline full-page Tesseract remains on `8080`; native Tesseract
 is still required for OCR. Nemotron and Wiki models require endpoint configuration.
 
-Set individual `OSII_ENABLE_TIKA=false`, `OSII_ENABLE_BANYAN=false`, or the other
+Set individual `OSII_ENABLE_BANYAN=false` or the other
 `OSII_ENABLE_…` switches in `.env` to omit a module's dependencies and startup.
-The complete switch list is in `.env.example`. Restart the stack after changing
+Switch names are derived from each manifest service ID; see the
+[manifest contract](../extending/processor-modules.md). Restart the stack after changing
 these flags. Banyan's implementation and launch configuration are both under
 `osii-processor-modules/banyan/`; no separate host project is needed.
 
@@ -206,8 +209,9 @@ processor module implementations remain under `osii-processor-modules/` and star
 unless opted out as described above. To deploy a tool independently or connect
 your own processor, start its service using its source instructions, register
 its base URL in Setup's custom Processor API services, then choose its
-extraction/enrichment route. External Tika can be
-configured as an endpoint; the host workflow no longer starts containers.
+extraction/enrichment route. The host workflow does not start containers.
+The former Tika adapter and managed Java runtime are archived on
+`archive/tika-2026-11-19`; `main` does not prepare or start them.
 
 ## Developer checks
 
@@ -218,7 +222,8 @@ needs verification on a Windows workstation.
 
 ## Choose startup and intake defaults
 
-`.env.example` documents the complete host configuration. Copy it to an ignored
+`.env.example` is a short startup template. Processing preferences belong in
+Setup, not in a list of per-processor environment variables. Copy it to an ignored
 `.env` once, or keep several private files and select one at startup:
 
 ```bash
@@ -234,14 +239,84 @@ changing environment settings. Paths are checkout-relative; values are literal,
 without shell variable interpolation. This selects a configuration file, not a
 user account. OSII-local has no login.
 
-Set `OSII_INTAKE_PRESET` to `text`, `search`, `summary-search`, or `full`.
-Intake displays the preset prominently and lets you switch for each batch, then
-adjust individual steps. These presets initialize the form, never start work.
-`text` needs no model; `search` adds semantic embeddings; `summary-search` adds
-summaries; `full` also enables the selected enrichment. Explicit API run payloads
-remain authoritative. Patterns, subfolders, hidden files, chunk sizes, and method
-overrides have documented `OSII_INTAKE_*` settings in the example file. The
-processor and model must be available before model-backed work can run.
+Use **Setup → Processing flows** to configure named reader/fallback chains,
+synthesis, and enrichment. **Test sample** uses the definition page (physical
+page 6) of the bundled text-layer NIST cloud-computing PDF and tiny text/model
+requests. It records endpoint diagnostics and a configuration fingerprint. Results open immediately with numbered steps and
+visible failures. Use **View errors** beside a flow to reopen its saved report,
+even after refreshing, and **Copy report** for full diagnostics.
+Changing the flow, models, or processor settings
+invalidates its displayed test result; passing a sample is not a future
+availability guarantee. Model-backed tests may use provider credits.
+
+**Intake & Queue always starts with All processes**: extract, synthesize, enrich,
+then embed. Select files and a flow, then queue. It does not ask users to rebuild
+reader rules or repeat endpoint tests after file selection. Paths and selected
+membership survive navigation to Setup in the same browser. The lightweight
+selection preview reads metadata only. Flow-backed queue submissions defer
+provider operation tests to the worker; errors remain retryable in the queue.
+Legacy APIs retain explicit operation flags and saved preset compatibility.
+
+Use a collection's **Processing status** panel to process existing text or reread
+originals while preserving extraction history. Current semantic vectors depend
+on the selected embedding model; this panel reports read, synthesis, enrichment,
+and embedding coverage. Queue cards contain process information, files,
+backends, errors, logs, and a copyable run report. Products are viewed on Files
+and Collections, not embedded in queue cards.
+
+Large-volume scanning is archived on `archive/large-volume-discovery-2026-11-19`.
+The beta launcher does not start its worker. Inventory history remains intact.
+
+Configuration ownership:
+
+| Location | Purpose |
+| --- | --- |
+| Root `.env` | Bootstrap paths, corporate trust, Python, application ports, global startup switches; optional deployment overrides |
+| Module `processor-module.toml` | Identity, command, default port, capabilities, offline request schema, startup schema/defaults |
+| Setup → Model connections | Provider endpoints, model selection, replaceable credentials; saved in `models.toml` and private `secrets.env` |
+| Setup → Processing defaults | Intake preferences, routing, bindings and processor settings; saved in `processors.toml` |
+| Processor → Startup settings | Manifest-defined lifecycle options; restart the service after saving |
+
+When `processors.toml` is absent, Core copies valid existing `tools.toml`
+configuration atomically, then removes the migrated file. Existing `processors.toml`
+always wins, even if invalid; parse errors are shown rather than falling back to
+an older file. The `[tools]` registration table and legacy API/import names remain
+compatible; only the filename changes. Routes, model bindings, request settings,
+and unknown extension sections are retained. Legacy YAML/JSON import remains
+supported. Avoid editing the old file after migration.
+
+Existing private `.env` files are never rewritten. `OSII_INTAKE_PRESET`,
+`OSII_INTAKE_CHUNK_SIZE`, `OSII_INTAKE_CHUNK_OVERLAP`,
+`OSII_INTAKE_SYNTHESIZER`, and `OSII_INTAKE_ENRICHER` remain bootstrap defaults
+until replaced in Setup (or `[intake]` in `processors.toml`). Saved Intake fields
+win over those old values; an explicit run payload wins over both. Legacy
+`OSII_INTAKE_INCLUDE_PATTERNS`, `OSII_INTAKE_EXCLUDE_PATTERNS`,
+`OSII_INTAKE_INCLUDE_SUBFOLDERS`, and `OSII_INTAKE_SHOW_HIDDEN` remain in
+`GET /api/intake/defaults` for API callers; the explicit discovery/browser controls
+own file selection in the current UI.
+
+### Advanced startup overrides
+
+You can still add these to an existing private env file; omitting them uses the
+application/manifest defaults. Module additions need no root-template edit.
+
+| Optional overrides | Default / effect |
+| --- | --- |
+| `OSII_SOURCE_KIND` | `auto`; `shared` labels a mounted source |
+| `OSII_ROOT`, `UPLOAD_ORIGINALS_ROOT`, `OSII_INVENTORY_DB` | Derived local runtime paths; keep inventory outside source roots |
+| `OSII_STORAGE_BACKEND`, `DATABASE_URL` | Sidecars by default; PostgreSQL requires explicit initialization, never an automatic migration |
+| `OSII_ACTIVE_PROFILE` | `development` |
+| `OSII_DEFAULT_EXTRACTOR`, `OSII_DEFAULT_ENRICHER` | Native text and statistics/keywords fallback; prefer Setup's saved routing and method choices |
+| `OSII_PROCESSOR_MODULES_DIR`, `OSII_PROCESSORS` | Trusted manifest root and additional Processor API URLs |
+| `OSII_ENABLE_<SERVICE_ID>` | `true`; `false` omits preparation, registration and startup |
+| Manifest `port_env` | Module's adapter port override; otherwise the manifest's `port` |
+| `OSII_LOCAL_EXTRACTOR_PORT`, `OSII_TESSERACT_PORT` | `8092`, `8080` |
+| `OSII_LOCAL_SYNTHESIZER_PORT`, `OSII_EMBEDDINGS_PORT`, `OSII_LOCAL_ENRICHER_PORT` | `8093`, `8085`, `8094` |
+
+For module startup fields, explicit environment values win over saved Setup
+choices, then manifest defaults. Setup shows the names of overriding variables
+without revealing values. Restarting a module from Setup rereads its saved
+startup settings. Global enable/port overrides require restarting `make dev`.
 
 For an OpenRouter or corporate OpenAI-compatible provider, set its API base URL,
 exact chat and embedding model IDs, and credentials. Shared `OPENAI_BASE_URL`

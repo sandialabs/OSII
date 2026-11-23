@@ -16,8 +16,7 @@ standard artifact. It never writes directly to the OSII store.
 
 Use one folder per module under `osii-processor-modules/`: implementation,
 `pyproject.toml`, configuration template, tests, and README stay together.
-`banyan/` is a consolidated example; `tika-adapter/` also demonstrates an owned
-runtime. Add a `processor-module.toml` to declare launch and registration metadata;
+`banyan/` is a consolidated example. Add a `processor-module.toml` to declare launch and registration metadata;
 OSII discovers it and derives enable/port switches automatically. No central Python
 list or `.env.example` edit is required. Follow the
 [manifest authoring guide](processor-modules.md). **Toolbox** is the frontend collection of tools.

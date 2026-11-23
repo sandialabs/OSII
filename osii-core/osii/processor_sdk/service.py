@@ -52,11 +52,41 @@ class Enricher(ABC):
         """Produce one or more standard, derived artifacts over a scope."""
 
 
+def _install_diagnostics(app: FastAPI, descriptor: ProcessorDescriptor) -> None:
+    from fastapi.responses import JSONResponse
+    from .diagnostics import environment, failure
+
+    @app.get("/v1/diagnostics")
+    def diagnostics():
+        return {"processor": descriptor.name, "python": environment()}
+
+    @app.exception_handler(HTTPException)
+    async def rejected(request, exc):
+        from fastapi.exception_handlers import http_exception_handler
+        from .diagnostics import redact
+        # Preserve the existing 422 detail while retaining wrapped import/read
+        # failures that would otherwise lose their traceback at the HTTP boundary.
+        if exc.status_code == 422 and isinstance(exc.detail, str) and isinstance(exc.__cause__, Exception):
+            return JSONResponse(status_code=422, headers=exc.headers, content={
+                "detail": redact(exc.detail), "diagnostics": failure(exc.__cause__,
+                    processor=descriptor.name, phase=request.url.path, runtime="Processor service")})
+        return await http_exception_handler(request, exc)
+
+    @app.exception_handler(Exception)
+    async def failed(request, exc):
+        return JSONResponse(status_code=500, content={"detail": failure(
+            exc, processor=descriptor.name, phase=request.url.path, runtime="Processor service")})
+
+
 def create_processor_app(processor: Extractor | Synthesizer | Embedder | Enricher) -> FastAPI:
+    from .access_logs import quiet_status_logs
+    quiet_status_logs()
     app = FastAPI(
         title=processor.descriptor.display_name,
         version=processor.descriptor.version,
     )
+
+    _install_diagnostics(app, processor.descriptor)
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -127,7 +157,11 @@ def create_openai_processor_app(
             f"descriptor must declare {model_capability!r} as a model requirement"
         )
 
+    from .access_logs import quiet_status_logs
+    quiet_status_logs()
     app = FastAPI(title=descriptor.display_name, version=descriptor.version)
+
+    _install_diagnostics(app, descriptor)
 
     @app.get("/health")
     def health() -> dict[str, str]:

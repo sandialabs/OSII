@@ -1081,7 +1081,7 @@ and rejects changed evidence rather than silently attaching stale locations.
 ### Extraction routing setup
 
 `GET /api/extractor-routes` returns `routes` and the active `path` to
-`tools.toml`. `PUT /api/extractor-routes` preserves other tool configuration and
+`processors.toml`. `PUT /api/extractor-routes` preserves other tool configuration and
 validates primary and fallback file-type compatibility.
 
 `POST /api/extractor-routes/import` accepts `{"toml": "..."}` (up to 1 MiB)
@@ -1093,13 +1093,113 @@ Processor administration records expose `resolved_models` and `model_error`
 for per-service model assignment. Missing bindings inherit enabled compatible
 library defaults; explicit disabled or missing bindings report a setup error.
 
-### Apache Tika processor module configuration
+### Saved Intake and processor startup defaults
 
-Save the upstream address with `PUT /api/admin/processor-settings/tika` and
-`{"config": {"tika_endpoint": "http://your-tika:9998", "chunk_chars": 4000}}`.
-Both `tika` and `tika_catchall` intake routes use these saved settings. The
-adapter exposes the standard `/v1/descriptor` and `/v1/extract` endpoints;
-`/health` checks the wrapper and `/upstream-health?tika_endpoint=...` checks
-Apache Tika. The normal development stack prepares and manages Apache Tika
-automatically; `OSII_TIKA_MANAGED=false` selects an externally managed runtime. See the
-[Apache Tika adapter guide](../extractor-routing.md#apache-tika-processor-module).
+`GET /api/intake/defaults` keeps the existing response fields. `PUT` at the same
+path accepts a partial object with `preset`, `chunk_size`, `chunk_overlap`,
+`synthesizer`, `enricher`, or legacy discovery-default fields. Unknown keys,
+invalid types/presets, and invalid chunk sizes/overlap return 422 without writing.
+Saved fields under `[intake]` in `processors.toml` override old startup
+`OSII_INTAKE_*` values. Explicit run payloads remain authoritative; saving does
+not create a job or change queued/running work.
+
+`GET /api/admin/processor-settings/startup` returns `path` and `processors`
+with service `id`, `processor_id`, `display_name`, manifest `schema`, saved
+`config`, and `environment_overrides` (names only). Modules without startup
+fields are omitted. `PUT /api/admin/processor-settings/startup/{service_id}`
+accepts `{"config": {...}}`, validates against the manifest, and saves under
+`[processor_startup.<service-id>]`. It returns `restart_required: true`; it does
+not restart or interrupt the service. Unsupported services return 404, invalid
+settings return 422. The launcher rereads the file for each service start, with
+explicit environment overrides taking precedence. Existing
+`/api/admin/processor-settings/{processor_name}` remains the per-request settings
+API, independent of lifecycle settings.
+
+`processors.toml` replaces the old filename `tools.toml`. The first load copies
+valid legacy settings when the new file is absent, then removes the migrated file;
+an existing new file always wins. `[tools]` registration tables and existing
+API payloads remain compatible. Configuration status names the new file
+`processors`; the old Python `tools_path()` import remains an alias.
+
+### Explicit Intake operation tests
+
+`POST /api/intake/preflight` accepts `processors` (up to eight
+`{"name": "processor.id", "kind": "extractor" | "synthesizer"}` entries) and
+`embed` (boolean). It uses registered endpoints, saved processor configuration,
+and model bindings to execute tiny synthetic inputs without canonical writes.
+Each result contains processor identity, `ok`, detail or redacted diagnostics,
+and the response includes `tested_at`. This is an explicit, potentially billable
+operation, not an automatic health poll. Invalid targets return 422.
+
+Processor SDK services expose `GET /v1/diagnostics` for processor identity and
+Python/package information. Unexpected operation failures return HTTP 500 with
+a structured diagnostic `detail`, including the processor's traceback and Python
+environment. Existing typed successful responses and 422 validation behavior
+remain compatible. Run items may include a `diagnostics` array; embedding failures
+may include run-level diagnostics. Older services/runs need not have these fields.
+
+
+Intake preflight results include `runtime` when the processor provides
+`/v1/diagnostics`: its own Python executable, module paths, and package versions.
+This is separate from Core's error environment. Sample tests support PDF, image,
+plain-text, and CSV readers based on declared extensions. If no synthetic input
+is supported, `ok` is null and the result explicitly says no operation was tested.
+The test never labels that case as passed.
+
+SDK operation errors wrapped as HTTP 422 retain their existing string `detail`
+and add `diagnostics` with the original exception chain. This preserves validation
+compatibility while making lazy dependency/import failures visible to Intake.
+
+### Explicit model capability test
+
+`POST /api/admin/model-providers/{provider_id}/test-model` accepts
+`{"model": "catalog-model-id", "capability": "chat"}` (or `embedding`).
+It performs one small inference request and returns `ok`, `model`, `capability`,
+optional `dimensions` for embeddings, or `detail` on failure. It does not change
+default assignments or write library artifacts. Clients must invoke it only on
+explicit selection or testing, never periodic status refreshes. Existing health
+and provider configuration endpoints remain compatible.
+
+Model provider GET/PUT payloads support optional `display_name` (up to 200
+characters), persisted in `models.toml`. Updating it changes the friendly label
+without renaming stable provider IDs, defaults, credentials, or processor bindings.
+
+
+### Beta Intake and named processing flows
+
+- `GET /api/processing-flows` lists built-in and saved named flows, routing order,
+  method choices, fingerprint, and any matching sample-test report.
+- `PUT /api/processing-flows/{id}` saves `name`, ordered `routes`,
+  `synthesizer_name`, `enricher_name`, `chunk_size`, and `chunk_overlap` in
+  `processors.toml`. Route validation enforces declared input types. Tests are
+  invalidated on edits. The bundled and advanced-OCR flows can be customized.
+- `POST /api/processing-flows/{id}/test` tests each reader/fallback with the
+  definition page (physical page 6) of bundled
+  `scripts/demo-data/nist-cloud-computing.pdf` where appropriate, then tiny
+  synthesis, enrichment, and embedding requests. Reports include runtime/error
+  diagnostics. A chain passes when at least one reader passes; failed optional
+  fallbacks remain visible. Other steps must all pass. No library artifacts are
+  written. Configuration fingerprints include the bundled sample’s content and page,
+  preventing reuse of results after sample or settings changes.
+- `POST /api/runs` accepts optional `processing_flow_id`. Such jobs always run
+  extraction, synthesis, enrichment, and embeddings, with route/method/settings
+  snapshots in durable payloads and `processing_flow` in run reports. They do not
+  repeat model preflight while queueing. Older callers and explicit flags remain
+  compatible when no flow ID is supplied. Runtime provider outages can still fail
+  work; existing retries preserve completed phases and vectors.
+- `POST /api/resolve` accepts `metadata_only: true` for lightweight file previews
+  without hashing originals, resolving processor rules, or invoking models.
+- `POST /api/collections/{id}/process` accepts `processing_flow_id` and `mode`
+  (`missing` or `reprocess`). It resolves only collection members and queues a
+  library workflow tagged with the collection ID. Missing originals return a
+  diagnostic HTTP 409 without changing historical results.
+
+Scan inventory and recursive discovery UI are archived on
+`archive/large-volume-discovery-2026-11-19`. Main preserves read access to
+`/api/volume` history but returns HTTP 410 for inventory mutations. Its normal
+launcher no longer starts `inventory-worker`. Standalone archived volume APIs
+remain available to the archive implementation; no inventory evidence is reset.
+
+Flow sample-test result entries include a `step` identifier (`extract`,
+`synthesize`, `enrich`, or `embed`) for presentation independent of processor
+names. Saved reports lacking these identifiers remain readable by the UI.

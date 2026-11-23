@@ -43,7 +43,7 @@ On Windows PowerShell:
 
 The command performs these visible data-only steps:
 
-1. It copies the bundled Purcell PDF into `osii-data/source/example-documents`.
+1. It copies the bundled text-layer NIST cloud-computing PDF into `osii-data/source/example-documents`.
 2. It exports the Iris and Wine datasets bundled with scikit-learn into
    temporary ZIP archives, then safely unpacks their CSV partitions and data
    cards beneath `osii-data/source/example-datasets`.

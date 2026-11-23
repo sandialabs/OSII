@@ -27,8 +27,8 @@ import urllib.request
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 # The loader uses only the standard library; startup works before uv sync.
 sys.path.insert(0, str(REPOSITORY_ROOT / "osii-core"))
-from osii.processor_modules import active_processors, modules_directory, enabled, ModuleManifestError
 from osii.library_lock import LibraryLock
+from osii.processor_modules import active_processors, modules_directory, enabled, ModuleManifestError, load_startup_settings
 SERVICE_DISPLAY_NAMES = {
     "extractor": "Python text-layer PDF and Office extractor",
     "ocr": "Tesseract OCR — full page",
@@ -38,7 +38,6 @@ SERVICE_DISPLAY_NAMES = {
     "model-bridge": "Ollama/OpenAI-compatible HTTP adapter (not Ollama itself)",
     "api": "OSII backend API and grounded chat",
     "worker": "sequential intake worker",
-    "inventory-worker": "file metadata inventory worker",
     "dashboard": "dashboard web interface",
 }
 
@@ -203,11 +202,11 @@ def build_environment(core_only: bool) -> dict[str, str]:
     # Never import home-directory settings over a repository's existing config.
     new_configuration = not any(
         (configuration_root / name).exists()
-        for name in ("models.toml", "tools.toml", "models.yml", "tools.yml", "secrets.env")
+        for name in ("models.toml", "processors.toml", "tools.toml", "models.yml", "tools.yml", "secrets.env")
     )
     configuration_root.mkdir(parents=True, exist_ok=True)
     if new_configuration and previous_configuration_root is not None:
-        for name in ("models.toml", "tools.toml", "models.yml", "tools.yml", "secrets.env"):
+        for name in ("models.toml", "processors.toml", "tools.toml", "models.yml", "tools.yml", "secrets.env"):
             previous = previous_configuration_root / name
             if previous.is_file():
                 target = configuration_root / name
@@ -324,7 +323,6 @@ def prepare_dependencies(uv: str, npm: str, env: dict[str, str], *, core_only: b
             "--package",
             "osii",
             "--extra", "rag-haystack",
-            "--package",
             "--package", "osii-local-extractor",
             "--package", "osii-local-tesseract",
             "--package", "osii-local-synthesizer",
@@ -435,13 +433,6 @@ def service_commands(
             0,
         ),
         Service(
-            "inventory-worker",
-            (uv, "run", "--no-sync", "--package", "osii", "python", "-m",
-             "watchfiles", "--filter", "python", "--target-type", "function", "osii.volume.worker.main", "osii/volume"),
-            REPOSITORY_ROOT / "osii-core",
-            0,
-        ),
-        Service(
             "dashboard",
             (
                 npm,
@@ -509,13 +500,37 @@ def render_command(service: Service) -> str:
 
 def service_environment(service: Service, env: dict[str,str]) -> dict[str,str]:
     result={**env,**dict(service.environment)}
+    if service.processor_module:
+        processor = next(p for p in active_processors(modules_directory(env, REPOSITORY_ROOT), env) if p.id == service.name)
+        saved = load_startup_settings(env).get(service.name, {})
+        result.update(processor.startup_environment(env, saved))
     if service.name not in {"api","worker"}:
         result.pop("DATABASE_URL",None)
         result.pop("OSII_STORAGE_BACKEND",None)
     return result
 
 
+
+def verify_python_runtime(service: Service, env: dict[str, str]) -> None:
+    """Probe the exact project/interpreter command used by this service."""
+    if "python" not in service.command:
+        return
+    position = service.command.index("python")
+    command = [*service.command[:position], "python", "-c",
+        "import sys, fastapi, osii.processor_sdk; "
+        "print('Python:', sys.executable); print('FastAPI:', fastapi.__file__)"]
+    result = subprocess.run(command, cwd=service.working_directory,
+        env=service_environment(service, env), capture_output=True, text=True)
+    if result.returncode:
+        name = service.display_name or SERVICE_DISPLAY_NAMES.get(service.name, service.name)
+        raise RuntimeError(f"{name}: Python dependency check failed before startup. "
+            f"Run make dev (Windows: scripts/osii.ps1 dev) to prepare this environment. "
+            f"Project: {service.working_directory}\n{result.stdout}{result.stderr}")
+    print(f"[check:{service.name}] {result.stdout.strip()}", flush=True)
+
+
 def start_service(service: Service, env: dict[str, str]) -> subprocess.Popen[bytes]:
+    verify_python_runtime(service, env)
     display_name = service.display_name or SERVICE_DISPLAY_NAMES.get(service.name, service.name)
     print(f"[dev] Starting {display_name}...")
     kwargs: dict[str, object] = {
@@ -571,6 +586,7 @@ class CapabilitySupervisor:
         service = self.services[service_id]
         if self._reachable(service_id):
             raise RuntimeError(f"{service_info(service)[0]} is already running externally.")
+        verify_python_runtime(service, self.env)
         kwargs: dict[str, object] = {
             "args": service.command,
             "cwd": service.working_directory,

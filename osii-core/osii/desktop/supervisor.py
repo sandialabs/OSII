@@ -246,9 +246,8 @@ class Supervisor:
             self.start_control(reserved.pop("control"))
             for name in (*SERVICES, "api"):
                 self.wait_ready(self.services[name])
-            for name in ("worker", "inventory-worker"):
-                service = self.services[name] = Service(name)
-                self.spawn(service)
+            worker = self.services["worker"] = Service("worker")
+            self.spawn(worker)
             self.stopping.wait(0.25)
             self.check_processes()
             return {"url": self.services["api"].url, "token": self.token, "profile": profile}
@@ -347,7 +346,7 @@ class Supervisor:
             if process and not service.stopped and process.poll() is not None:
                 self.record(name, "unexpected_exit", exit_code=process.returncode)
                 service.stopped = True
-                if name in {"api", "worker", "inventory-worker"}:
+                if name in {"api", "worker"}:
                     raise RuntimeError(f"OSII's {name} stopped unexpectedly. Close the library and reopen it to recover queued work.")
 
     def close_library(self) -> None:

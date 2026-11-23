@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from osii.extraction.banyan_extractor import PdfDefaultExtractor
-from osii.extraction.tika_extractor import TikaCatchallExtractor
 from osii.extraction.native_text_extractor import NativeTextExtractor
 
 
@@ -16,8 +15,6 @@ def dispatch_extract(
 ) -> dict:
     if extractor_name == "native_text":
         extractor = NativeTextExtractor()
-    elif extractor_name in {"tika", "tika_catchall"}:
-        extractor = TikaCatchallExtractor()
     elif extractor_name in {"banyan_ingest", "banyan-extract", "banyan", "pdf_default"}:
         extractor = PdfDefaultExtractor()
     else:

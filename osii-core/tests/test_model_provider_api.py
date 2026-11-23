@@ -1,3 +1,4 @@
+import pytest
 import json
 import os
 from pathlib import Path
@@ -79,7 +80,7 @@ def test_corporate_preset_roundtrips_without_a_new_protocol(client):
     config = (Path(os.environ["OSII_CONFIG_DIR"]) / "models.toml").read_text()
     assert 'type = "openai-compatible"' in config
     assert 'preset = "corporate"' in config
-    assert str(Path(os.environ["OSII_CONFIG_DIR"]) / "secrets.env") in saved["credential_help"]
+    assert saved["credential_help"] == ""
 
 
 def test_corporate_preset_rejects_incompatible_transport(client):
@@ -247,8 +248,7 @@ def test_openai_environment_exposes_generic_runtime_defaults(client, monkeypatch
     assert selected_processor("embedder") == "openai.embedder"
     assert selected_processor("synthesizer") == "openai.synthesizer"
     assert provider["credential_writable"] is False
-    assert "OPENAI_API_KEY" in provider["credential_help"]
-    assert "restart" in provider["credential_help"]
+    assert provider["credential_help"] == "OSII is using OPENAI_API_KEY from its startup environment."
     assert "alias-key" not in str(payload)
 
     blocked = client.put("/api/admin/model-providers/openai-compatible/credential",
@@ -287,7 +287,7 @@ def test_new_external_default_accepts_setup_key_when_environment_key_is_empty(cl
 
 
 def test_openai_environment_accepts_container_secret_file(client, monkeypatch, tmp_path):
-    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
+    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "false")
     secret = tmp_path / "openai_api_key"
     secret.write_text("mounted-secret\n", encoding="utf-8")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -340,7 +340,7 @@ def test_openai_health_validates_selected_embedding_model(client, monkeypatch):
     }
 
 
-def test_ollama_models_are_discovered_and_allowlisted_pull_runs(client, monkeypatch):
+def test_ollama_models_are_discovered_and_any_named_model_can_be_pulled(client, monkeypatch):
     monkeypatch.setattr(
         "osii.api.model_provider_routes.requests.post",
         lambda *_, **__: FakeResponse(payload={"embeddings": [[0.1, 0.2, 0.3]]}),
@@ -374,8 +374,16 @@ def test_ollama_models_are_discovered_and_allowlisted_pull_runs(client, monkeypa
         time.sleep(0.01)
     assert job["status"] == "complete"
 
-    denied = client.post("/api/admin/model-providers/minilm/models/pull", json={"model": "deepseek-r1"})
-    assert denied.status_code == 403
+    for model in ("deepseek-r1", "user/custom-model:tag", "some-future-model:latest"):
+        started = client.post("/api/admin/model-providers/minilm/models/pull", json={"model": model})
+        assert started.status_code == 200
+        assert started.json()["model"] == model
+
+
+@pytest.mark.parametrize("model", [None, "", "  ", 12, ["model"]])
+def test_ollama_pull_requires_a_model_name(client, model):
+    result = client.post("/api/admin/model-providers/minilm/models/pull", json={"model": model})
+    assert result.status_code == 422
 
 
 def test_ollama_pull_stream_error_is_reported(client, monkeypatch):
@@ -417,6 +425,7 @@ def test_setup_rotates_startup_key_without_restart(client, monkeypatch, tmp_path
     providers = client.get("/api/admin/model-providers").json()["providers"]
     provider = next(item for item in providers if item["id"] == "openai-compatible")
     assert provider["credential_writable"] is True
+    assert provider["credential_help"] == "OSII is using OPENAI_API_KEY from its startup environment."
     for replacement in ("replacement-one", "replacement-two"):
         response = client.put("/api/admin/model-providers/openai-compatible/credential",
                               json={"api_key": replacement})
@@ -429,3 +438,115 @@ def test_setup_rotates_startup_key_without_restart(client, monkeypatch, tmp_path
         client.post("/api/admin/model-providers/openai-compatible/health")
         assert seen[0]["Authorization"] == f"Bearer {replacement}"
     assert __import__("os").environ["OPENAI_API_KEY"] == "bad-startup-key"
+
+
+@pytest.mark.parametrize("key_file_exists", [True, False])
+def test_optional_key_file_does_not_block_setup_or_local_replacement(client, monkeypatch, tmp_path, key_file_exists):
+    from osii.configuration import default_models_config, load_models_config
+    from osii.model_clients import _endpoint
+    key_file = tmp_path / "provider-key"
+    if key_file_exists:
+        key_file.write_text("previous-file-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://corporate.test/v1")
+    monkeypatch.setenv("OPENAI_API_KEY_FILE", str(key_file))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
+    monkeypatch.setenv("OSII_ENV_FILE", str(tmp_path / "saved-secrets.env"))
+    assert default_models_config()["models"]["openai-compatible"]["api_key_env"] == "OPENAI_API_KEY"
+    assert load_models_config()
+    response = client.get("/api/admin/model-providers")
+    assert response.status_code == 200
+    provider = next(p for p in response.json()["providers"] if p["id"] == "openai-compatible")
+    assert provider["credential_writable"]
+    saved = client.put("/api/admin/model-providers/openai-compatible/credential", json={"api_key": "replacement-from-setup"})
+    assert saved.status_code == 200
+    assert _endpoint("chat").api_key == "replacement-from-setup"
+    assert key_file.exists() == key_file_exists
+
+
+@pytest.mark.parametrize("capability,payload,ok", [
+    ("embedding", {"data": [{"embedding": [0.1, 0.2]}]}, True),
+    ("embedding", {"data": [{"embedding": []}]}, False),
+    ("embedding", {"data": [{"embedding": [float("nan")]}]}, False),
+    ("embedding", {"data": [{"embedding": ["text"]}]}, False),
+    ("chat", {"choices": [{"message": {"content": "OK"}}]}, True),
+    ("chat", {"choices": []}, False),
+])
+def test_explicit_model_probe_preserves_defaults(client, monkeypatch, capability, payload, ok):
+    from osii.configuration import load_models_config
+    client.put("/api/admin/model-providers/probe", json={"type": "openai", "base_url": "https://test.invalid/v1"})
+    before = load_models_config()
+    calls = []
+    monkeypatch.setattr("requests.post", lambda url, **kw: calls.append((url, kw)) or FakeResponse(payload=payload))
+    result = client.post("/api/admin/model-providers/probe/test-model", json={"model": "unknown-model", "capability": capability})
+    assert result.status_code == 200
+    assert result.json()["ok"] is ok
+    assert len(calls) == 1
+    assert calls[0][0].endswith("/embeddings" if capability == "embedding" else "/chat/completions")
+    assert load_models_config() == before
+
+
+def test_explicit_model_probe_validates_input(client):
+    assert client.post("/api/admin/model-providers/absent/test-model", json={"model": "x", "capability": "chat"}).status_code == 404
+    client.put("/api/admin/model-providers/probe", json={"type": "openai", "base_url": "https://test.invalid/v1"})
+    assert client.post("/api/admin/model-providers/probe/test-model", json={"model": "", "capability": "chat"}).status_code == 422
+
+
+def test_status_access_filter_retains_errors_and_actions():
+    import logging
+    from osii.processor_sdk.access_logs import StatusAccessFilter
+    filter_ = StatusAccessFilter()
+    def visible(method, path, status):
+        return filter_.filter(logging.LogRecord("uvicorn.access", logging.INFO, "", 0, "%s %s %s %s %s", ("client", method, path, "1.1", status), None))
+    assert not visible("GET", "/api/runs", 200)
+    assert not visible("GET", "/health", 200)
+    assert not visible("POST", "/api/admin/model-providers/discover", 200)
+    assert visible("GET", "/api/runs", 500)
+    assert visible("POST", "/api/admin/model-providers/discover", 401)
+    assert visible("POST", "/api/intake", 200)
+    assert visible("GET", "/api/objects", 200)
+
+
+def test_connection_display_name_is_editable_without_changing_identity(client, monkeypatch):
+    from osii.configuration import load_models_config
+    monkeypatch.setenv("OPENAI_API_KEY", "test-name-secret")
+    payload = {"type": "openai", "base_url": "https://openrouter.ai/api/v1", "chat_model": "chat", "embedding_model": "embedding", "enabled": True, "credential_env": "OPENAI_API_KEY"}
+    first = client.put("/api/admin/model-providers/rename-test", json=payload).json()["provider"]
+    before = load_models_config()
+    result = client.put("/api/admin/model-providers/rename-test", json={**first, "display_name": "Corporate · Research"})
+    assert result.status_code == 200
+    providers = client.get("/api/admin/model-providers").json()["providers"]
+    renamed = next(p for p in providers if p["id"] == "rename-test")
+    assert renamed["display_name"] == "Corporate · Research"
+    assert renamed["credential_present"]
+    assert "test-name-secret" not in result.text
+    after = load_models_config()
+    assert before["defaults"] == after["defaults"]
+    assert before["models"].keys() == after["models"].keys()
+    assert after["models"]["rename-test-embedding"]["display_name"] == "Corporate · Research"
+    assert renamed["chat_model"] == "chat" and renamed["embedding_model"] == "embedding"
+
+
+def test_connection_display_name_length_is_bounded(client):
+    response = client.put("/api/admin/model-providers/rename-test", json={"type": "openai", "base_url": "https://test.invalid/v1", "display_name": "x" * 201})
+    assert response.status_code == 422
+
+
+def test_ollama_model_probe_does_not_send_unrelated_openai_key(client, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "unrelated-cloud-secret")
+    calls = []
+    monkeypatch.setattr("requests.post", lambda url, **kw: calls.append((url, kw)) or FakeResponse(payload={"embeddings": [[0.1, 0.2]]}))
+    response = client.post("/api/admin/model-providers/minilm/test-model", json={"model": "all-minilm", "capability": "embedding"})
+    assert response.status_code == 200 and response.json()["ok"]
+    assert calls[0][1]["headers"] == {}
+
+
+def test_explicit_connection_credential_reference_wins_over_legacy_alias(client, monkeypatch):
+    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
+    payload = {"type": "openai", "base_url": "https://corporate.invalid/v1", "credential_env": "OSII_PROVIDER_CORPORATE_API_KEY"}
+    assert client.put("/api/admin/model-providers/openai-compatible", json=payload).status_code == 200
+    assert client.put("/api/admin/model-providers/openai-compatible/credential", json={"api_key": "separate-test-key"}).status_code == 200
+    from osii.domain.env_credentials import resolve_env_value
+    assert resolve_env_value("OSII_PROVIDER_CORPORATE_API_KEY")[0] == "separate-test-key"
+    provider = next(provider for provider in client.get("/api/admin/model-providers").json()["providers"] if provider["id"] == "openai-compatible")
+    assert provider["credential_env"] == "OSII_PROVIDER_CORPORATE_API_KEY"

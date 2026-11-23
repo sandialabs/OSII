@@ -727,6 +727,9 @@ export type IntakeResolveResponse = {
 };
 
 export type ProcessingRun = {
+  processing_flow?: {id: string; name: string; routes: Record<string, unknown>[]; fingerprint: string; test?: unknown} | null;
+  selection?: {inventory_selection_id?: number; paths: string[]; include_subfolders: boolean; include_patterns: string[]; exclude_patterns: string[]};
+  diagnostics?: Array<Record<string, unknown>>;
   batch_progress?: BatchProgress;
   id: string;
   status: "pending" | "queued" | "running" | "done" | "error" | string;
@@ -740,7 +743,7 @@ export type ProcessingRun = {
   tool_id?: string;
   tool_label?: string;
   scope?: ScopeDescribeRequest;
-  model_targets?: Record<string, { alias: string; model: string; endpoint_type?: string }>;
+  model_targets?: Record<string, { alias: string; model: string; endpoint?: string; endpoint_type?: string }>;
   input_summary?: { member_ids: string[]; text_chars: number; truncated_documents: number };
   expert_context?: string | null;
   operations?: {
@@ -773,7 +776,10 @@ export type ProcessingRun = {
     display: string;
     status: string;
     error?: string | null;
-    current_step?: string;
+    diagnostics?: Array<Record<string, unknown>>;
+    synthesizer?: string | null;
+    enricher?: string | null;
+    current_step?: string | null;
     steps?: Record<string, string>;
     extractor?: string | null;
     extraction_variant_id?: string | null;
@@ -822,6 +828,7 @@ export type ProcessorEndpoint = {
 
 export type ModelProvider = {
   id: string;
+  display_name?: string;
   type: "ollama" | "openai";
   preset?: "corporate";
   base_url: string;
@@ -876,7 +883,7 @@ export type SetupSummary = {
   configuration: {
     directory: string;
     active_profile: string;
-    files: Record<"models" | "tools" | "secrets", string>;
+    files: Record<"models" | "processors" | "secrets", string>;
     errors: Record<string, string>;
     generation: number;
   };

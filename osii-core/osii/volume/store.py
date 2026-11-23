@@ -195,19 +195,19 @@ class VolumeStore:
     @contextmanager
     def connect(self, *, project_processing: bool = False) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.path, timeout=30)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA busy_timeout=30000")
-        conn.execute("PRAGMA synchronous=FULL")
-        conn.execute("PRAGMA temp_store=FILE")
-        conn.execute("PRAGMA case_sensitive_like=ON")
-        conn.create_function(
-            "sample_key",
-            2,
-            lambda seed, key: hashlib.sha256(f"{seed}:{key}".encode()).hexdigest(),
-            deterministic=True,
-        )
         try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA busy_timeout=30000")
+            conn.execute("PRAGMA synchronous=FULL")
+            conn.execute("PRAGMA temp_store=FILE")
+            conn.execute("PRAGMA case_sensitive_like=ON")
+            conn.create_function(
+                "sample_key",
+                2,
+                lambda seed, key: hashlib.sha256(f"{seed}:{key}".encode()).hexdigest(),
+                deterministic=True,
+            )
             with conn:
                 if project_processing and self.processing_links is not None:
                     # A connection-local read projection only. Never migrate,
@@ -221,6 +221,20 @@ class VolumeStore:
 
     def initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                self._initialize_once()
+                return
+            except sqlite3.OperationalError as exc:
+                code = getattr(exc, "sqlite_errorcode", 0) & 0xFF
+                if code not in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED} or time.monotonic() >= deadline:
+                    raise
+                # Concurrent WAL transitions can fail immediately despite the
+                # busy timeout. Close all locks, then retry the atomic check.
+                time.sleep(0.05)
+
+    def _initialize_once(self) -> None:
         with self.connect() as conn:
             # API and worker can start simultaneously; schema inspection and
             # creation must share one lock, without executescript's implicit commit.

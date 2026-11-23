@@ -1,4 +1,4 @@
-"""Exercise the delivered executable using only a stdlib test driver on the builder."""
+"""Exercise the delivered executable from the builder."""
 from __future__ import annotations
 
 import argparse
@@ -19,6 +19,10 @@ import threading
 import time
 import urllib.error
 import urllib.request
+
+from osii.volume.models import ScanOptions
+from osii.volume.store import VolumeStore
+from osii.volume.worker import execute
 
 
 class Runtime:
@@ -205,16 +209,14 @@ def check(executable: Path) -> dict:
             assert api(session, "/health")["status"] == "ok"
             setup = api(session, "/api/admin/setup")
             assert setup["extraction_ready"] and not setup["ai_ready"], setup
-            runtime_ports = api(session, "/api/volume/runtime")["endpoints"]
-            assert all("127.0.0.1:" in endpoint for endpoint in runtime_ports.values())
-            # Real isolated directory scanners must survive freezing too.
-            source_id = api(session, "/api/volume/sources")["items"][0]["id"]
-            scan = api(session, f"/api/volume/sources/{source_id}/scan", {})
-            wait_run(session, "/api/volume/runs/" + str(scan["id"]))
             inventory = Path(profile["library"]) / "state" / "inventory.sqlite3"
             assert inventory.is_file()
-            run = api(session, "/api/runs", {"queue_paths": [str(original)], "run_extraction": True,
-                "synthesizer_name": "local.extractive-preview", "enricher_name": "local.stats-keywords", "build_embeddings": False})
+            flow = api(session, "/api/processing-flows")["default_flow_id"]
+            assert flow == "standalone-offline"
+            report = api(session, f"/api/processing-flows/{flow}/test", {})
+            assert report["ok"], report
+            assert {step["step"] for step in report["results"]} == {"extract", "synthesize", "enrich"}, report
+            run = api(session, "/api/runs", {"queue_paths": [str(original)], "processing_flow_id": flow})
             wait_run(session, "/api/runs/" + run.get("run_id", run["id"]))
             search = api(session, "/api/search", {"query": "calibration", "mode": "lexical"})
             assert search.get("results"), search
@@ -251,8 +253,16 @@ def check(executable: Path) -> dict:
         # Explicitly open the same real library from a fresh application profile,
         # rather than only testing this launcher's own saved-profile reopening.
         canonical = {path: path.read_bytes() for path in Path(profile["library"]).rglob("*.toml")}
+        # Seed inventory evidence using the archived scanner on the builder.
+        store = VolumeStore(inventory)
+        source_id = store.register_source(source)["id"]
+        scan_id = store.new_scan(source_id, ScanOptions(readers=1, isolate=False))
+        owner = "archived-inventory-fixture"
+        execute(store, store.claim(owner), owner, threading.Event())
+        assert store.run(scan_id)["status"] == "done"
         with closing(sqlite3.connect(inventory)) as connection:
             inventory_before = connection.execute("SELECT id,path,size_bytes,mtime_ns FROM entries ORDER BY id").fetchall()
+        assert any(row[1] == original.name for row in inventory_before)
         adopted = Runtime(executable, temporary / "separate-application")
         try:
             existing = adopted.request("create_profile", profile={"name": "Existing library", "source": str(source),
@@ -260,6 +270,8 @@ def check(executable: Path) -> dict:
             opened = adopted.request("open_profile", profile_id=existing["id"])
             assert api(opened, "/api/search", {"query": "calibration", "mode": "lexical"}).get("results")
             assert "Preserved collection" in json.dumps(api(opened, "/api/collections"))
+            entries = api(opened, "/api/volume/entries")["items"]
+            assert any(entry["name"] == original.name for entry in entries)
             assert all(path.read_bytes() == content for path, content in canonical.items())
             with closing(sqlite3.connect(inventory)) as connection:
                 assert connection.execute("SELECT id,path,size_bytes,mtime_ns FROM entries ORDER BY id").fetchall() == inventory_before
@@ -300,7 +312,7 @@ def check(executable: Path) -> dict:
             finally:
                 recovered.close()
     return {"status": "ok", "startup_seconds": startup_seconds,
-            "checks": ["private-runtime", "metadata-scan", "intake", "baseline-processing", "lexical-search", "library-lock", "model-connection", "semantic-search", "model-chat", "endpoint-disconnect", "restart", "helper-cleanup"]}
+            "checks": ["private-runtime", "offline-flow", "bundled-sample", "archived-inventory", "lexical-search", "library-lock", "model-connection", "semantic-search", "model-chat", "endpoint-disconnect", "restart", "helper-cleanup"]}
 
 
 if __name__ == "__main__":

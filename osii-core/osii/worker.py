@@ -8,6 +8,7 @@ import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from osii.processor_sdk.diagnostics import failure
 
 from osii.domain.processing.jobs import (
     append_log,
@@ -72,6 +73,7 @@ def execute_job(job: dict) -> None:
             enricher_config=payload.get("enricher_config") or {},
             collection_id=payload.get("collection_id") or None,
             staging=payload.get("staging"),
+            routes_snapshot=payload.get("routes_snapshot"),
         )
 
     run = get_run(job["run_id"])
@@ -170,6 +172,7 @@ def execute_job(job: dict) -> None:
                     error_phase="embedding",
                     finished_at=datetime.now(UTC).isoformat(),
                 )
+                run.setdefault("diagnostics", []).append(failure(exc, processor=str(run.get("embedding_target") or "selected embedder"), phase="embedding"))
                 if isinstance(exc, IncrementalEmbeddingError):
                     run["indexing_progress"] = {
                         key: value

@@ -147,7 +147,9 @@ def test_document_extraction_api_queues_only_the_selected_extractor(
     payload = queued.json()
     assert payload["status"] == "queued"
     run = client.get(f"/api/runs/{payload['run_id']}").json()
+    assert run["selection"]["paths"] == [str(source)]
     assert run["operations"] == {
+        "extractor_overrides": {".txt": "local.native-text"},
         "extract": True,
         "extract_mode": "reprocess",
         "extraction_policy": "save_variant",

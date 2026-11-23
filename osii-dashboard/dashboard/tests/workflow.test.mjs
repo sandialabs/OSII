@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { libraryWorkflowSteps } from "../src/domain/workflow.ts";
+import { libraryWorkflowSteps, queuePollInterval } from "../src/domain/workflow.ts";
 
 const ready = () => ({
   defaults: { extractor: "local.native-text", embedder: "openai.embedder" },
@@ -96,4 +96,84 @@ test("pixel source coordinates require dimensions and invalid boxes are ignored"
   assert.deepEqual(pageBoundingRegions([{ source_origin: { ...origin, bbox: [100, 200, 400, 600] } }], 1)[0].bbox, [0.1, 0.1, 0.4, 0.3]);
   assert.equal(pageBoundingRegions([{ source_origin: { page: 1, bbox: [0.8, 0.2, 0.1, 0.3] } }], 1).length, 0);
   assert.equal(pageBoundingRegions([{ source_origin: { page: 1, coordinate_space: "pdf-points", bbox: [1, 2, 4, 5] } }], 1).length, 0);
+});
+
+
+test("queue polling is slow when idle and fast through active transitions", () => {
+  assert.equal(queuePollInterval(), 30_000);
+  assert.equal(queuePollInterval([]), 30_000);
+  assert.equal(queuePollInterval([{status: "completed"}, {status: "error"}, {status: "paused"}]), 30_000);
+  for (const status of ["queued", "pending", "running", "pausing", "cancelling"]) {
+    assert.equal(queuePollInterval([{status: "completed"}, {status}]), 3000);
+  }
+});
+
+
+test("connection labels identify the service, independently of model names", async () => {
+  const {suggestedConnectionName, sameEndpoint} = await import("../src/features/models/connectionName.ts");
+  assert.equal(suggestedConnectionName("https://api.company.example/v1"), "Company");
+  assert.equal(suggestedConnectionName("http://localhost:11434"), "Local models");
+  assert.equal(suggestedConnectionName(""), "Connection");
+  assert.ok(sameEndpoint("https://EXAMPLE.com/v1/", "https://example.com/v1"));
+  assert.ok(!sameEndpoint("https://example.com/v1", "https://example.com/v2"));
+  assert.ok(!sameEndpoint("", ""));
+});
+
+
+test("endpoint name suggestions work for arbitrary hosts and IP addresses", async () => {
+  const {suggestedConnectionName} = await import("../src/features/models/connectionName.ts");
+  assert.equal(suggestedConnectionName("https://openrouter.ai/api/v1"), "Openrouter");
+  assert.equal(suggestedConnectionName("https://www.api.invented.example/v1"), "Invented");
+  assert.equal(suggestedConnectionName("http://192.168.1.150:8080/v1"), "Model server");
+});
+
+test("flow reports distinguish fatal errors from successful fallback recovery", async () => {
+  const {flowTestStatus, flowTestError, flowStepLabel} = await import("../src/domain/processingFlowTests.ts");
+  const failed = {processor: "reader-a", ok: false, diagnostics: {error: "No text returned"}};
+  const recovered = {step: "extract", ok: true, attempts: [failed, {processor: "reader-b", ok: true}]};
+  const report = {ok: true, tested_at: "2026-11-19T00:00:00Z", results: [recovered]};
+  assert.equal(flowTestStatus(report).label, "Ready · fallback used");
+  assert.equal(flowTestStatus({...report, ok: false}).label, "Needs attention");
+  assert.equal(flowTestStatus({...report, results: [{ok: true}]}).label, "Ready");
+  assert.equal(flowTestStatus(null).label, "Not tested");
+  assert.equal(flowTestError(failed), "No text returned");
+  assert.equal(flowTestError({ok: false, diagnostics: {error: 'processor failed: HTTP 500: {"detail":{"error":"No module named fastapi","traceback":"long trace"}}'}}), "No module named fastapi");
+  assert.match(flowTestError({ok: null}), /No compatible sample/);
+  assert.equal(flowStepLabel({step: "synthesize", processor: "custom-wiki", ok: false}), "Generate summaries");
+  assert.equal(flowStepLabel({step: "enrich", processor: "custom", ok: true}), "Enrich documents");
+});
+
+
+test("flow results put a late-stage failure ahead of successful reader checks", async () => {
+  const {flowTestEntries} = await import("../src/domain/processingFlowTests.ts");
+  const entries = flowTestEntries({ok: false, tested_at: "now", results: [
+    {ok: true, step: "extract"}, {ok: true, attempts: [{ok: false}, {ok: true}]}, {ok: false, step: "embed"},
+  ]});
+  assert.deepEqual(entries.map(entry => entry.index), [2, 1, 0]);
+  assert.deepEqual(entries.map(entry => entry.attention), [true, true, false]);
+});
+
+
+test("endpoint grouping keeps model aliases and distinct credentials intact", async () => {
+  const {groupModelConnections} = await import("../src/features/models/connectionName.ts");
+  const writing = {id: "base", type: "ollama", base_url: "http://localhost:11434/", credential_env: "", chat_model: "writer"};
+  const embedding = {id: "minilm", type: "ollama", base_url: "http://localhost:11434", credential_env: "", embedding_model: "embedder"};
+  const separate = {...writing, id: "private", credential_env: "OTHER_KEY"};
+  const groups = groupModelConnections([writing, embedding, separate]);
+  assert.equal(groups.length, 2);
+  assert.deepEqual(groups[0].members.map(member => member.id), ["base", "minilm"]);
+  assert.equal(groups[0].primary.id, "base");
+  assert.equal(groups[0].name, "Local models");
+  assert.equal(groups[0].members[1], embedding);
+  assert.equal(embedding.embedding_model, "embedder");
+  assert.equal(groupModelConnections([{...writing, display_name: "My service"}])[0].name, "My service");
+});
+
+
+test("legacy generated service-plus-model labels no longer identify the connection by one model", async () => {
+  const {connectionDisplayName} = await import("../src/features/models/connectionName.ts");
+  const connection = {id:"stable-alias", type:"openai", base_url:"https://api.company.example/v1", credential_env:"CORP_KEY", chat_model:"vendor/gpt-example", display_name:"Company - GPT Example"};
+  assert.equal(connectionDisplayName(connection), "Company");
+  assert.equal(connectionDisplayName({...connection, display_name:"Research service"}), "Research service");
+  assert.equal(connection.id, "stable-alias");
 });

@@ -15,14 +15,14 @@ containers.
 
 ## Where configuration lives
 
-Model and tool configuration belongs to the active library profile, not the
+Model and processor configuration belongs to the active library profile, not the
 source documents or portable `.osii` sidecar. The launcher keeps an existing
 `profiles/<profile-id>/deployment/` directory beside its local `data/` directory:
 
 ```text
 deployment/
 ├── models.toml      # connection aliases, model names, and defaults
-├── tools.toml       # processors, bindings, routing, and setting overrides
+├── processors.toml  # processors, bindings, routing, and setting overrides
 └── secrets.env      # API keys; never returned by the API
 ```
 
@@ -36,23 +36,23 @@ Set `OSII_CONFIG_DIR` to select a different location. Installed launchers still
 use their writable profile workspace: a signed application installation is
 not an appropriate place for mutable configuration or credentials.
 The selected source may be on a read-only shared drive; configuration stays local.
+Existing `tools.toml` is copied once when `processors.toml` is absent; the old file
+is removed only after the new file is successfully saved. Use processors.toml for subsequent edits.
 
-Setup offers **Corporate endpoint** alongside OpenAI-compatible and Ollama.
-The corporate choice is a named preset for the same OpenAI-compatible protocol;
-enter your organization's base URL, model names, and key. No corporate address
+For a corporate endpoint, choose **OpenAI-compatible endpoint**, give it a clear
+connection name, and enter your organization's API base URL and key. No corporate address
 is built into OSII. Configure corporate certificate trust in the startup
 environment, not by disabling TLS checks.
 
 Each processing-method entry identifies whether it is bundled Core code, an
 optional service, a configured processor, or a model connection. **Copy path**
 copies the effective TOML location; **Implementation and configuration source**
-shows the code or endpoint setting behind the entry. Apache Tika is a separate
-Apache service supplied by the optional Compose `ocr` profile. Nemotron is an
+shows the code or endpoint setting behind the entry. Nemotron is an
 older PDF compatibility adapter, shown only when `NEMOTRON_BASE_URL` or an
 extraction rule explicitly selects it; OSII does not bundle its model.
 
 `models.toml` names reusable connections such as `base`, `mid`, `top`, and
-`minilm`. `tools.toml` binds a processor capability to one of those aliases.
+`minilm`. `processors.toml` binds a processor capability to one of those aliases.
 Changing a binding takes effect on the next operation; the processor does not
 restart. Both files are re-read when used. If an edit contains invalid TOML,
 OSII keeps the last valid generation and reports the line and column in the
@@ -83,7 +83,7 @@ model = "all-minilm"
 capabilities = ["embedding"]
 ```
 
-The corresponding `tools.toml` states whether a processor is self-contained or
+The corresponding `processors.toml` states whether a processor is self-contained or
 which connection it may use:
 
 ```toml
@@ -133,9 +133,9 @@ First-run selections are Ollama's
 Both are US-origin defaults sized for an ordinary workstation. If either is
 absent, Setup can explicitly call Ollama's documented
 [`/api/pull`](https://docs.ollama.com/api/pull) endpoint and show download
-progress. The default download allowlist contains only those two names and can be extended through
-`OSII_OLLAMA_ALLOWED_MODELS`. OSII installs no Ollama Python package and
-bundles no server or weights.
+progress. The starter models are suggestions, not restrictions. OSII accepts any Ollama
+model name for an explicit download request; Ollama reports registry/download
+errors. OSII installs no Ollama Python package and bundles no server or weights.
 
 Ollama reports some registry and model errors inside its streaming response
 even when the HTTP request itself succeeded. OSII treats those updates as
@@ -186,7 +186,7 @@ the environment-variable name; a locally saved value lives in `secrets.env`.
 `OPENAI_API_KEY` is the conventional default name. Process environment values
 take precedence over the file.
 
-Extraction remains local through the Python extractor, Apache Tika, Tesseract,
+Extraction remains local through the Python extractor, Tesseract,
 or a custom Processor API extractor. `make dev` automatically selects the
 bundled OpenAI-compatible embedding/synthesis/chat adapters when
 `OPENAI_BASE_URL` is configured, and keeps Ollama, BM25, and extractive
@@ -257,3 +257,86 @@ The bridge exposes live docs at <http://localhost:8095/docs>. Provider-specific
 Processor mounts are `/ollama/embedder`, `/ollama/synthesizer`,
 `/openai/embedder`, `/openai/synthesizer`, `/openai/embedder`, and
 `/openai/synthesizer`.
+
+## Connection setup and configuration ownership
+
+Add a connection using its name, API base URL and optional key, then **Save and check**.
+The dialog keeps endpoint, saved-key controls, **Save and check**, and model
+selection together. A friendly **Connection name** at the bottom is suggested
+from the endpoint hostname and chosen model. Configure lets you edit that name
+without changing stable connection IDs, credential references, or bindings.
+Adding an already-connected endpoint offers the existing connection; making a
+separate connection requires an explicit choice. Existing duplicates are not deleted.
+Save and check saves credentials and reads the endpoint's model catalog; it does not establish
+that every listed model works. Choose a listed language or embedding model to save
+and test that capability with one small inference request. OSII uses provider capability metadata to filter choices without maintaining
+a model-name allowlist. Missing metadata does not add repetitive labels; test
+the selected model to check that it works. Tests may
+incur provider charges. Manual model entry is no longer offered.
+
+Corporate installations should prepopulate `models.toml` with endpoint URLs,
+model choices and capability defaults. Keep keys in private `secrets.env` via
+Setup or a deployment secret source, referenced by name in TOML. Do not duplicate
+saved endpoints in `.env`: environment model settings seed fresh profiles;
+saved model configuration remains authoritative. `.env` controls startup paths,
+certificate/proxy trust and deployment overrides.
+
+Processor manifests declare discovery, service startup and built-in defaults.
+`processors.toml` stores user overrides: routing, processor settings, model
+bindings, lifecycle settings and Intake defaults. It is not a module inventory
+that contributors must maintain. Setup reads and writes this file; hand editing
+is optional. Legacy `[tools]` table names remain compatible with existing APIs.
+
+Idle dashboard status refreshes run every 30 seconds; active Intake jobs update
+every 3 seconds. Completed logs stop polling. Hidden tabs use React Query's
+foreground-only polling and refresh on focus. Worker recovery heartbeats remain
+unchanged. Routine successful status GETs are quiet in terminal access logs;
+failed requests, warnings, exceptions and lifecycle messages remain visible.
+
+The beta Intake UI always starts with **All processes**: extraction, synthesis, embeddings
+and enrichment. Choose a named flow in Intake; configure and sample-test its
+reader/fallback order and methods in Setup. Legacy API presets remain compatible.
+The endpoint help button explains model selection and installing/starting Ollama.
+
+
+Ollama model choices are unrestricted. The **? Endpoints and models** help explains
+what Ollama is, links to [installation](https://ollama.com/download), the
+[model library](https://ollama.com/library), and the
+[getting-started guide](https://docs.ollama.com/quickstart). Install and start Ollama,
+follow a model’s download instructions (such as `ollama pull model-name`), then
+**Save and check** to refresh installed models and test your selection in OSII.
+
+
+### Finding connections and test results
+
+Connection names identify the endpoint service, independently of its models.
+Suggestions use a word from the URL hostname (with generic API/WWW prefixes
+removed), never a corporate service-name list or a selected model name. Existing
+custom names and stable IDs are preserved. Writing and embedding models each
+have a single row containing selection, **Test**, and inline verification/error
+feedback. Credentials remain masked and replaceable.
+
+Setup's primary view contains connections and compact processing-flow cards.
+Detailed processor tuning is under **Processor settings & diagnostics**. Each
+flow has **Test sample** and **View results** or **View errors** beside its status.
+Testing opens a focused results dialog; saved reports remain accessible after
+refresh. The dialog shows numbered stages, readable processor errors and service
+addresses, with full tracebacks/runtime details behind **Technical details** and
+**Copy report**. A recovered reader failure is labeled **Ready · fallback used**;
+a genuinely failed flow is **Needs attention**. Changing the flow or relevant
+configuration invalidates its test result rather than showing stale success.
+
+Models sharing the same protocol, normalized endpoint URL, and credential
+reference are presented under one connection card. Legacy model aliases (for
+example, `base` and `minilm`) remain distinct internally: editing/testing a model
+uses its own alias, so defaults, processor bindings, and saved indexes keep their
+identities. Different credential references are never grouped. Renaming or
+editing the shared endpoint updates its grouped configuration entries; the
+confirmation for removing a connection identifies the group being removed.
+
+Earlier automatic hostname-plus-model labels display as endpoint names when they
+match the currently configured model; unrelated custom names stay intact. New
+connections receive their own generated credential reference in private secret
+storage, so setting a key does not replace another endpoint's key. This requires
+no extra root `.env` entries. Explicit legacy credential references remain
+compatible. **Test** sends a probe without rewriting model configuration.

@@ -63,9 +63,11 @@ class ProcessorClient:
             with urllib.request.urlopen(http_request, timeout=self.timeout) as response:
                 result = json.load(response)
         except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")[:2000]
+            body = exc.read(131073).decode("utf-8", errors="replace")
+            if len(body) > 131072:
+                body = body[:131072] + " [diagnostic body truncated at 128 KiB]"
             raise ProcessorClientError(
-                f"processor request failed: HTTP {exc.code}: {body or exc.reason}"
+                f"processor {self.base_url}{path} failed: HTTP {exc.code}: {body or exc.reason}"
             ) from exc
         except (urllib.error.URLError, json.JSONDecodeError) as exc:
             raise ProcessorClientError(f"processor request failed: {exc}") from exc
@@ -75,5 +77,10 @@ class ProcessorClient:
         try:
             with urllib.request.urlopen(f"{self.base_url}{path}", timeout=self.timeout) as response:
                 return json.load(response)
+        except urllib.error.HTTPError as exc:
+            body = exc.read(131073).decode("utf-8", errors="replace")
+            if len(body) > 131072:
+                body = body[:131072] + " [diagnostic body truncated at 128 KiB]"
+            raise ProcessorClientError(f"processor discovery at {self.base_url}{path} failed: HTTP {exc.code}: {body or exc.reason}") from exc
         except (urllib.error.URLError, json.JSONDecodeError) as exc:
             raise ProcessorClientError(f"processor discovery failed: {exc}") from exc

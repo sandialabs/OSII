@@ -1,7 +1,7 @@
 # Model provider bridge
 
 HTTP-only adapters for Ollama and generic OpenAI-compatible services. The
-service never bundles a model or stores credentials. OSII Setup may send an explicit, allowlisted pull request
+service never bundles a model or stores credentials. OSII Setup may send an explicit pull request for any Ollama model
 directly to a separately running Ollama service. Configure models explicitly,
 run it on port 8095, and use these Processor API base URLs:
 

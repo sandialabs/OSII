@@ -1,6 +1,9 @@
+import { useState } from "react";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import CheckCircleOutline from "@mui/icons-material/CheckCircleOutline";
 import {
   Alert,
+  IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
   Box,
   Button,
   Chip,
@@ -35,7 +38,7 @@ export function ReadinessPanel<Id extends string>({
   completionLabel?: string;
 }) {
   const completed = steps.filter((step) => step.complete).length;
-  const next = steps.find(step => !step.complete);
+  const [help, setHelp] = useState(false);
   return (
     <Paper
       variant="outlined"
@@ -52,9 +55,10 @@ export function ReadinessPanel<Id extends string>({
           spacing={1}
           alignItems={{ sm: "center" }}
         >
-          <Typography variant="h6" fontWeight={700}>
-            Your path to search &amp; AI chat
+          <Stack direction="row" spacing={1} alignItems="center"><Typography variant="h6" fontWeight={700}>
+            Your path to AI search &amp; chat
           </Typography>
+          <IconButton aria-label="About the path to AI search and chat" onClick={() => setHelp(true)}><HelpOutlineIcon fontSize="small" /></IconButton></Stack>
           <Chip
             variant="outlined"
             color={
@@ -144,11 +148,6 @@ export function ReadinessPanel<Id extends string>({
             </Box>
           ))}
         </Box>
-        {!loading && !failed && next && <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} justifyContent="space-between" sx={{ borderTop: "1px solid", borderColor: "divider", pt: 1.5 }}>
-          <Stack spacing={0.25}><Typography variant="body2" fontWeight={700}>Next: {next.label}</Typography><Typography variant="body2" color="text.secondary">{next.detail}</Typography></Stack>
-          <Button variant="contained" color="secondary" onClick={() => onStep(next.id)} sx={{ flexShrink: 0, alignSelf: "start" }}>{next.action || "Review " + next.label.toLowerCase()}</Button>
-        </Stack>}
-        <Typography variant="caption" color="text.secondary">Keyword search and source browsing work earlier. Summaries and enrichments add optional knowledge products.</Typography>
         {failed && (
           <Alert severity="warning">
             {hasPrevious
@@ -156,6 +155,7 @@ export function ReadinessPanel<Id extends string>({
               : "Readiness unavailable. Try refreshing."}
           </Alert>
         )}
+        <Dialog open={help} onClose={() => setHelp(false)} fullWidth maxWidth="sm"><DialogTitle>Your path to AI search &amp; chat</DialogTitle><DialogContent><Stack spacing={2}>{steps.map((step, index) => <Box key={step.id}><Typography fontWeight={700}>{index + 1}. {step.label}</Typography><Typography variant="body2">{step.detail}</Typography></Box>)}</Stack></DialogContent><DialogActions><Button onClick={() => setHelp(false)}>Close</Button></DialogActions></Dialog>
       </Stack>
     </Paper>
   );

@@ -177,9 +177,7 @@ def test_powershell_reloads_trust_settings_without_polluting_the_shell(trust_sta
 def test_supervisor_http_requires_private_token(tmp_path):
     supervisor = DEV_STACK.CapabilitySupervisor(
         services=[],
-        env={
-            "OSII_TIKA_PORT": "19998",
-        },
+        env={},
         uv="uv",
         token="private-token",
     )
@@ -217,7 +215,7 @@ def test_supervisor_rejects_unknown_services_and_actions():
     except KeyError:
         pass
     try:
-        supervisor.action("tika", "run-shell")
+        supervisor.action("banyan", "run-shell")
         raise AssertionError("unknown action unexpectedly accepted")
     except ValueError:
         pass
@@ -265,10 +263,8 @@ def test_service_plan_uses_nested_components_without_concurrent_uv_sync():
     assert "banyan_extract.integrations.osii_extractor:app" in by_name["banyan"].command
     environments = {dict(service.environment)["UV_PROJECT_ENVIRONMENT"]
                     for service in services if service.working_directory.is_relative_to(ROOT / "osii-processor-modules")}
-    assert len(environments) == 5
-    assert by_name["tika"].working_directory == ROOT / "osii-processor-modules" / "tika-adapter"
-    assert "tika_adapter.main:app" in by_name["tika"].command
-    assert by_name["tika"].port == 8102
+    assert len(environments) == 4
+    assert "tika" not in by_name
     assert str(ROOT / "osii-env") not in environments
 
 
@@ -276,15 +272,15 @@ def test_toolbox_opt_out_retains_manual_controls_and_core_only_omits_services():
     env = {"OSII_START_PROCESSOR_MODULES": "false"}
     services = DEV_STACK.service_commands("uv", "npm", env, core_only=False)
     tools = [s for s in services if s.working_directory.is_relative_to(ROOT / "osii-processor-modules")]
-    assert len(tools) == 7 and all(not s.start_automatically for s in tools)
+    assert len(tools) == 6 and all(not s.start_automatically for s in tools)
     assert all("--no-sync" not in s.command for s in tools)
     core = DEV_STACK.service_commands("uv", "npm", {}, core_only=True)
-    assert {s.name for s in core} == {"api", "worker", "inventory-worker", "dashboard"}
+    assert {s.name for s in core} == {"api", "worker", "dashboard"}
     by_name = {s.name: s for s in core}
     assert "osii.main:app" in by_name["api"].command
     assert "osii.worker.main" in by_name["worker"].command
     assert "--target-type" in by_name["worker"].command
-    assert "osii.volume.worker.main" in by_name["inventory-worker"].command
+    assert "inventory-worker" not in by_name
 
 
 def test_toolbox_environment_registers_custom_ports_without_changing_routes(monkeypatch, tmp_path):
@@ -309,7 +305,7 @@ def test_toolbox_environment_registers_custom_ports_without_changing_routes(monk
     assert "http://127.0.0.1:18081" in DEV_STACK.build_environment(False)["OSII_PROCESSORS"].split(",")
 
 
-@pytest.mark.parametrize("enabled, core_only, expected", [(True, False, 5), (False, False, 0), (True, True, 0)])
+@pytest.mark.parametrize("enabled, core_only, expected", [(True, False, 4), (False, False, 0), (True, True, 0)])
 def test_toolbox_dependencies_prepare_once_per_isolated_environment(monkeypatch, tmp_path, enabled, core_only, expected):
     for manifest in (ROOT / "osii-processor-modules").glob("*/processor-module.toml"):
         target = tmp_path / "osii-processor-modules" / manifest.parent.name
@@ -498,14 +494,19 @@ def test_default_startup_leaves_chat_selection_to_saved_models(monkeypatch, tmp_
     assert "CHAT_PROVIDER_CHAIN" not in env
 
 
-def test_public_env_template_uses_current_model_and_endpoint_keys():
+def test_public_env_template_is_bootstrap_only_with_optional_current_provider_keys():
     settings = DEV_STACK.load_dotenv(ROOT / ".env.example")
-    assert {"OSII_CHAT_MODEL", "OSII_EMBEDDING_MODEL", "OPENAI_BASE_URL"} <= settings.keys()
+    assert settings['UV_SYSTEM_CERTS'] == 'true'
+    assert 'OSII_ENABLE_MCP' not in settings
+    assert not any(name.startswith('OSII_INTAKE_') for name in settings)
+    assert not any(name.startswith('OSII_ENABLE_') and name != 'OSII_ENABLE_MCP' for name in settings)
+    template = (ROOT / '.env.example').read_text()
+    assert '# OPENAI_BASE_URL=' in template and '# OSII_CHAT_MODEL=' in template
     assert not ({"CHAT_PROVIDER", "CHAT_PROVIDER_CHAIN", "CHAT_MODEL", "OSII_MODEL_BASE_URL", "OSII_MODEL_API_KEY", "OPENAI_CHAT_MODEL", "OPENAI_SYNTHESIS_MODEL"} & settings.keys())
 
 
 def test_individual_module_opt_out_skips_environment_and_service(monkeypatch, tmp_path):
-    env = {'OSII_ENABLE_TIKA': 'false', 'OSII_ENABLE_BANYAN': 'false', 'OSII_ENABLE_READABLE_WIKI': 'false'}
+    env = {'OSII_ENABLE_BANYAN': 'false', 'OSII_ENABLE_READABLE_WIKI': 'false'}
     services = DEV_STACK.processor_module_services('uv', env)
     assert not {'tika','banyan','readable-wiki'} & {service.name for service in services}
     assert {'concept-entity-wiki','csv-extractor'} <= {service.name for service in services}
@@ -552,3 +553,33 @@ if __name__ == '__main__':
 """)
     result = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=50)
     assert result.returncode == 0, result.stderr
+
+
+def test_runtime_probe_uses_the_services_exact_environment(monkeypatch, tmp_path):
+    service = DEV_STACK.Service("extractor", ("uv", "run", "--no-sync", "--package", "osii-local-extractor", "python", "-m", "uvicorn", "app.main:app"), tmp_path, 8092)
+    calls = []
+    monkeypatch.setattr(DEV_STACK.subprocess, "run", lambda command, **kw: calls.append((command, kw)) or subprocess.CompletedProcess(command, 0, "Python: app-env/python", ""))
+    DEV_STACK.verify_python_runtime(service, {"UV_PROJECT_ENVIRONMENT": str(tmp_path / "app-env")})
+    command, options = calls[0]
+    assert command[:6] == list(service.command[:6])
+    assert options["env"]["UV_PROJECT_ENVIRONMENT"] == str(tmp_path / "app-env")
+    assert options["cwd"] == tmp_path
+    monkeypatch.setattr(DEV_STACK.subprocess, "run", lambda *a, **kw: subprocess.CompletedProcess(a[0], 1, "", "ModuleNotFoundError: No module named fastapi"))
+    with pytest.raises(RuntimeError, match="extractor.*dependency check failed"):
+        DEV_STACK.verify_python_runtime(service, {})
+
+
+def test_module_restart_rereads_saved_startup_settings_and_retains_env_precedence(tmp_path, startup_module):
+    config = tmp_path / 'config'
+    config.mkdir()
+    env = {'OSII_CONFIG_DIR': str(config), 'OSII_PROCESSOR_MODULES_DIR': str(startup_module)}
+    service = next(s for s in DEV_STACK.processor_module_services('uv', env) if s.name == 'example-cache')
+    assert DEV_STACK.service_environment(service, env)['EXAMPLE_CACHE_PORT'] == '9998'
+    # Legacy filename is readable before Core has performed the copy.
+    (config / 'tools.toml').write_text('[processor_startup.example-cache]\nEXAMPLE_CACHE_ENABLED=false\nEXAMPLE_CACHE_PORT=19998\n')
+    first = DEV_STACK.service_environment(service, env)
+    assert first['EXAMPLE_CACHE_ENABLED'] == 'false' and first['EXAMPLE_CACHE_PORT'] == '19998'
+    (config / 'processors.toml').write_text('[processor_startup.example-cache]\nEXAMPLE_CACHE_ENABLED=true\nEXAMPLE_CACHE_PORT=29998\n')
+    second = DEV_STACK.service_environment(service, env)
+    assert second['EXAMPLE_CACHE_ENABLED'] == 'true' and second['EXAMPLE_CACHE_PORT'] == '29998'
+    assert DEV_STACK.service_environment(service, {**env, 'EXAMPLE_CACHE_PORT': '39998'})['EXAMPLE_CACHE_PORT'] == '39998'

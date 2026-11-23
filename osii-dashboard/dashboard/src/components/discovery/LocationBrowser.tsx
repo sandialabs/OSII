@@ -115,8 +115,10 @@ export function LocationBrowser({
   useEffect(() => {
     if (open) {
       setFiles(selected);
-      setAddress(initialPath ?? "");
-      void load(initialPath);
+      const last = initialPath || (!boundaryPath ? localStorage.getItem("osii:last-folder") : null);
+      setAddress(last ?? "");
+      setPage(null);
+      if (last) void load(last);
     } else release();
     return release;
   }, [open]);
@@ -318,7 +320,7 @@ export function LocationBrowser({
           <Button
             variant="contained"
             disabled={!page || busy || Boolean(error)}
-            onClick={() => page && onFolder?.(page.current_path)}
+            onClick={() => { if (page) { localStorage.setItem("osii:last-folder", page.current_path); onFolder?.(page.current_path); } }}
           >
             Use this location
           </Button>
@@ -328,7 +330,7 @@ export function LocationBrowser({
             disabled={
               !files.length || files.length > 10000 || total > 1024 ** 3 || busy
             }
-            onClick={() => onFiles?.(files)}
+            onClick={() => { if (page) localStorage.setItem("osii:last-folder", page.current_path); onFiles?.(files); }}
           >
             Use {files.length} {files.length === 1 ? "file" : "files"}
           </Button>

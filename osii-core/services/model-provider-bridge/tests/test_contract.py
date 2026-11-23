@@ -485,3 +485,13 @@ def test_local_saved_key_rotation_reaches_generation_headers(monkeypatch, tmp_pa
         assert CLIENTS["openai"].headers(capability="chat")["Authorization"] == f"Bearer {key}"
     monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "false")
     assert CLIENTS["openai"].headers(capability="chat")["Authorization"] == "Bearer bad-startup-key"
+
+
+def test_local_replacement_overrides_optional_missing_key_file(monkeypatch, tmp_path):
+    from osii_model_provider_bridge.env_credentials import resolve_secret
+    monkeypatch.setenv("OPENAI_API_KEY_FILE", str(tmp_path / "provider-key"))
+    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
+    secrets = tmp_path / "secrets.env"
+    monkeypatch.setenv("OSII_ENV_FILE", str(secrets))
+    secrets.write_text('OPENAI_API_KEY="local-replacement"\n')
+    assert resolve_secret("OPENAI_API_KEY") == "local-replacement"

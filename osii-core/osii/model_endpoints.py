@@ -35,7 +35,8 @@ def _url(value: str, capability: str) -> str:
 
 
 def endpoint_from_environment(capability: str, *, default_url: str = "",
-                              environment: Mapping[str, str] | None = None) -> ModelEndpoint:
+                              environment: Mapping[str, str] | None = None,
+                              resolve_credentials: bool = True) -> ModelEndpoint:
     """Explicit capability URLs never inherit another endpoint's credentials.
 
     A capability key/file can also override a legacy shared endpoint's key.
@@ -59,18 +60,21 @@ def endpoint_from_environment(capability: str, *, default_url: str = "",
     key = ""
     for name in names:
         path = env.get(name + "_FILE", "").strip()
-        if path:
+        if path and resolve_credentials and url:
             try:
                 file = Path(path).expanduser()
                 if file.stat().st_size > 65536:
                     raise ValueError()
                 key = file.read_text(encoding="utf-8").strip()
             except (OSError, ValueError):
-                raise ValueError(f"Cannot read configured {capability} API key file") from None
+                raise ValueError(f"{name}_FILE points to an unreadable or invalid key file. Clear this optional setting or replace the key in Setup.") from None
+            selected = name
+            break
+        if path and not resolve_credentials:
             selected = name
             break
         if env.get(name, ""):
-            key, selected = env[name], name
+            key, selected = (env[name] if resolve_credentials else ""), name
             break
     if "\n" in key or "\r" in key:
         raise ValueError(f"Invalid {capability} API key: line breaks are not allowed")

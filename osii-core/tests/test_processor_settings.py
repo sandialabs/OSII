@@ -44,3 +44,23 @@ def test_processor_settings_reject_toml_incompatible_null(client):
         json={"config": {"temperature": None}},
     )
     assert response.status_code == 422
+
+
+def test_manifest_startup_settings_validate_persist_and_report_environment_overrides(client, monkeypatch, startup_module):
+    from osii.configuration import load_tools_config
+    monkeypatch.setenv('EXAMPLE_CACHE_ENABLED', 'true')
+    modules = client.get('/api/admin/processor-settings/startup').json()
+    example = next(item for item in modules['processors'] if item['id'] == 'example-cache')
+    assert example['schema']['properties']['EXAMPLE_CACHE_PORT']['default'] == 9998
+    assert example['environment_overrides'] == ['EXAMPLE_CACHE_ENABLED']
+    from pathlib import Path
+    assert Path(modules['path']).name == 'processors.toml'
+    endpoint = '/api/admin/processor-settings/startup/example-cache'
+    config = {'EXAMPLE_CACHE_ENABLED': False, 'EXAMPLE_CACHE_PORT': 19998}
+    saved = client.put(endpoint, json={'config': config})
+    assert saved.status_code == 200 and saved.json()['restart_required']
+    assert load_tools_config()['processor_startup']['example-cache'] == config
+    for bad in ({'EXAMPLE_CACHE_ENABLED': 'false'}, {'EXAMPLE_CACHE_PORT': 0}, {'DATABASE_URL': 'not-a-module-setting'}):
+        assert client.put(endpoint, json={'config': bad}).status_code == 422
+        assert load_tools_config()['processor_startup']['example-cache'] == config
+    assert client.put('/api/admin/processor-settings/startup/missing', json={'config': {}}).status_code == 404

@@ -87,7 +87,7 @@ class NativeTextExtractor(BaseExtractor):
     display_name = "Native Python Text Extractor"
     description = (
         "Runs entirely in the OSII Python process. Supports text files, text-layer "
-        "PDFs, DOCX, PPTX, and XLSX without Tika or OCR."
+        "PDFs, DOCX, PPTX, and XLSX without OCR."
     )
     version = "1.0"
 
@@ -124,7 +124,7 @@ class NativeTextExtractor(BaseExtractor):
         else:
             raise RuntimeError(
                 f"The host-native extractor does not support '{suffix or 'files without an extension'}'. "
-                "Exclude that file type during development or start Tika/OCR "
+                "Exclude that file type during development or select a compatible extractor "
                 "from Setup to test that extraction path."
             )
 

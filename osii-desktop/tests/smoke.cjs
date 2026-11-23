@@ -78,8 +78,18 @@ async function main() {
     if (process.platform === 'win32') metrics.idleMemory = windowsProcessMemory(application.process().pid);
     const noToken = await fetch(new URL('/health', page.url()));
     assert.equal(noToken.status, 403, 'The API must reject requests outside the Electron session');
-    const run = await api('/api/runs', 'POST', { queue_paths: [documents], run_extraction: true,
-      synthesizer_name: 'local.extractive-preview', enricher_name: 'local.stats-keywords', build_embeddings: false });
+    await page.goto(new URL('/intake', page.url()).href);
+    await page.getByRole('combobox', { name: 'Processing flow' }).getByText('Text and keywords (offline)').waitFor();
+    await page.getByRole('button', { name: 'Browse files', exact: true }).click();
+    const browser = page.getByRole('dialog');
+    await browser.getByLabel('Folder path').fill(documents);
+    await browser.getByRole('button', { name: 'Go', exact: true }).click();
+    await browser.getByText('evidence.txt', { exact: true }).click();
+    await browser.getByRole('button', { name: 'Use 1 file', exact: true }).click();
+    const queued = page.waitForResponse(response => new URL(response.url()).pathname === '/api/runs'
+      && response.request().method() === 'POST');
+    await page.getByRole('button', { name: 'Queue 1 file', exact: true }).click();
+    const run = await (await queued).json();
     const identifier = run.run_id || run.id;
     assert.ok(identifier, JSON.stringify(run));
     let finished;

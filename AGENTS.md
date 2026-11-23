@@ -86,17 +86,15 @@ The agent's job is to execute the human's command—nothing more.
   feature branch for shared work, fetch `origin`, check that its worktree is
   clean, and merge `origin/main` into it. Land shared fixes on `main`,
   including portable fixes found while working on a delivery branch.
-- Until the deployment branches are aligned with the restored `main`, bring
-  over needed shared commits and prerequisites with `git cherry-pick -x <commit>`.
-  Align each deployment branch on a temporary integration branch. A full merge
-  during this transition can carry packaging or hosted-code deletions from the
-  rollback. Review the result for the intended platform behavior before
-  updating the delivery branch.
-- After alignment, merge `origin/main` forward into each deployment branch.
-  Run the relevant profile checks. Windows changes need the installer checks
-  when they affect delivery. Hosted changes must preserve authorization, data
-  visibility, and PostgreSQL behavior. Treat migrations and deployment as
-  separate operations.
+- Standalone is aligned with `main`. Fetch and merge `origin/main` forward
+  into `osii-standalone` in the private repository. For public integration,
+  merge `upstream/main` into a branch based on `upstream/osii-standalone` and
+  transfer any reviewed Standalone-specific changes. Keep private ancestry
+  out of public pushes.
+- Use an `osii-standalone-sync/<name>` integration branch in the private
+  repository to run CI and Standalone Windows before advancing the deployment
+  branch. Review conflicts for deployment behavior and keep shared fixes on
+  `main`. Server follows its own branch guidance.
 
 ## Current delivery scope
 
@@ -108,7 +106,8 @@ The agent's job is to execute the human's command—nothing more.
   packaging. Use the unsigned pilot label until signing and clean standard-user
   acceptance are complete.
 - Use local sidecar storage for the desktop release. Preserve existing library
-  data and keep the canonical inventory SQLite database independent.
+  data and keep the canonical inventory SQLite database independent. The
+  current dashboard uses direct Intake and preserves archived inventory evidence.
 
 - The supported startup path on main is `make dev` (Windows:
   `.\\scripts\\osii.ps1 dev`). Keep automatic dependency setup, logs, health

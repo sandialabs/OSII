@@ -61,8 +61,8 @@ def test_native_routes_leave_unsupported_binaries_for_explicit_handling(
     routes = load_extractor_routes()
 
     assert choose_extractor_for_path(Path("report.pdf"), routes) == "local.native-text"
-    assert extractor_chain_for_path(Path("report.pdf"), routes) == ["local.native-text", "tika"]
-    assert choose_extractor_for_path(Path("archive.bin"), routes) == "tika"
+    assert extractor_chain_for_path(Path("report.pdf"), routes) == ["local.native-text"]
+    assert choose_extractor_for_path(Path("archive.bin"), routes) == "local.native-text"
 
 
 def test_native_text_extractor_rejects_scanned_pdf(tmp_path: Path):
@@ -100,3 +100,18 @@ def test_extractor_route_fallbacks_reject_duplicates_and_primary():
 
     assert any("primary extractor" in error for error in primary_errors)
     assert any("duplicate fallback" in error for error in duplicate_errors)
+
+
+@pytest.mark.parametrize("primary,fallbacks,expected", [
+    ("tika", ["local.native-text"], ["local.native-text"]),
+    ("tika_catchall", [], ["local.native-text"]),
+    ("local.native-text", ["tika"], ["local.native-text"]),
+    ("tika", ["local.tesseract-page-ocr", "local.native-text"], ["local.tesseract-page-ocr", "local.native-text"]),
+])
+def test_archived_tika_routes_adapt_without_rewriting_configuration(tmp_path, primary, fallbacks, expected):
+    import tomli_w
+    path = tmp_path / "routes.toml"
+    path.write_text(tomli_w.dumps({"routes": [{"name": "saved", "extensions": [".pdf"], "extractor": primary, "fallbacks": fallbacks}]}))
+    original = path.read_bytes()
+    assert extractor_chain_for_path(Path("file.pdf"), load_extractor_routes(path)) == expected
+    assert path.read_bytes() == original

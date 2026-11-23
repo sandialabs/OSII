@@ -23,8 +23,8 @@ an AI model.
 
 ## What you can do
 
-- Choose files directly or discover shared-drive metadata with resumable scans,
-  then select a bounded set to process.
+- Choose files from local folders or a connected share and process them with a
+  named flow. The desktop defaults to offline extraction, previews, and keywords.
 - Extract text, add OCR alongside it, and inspect text or mathematical Markdown
   with source locations.
 - Browse files and collections, search by keywords or document meaning, and ask
@@ -73,12 +73,11 @@ Open [the dashboard](http://localhost:5173), process your files, and explore the
 library. Source-development processor modules start automatically and are available in **Setup**.
 Set individual `OSII_ENABLE_…` switches in `.env` to omit modules.
 Keep the terminal open; **Ctrl+C** stops OSII. For sample files, use
-`make demo` (Windows: `.\scripts\osii.ps1 demo`). Install Tesseract for OCR;
-Apache Tika and its Java runtime are prepared automatically on first startup;
-configure optional model connections in **Setup**. The
+`make demo` (Windows: `.\scripts\osii.ps1 demo`). Install Tesseract for OCR when
+running from source. Configure optional model connections in **Setup**. The
 [Banyan processor module](osii-processor-modules/banyan/README.md) uses its
 own local Nemotron endpoint configuration. Keep credentials outside Git.
-Choose an Intake preset for selected files; the startup guide covers provider
+Choose a processing flow for selected files. The startup guide covers provider
 profiles and configurable processing defaults.
 
 See the [startup guide](docs/operations/runbook-development.md) for setup and

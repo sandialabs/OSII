@@ -30,7 +30,7 @@ def discover_models(base_url: str, api_key: str = "", *, protocol: str = "openai
         if response.status_code in {401, 403}:
             raise CatalogError("The endpoint rejected access. Check its API key and permissions.")
         if not response.ok or 300 <= response.status_code < 400:
-            raise CatalogError("This endpoint did not publish a model list. You can enter its model name manually.")
+            raise CatalogError("This endpoint did not publish a model list. Check the API base address or ask its administrator to enable model discovery.")
         try:
             payload = response.json()
             rows = payload.get("data", payload.get("models"))
@@ -45,18 +45,24 @@ def discover_models(base_url: str, api_key: str = "", *, protocol: str = "openai
                 modalities = (row.get("architecture") or {}).get("output_modalities", [])
                 if modalities and not any(value in modalities for value in ("text", "embeddings")):
                     continue
-                caps = row.get("capabilities") or []
-                caps = [name for name in caps if name in {"chat", "embedding", "rerank"}] if isinstance(caps, list) else []
-                if path == "/embeddings/models" or "embeddings" in modalities:
-                    caps = ["embedding"]
-                elif "text" in modalities:
-                    caps = ["chat"]
-                elif row.get("endpoints"):
-                    caps = [name for name in ("chat", "embedding", "rerank")
-                            if ("embed" if name == "embedding" else name) in row["endpoints"]]
+                caps = model_capabilities(row, embedding_catalog=path == "/embeddings/models")
                 if capability and caps and capability not in caps:
                     continue
                 models[identifier] = {"id": identifier, "name": str(row.get("name") or identifier)[:300], "capabilities": caps}
         except (ValueError, AttributeError, TypeError):
             raise CatalogError("The endpoint returned an unreadable model list. Check the API base address.") from None
     return sorted(models.values(), key=lambda model: (model["name"].casefold(), model["id"]))
+
+
+def model_capabilities(row: dict, *, embedding_catalog: bool = False) -> list[str]:
+    """Provider declarations, never a model-name allowlist or inferred verification."""
+    caps = row.get("capabilities") or []
+    caps = [name for name in caps if name in {"chat", "embedding", "rerank"}] if isinstance(caps, list) else []
+    modalities = (row.get("architecture") or {}).get("output_modalities", [])
+    if embedding_catalog or "embeddings" in modalities:
+        return ["embedding"]
+    if "text" in modalities:
+        return ["chat"]
+    if row.get("endpoints"):
+        return [name for name in ("chat", "embedding", "rerank") if ("embed" if name == "embedding" else name) in row["endpoints"]]
+    return caps

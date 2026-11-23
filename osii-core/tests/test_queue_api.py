@@ -199,7 +199,7 @@ def test_browse_and_preview_report_processed_files(
         {
             "extension": ".pdf",
             "extractor": "local.native-text",
-            "fallbacks": ["tika"],
+            "fallbacks": [],
             "count": 1,
             "sample": ["finished.PDF"],
         }
@@ -295,7 +295,7 @@ def test_intake_readiness_reports_bundled_tools(
     monkeypatch.delenv("NEMOTRON_BASE_URL", raising=False)
 
     monkeypatch.setattr(capability_readiness, "discover_remote_processors", lambda **_: [
-        {"name": "tika", "kind": "extractor", "base_url": "http://127.0.0.1:8102"},
+        {"name": "toolbox.tesseract-opencv", "kind": "extractor", "base_url": "http://127.0.0.1:8081"},
     ])
     response = client.get("/api/intake/readiness")
 
@@ -303,14 +303,15 @@ def test_intake_readiness_reports_bundled_tools(
     payload = response.json()
     native = next(item for item in payload["extractors"] if item["id"] == "native_text")
     assert native["available"] is True
-    tika = next(item for item in payload["extractors"] if item["id"] == "tika")
-    assert tika["available"] is True
-    assert tika["bundled"] is False
-    assert tika["origin"]["label"] == "Processor module"
-    assert tika["origin"]["implementation"].endswith("osii-processor-modules/tika-adapter")
-    assert tika["origin"]["manifest"].endswith("processor-module.toml")
+    ocr = next(item for item in payload["extractors"] if item["id"] == "toolbox.tesseract-opencv")
+    assert ocr["available"] is True
+    assert ocr["bundled"] is False
+    assert ocr["origin"]["label"] == "Processor module"
+    assert ocr["origin"]["implementation"].endswith("osii-processor-modules/osii-tesseract")
+    assert ocr["origin"]["manifest"].endswith("processor-module.toml")
+    assert not any(item["id"] in {"tika", "tika_catchall"} for item in payload["extractors"])
     assert native["origin"]["label"] == "Bundled Core"
-    assert native["origin"]["configuration_file"].endswith("tools.toml")
+    assert native["origin"]["configuration_file"].endswith("processors.toml")
     assert not any(item["id"] == "pdf_default" for item in payload["extractors"])
     assert payload["synthesizers"] == []
     assert payload["embedders"][0]["available"] is False
@@ -715,7 +716,7 @@ def test_preview_directory_failure_is_actionable(client, temp_data_root, monkeyp
     monkeypatch.setattr(intake_routes, 'expand_queue_to_files', denied)
     response = client.post('/api/resolve', json={'queue_paths': [str(temp_data_root)]})
     assert response.status_code == 503
-    assert 'File inventory' in response.json()['detail']
+    assert 'Browse files' in response.json()['detail']
     assert 'PermissionError' in response.json()['detail']
     assert 'private platform details' not in response.text
 

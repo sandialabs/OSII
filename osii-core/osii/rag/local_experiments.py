@@ -11,7 +11,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-from osii.configuration import models_path, tools_path
+from osii.configuration import models_path, processors_path
 from osii.domain.scopes.search import build_scope_filters, file_matches_scope
 from osii.domain.services.search import dashboard_search
 from osii.rag.config import get_chat_settings
@@ -82,7 +82,7 @@ class _Session:
             revision = self.library.query("SELECT revision FROM datasets WHERE id='shared'")[0]["revision"]
             return (revision, configuration_stamp(self.root), tuple(d.file_id for d in self.library.documents(self.scope)))
         folder = self.root / "embeddings"
-        paths = [folder / "chunks/chunks.jsonl", models_path(), tools_path(), *folder.glob("segments.*"), *folder.glob("providers/*/*/segments.*")]
+        paths = [folder / "chunks/chunks.jsonl", models_path(), processors_path(), *folder.glob("segments.*"), *folder.glob("providers/*/*/segments.*")]
         return tuple((str(p), self._stat(p)) for p in sorted(set(paths)))
 
     def guard(self):

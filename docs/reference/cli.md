@@ -28,7 +28,7 @@ Backend API docs: http://localhost:8511/docs
 ```
 
 Press Ctrl+C once in the launch terminal to stop every process owned by this
-run. Open **Setup** in the dashboard to connect optional AI or Apache Tika.
+run. Open **Setup** in the dashboard to connect optional models and processors.
 The packaged baseline already includes full-page Tesseract OCR; bare-metal
 development requires the native Tesseract program to be installed first.
 
@@ -45,23 +45,13 @@ python -m osii.extraction.cli `
   --extractor pdf_default
 ```
 
-### Tika document extractor
+### Native document extractor
 ```powershell
 python -m osii.extraction.cli `
   ".\osii-data\source\reports\example.docx" `
   --data-root ".\osii-data\source" `
   --osii-root ".\osii-data\.osii" `
-  --extractor tika
-```
-
-### Tika catchall
-```powershell
-python -m osii.extraction.cli `
-  ".\osii-data\source\notes\experiment_log.txt" `
-  --data-root ".\osii-data\source" `
-  --osii-root ".\osii-data\.osii" `
-  --extractor tika_catchall `
-  --option chunk_chars=4000
+  --extractor native_text
 ```
 
 ---
@@ -155,7 +145,7 @@ python -m osii.build_collection `
 python -m osii.build_collection `
   --data-root "./osii-data/source" `
   --osii-root "./osii-data/.osii" `
-  --extractor tika
+  --extractor native_text
 ```
 
 ### Add context
@@ -326,7 +316,7 @@ python -m osii.rescan `
   --data-root ".\osii-data\source" `
   --osii-root ".\osii-data\.osii" `
   --apply `
-  --extractor tika
+  --extractor native_text
 ```
 
 ## Rescan apply mode with automatic routing
@@ -348,7 +338,7 @@ python -m osii.rescan `
   --data-root ".\osii-data\source" `
   --osii-root ".\osii-data\.osii" `
   --apply `
-  --extractor tika
+  --extractor native_text
 ```
 
 ## Build lexical search index without embeddings
@@ -392,7 +382,7 @@ The backend provides a single CLI entry point for running the full pipeline:
 
 Default behavior uses:
 
-- extractor: `tika`
+- extractor: `native_text`
 - file synthesizer: `describe`
 - folder synthesizer: `describe_folder`
 - collection synthesizer: `collection_firstn`

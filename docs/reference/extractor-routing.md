@@ -4,20 +4,34 @@
 
 Extractor routing determines which extractor processes each source file during an ingest run.
 
-The default route uses `local.native-text` for supported text-bearing formats
-and tries `tika` if that fails. Other formats route to `tika`. An unavailable
-Tika service is reported as such; scanned PDFs need OCR.
+The default route uses `local.native-text` for text-layer PDFs, Office files,
+and supported text formats. Scanned PDFs and images need an OCR flow. Unsupported
+formats produce an explicit error; choose a compatible processor in Setup.
 
 Routing is configured externally so extractor selection is not hardcoded in the run pipeline.
 
 ---
+
+## Named flows in Setup
+
+For the beta UI, use **Setup → Processing flows**. Every flow has a name,
+ordered file-type routes, primary reader and ordered fallbacks, synthesis and
+enrichment methods, and embedding chunk sizes. **Save & test sample** saves it
+under `[processing_flows.<id>]` in `processors.toml` and exercises bundled samples.
+Select that name in **Intake & Queue**. All processing steps run by default.
+A queued job holds a route snapshot; editing Setup cannot reorder its readers.
+The first matching extension wins; fallback order runs left to right.
+
+The top-level `[routes.extractor]` format below remains compatible for existing
+API callers. If customized, it appears as **Saved extraction routing** among
+named flows. It is not a second routing editor in the beta Setup interface.
 
 ## Config file
 
 Location:
 
 ```text
-<OSII application data>/profiles/<profile-id>/deployment/tools.toml
+<OSII application data>/profiles/<profile-id>/deployment/processors.toml
 ```
 
 ---
@@ -38,7 +52,7 @@ extensions = [".pdf"]
 
 [[routes.extractor]]
 name = "other-native"
-extractor = "tika"
+extractor = "local.native-text"
 fallbacks = []
 extensions = ["*"]
 ```
@@ -100,7 +114,7 @@ extensions = [".pdf"]
 
 [[routes.extractor]]
 name = "other-native"
-extractor = "tika"
+extractor = "local.native-text"
 fallbacks = []
 extensions = ["*"]
 ```
@@ -111,7 +125,6 @@ extensions = ["*"]
 
 Common extractor identifiers:
 - `local.native-text`
-- `tika`
 - `local.tesseract-page-ocr`
 - `toolbox.tesseract-opencv` when that optional service is registered
 
@@ -138,11 +151,6 @@ osii-core/osii/extraction/dispatcher.py
 - sends page images to Nemotron Parse
 - writes one page segment per page
 - writes `Picture` boxes to `artifacts/`
-
-### `tika_catchall`
-- intended as general fallback/default extractor
-- uses Apache Tika over HTTP
-- writes chunked text segments
 
 ---
 
@@ -175,7 +183,7 @@ Extractor routing is externalized because:
 
 ## Setup controls and tool configuration
 
-The routing section displays the active `tools.toml` path. **Load TOML** accepts
+The routing section displays the active `processors.toml` path. **Load TOML** accepts
 `[[routes.extractor]]` tables (or the older `[[routes]]` format), validates them,
 and stages a draft. **Save routes** changes only routing, preserving other tool
 settings. Invalid files leave saved configuration and the current draft intact.
@@ -195,13 +203,19 @@ enabled compatible connection; the resolved alias is displayed. Explicit choices
 remain explicit. Endpoint health is shown by Model Connections; an automatic
 choice cannot guarantee a remote service will remain reachable during a run.
 
-## Apache Tika processor module
+## Archived Tika integration
 
-`osii-processor-modules/tika-adapter` owns the HTTP integration and managed Java
-runtime. `make dev` prepares Apache Tika automatically. Existing `tika` and
-`tika_catchall` routes and settings remain compatible. Set `OSII_ENABLE_TIKA=false`
-in `.env` to omit it; set `OSII_TIKA_MANAGED=false` and configure an endpoint in
-Setup to use an externally managed server instead. Defaults are loopback 8102
-for the adapter and 9998 for Apache Tika. See the
-[startup guide](../operations/runbook-development.md#start-and-check) for caching,
-first-start network access, offline provisioning, and startup switches.
+The former Tika adapter, managed Java runtime, and their tests are preserved on
+`archive/tika-2026-11-19`. They are absent from `main` discovery, startup, and
+Setup. The archived runtime ran Java directly; it did not require Podman.
+
+Previously saved `tika` / `tika_catchall` routes are adapted in memory to their
+remaining fallback chain, or `local.native-text` when none remains. Named flows
+use the same adaptation. The saved configuration and historical extraction
+bundles are preserved; changed effective routes invalidate prior sample tests.
+Retest the flow in Setup. Files outside native text support need a compatible
+processor, and scans need an OCR flow.
+
+Existing queued jobs retain their original route snapshots and run history.
+A paused job requiring the archived reader must be cancelled and queued again
+with an available flow; original results and completed work remain stored.

@@ -13,8 +13,9 @@ follow your organization's software approval policy. The delivered artifact's
 2. Open **OSII Standalone** from the Start menu.
 3. Choose **Create library**, enter a name and select the document folder.
    A connected mapped drive or UNC path is supported for documents.
-4. Select **Create and open library**. Use Intake to read files and search them.
-   AI connections are optional and can be added later in Setup.
+4. Select **Create and open library**. In **Intake & Queue**, select files and
+   use **Text and keywords (offline)** to read and search them. Set up an
+   optional model connection before choosing a flow that builds embeddings.
 
 Do not install Python, uv, Node, Java, Tesseract, Podman or Docker for this app.
 Ollama is separately installed and managed only when you choose to use it.
@@ -47,10 +48,14 @@ manually before switching applications.
 | --- | --- |
 | Native extraction | Text-layer PDF, DOCX, PPTX, XLSX, RTF and common text/data files |
 | OCR | Full-page Tesseract for PDF, PNG, JPEG and TIFF; English, French, German, Spanish, Japanese, Korean, Simplified Chinese and Arabic |
-| Without a model | Metadata inventory, keyword search, extractive previews and grounded answers, statistics and keywords |
+| Without a model | Direct file selection, keyword search, extractive previews and grounded answers, statistics and keywords |
 | With an optional endpoint | Semantic search, model-backed synthesis/chat, and existing model-dependent workflows |
 | Preserved product interfaces | Browsing, collections, editing, provenance, reports and exports; Topic Explorer retains its existing requirements |
 | Not bundled | Java/Tika, PostgreSQL, Banyan, OpenCV region OCR, specialist dataset analysis, Haystack, Ollama and LLM/embedding weights |
+
+Background discovery follows the shared beta workflow and is archived.
+Existing inventory records stay readable in their original SQLite database.
+Use direct Intake for new batches.
 
 Existing external Processor API services can be registered in Setup. The
 installer does not download or install their dependencies. MCP is not started
@@ -115,8 +120,8 @@ runtime contains dependency notices and Electron includes its own notices.
 ## Validation and release gates
 
 CI builds and tests the actual frozen distribution and installs the resulting
-NSIS artifact. It checks native formats/OCR/FAISS, isolated metadata scanners,
-real processor HTTP calls, optional model/semantic/chat behavior, private API
+NSIS artifact. It checks native formats/OCR/FAISS, archived inventory preservation,
+the offline processing flow and its sample, optional model/semantic/chat behavior, private API
 and IPC boundaries, shutdown/restart, and data-preserving reinstall/uninstall.
 The frozen tests clear dependency-tool paths. They do not establish that a
 GitHub-hosted machine is a clean end-user Windows installation.

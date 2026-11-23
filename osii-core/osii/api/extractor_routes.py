@@ -3,14 +3,14 @@ from pathlib import Path
 import tomllib
 
 from fastapi import APIRouter
-from osii.configuration import load_tools_config, save_tools_config, tools_path
+from osii.configuration import load_tools_config, save_tools_config, processors_path
 from osii.domain.processing.extractor_selection import load_extractor_routes
 
 router = APIRouter(prefix="/api", tags=["extractor-routes"])
 
 
 def extractor_routes_path() -> Path:
-    return tools_path()
+    return processors_path()
 
 
 def extractors_config_path() -> Path:
@@ -18,7 +18,7 @@ def extractors_config_path() -> Path:
 
 
 def load_extractor_routes_file() -> dict:
-    return {"routes": load_extractor_routes(), "path": str(tools_path())}
+    return {"routes": load_extractor_routes(), "path": str(processors_path())}
 
 
 def load_extractors_file() -> dict:
@@ -49,7 +49,11 @@ def validate_routes(payload: dict) -> tuple[list[str], list[str]]:
     accepted = {"native_text": NATIVE_EXTENSIONS, "local.native-text": NATIVE_EXTENSIONS}
     images = [".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff"]
     accepted["local.tesseract-page-ocr"] = images
+    for identifier in accepted:
+        extractor_map.setdefault(identifier, {"id": identifier, "enabled": True})
     for tool_id, tool in configured_tools().items():
+        if tool.get("kind") != "extractor":
+            continue
         endpoint = tool.get("runtime", {}).get("endpoint")
         descriptor = _cached_descriptor(endpoint.rstrip("/")) if endpoint else {}
         extensions = descriptor.get("capabilities", {}).get("file_extensions") or tool.get("capabilities", {}).get("file_extensions")
@@ -57,6 +61,7 @@ def validate_routes(payload: dict) -> tuple[list[str], list[str]]:
             for identifier in [tool_id, tool.get("processor_id"), *tool.get("aliases", [])]:
                 if identifier:
                     accepted[identifier] = extensions
+                    extractor_map[identifier] = {"id": identifier, "enabled": tool.get("enabled", True)}
 
     for i, route in enumerate(routes):
         if not isinstance(route, dict):
@@ -177,7 +182,7 @@ async def put_extractor_routes(payload: dict):
     return {
         "ok": True,
         "message": "extractor routes updated.",
-        "path": str(tools_path()),
+        "path": str(processors_path()),
         "routes": payload.get("routes", []),
         "warnings": warnings,
     }

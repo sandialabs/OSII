@@ -41,7 +41,7 @@ def main() -> int:
     parser.add_argument(
         "--extractor",
         required=True,
-        help="Extractor name, e.g. 'pdf_default', 'tika_catchall', or 'toolbox.tesseract-opencv'",
+        help="Extractor name, e.g. 'native_text', 'pdf_default', or 'toolbox.tesseract-opencv'",
     )
     parser.add_argument(
         "--expert-context",

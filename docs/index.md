@@ -6,7 +6,7 @@ links to their evidence.
 
 ## Get started
 
-1. [Start OSII](operations/standalone.md).
+1. [Start OSII](operations/runbook-development.md).
 2. Open **Setup** to check document readers and connect any models you want to use.
 3. In **Intake**, select files, choose processing, test the selected endpoints,
    and queue the work. Choose text-only processing to work without a model.

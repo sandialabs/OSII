@@ -77,10 +77,10 @@ def run_role(role: str) -> None:
         if getattr(sys, "frozen", False):
             raise
     phase("trust_ready")
-    if role in {"worker", "inventory-worker"}:
+    if role == "worker":
         phase("worker_starting")
-        module = "osii.worker" if role == "worker" else "osii.volume.worker"
-        importlib.import_module(module).main()
+        from osii.worker import main as worker_main
+        worker_main()
         return
     if "socket_share" in bootstrap:
         sock = socket.fromshare(base64.b64decode(bootstrap["socket_share"]))
@@ -115,7 +115,7 @@ def main() -> int:
             stream.reconfigure(encoding="utf-8", errors="backslashreplace")
     from .supervisor import SERVICES
     parser = argparse.ArgumentParser(description="OSII packaged runtime")
-    parser.add_argument("role", choices=["self-test", "supervisor", "api", "worker", "inventory-worker", *SERVICES])
+    parser.add_argument("role", choices=["self-test", "supervisor", "api", "worker", *SERVICES])
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--fixture-dir", type=Path, help="Self-test only: write a temporary OCR interruption fixture")
     args = parser.parse_args()

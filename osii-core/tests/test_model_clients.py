@@ -89,3 +89,47 @@ def test_openai_embedding_response_indices_preserve_input_identity(monkeypatch):
 
     with pytest.raises(RuntimeError, match="invalid vectors"):
         client.embed(model="test", texts=["first", "second"])
+
+
+def test_saved_ollama_embedding_does_not_read_an_unused_openai_key_file(monkeypatch, tmp_path):
+    from osii.configuration import save_models_config
+    from osii.processors.remote import ProcessorEmbeddingClient
+    save_models_config({"version": 1, "models": {"chosen": {
+        "type": "ollama-local", "base_url": "http://ollama.test", "model": "all-minilm", "enabled": True,
+        "capabilities": ["embedding"]}}, "defaults": {"embedding": "chosen"}})
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://unused.test/v1")
+    monkeypatch.setenv("OPENAI_API_KEY_FILE", str(tmp_path / "provider-key"))
+    monkeypatch.setattr("osii.model_clients._endpoint", lambda *a: __import__("pytest").fail("Unused provider must not be resolved"))
+    seen = []
+    monkeypatch.setattr("osii.processors.remote.resolve_remote_processor", lambda name, kind: seen.append((name, kind)) or {"name": name, "base_url": "http://bridge.test/ollama/embedder"})
+    result = create_embedding_client()
+    assert isinstance(result, ProcessorEmbeddingClient)
+    assert seen == [("ollama.embedder", "embedder")]
+
+
+def test_saved_openai_connection_uses_its_own_url_and_key(monkeypatch, tmp_path):
+    from osii.configuration import save_models_config
+    save_models_config({"version": 1, "models": {"chosen": {
+        "type": "openai-compatible", "base_url": "https://selected.test/v1", "model": "selected-model", "enabled": True,
+        "api_key_env": "SELECTED_KEY", "capabilities": ["embedding"]}}, "defaults": {"embedding": "chosen"}})
+    monkeypatch.setenv("SELECTED_KEY", "selected-provider-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://unused.test/v1")
+    monkeypatch.setenv("OPENAI_API_KEY_FILE", str(tmp_path / "missing-key-file"))
+    result = create_embedding_client()
+    assert result.base_url == "https://selected.test/v1"
+    assert result.api_key == "selected-provider-key"
+
+
+def test_existing_named_client_reads_a_replacement_key_on_its_next_request(monkeypatch, tmp_path):
+    from osii.model_clients import OpenAICompatibleClient
+    from osii.domain.env_credentials import write_env_value
+    monkeypatch.setenv("OSII_ENV_FILE", str(tmp_path / "secrets.env"))
+    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
+    monkeypatch.setenv("SELECTED_KEY", "startup-key")
+    seen = []
+    monkeypatch.setattr("osii.model_clients.requests.post", lambda *a, **kw: seen.append(kw["headers"]["Authorization"]) or FakeResponse({"data": [{"embedding": [1, 0]}]}))
+    client = OpenAICompatibleClient("https://selected.test/v1", "startup-key", credential_env="SELECTED_KEY")
+    client.embed(model="selected", texts=["first"])
+    write_env_value("SELECTED_KEY", "replacement-key")
+    client.embed(model="selected", texts=["next"])
+    assert seen == ["Bearer startup-key", "Bearer replacement-key"]
