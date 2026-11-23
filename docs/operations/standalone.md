@@ -138,8 +138,8 @@ the offline processing flow and its sample, optional endpoint behavior, private 
 and IPC boundaries, shutdown/restart, and data-preserving reinstall/uninstall.
 It also checks that a fresh installed library ranks a relevant document for a
 paraphrased query using the bundled model and can reopen its semantic index.
-Windows Firewall blocks external traffic for the installed app and its model
-helpers during this test. The runner stays connected so it can record results.
+Windows Firewall blocks external traffic for the installer, the installed app,
+and its model helpers. The runner stays connected so it can record results.
 Clean, standard-user Windows acceptance remains a separate release gate.
 
 Before broad distribution, record a run on a clean Windows 11 x64 VM with a

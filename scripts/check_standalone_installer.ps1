@@ -6,14 +6,15 @@ param(
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
 $nodeExecutable = (Get-Command node -ErrorAction Stop).Source
-$testRoot = Join-Path $env:TEMP ("OSII installer " + [Guid]::NewGuid().ToString())
+$testBase = if ($BlockExternalNetwork) { $env:ProgramData } else { $env:TEMP }
+$testRoot = Join-Path $testBase ("OSII installer " + [Guid]::NewGuid().ToString())
 $installation = Join-Path $testRoot 'Installed application'
 $workspace = Join-Path $testRoot 'Preserved library'
 $previousPath = $env:PATH
 $previousExecutable = $env:OSII_DESKTOP_EXECUTABLE
 $previousWorkspace = $env:OSII_SMOKE_DIRECTORY
 $previousOffline = $env:OSII_SMOKE_BLOCK_EXTERNAL
-$firewallGroup = "OSII installer test " + [Guid]::NewGuid().ToString()
+$firewallRules = [System.Collections.Generic.List[string]]::new()
 
 function Install-OSII {
     $process = Start-Process -FilePath (Resolve-Path $Installer).Path -ArgumentList "/S /D=$installation" -Wait -PassThru
@@ -21,8 +22,27 @@ function Install-OSII {
     if (-not (Test-Path (Join-Path $installation 'OSII Standalone.exe'))) { throw 'Installed desktop executable is missing' }
 }
 
+function Block-OSIIOutbound([string]$Executable) {
+    $program = (Resolve-Path -LiteralPath $Executable).ProviderPath
+    $ruleName = "OSII-installer-test-" + [Guid]::NewGuid().ToString()
+    New-NetFirewallRule -Name $ruleName -DisplayName $ruleName -Program $program `
+        -Direction Outbound -Action Block | Out-Null
+    $firewallRules.Add($ruleName)
+    if (-not (Get-NetFirewallRule -PolicyStore ActiveStore -Name $ruleName)) {
+        throw 'The outbound firewall rule is not active'
+    }
+}
+
 try {
     New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
+    if ($BlockExternalNetwork) {
+        $probe = Invoke-WebRequest -Uri 'https://github.com/robots.txt' -TimeoutSec 15
+        if ($probe.StatusCode -ne 200) { throw 'External connectivity control did not pass' }
+        $testInstaller = Join-Path $testRoot 'OSII-Standalone-Setup.exe'
+        Copy-Item -LiteralPath $Installer -Destination $testInstaller
+        $Installer = $testInstaller
+        Block-OSIIOutbound $Installer
+    }
     Install-OSII
     if ($RequireSignature) {
         foreach ($file in @($Installer, (Join-Path $installation 'OSII Standalone.exe'), (Join-Path $installation 'resources/runtime/osii-runtime.exe'))) {
@@ -32,21 +52,12 @@ try {
     $env:OSII_DESKTOP_EXECUTABLE = Join-Path $installation 'OSII Standalone.exe'
     $env:OSII_SMOKE_DIRECTORY = $workspace
     if ($BlockExternalNetwork) {
-        # Leave the Actions runner online. Isolate the installed application,
-        # the frozen Python helpers, and the model runtime from external hosts.
-        $probe = Invoke-WebRequest -Uri 'https://github.com/robots.txt' -TimeoutSec 15
-        if ($probe.StatusCode -ne 200) { throw 'External connectivity control did not pass' }
+        # Program rules leave loopback and the Actions runner online.
         $programs = @($env:OSII_DESKTOP_EXECUTABLE,
             (Join-Path $installation 'resources/runtime/osii-runtime.exe'),
             (Join-Path $installation 'resources/runtime/_internal/embedding/llama-server.exe'))
         foreach ($program in $programs) {
-            if (-not (Test-Path $program)) { throw "Missing installed executable: $program" }
-            New-NetFirewallRule -DisplayName $firewallGroup -Group $firewallGroup -Program $program `
-                -Profile Any -Direction Outbound -Action Block `
-                -RemoteAddress @('Internet', 'Intranet', 'LocalSubnet') | Out-Null
-        }
-        if (@(Get-NetFirewallRule -PolicyStore ActiveStore -Group $firewallGroup).Count -ne $programs.Count) {
-            throw 'External-network restrictions were not applied'
+            Block-OSIIOutbound $program
         }
         $env:OSII_SMOKE_BLOCK_EXTERNAL = '1'
     }
@@ -79,8 +90,8 @@ try {
     $env:OSII_DESKTOP_EXECUTABLE = $previousExecutable
     $env:OSII_SMOKE_DIRECTORY = $previousWorkspace
     $env:OSII_SMOKE_BLOCK_EXTERNAL = $previousOffline
-    if ($BlockExternalNetwork) {
-        Remove-NetFirewallRule -Group $firewallGroup -ErrorAction SilentlyContinue
+    foreach ($ruleName in $firewallRules) {
+        Remove-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue
     }
     if (Test-Path $testRoot) { Remove-Item -Recurse -Force $testRoot }
 }
