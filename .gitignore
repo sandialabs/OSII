@@ -79,3 +79,6 @@ repo_for_ai.txt
 plans/
 .playwright-cli/
 output/playwright/
+
+# Private agent preferences
+/AGENTS.override.md
