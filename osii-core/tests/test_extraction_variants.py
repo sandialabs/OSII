@@ -118,6 +118,16 @@ def test_extraction_artifact_api_previews_standard_json(
     )
     assert response.status_code == 200
     assert response.json()["artifacts"][0]["id"] == "source-table"
+    relative_path = response.json()["artifacts"][0]["relpath"]
+    assert client.get(f"/artifact/{relative_path}").content == artifact.read_bytes()
+
+    catalog = client.get(f"/api/objects/{extraction['file_id']}/extractions?include_artifacts=true")
+    assert catalog.status_code == 200
+    [version] = catalog.json()["variants"]
+    [entry] = version["artifacts"]
+    assert entry["filename"] == artifact.name
+    assert entry["source_origin"] == {"row": 1}
+    assert entry["data"] is None
 
 
 def test_document_extraction_api_queues_only_the_selected_extractor(

@@ -25,6 +25,7 @@ export type PickedFile = {
   path: string;
   name: string;
   size_bytes: number | null;
+  mime?: string | null;
 };
 type Page = {
   current_path: string;
@@ -37,6 +38,7 @@ export function LocationBrowser({
   initialPath,
   boundaryPath,
   foldersOnly = false,
+  singleFile = false,
   selected = [],
   onClose,
   onFolder,
@@ -46,6 +48,7 @@ export function LocationBrowser({
   initialPath?: string;
   boundaryPath?: string;
   foldersOnly?: boolean;
+  singleFile?: boolean;
   selected?: PickedFile[];
   onClose: () => void;
   onFolder?: (path: string) => void;
@@ -129,12 +132,12 @@ export function LocationBrowser({
     setFiles((current) =>
       current.some((item) => item.path === file.path)
         ? current.filter((item) => item.path !== file.path)
-        : [...current, file],
+        : singleFile ? [file] : [...current, file],
     );
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
       <DialogTitle>
-        {foldersOnly ? "Choose a location" : "Select files"}
+        {foldersOnly ? "Choose a location" : singleFile ? "Select a file" : "Select files"}
       </DialogTitle>
       <DialogContent>
         <Stack spacing={1.5} sx={{ pt: 1 }}>
@@ -255,7 +258,7 @@ export function LocationBrowser({
                 </ListItem>
               ))}
           </List>
-          {!foldersOnly && page && (
+          {!foldersOnly && !singleFile && page && (
             <Stack direction="row" spacing={1}>
               <Button
                 disabled={

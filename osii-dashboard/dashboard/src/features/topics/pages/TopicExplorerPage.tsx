@@ -1,3 +1,4 @@
+import { ToolContext } from "../../../components/workbench/ToolContext";
 import { useMemo, useRef } from "react";
 import {
   Alert,
@@ -59,10 +60,7 @@ export function TopicExplorerPage() {
       <Stack direction="row" justifyContent="space-between">
         <Stack>
           <Typography variant="h5">Topic explorer</Typography>
-          <Typography color="text.secondary">
-            Find groups of documents, inspect their content, and save
-            collections.
-          </Typography>
+          <ToolContext id="topics" />
         </Stack>
         <Button disabled={map.isFetching} onClick={() => void map.refetch()}>
           Refresh map

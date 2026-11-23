@@ -22,6 +22,7 @@ aliases = [
 ]
 
 [processors.capabilities]
+output_kinds = ["text_segments", "ocr_text"]
 file_extensions = [
     ".pdf",
     ".png",

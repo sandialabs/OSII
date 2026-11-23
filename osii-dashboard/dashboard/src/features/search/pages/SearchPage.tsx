@@ -1,3 +1,4 @@
+import { ToolContext } from "../../../components/workbench/ToolContext";
 // src/features/search/pages/SearchPage.tsx
 import { useMemo, useState } from "react";
 import {
@@ -138,9 +139,7 @@ export function SearchPage() {
               <Typography variant="h5" fontWeight={700}>
                 Search
               </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Search across your indexed files with grounded results.
-              </Typography>
+              <ToolContext id="search" />
             </Stack>
 
             <Stack

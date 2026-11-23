@@ -19,6 +19,14 @@ export async function getObject(fileId: string): Promise<ObjectAggregate> {
   return apiJson<ObjectAggregate>(`/api/objects/${encodeURIComponent(fileId)}`);
 }
 
+export function findCatalogFiles(text: string, signal?: AbortSignal) {
+  const params = new URLSearchParams({ limit: "100", text });
+  return apiJson<{
+    items: { file_id: string; filename: string; source_relpath: string; mime: string | null }[];
+    next_cursor: string | null;
+  }>(`/api/catalog/files?${params}`, { signal });
+}
+
 export async function getObjectSummaries(
   request: ObjectSummariesRequest,
 ): Promise<ObjectSummariesResponse> {
@@ -42,9 +50,9 @@ export async function getObjectTexts(fileId: string): Promise<ObjectTextsRespons
   );
 }
 
-export async function getObjectExtractions(fileId: string): Promise<ExtractionVariantsResponse> {
+export async function getObjectExtractions(fileId: string, includeArtifacts = false): Promise<ExtractionVariantsResponse> {
   return apiJson<ExtractionVariantsResponse>(
-    `/api/objects/${encodeURIComponent(fileId)}/extractions`,
+    `/api/objects/${encodeURIComponent(fileId)}/extractions${includeArtifacts ? "?include_artifacts=true" : ""}`,
   );
 }
 

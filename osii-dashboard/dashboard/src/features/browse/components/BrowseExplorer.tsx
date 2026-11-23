@@ -1,3 +1,4 @@
+import { ToolContext } from "../../../components/workbench/ToolContext";
 import { useState, type ComponentProps } from "react";
 import { Accordion, AccordionDetails, AccordionSummary, Alert, CircularProgress, Stack, Typography } from "@mui/material";
 import { ExpandMoreOutlined } from "@mui/icons-material";
@@ -13,7 +14,7 @@ export function BrowseExplorer({ breadcrumbs, onNavigate, currentFolder, loading
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   return <Stack spacing={1.75}>
-    <Stack spacing={0.35}><Typography variant="h5" fontWeight={700}>Browse</Typography></Stack>
+    <Stack spacing={0.35}><Typography variant="h5" fontWeight={700}>Browse</Typography><ToolContext id="browse" /></Stack>
     <BrowseBreadcrumbs items={breadcrumbs} onNavigate={onNavigate} />
     {loading ? <Stack direction="row" spacing={2} alignItems="center"><CircularProgress size={24} /><Typography>Loading folder contents…</Typography></Stack>
       : error ? <Alert severity="error">{error}</Alert> : <BrowseGrid {...grid} />}

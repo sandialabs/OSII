@@ -15,6 +15,7 @@ const pages: Record<string, ComponentType> = {
   collections: lazy(() => import("../features/collections/pages/CollectionsPage").then(m => ({ default: m.CollectionsPage }))),
   research: lazy(() => import("../features/research/ResearchPage").then(m => ({ default: m.ResearchPage }))),
   overview: lazy(() => import("../features/library/pages/LibraryOverviewPage").then(m => ({ default: m.LibraryOverviewPage }))),
+  ocr: lazy(() => import("../features/ocr/OcrWorkbenchPage").then(m => ({ default: m.OcrWorkbenchPage }))),
   topics: lazy(() => import("../features/topics/pages/TopicExplorerPage").then(m => ({ default: m.TopicExplorerPage }))),
 };
 export const workbenchTools: readonly WorkbenchTool[] = [

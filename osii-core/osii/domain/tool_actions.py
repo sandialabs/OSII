@@ -109,6 +109,7 @@ def tool_catalog(root: Path) -> dict:
         identity = descriptor.get("name")
         if not identity or any(item["id"] == identity for item in methods):
             continue
+        capabilities = descriptor.get("capabilities") or {}
         methods.append(
             {
                 "id": identity,
@@ -119,10 +120,17 @@ def tool_catalog(root: Path) -> dict:
                     "synthesizer": "summary.write",
                     "embedder": "embedding.build",
                 }.get(kind, "analyze"),
-                "scopes": descriptor.get("capabilities", {}).get("scope_types")
-                or ["object"],
+                "scopes": capabilities.get("scope_types") or ["object"],
                 "inputs": ["source" if kind == "extractor" else "text"],
-                "outputs": descriptor.get("capabilities", {}).get("output_kinds") or [],
+                **(
+                    {"source_types": {
+                        "file_extensions": capabilities.get("file_extensions") or [],
+                        "media_types": capabilities.get("media_types") or [],
+                    }}
+                    if kind == "extractor"
+                    else {}
+                ),
+                "outputs": capabilities.get("output_kinds") or [],
                 "config_schema": descriptor.get("config_schema") or {},
                 "model_requirements": descriptor.get("model_requirements") or {},
                 "bindings": {},

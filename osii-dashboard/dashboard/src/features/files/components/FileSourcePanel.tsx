@@ -219,15 +219,8 @@ function PdfSourcePanel({
       {regions.length ? (
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
           <Chip size="small" color="error" variant="outlined" label={`${regions.length} grounded OCR regions`} />
-          <Typography variant="caption" color="text.secondary">
-            Boxes use normalized source coordinates and resize with the PDF page.
-          </Typography>
         </Stack>
-      ) : (
-        <Typography variant="caption" color="text.secondary">
-          No region-level provenance is available for this page.
-        </Typography>
-      )}
+      ) : null}
 
       <Box
         sx={{

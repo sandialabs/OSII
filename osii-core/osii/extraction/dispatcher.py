@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from osii.domain.processing.extractor_selection import require_source_type
+
 from osii.extraction.banyan_extractor import PdfDefaultExtractor
 from osii.extraction.native_text_extractor import NativeTextExtractor
 
@@ -21,9 +23,7 @@ def dispatch_extract(
         from osii.processors.remote import RemoteExtractor, resolve_remote_processor
 
         descriptor = resolve_remote_processor(extractor_name, "extractor")
-        supported = descriptor.get("capabilities", {}).get("file_extensions", [])
-        if supported and "*" not in supported and source_path.suffix.lower() not in supported:
-            raise ValueError(f"Extractor '{extractor_name}' does not accept {source_path.suffix}; supported: {', '.join(supported)}")
+        require_source_type(source_path, descriptor.get("capabilities") or {}, extractor_name)
         extractor = RemoteExtractor(descriptor)
 
     return extractor.extract(

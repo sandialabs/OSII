@@ -1,3 +1,4 @@
+import { LibraryFlow } from "../../../components/workbench/LibraryFlow";
 import {useEffect, useState} from "react";
 import {Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Paper, Stack, Typography} from "@mui/material";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
@@ -51,7 +52,8 @@ export function QueuePage() {
     {notice && <Alert severity={notice.severity}>{notice.text}</Alert>}
     {section === "add" ? <><FileSelectionPanel files={files} onFiles={setFiles} /><Paper variant="outlined" sx={{p: 2}}><Stack spacing={1.5}>
       <Typography variant="h6" fontWeight={700}>2. Process</Typography>
-      <Typography><strong>All processes:</strong> extract → synthesize → enrich → embed</Typography>
+      <Typography fontWeight={650}>Extract → synthesize → enrich → embed</Typography>
+      <LibraryFlow reads={["source"]} writes={["text", "metadata", "summaries", "artifacts", "index", "runs"]} />
       <ProcessingFlowSelect value={flow} onChange={setFlow} />
       <Button component={Link} to="/admin/processors#processing-flows" sx={{alignSelf: "start"}}>Configure & test flows in Setup</Button>
       {preview.isFetching && <Typography role="status" variant="body2">Checking access to selected files…</Typography>}

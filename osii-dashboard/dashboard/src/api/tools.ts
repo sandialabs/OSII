@@ -1,3 +1,4 @@
+import type { SourceTypes } from "../domain/fileCompatibility";
 import { apiJson } from "./client";
 import type { ProcessorConfigSchema, ScopeDescribeRequest } from "./types";
 
@@ -5,6 +6,7 @@ export type ToolMethod = {
   execution: "scope" | "intake";
   id: string; action: string; label: string; version: string;
   scopes: string[]; inputs: string[]; outputs: string[];
+  source_types?: SourceTypes;
   config_schema: ProcessorConfigSchema;
   model_requirements: Record<string, "required" | "optional">;
   bindings: Record<string, string>; configuration_error: string | null;
@@ -31,3 +33,14 @@ export const getProductHistory = (scope: ScopeDescribeRequest, filename: string)
   apiJson<ProductHistory>("/api/enrichments/revisions", { method: "POST", json: { scope, filename } });
 export const saveProduct = (scope: ScopeDescribeRequest, filename: string, expected_revision: string, change: { markdown: string } | { revision: string }) =>
   apiJson<ProductHistory>("/api/enrichments/revisions", { method: "PUT", json: { scope, filename, expected_revision, ...change } });
+
+
+export type SavedProduct = {
+  family: string;
+  filename: string;
+  title: string;
+  artifact_type?: string | null;
+};
+
+export const listProducts = (scope: ScopeDescribeRequest) =>
+  apiJson<{ products: SavedProduct[] }>("/api/products/list", { method: "POST", json: scope });

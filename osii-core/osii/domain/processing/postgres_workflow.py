@@ -652,16 +652,17 @@ class PostgresWorkflow:
             options.get("extract_mode") != "missing" or previous is None
         )
         if read and item["steps"].get("extraction") != "done":
-            from osii.domain.processing.extractor_selection import load_extractor_routes
+            from osii.domain.processing.extractor_selection import load_extractor_routes, require_source_type
             from osii.api.runs_routes import choose_parser_chain
 
-            names = [options.get("extractor_overrides", {}).get(path.suffix.lower())]
+            names = [options.get("extractor_overrides", {}).get(path.suffix.lower() or "(no extension)")]
             if not names[0]:
                 names = choose_parser_chain(path, load_extractor_routes())
             failures = []
             for name in names:
                 try:
                     descriptor, client = processor(self.root, name, "extractor")
+                    require_source_type(path, descriptor.capabilities.model_dump(), name)
                     request_id = f"{lease.job_id}:{index}:extract"
                     from osii.domain.processor_settings import merged_processor_settings
                     from osii.domain.tool_actions import validate_tool_config
@@ -735,6 +736,7 @@ class PostgresWorkflow:
             )
             command = replace(command, chunks=chunks)
             item["steps"]["extraction"] = "done"
+            item["extraction_variant_id"] = command.commit_id
             if staging:
                 validate_member(staging, staging["members"][index])
             self.backend.committer.commit(

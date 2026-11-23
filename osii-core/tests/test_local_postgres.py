@@ -1433,7 +1433,7 @@ def test_reextraction_variants_and_promotion_preserve_corrections(
     pg_client, monkeypatch
 ):
     from osii.domain.processing import postgres_workflow
-    from osii.processor_sdk import TextSegment
+    from osii.processor_sdk import Artifact, TextSegment
 
     file_id, _ = intake(pg_client, monkeypatch)
     client, app, source, _ = pg_client
@@ -1456,7 +1456,16 @@ def test_reextraction_variants_and_promotion_preserve_corrections(
                         text="Better grounded OCR",
                         source_origin={"page": 2, "bbox": [0.1, 0.2, 0.5, 0.6]},
                     )
-                ]
+                ],
+                "artifacts": [
+                    Artifact(
+                        id="page-stats",
+                        kind="metadata",
+                        media_type="application/json",
+                        json_data={"words": 3},
+                        source_origin={"page": 2},
+                    )
+                ],
             }
         )
         return descriptor, service
@@ -1475,6 +1484,14 @@ def test_reextraction_variants_and_promotion_preserve_corrections(
         for r in lib.query("SELECT id,response FROM extractions")
         if r["response"]["processor"]["name"] == "test.better"
     )
+    run = client.get(f"/api/runs/{response.json()['id']}").json()
+    assert run["items"][0]["extraction_variant_id"] == alternate["id"]
+    versions = client.get(f"/api/objects/{file_id}/extractions?include_artifacts=true").json()
+    result = next(row for row in versions["variants"] if row["id"] == alternate["id"])
+    [artifact] = result["artifacts"]
+    assert artifact["id"] == "page-stats"
+    assert artifact["source_origin"] == {"page": 2}
+    assert artifact["data"] is None
     promoted = client.post(
         f"/api/objects/{file_id}/extractions/{alternate['id']}/primary"
     )

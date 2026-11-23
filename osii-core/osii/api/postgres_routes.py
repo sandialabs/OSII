@@ -400,7 +400,7 @@ def text_span(
 
 
 @router.get("/api/objects/{file_id}/extractions")
-def extractions(request: Request, file_id: str):
+def extractions(request: Request, file_id: str, include_artifacts: bool = False):
     lib = library(request)
     doc = lib.reader.get_document(file_id)
     if doc is None:
@@ -418,6 +418,10 @@ def extractions(request: Request, file_id: str):
                 "created_utc": row["created_at"],
                 "extractor": row["response"]["processor"],
                 "status": "done",
+                **({"artifacts": [
+                    extraction_artifact_view(artifact, preview=False)
+                    for artifact in row["response"].get("artifacts", [])
+                ]} if include_artifacts else {}),
                 "text_chars": len(
                     lib.reader.get_representation(file_id, row["id"]).text
                 ),
@@ -453,6 +457,18 @@ def extraction_text(request: Request, file_id: str, variant_id: str):
     }
 
 
+def extraction_artifact_view(row, *, preview: bool):
+    return {
+        "id": row["id"],
+        "kind": row["kind"],
+        "media_type": row["media_type"],
+        "source_origin": row.get("source_origin", {}),
+        "filename": row["id"],
+        "size_bytes": None,
+        "data": (row.get("standard_data") or row.get("json_data")) if preview else None,
+    }
+
+
 @router.get("/api/objects/{file_id}/extractions/{variant_id}/artifacts")
 def extraction_artifacts(request: Request, file_id: str, variant_id: str):
     rows = library(request).query(
@@ -466,15 +482,7 @@ def extraction_artifacts(request: Request, file_id: str, variant_id: str):
         "file_id": file_id,
         "variant_id": variant_id,
         "artifacts": [
-            {
-                "id": row["id"],
-                "kind": row["kind"],
-                "media_type": row["media_type"],
-                "source_origin": row.get("source_origin", {}),
-                "filename": row["id"],
-                "size_bytes": None,
-                "data": row.get("standard_data") or row.get("json_data"),
-            }
+            extraction_artifact_view(row, preview=True)
             for row in rows[0]["response"].get("artifacts", [])
         ],
     }

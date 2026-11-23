@@ -275,6 +275,7 @@ export type ExtractionVariant = {
   text_path: string;
   manifest_path: string;
   provenance_path: string;
+  artifacts?: ExtractionArtifact[];
 };
 
 export type ExtractionVariantsResponse = {
@@ -290,6 +291,7 @@ export type ExtractionArtifact = {
   source_origin: Record<string, unknown>;
   filename: string;
   size_bytes: number | null;
+  relpath?: string;
   data: unknown | null;
 };
 
@@ -640,10 +642,12 @@ export type CapabilityReadiness = {
   index_rebuild_required?: boolean;
   indexed_model?: string;
   config_schema?: ProcessorConfigSchema;
+  capabilities?: { file_extensions?: string[]; media_types?: string[]; output_kinds?: string[] };
   descriptor?: {
     config_schema?: ProcessorConfigSchema;
     capabilities?: {
       file_extensions?: string[];
+      media_types?: string[];
       output_kinds?: string[];
       scope_types?: string[];
       [key: string]: unknown;

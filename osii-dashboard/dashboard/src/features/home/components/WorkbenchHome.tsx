@@ -1,6 +1,7 @@
 import { Alert, Box, Button, Card, CardActionArea, CardContent, LinearProgress, Stack, Typography } from "@mui/material";
 import { Link } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { LibraryFlow } from "../../../components/workbench/LibraryFlow";
 import { documentTools } from "../../../domain/workbench";
 import { useWorkbenchHome } from "../../../hooks/useWorkbenchHome";
 import { dismissHomeSetup } from "../../../api/workbench";
@@ -10,7 +11,7 @@ export function WorkbenchHome({ setupPath, toolsOnly = false }: { setupPath: str
   const client = useQueryClient();
   const dismiss = useMutation({ mutationFn: dismissHomeSetup, onSuccess: () => client.invalidateQueries({ queryKey: ["workbench-home"] }) });
   return <Stack spacing={3} sx={{ maxWidth: 1200, mx: "auto" }}>
-    <Stack spacing={0.5}><Typography id="workbench-title" variant="h4" fontWeight={750}>{toolsOnly ? "Toolbox" : "Welcome to OSII"}</Typography><Typography color="text.secondary">Choose what you’d like to do with your documents.</Typography></Stack>
+    <Stack spacing={0.5}><Typography id="workbench-title" variant="h4" fontWeight={750}>{toolsOnly ? "Toolbox" : "Welcome to OSII"}</Typography></Stack>
     {home.isPending ? <Stack spacing={1}><LinearProgress aria-label="Checking tool readiness" /><Typography role="status">Checking what’s ready…</Typography></Stack> : null}
     {home.isError ? <Alert severity="warning" action={<Button onClick={() => void home.refetch()}>Retry</Button>}>Could not check tool readiness. Your library and settings are unchanged.</Alert> : null}
     {!toolsOnly && !home.isError && home.data?.setup.visible ? <Card variant="outlined" component="section" aria-labelledby="home-setup-title"><CardContent><Stack spacing={1.5}>
@@ -31,12 +32,14 @@ export function WorkbenchHome({ setupPath, toolsOnly = false }: { setupPath: str
           const enabled = state?.enabled === true;
           const reason = home.isError ? "Readiness unavailable — retry above" : state?.reason ?? "Checking readiness…";
           return <Card key={tool.id} variant="outlined" sx={{ bgcolor: enabled ? "background.paper" : "action.disabledBackground", color: enabled ? "text.primary" : "text.secondary", height: "100%" }}>
-            <CardActionArea component={Link} to={tool.path} disabled={!enabled} aria-disabled={!enabled} aria-describedby={`tool-${tool.id}-reason`} sx={{ height: "100%", alignItems: "stretch" }}>
+            <CardActionArea component={Link} to={tool.path} disabled={!enabled} aria-disabled={!enabled} aria-describedby={!enabled ? `tool-${tool.id}-reason` : undefined} sx={{ height: "100%", alignItems: "stretch" }}>
               <CardContent sx={{ height: "100%", boxSizing: "border-box" }}><Stack spacing={1.25}>
                 <Box aria-hidden sx={{ fontSize: "2.5rem", filter: enabled ? undefined : "grayscale(1)" }}>{tool.illustration}</Box>
                 <Typography variant="h6" fontWeight={700}>{tool.label}</Typography>
                 <Typography variant="body2">{tool.description}</Typography>
-                <Typography id={`tool-${tool.id}-reason`} variant="caption" sx={{ display: "block" }}>{reason}</Typography>
+                <Typography variant="caption" color="text.secondary">{tool.scope}</Typography>
+                <LibraryFlow {...tool.flow} />
+                {!enabled && <Typography id={`tool-${tool.id}-reason`} variant="caption" color="text.secondary">{reason}</Typography>}
               </Stack></CardContent>
             </CardActionArea>
           </Card>;

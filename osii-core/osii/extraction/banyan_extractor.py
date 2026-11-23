@@ -37,6 +37,12 @@ class PdfDefaultExtractor(BaseExtractor):
     )
     version = "1.0"
 
+    def describe(self) -> dict:
+        return {
+            **super().describe(),
+            "capabilities": {"file_extensions": [".pdf"], "output_kinds": ["text_segments"]},
+        }
+
     def _nemotron_base_url(self, extractor_config: dict | None = None) -> str:
         extractor_config = extractor_config or {}
         base_url = str(
