@@ -9,6 +9,19 @@ def test_catalog_keeps_api_id_distinct_from_label(monkeypatch):
     assert provider.catalog() == [{"id": "vendor/exact-id", "name": "A friendly name", "capabilities": []}]
 
 
+def test_model_catalog_respects_provider_capability_declarations(monkeypatch):
+    provider = ModelProvider("https://endpoint.test/v1", "")
+    monkeypatch.setattr(provider, "request", lambda *args: {"data": [
+        {"id": "encoder", "endpoints": ["embed"]},
+        {"id": "language", "capabilities": ["chat", "unsupported"]},
+        {"id": "ranker", "endpoints": ["rerank"]},
+    ]})
+
+    assert {model["id"]: model["capabilities"] for model in provider.catalog()} == {
+        "encoder": ["embedding"], "language": ["chat"], "ranker": ["rerank"],
+    }
+
+
 def test_non_json_error_is_actionable(monkeypatch):
     import requests
     class Response:

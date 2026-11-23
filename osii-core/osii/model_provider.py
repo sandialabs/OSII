@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import requests
 import time
+from osii.model_catalog import model_capabilities
 from osii.model_endpoints import ModelEndpoint
 
 
@@ -68,9 +69,8 @@ class ModelProvider:
         for model in data.get("data", []):
             if not isinstance(model, dict) or not model.get("id"):
                 continue
-            modalities = (model.get("architecture") or {}).get("output_modalities", [])
             results[str(model["id"])] = {"id": str(model["id"]), "name": str(model.get("name") or model["id"]),
-                "capabilities": ["embedding"] if "embeddings" in modalities else ["chat"] if "text" in modalities else []}
+                "capabilities": model_capabilities(model)}
         # OpenRouter publishes embeddings separately. Generic compatible endpoints
         # need not implement this; unknown capabilities remain selectable manually.
         if self.url == "https://openrouter.ai/api/v1":

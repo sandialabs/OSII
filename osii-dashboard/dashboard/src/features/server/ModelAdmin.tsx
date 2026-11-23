@@ -53,7 +53,7 @@ function ConnectionDialog({ kind, endpoint, close, saved }: { kind: Kind; endpoi
     <DialogContent><Stack spacing={2} sx={{ pt: 1 }}>
       <Typography color="text.secondary">Enter the service address and key, then find its available models. Choose a model by name. This lookup does not save settings or generate content.</Typography>
       <EndpointFields baseUrl={url} onBaseUrl={value => { version.current += 1; setUrl(value); setOptions([]); setQueried(false); setModel(""); }}
-        apiKey={key} onApiKey={value => { version.current += 1; setClearKey(false); setKey(value); setOptions([]); setQueried(false); }} credentialPresent={credentialPresent}
+        apiKey={key} onApiKey={value => { version.current += 1; setClearKey(false); setKey(value); setOptions([]); setQueried(false); }} credentialPresent={credentialPresent && !clearKey}
         onDiscover={() => void findModels()} discovering={finding} required urlHelp="Use the service's API base address, including /v1 or /v2 when required." />
       {credentialPresent && <FormControlLabel control={<Checkbox checked={clearKey} onChange={e => { setClearKey(e.target.checked); setKey(""); version.current += 1; setOptions([]); setQueried(false); }} />} label="Remove the saved API key (this service needs no key)" />}
       {error && <Alert severity="error">{error}</Alert>}
