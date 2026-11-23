@@ -76,24 +76,44 @@ The agent's job is to execute the human's command—nothing more.
   changes. Keep examples and demonstrations small and inspectable; do not
   create new example material unless explicitly requested.
 
+## Branches and merges
+
+- Use `main` for shared Core, shared dashboard behavior, and the local
+  source workflow. Keep Windows packaging on `osii-standalone` and hosted
+  authentication, persistence, and deployment on `osii-server`. Keep separate
+  worktrees for parallel Codex work.
+- Start a feature branch from the branch that owns the change. To update a
+  feature branch for shared work, fetch `origin`, check that its worktree is
+  clean, and merge `origin/main` into it. Land shared fixes on `main`,
+  including portable fixes found while working on a delivery branch.
+- Until the deployment branches are aligned with the restored `main`, bring
+  over needed shared commits and prerequisites with `git cherry-pick -x <commit>`.
+  Align each deployment branch on a temporary integration branch. A full merge
+  during this transition can carry packaging or hosted-code deletions from the
+  rollback. Review the result for the intended platform behavior before
+  updating the delivery branch.
+- After alignment, merge `origin/main` forward into each deployment branch.
+  Run the relevant profile checks. Windows changes need the installer checks
+  when they affect delivery. Hosted changes must preserve authorization, data
+  visibility, and PostgreSQL behavior. Treat migrations and deployment as
+  separate operations.
+
 ## Current delivery scope
 
-- `main` is the standalone application, using sidecars by default with optional,
+- `main` runs OSII Dev from source, using sidecars by default with optional,
   explicitly initialized PostgreSQL storage. Never auto-import or silently fall
   back between stores. The canonical inventory SQLite stays independent.
   `osii-server` is developed separately for hosted accounts and OpenShift. Keep
-  portable fixes isolated for transfer between the branches; never merge server
-  persistence or hosted startup into main implicitly.
+  portable fixes isolated for transfer between the branches.
 
 - The supported startup path on main is `make dev` (Windows:
   `.\\scripts\\osii.ps1 dev`). Keep automatic dependency setup, logs, health
   checks, and Ctrl+C shutdown working. Do not add alternative startup menus.
 - Product direction is one shared OpenShift deployment, independent model capability
-  endpoints, and one shared database. This does not authorize an implicit
-  database migration or claim that hosted authentication is implemented.
-- Desktop installers, workstation catalogs, Compose, component splitting, and
-  image publishing are archived on `archive/workstation-deployment-2026-11-03`.
-  Do not reintroduce them without an explicit human request.
+  endpoints, and one shared database. Hosted migrations and administrator
+  bootstrap are explicit operations.
+- The Windows installer lives on `osii-standalone`. Container-based workstation
+  deployment is archived on `archive/workstation-deployment-2026-11-03`.
 - Preserve Core, dashboard, SDK, and processor boundaries while simplifying
   delivery. Optional tools stay optional. Do not replace existing persistence
   or delete user data as part of deployment cleanup.

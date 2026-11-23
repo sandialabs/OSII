@@ -1,77 +1,23 @@
-# OSII — local
+# OSII
 
-> Keep the evidence. Grow the intelligence.
+OSII turns documents and datasets into a library you can browse, search, and ask
+questions about. It keeps originals intact and links results to their evidence.
+Basic text extraction and keyword search work offline.
 
-OSII (the On-Store Intelligence Index) turns documents and datasets into a
-library you can browse, search, enrich, and ask questions about. The `main`
-branch is OSII-local: a standalone application for working with files on your
-computer or a shared drive mounted on it.
-It runs without user accounts or a login; OSII-server provides hosted user access.
+- **Use OSII on Windows.** Download the installer from [GitHub Releases](https://github.com/sandialabs/OSII/releases).
+  Windows packaging lives on [`osii-standalone`](https://github.com/sandialabs/OSII/tree/osii-standalone).
+- **Develop OSII.** Use `main` for the shared Python Core, React dashboard, and
+  local source workflow described below.
+- **Run a shared library.** Use [`osii-server`](https://github.com/sandialabs/OSII/tree/osii-server)
+  for the hosted app with accounts and PostgreSQL.
 
-The source material is the evidence. OSII keeps originals unchanged and saves
-extracted content and provenance in portable `.osii` sidecars by default. An
-[optional PostgreSQL backend](docs/reference/local-storage.md) supports the same
-local Workbench, with explicit, non-destructive one-way import. Search indexes
-are rebuildable, processors are replaceable, and model interpretations remain
-traceable to their sources. Basic extraction and keyword search work without
-an AI model.
+## Run from source
 
-## What you can do
+Install uv and Node.js 22.18+. Copy `.env.example` to `.env` and set
+`OSII_SOURCE_DIR` to an existing document folder. Run `make dev` on macOS or
+Linux, or `.\scripts\osii.ps1 dev` in Windows PowerShell. Open the dashboard at
+`http://localhost:5173`.
 
-- Browse selected folders or upload files, then queue a named processing flow.
-- Extract text, add OCR alongside it, and inspect text or mathematical Markdown
-  with source locations.
-- Browse files and collections, search by keywords or document meaning, and ask
-  grounded questions with an optional model connection.
-- Edit summaries, metadata, wikis, and other derived products with revision
-  history; run replaceable analysis tools.
-- Explore related documents with the experimental Topic Explorer.
-- Create focused collections from topic suggestions or a prompt; see
-  [how suggestions work](docs/reference/collection-suggestions.md).
-- Compare experimental RAG strategies and inspect their evidence in Chat.
-- Extend processing and frontend tools through documented interfaces.
-- Write editable research reports with passage references, bibliography drafts,
-  reviewable revisions, and Markdown or Mathpix exports.
-
-The **Toolbox** contains frontend workflows. Backend **processor modules**
-(Extractors, Synthesizers, Embedders, and Enrichers) live in
-`osii-processor-modules/` and use the shared Processor API.
-
-## Get started
-
-Install **uv**, **Node.js 22.18+**, and **make** on macOS/Linux. Copy
-`.env.example` to `.env`, set `OSII_SOURCE_DIR` to an existing folder, and run:
-
-```bash
-make dev
-```
-
-On Windows, install uv and Node.js and run:
-
-```powershell
-.\scripts\osii.ps1 dev
-```
-
-Open [the dashboard](http://localhost:5173), process your files, and explore the
-library. Processor modules start automatically and are available in **Setup**.
-Set individual `OSII_ENABLE_…` switches in `.env` to omit modules.
-Keep the terminal open; **Ctrl+C** stops OSII. For sample files, use
-`make demo` (Windows: `.\scripts\osii.ps1 demo`). Install Tesseract for OCR;
-configure model connections and processing defaults in **Setup**. The
-[Banyan processor module](osii-processor-modules/banyan/README.md) uses its
-own local Nemotron endpoint configuration. Keep credentials outside Git.
-Use **Intake & Queue** to select files and run all processing steps. Configure and
-sample-test named flows in **Setup**. Inspect processing status and reprocess
-existing documents from their collection. The startup guide covers provider
-profiles and processing configuration.
-
-See the [startup guide](docs/operations/runbook-development.md) for setup and
-troubleshooting, [architecture](docs/concepts/architecture.md) for the design,
-and [extension guides](docs/extending/index.md) for processors and frontend tools.
-Use the `osii-server` branch for an authenticated library shared by a team;
-`archive/workstation-deployment-2026-11-03` preserves earlier workstation
-packaging workflows.
-
-Optional [Python demos](docs/tutorials/python-demonstrations.md) and the agent
-interface are separate downloads on the `osii-demo-notebooks` and `osii-mcp`
-branches. Each branch contains only that tool.
+See the [development guide](docs/operations/runbook-development.md) for setup,
+[architecture](docs/concepts/architecture.md) for the design, and the
+[frontend extension guide](docs/extending/frontend-tools.md) to add a Toolbox item.
