@@ -274,27 +274,65 @@ def test_long_model_free_outputs_do_not_require_model_or_truncate_canonical_text
     assert len(store.list_artifacts(doc['file_id']))==2
 
 
-def test_ai_synthesis_runs_metadata_step_and_keeps_canonical_text(app):
+def test_ai_synthesis_metadata_reaches_saved_document_and_topic_map(client, app):
     import json
-    store=app.state.store
-    doc=document(store,app.state.settings.source_root,content='Grow vegetables at home during wartime.')
-    canonical=store.document(doc['file_id'])['text']
-    store.save_configuration({'chat_model':'selected-chat'})
-    jid=create_plan(app,[doc['source_relpath']],synthesizer_name='openai.synthesizer',synthesizer_config={'extract_metadata':True})
-    assert store.job(jid)['payload']['synthesis_calls_estimate']==2
+
+    store = app.state.store
+    store.save_configuration({
+        'chat_model': 'selected-chat',
+        'embedding_model': 'test-embeddings',
+    })
+    canonical = 'Home Garden Circular\nGrow vegetables at home during wartime.'
+    doc = document(store, app.state.settings.source_root, name='opaque.txt', content=canonical)
+    file_id = doc['file_id']
+    jid = create_plan(
+        app, [doc['source_relpath']], synthesizer_name='openai.synthesizer',
+        synthesizer_config={'extract_metadata': True},
+    )
+    assert store.job(jid)['payload']['synthesis_calls_estimate'] == 2
+
     class MetadataProvider(Provider):
-        calls=0
-        def chat(self,model,messages,**kwargs):
-            self.calls+=1
+        calls = 0
+
+        def chat(self, model, messages, **kwargs):
+            self.calls += 1
             if 'OSII DOCUMENT METADATA EXTRACTION' in messages[0]['content']:
-                return json.dumps({'title':{'value':'Wartime Garden Guide'},'author':{'value':None,'qualifier':'Not identified'},'date':{'value':'circa 1940s','qualifier':'Approximate period'}}),{}
-            return '# Garden Report\n\nGrow vegetables.',{}
-    provider=MetadataProvider();start(app,jid)
-    result=execute(app,jid,provider=provider)
-    assert result['status']=='done',result['logs']
-    assert provider.calls==2
-    record=store.list_artifacts(doc['file_id'])[0]['payload']['response']['metadata']
-    assert record['document_title']=='Wartime Garden Guide'
-    assert record['document_metadata']['author']['value'] is None
-    assert record['document_metadata']['date']['value']=='circa 1940s'
-    assert store.document(doc['file_id'])['text']==canonical
+                assert 'descriptive_title, title, author, date, agency, document_type' in messages[0]['content']
+                return json.dumps({
+                    'descriptive_title': {'value': 'Wartime Garden Guide', 'evidence': 'Grow vegetables at home'},
+                    'title': {'value': 'Home Garden Circular', 'evidence': 'Home Garden Circular'},
+                    'author': {'value': None, 'qualifier': 'Not identified'},
+                    'date': {'value': 'circa 1940s', 'qualifier': 'Approximate period'},
+                    'agency': {'value': 'Possible issuer', 'evidence': 'Quotation absent from source'},
+                    'document_type': {'value': 'Circular'},
+                }), {}
+            return '# Garden Report\n\nGrow vegetables.', {}
+
+    provider = MetadataProvider()
+    start(app, jid)
+    result = execute(app, jid, provider=provider)
+    assert result['status'] == 'done', result['logs']
+    assert provider.calls == 2
+    assert store.document(file_id)['text'] == canonical
+
+    login(client, 'reader')
+    catalog = client.get(f'/api/objects/{file_id}/products/catalog').json()['items']
+    synthesis = next(item for item in catalog if item['kind'] == 'synthesis')
+    product = client.get(f"/api/objects/{file_id}/products/{synthesis['id']}")
+    assert product.status_code == 200, product.text
+    record = product.json()['payload']['response']['metadata']
+    metadata = record['document_metadata']
+    assert record['document_title'] == 'Wartime Garden Guide'
+    assert metadata['descriptive_title']['evidence'] == 'Grow vegetables at home'
+    assert metadata['title']['value'] == 'Home Garden Circular'
+    assert metadata['author']['value'] is None
+    assert metadata['date']['value'] == 'circa 1940s'
+    assert metadata['agency']['evidence'] is None
+    assert 'could not be verified' in metadata['agency']['qualifier']
+    assert metadata['document_type']['value'] == 'Circular'
+
+    topic_map = client.post('/api/topics/map', json={})
+    assert topic_map.status_code == 200, topic_map.text
+    point = topic_map.json()['points'][0]
+    assert point['document_title'] == 'Wartime Garden Guide'
+    assert point['document_metadata'] == metadata

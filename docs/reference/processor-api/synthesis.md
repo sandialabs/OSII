@@ -325,7 +325,7 @@ Next: [enrichment](enrichment.md) for structured knowledge, or
 
 ## Suggested document metadata and long inputs
 
-AI synthesis includes a separate bounded **Suggest title, author and date** step
+AI synthesis includes a separate bounded **Suggest document metadata** step
 (`extract_metadata`, default true). Disable it in processor settings for summary-only
 runs. It adds one model call per document, included in the hosted preview estimate.
 The model reads the first 16,000 and last 8,000 characters plus up to 24,000 characters
@@ -340,13 +340,16 @@ The response carries it in `metadata.document_metadata`:
   "schema_version": 1,
   "method": "text_llm",
   "model": "selected-chat-model",
-  "title": {"value": "Kitchen Garden Guide", "qualifier": "Inferred from subject matter", "evidence": "Grow vegetables at home"},
+  "descriptive_title": {"value": "Wartime Kitchen Gardening", "qualifier": "Inferred from subject matter", "evidence": "Grow vegetables at home"},
+  "title": {"value": "Kitchen Garden Guide", "evidence": "Kitchen Garden Guide"},
   "author": {"value": null, "qualifier": "No author identified", "evidence": null},
-  "date": {"value": "circa 1940s", "qualifier": "Approximate period; publication date unknown", "evidence": "wartime"}
+  "date": {"value": "circa 1940s", "qualifier": "Approximate period; publication date unknown", "evidence": "wartime"},
+  "agency": {"value": null},
+  "document_type": {"value": "Public information leaflet"}
 }
 ```
 
-Values are suggestions, not authoritative bibliographic facts. All three fields
+OSII displays these values as suggestions. All six fields
 accept null/blank values and qualitative qualifiers. Dates remain strings so
 approximate periods and ambiguous interpretations are not forced into fake ISO
 dates. Evidence is an optional exact quotation; Core removes a quotation that
@@ -364,11 +367,11 @@ in local). Local TOML omits null keys; the read adapter restores them as unknown
 A changed primary extraction makes suggestions stale. Originals and search text
 are never renamed or rewritten by inferred metadata.
 
-Topic Explorer prefers the suggested title, falls back to the filename when blank,
-and displays author/date qualifiers on hover and in the selected-document panel.
-Legacy synthesis headings and the model-free first-line heuristic remain supported
-and are not presented as newly extracted AI metadata. Re-run AI synthesis to add
-structured metadata to existing documents; viewing the map makes no model call.
+Topic Explorer uses the descriptive title by default, then the document title,
+then the filename. Hover and the selected-document panel show the metadata fields
+and their qualifiers. Older records still display with their saved title. Re-run
+AI synthesis to add the expanded fields to an existing document. Viewing the map
+makes no model call.
 
 The shared bounded synthesizer uses 100,000-character source windows by default,
 then reduces intermediate summaries in groups of up to four. All source windows
