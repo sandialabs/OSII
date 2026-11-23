@@ -515,9 +515,17 @@ class ProcessorEmbeddingClient:
         self.endpoint_type: str | None = None
         self.semantic: bool | None = None
 
-    def embed(self, *, model: str, texts) -> list[list[float]]:
+    def embed_query(self, *, model: str, text: str) -> list[float]:
+        return self.embed(model=model, texts=[text], query=True)[0]
+
+    def embed(self, *, model: str, texts, query: bool = False) -> list[list[float]]:
         request_id = str(uuid.uuid4())
         identifiers = [f"input-{index}" for index in range(len(texts))]
+        metadata = (
+            {"purpose": "query"}
+            if query and (self.descriptor.get("capabilities") or {}).get("embedding_input_purpose")
+            else {}
+        )
         model_context = _model_context(
             processor_name=self.descriptor["name"],
             descriptor=self.descriptor,
@@ -527,7 +535,10 @@ class ProcessorEmbeddingClient:
         try:
             response = self._client.embed(EmbeddingRequest(
                 request_id=request_id,
-                inputs=[EmbeddingInput(id=identifier, text=text) for identifier, text in zip(identifiers, texts)],
+                inputs=[
+                    EmbeddingInput(id=identifier, text=text, metadata=metadata)
+                    for identifier, text in zip(identifiers, texts)
+                ],
                 config={"model": model} if model else {},
                 model_context=model_context,
             ))

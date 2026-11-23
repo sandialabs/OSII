@@ -5,6 +5,7 @@ import faiss
 from osii.indexing.faiss_io import read_index
 import numpy as np
 from osii.model_clients import create_embedding_client
+from osii.processors.remote import ProcessorEmbeddingClient
 
 from osii.indexing.common import (
     embeddings_index_path,
@@ -45,7 +46,12 @@ def embed_query(text: str, model: str | None = None) -> np.ndarray:
     client = create_embedding_client()
     model_name = get_embedding_model(model)
 
-    vec = np.array([client.embed(model=model_name, texts=[text])[0]], dtype="float32")
+    embedding = (
+        client.embed_query(model=model_name, text=text)
+        if isinstance(client, ProcessorEmbeddingClient)
+        else client.embed(model=model_name, texts=[text])[0]
+    )
+    vec = np.array([embedding], dtype="float32")
     faiss.normalize_L2(vec)
     return vec
 

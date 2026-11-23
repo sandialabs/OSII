@@ -30,6 +30,13 @@ def write_module(root, folder='collection-data-card', **updates):
     return path
 
 
+def test_manifest_can_require_explicit_activation(tmp_path):
+    write_module(tmp_path, enabled_by_default=False)
+    processor, = discover_processors(tmp_path)
+    assert active_processors(tmp_path, {}) == []
+    assert active_processors(tmp_path, {processor.enable_env: 'true'}) == [processor]
+
+
 def test_new_module_drives_startup_registration_and_controls_without_central_edits(tmp_path, monkeypatch):
     # Use the actual launcher, without duplicating its discovery or registration code.
     sys.path.insert(0, str(ROOT / 'scripts'))
@@ -171,7 +178,7 @@ def test_launcher_imports_without_installed_application_dependencies():
 
 def test_all_existing_processors_keep_their_switches_and_ids():
     processors = discover_processors(ROOT/'osii-processor-modules')
-    assert {row.id for row in processors} == {'banyan','tesseract-opencv','readable-wiki','concept-entity-wiki','csv-extractor','collection-table'}
+    assert {row.id for row in processors} == {'banyan','tesseract-opencv','readable-wiki','concept-entity-wiki','csv-extractor','collection-table','embeddinggemma'}
     assert next(row for row in processors if row.id == 'banyan').registration_id == 'banyan-nemotron-parse'
     assert not any(row.id == 'tika' for row in processors)
 
