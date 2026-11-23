@@ -128,7 +128,8 @@ class EmbeddingGemma(Embedder):
         display_name="EmbeddingGemma 2 (local CPU)",
         description="Semantic embeddings from Google's text model. Processing stays on this computer.",
         kind=ProcessorKind.EMBEDDER,
-        capabilities=Capability(output_kinds=["embedding_vector"], embedding_input_purpose=True),
+        capabilities=Capability(output_kinds=["embedding_vector"]),
+        config_schema={"type": "object", "additionalProperties": False, "x-osii-embedding-input-purpose": True},
     )
 
     def __init__(self, runtime: LlamaRuntime):

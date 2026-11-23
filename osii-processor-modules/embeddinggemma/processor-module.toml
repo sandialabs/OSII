@@ -15,4 +15,8 @@ readiness_path = "/ready"
 
 [processors.capabilities]
 output_kinds = ["embedding_vector"]
-embedding_input_purpose = true
+
+[processors.config_schema]
+type = "object"
+additionalProperties = false
+x-osii-embedding-input-purpose = true

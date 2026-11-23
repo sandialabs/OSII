@@ -18,7 +18,7 @@ def test_processor_contract_distinguishes_queries_from_documents(monkeypatch):
     with TestClient(app) as client:
         descriptor = client.get("/v1/descriptor").json()
         assert descriptor["name"] == PROCESSOR_ID
-        assert descriptor["capabilities"]["embedding_input_purpose"]
+        assert descriptor["config_schema"]["x-osii-embedding-input-purpose"]
         response = client.post("/v1/embed", json={
             "request_id": "sample",
             "inputs": [
