@@ -41,7 +41,7 @@ def main() -> None:
     run([node, str(npm_cli), "run", "build"], directory=dashboard)
     run([sys.executable, "-m", "pytest", "osii-core/tests/test_library_lock.py", "osii-core/tests/test_desktop.py", "-q"])
     run([sys.executable, "-m", "pytest", "osii-core/services", "--import-mode=importlib", "-q"])
-    run([sys.executable, "scripts/prepare_standalone.py", "--ocr", "--dashboard"])
+    run([sys.executable, "scripts/prepare_standalone.py", "--ocr", "--embedding", "--dashboard"])
     run([sys.executable, "-m", "PyInstaller", "--clean", "--noconfirm", "--distpath", "osii-desktop/resources/runtime", "osii-desktop/runtime.spec"])
     executable = desktop / "resources" / "runtime" / "osii-runtime" / "osii-runtime.exe"
     clean = os.environ.copy()

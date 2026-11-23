@@ -24,7 +24,8 @@ an AI model.
 ## What you can do
 
 - Choose files from local folders or a connected share and process them with a
-  named flow. The desktop defaults to offline extraction, previews, and keywords.
+  named flow. The desktop includes offline extraction, previews, keyword search,
+  and semantic search with EmbeddingGemma 2.
 - Extract text, add OCR alongside it, and inspect text or mathematical Markdown
   with source locations.
 - Browse files and collections, search by keywords or document meaning, and ask

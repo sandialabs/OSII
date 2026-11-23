@@ -17,4 +17,7 @@ module.exports = async context => {
   }
   await fs.access(path.join(root, '_internal/dashboard/index.html'));
   await fs.access(path.join(root, '_internal/ocr/tesseract.exe'));
+  for (const name of ['model.gguf', 'llama-server.exe', 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll', 'NOTICE.txt']) {
+    await fs.access(path.join(root, '_internal/embedding', name));
+  }
 };

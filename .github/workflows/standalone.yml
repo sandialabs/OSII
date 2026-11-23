@@ -34,8 +34,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Launcher tests failed' }
           uv run --no-sync python -m pytest osii-core/services --import-mode=importlib -q
           if ($LASTEXITCODE -ne 0) { throw 'Processor tests failed' }
-      - name: Prepare checksum-verified OCR payload
-        run: uv run --no-sync python scripts/prepare_standalone.py --ocr
+      - name: Prepare checksum-verified OCR and CPU embedding payloads
+        run: uv run --no-sync python scripts/prepare_standalone.py --ocr --embedding
       - name: Build offline dashboard assets
         working-directory: osii-dashboard/dashboard
         run: |
@@ -83,8 +83,8 @@ jobs:
             "signed=false" >> $env:GITHUB_OUTPUT
           }
           if ($LASTEXITCODE -ne 0) { throw 'Installer packaging failed' }
-      - name: Install, exercise, reinstall and uninstall the delivered application
-        run: ./scripts/check_standalone_installer.ps1
+      - name: Install, verify offline semantic search, reinstall and uninstall
+        run: ./scripts/check_standalone_installer.ps1 -BlockExternalNetwork
       - name: Verify signatures and write release checksums
         env:
           OSII_SIGNED_BUILD: ${{ steps.installer.outputs.signed }}
@@ -96,7 +96,7 @@ jobs:
           }
           $hash = (Get-FileHash release/standalone/OSII-Standalone-Setup.exe -Algorithm SHA256).Hash.ToLower()
           "$hash  OSII-Standalone-Setup.exe" | Set-Content release/standalone/SHA256SUMS.txt
-          @{ signed = ($env:OSII_SIGNED_BUILD -eq 'true'); cleanWindowsAcceptance = 'pending'; commit = '${{ github.sha }}'; installerBytes = (Get-Item release/standalone/OSII-Standalone-Setup.exe).Length } | ConvertTo-Json | Set-Content release/standalone/validation.json
+          @{ signed = ($env:OSII_SIGNED_BUILD -eq 'true'); cleanWindowsAcceptance = 'pending'; offlineSemanticSearch = 'passed'; commit = '${{ github.sha }}'; installerBytes = (Get-Item release/standalone/OSII-Standalone-Setup.exe).Length } | ConvertTo-Json | Set-Content release/standalone/validation.json
       - uses: actions/upload-artifact@v6
         with:
           name: osii-standalone-windows-${{ steps.version.outputs.version }}

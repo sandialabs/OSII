@@ -195,7 +195,8 @@ def check(executable: Path) -> dict:
         source = temporary / "Documents with spaces"
         source.mkdir()
         original = source / "Résumé evidence.txt"
-        original.write_text("Portable evidence survives restart. The calibration result was measured twice.", encoding="utf-8")
+        original.write_text("Portable evidence survives restart. The calibration result was measured twice. "
+                            "A portable insulated chest filled with frozen gel packs preserves sandwiches during travel.", encoding="utf-8")
         original_bytes = original.read_bytes()
         application = temporary / "application"
         if os.name == "nt":
@@ -212,14 +213,23 @@ def check(executable: Path) -> dict:
             inventory = Path(profile["library"]) / "state" / "inventory.sqlite3"
             assert inventory.is_file()
             flow = api(session, "/api/processing-flows")["default_flow_id"]
-            assert flow == "standalone-offline"
-            report = api(session, f"/api/processing-flows/{flow}/test", {})
+            bundled = flow == "standalone-semantic"
+            if os.name == "nt":
+                assert bundled, flow
+            report = api(session, "/api/processing-flows/standalone-offline/test", {})
             assert report["ok"], report
             assert {step["step"] for step in report["results"]} == {"extract", "synthesize", "enrich"}, report
             run = api(session, "/api/runs", {"queue_paths": [str(original)], "processing_flow_id": flow})
             wait_run(session, "/api/runs/" + run.get("run_id", run["id"]))
             search = api(session, "/api/search", {"query": "calibration", "mode": "lexical"})
             assert search.get("results"), search
+            if bundled:
+                assert setup["methods"]["embedder"]["model"] == "embeddinggemma-2-text-256-v1", setup
+                search = api(session, "/api/search", {
+                    "query": "How do I keep perishables cold on the road?", "mode": "semantic",
+                })
+                assert search["retrieval_mode_used"] == "semantic", search
+                assert search["results"][0]["filename"] == original.name, search
             collection = api(session, "/api/collections", {"name": "Preserved collection"})
             # A second supervisor cannot write the same library.
             other = Runtime(executable, application)
@@ -246,7 +256,14 @@ def check(executable: Path) -> dict:
             # A disconnected model cannot break browsing or lexical retrieval.
             assert api(session, "/api/search", {"query": "calibration", "mode": "lexical"}).get("results")
             assert original.read_bytes() == original_bytes
-            pids = [row["pid"] for row in runtime.request("process_status")]
+            statuses = runtime.request("process_status")
+            pids = [row["pid"] for row in statuses]
+            if bundled and os.name == "nt":
+                embedder_pid = next(row["pid"] for row in statuses if row["id"] == "embeddinggemma")
+                children = [row["pid"] for row in windows_processes()
+                            if row["parent"] == embedder_pid and row["name"].lower() == "llama-server.exe"]
+                assert children, "The installed processor did not start its native CPU helper"
+                pids.extend(children)
         finally:
             runtime.close()
         assert all(not is_running(pid) for pid in pids), "Closing OSII left owned helpers alive"
@@ -312,7 +329,8 @@ def check(executable: Path) -> dict:
             finally:
                 recovered.close()
     return {"status": "ok", "startup_seconds": startup_seconds,
-            "checks": ["private-runtime", "offline-flow", "bundled-sample", "archived-inventory", "lexical-search", "library-lock", "model-connection", "semantic-search", "model-chat", "endpoint-disconnect", "restart", "helper-cleanup"]}
+            "checks": ["private-runtime", "offline-flow", "bundled-sample", "archived-inventory", "lexical-search", "library-lock", "model-connection", "semantic-search", "model-chat", "endpoint-disconnect", "restart", "helper-cleanup",
+                       *(["bundled-embeddinggemma"] if bundled else [])]}
 
 
 if __name__ == "__main__":

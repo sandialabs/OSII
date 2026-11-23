@@ -24,6 +24,7 @@ import urllib.error
 
 from osii.library_lock import LibraryLock
 from .profiles import Profiles, check_library, require_local, validate_source
+from .runtime import embedding_assets
 from .windows import ProcessJob
 
 SERVICES = {
@@ -31,6 +32,7 @@ SERVICES = {
     "ocr": ("osii_local_tesseract.main", "Bundled Tesseract OCR"),
     "synthesizer": ("osii_local_synthesizer.main", "Source excerpt preview — no AI"),
     "embedder": ("osii_local_embedder.main", "Lexical hashing — no AI"),
+    "embeddinggemma": ("osii_embeddinggemma.main", "EmbeddingGemma 2 (CPU)"),
     "enricher": ("osii_local_enricher.main", "Statistics and keywords"),
     "model-bridge": ("osii_model_provider_bridge.main", "Optional AI provider connection"),
 }
@@ -115,13 +117,15 @@ class Supervisor:
         if not getattr(sys, "frozen", False):
             # Source-only diagnostic execution; installed builds never need this.
             core = Path(__file__).resolve().parents[2]
-            env["PYTHONPATH"] = str(core) + os.pathsep + os.pathsep.join(str(core / "services" / name) for name in
-                ("local-extractor", "local-tesseract", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge"))
+            paths = [core, core.parent / "osii-processor-modules" / "embeddinggemma"]
+            paths.extend(core / "services" / name for name in
+                         ("local-extractor", "local-tesseract", "local-synthesizer", "local-embedder", "local-enricher", "model-provider-bridge"))
+            env["PYTHONPATH"] = os.pathsep.join(map(str, paths))
         runtime = self.profiles.directory / "profiles" / profile["id"]
         modules = runtime / "modules"
         modules.mkdir(exist_ok=True)
         bridge = f"http://127.0.0.1:{ports['model-bridge']}"
-        processors = [f"http://127.0.0.1:{ports[name]}" for name in SERVICES if name != "model-bridge"]
+        processors = [f"http://127.0.0.1:{port}" for name, port in ports.items() if name in SERVICES and name != "model-bridge"]
         processors += [bridge + f"/{provider}/{kind}" for provider in ("ollama", "openai") for kind in ("embedder", "synthesizer")]
         env.update({
             "PYTHONUNBUFFERED": "1", "OSII_STANDALONE": "1", "OSII_STORAGE_BACKEND": "sidecar",
@@ -142,6 +146,11 @@ class Supervisor:
             "OSII_PREVIEW_URL": f"http://127.0.0.1:{ports['synthesizer']}",
             "OSII_ENRICHER_URL": f"http://127.0.0.1:{ports['enricher']}",
         })
+        if "embeddinggemma" in ports:
+            from osii_embeddinggemma import MODEL_ID, PROCESSOR_ID
+            engine, model = embedding_assets()
+            env.update(OSII_DEFAULT_EMBEDDER=PROCESSOR_ID, EMBEDDING_MODEL=MODEL_ID,
+                       OSII_EMBEDDINGGEMMA_ENGINE=str(engine), OSII_EMBEDDINGGEMMA_WEIGHTS=str(model))
         return env
 
     def spawn(self, service: Service, sock: socket.socket | None = None) -> None:
@@ -232,7 +241,10 @@ class Supervisor:
         reserved: dict[str, socket.socket] = {}
         try:
             check_library(root, existing=True)
-            for name in (*SERVICES, "api", "control"):
+            service_names = list(SERVICES)
+            if not all(path.is_file() for path in embedding_assets()):
+                service_names.remove("embeddinggemma")
+            for name in (*service_names, "api", "control"):
                 reserved[name] = listener()
             ports = {name: sock.getsockname()[1] for name, sock in reserved.items()}
             self.token = secrets.token_urlsafe(48)
@@ -240,11 +252,11 @@ class Supervisor:
             self.environment.update(OSII_SERVICE_SUPERVISOR_URL=f"http://127.0.0.1:{ports['control']}",
                                     OSII_SERVICE_SUPERVISOR_TOKEN=secrets.token_urlsafe(48))
             self.profile = profile
-            for name in (*SERVICES, "api"):
+            for name in (*service_names, "api"):
                 service = self.services[name] = Service(name, ports[name])
                 self.spawn(service, reserved.pop(name))
             self.start_control(reserved.pop("control"))
-            for name in (*SERVICES, "api"):
+            for name in (*service_names, "api"):
                 self.wait_ready(self.services[name])
             worker = self.services["worker"] = Service("worker")
             self.spawn(worker)

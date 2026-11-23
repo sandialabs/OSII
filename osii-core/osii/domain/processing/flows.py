@@ -16,10 +16,13 @@ TEXT_LAYER_SAMPLE = SAMPLE_ROOT / "scripts/demo-data/nist-cloud-computing.pdf"
 TEXT_LAYER_SAMPLE_PAGE = 5  # physical PDF page 6: the definition, not its cover
 TEXT_LAYER_SAMPLE_ID = "nist-cloud-definition"
 OFFLINE_FLOW_ID = "standalone-offline"
+SEMANTIC_FLOW_ID = "standalone-semantic"
 
 
 def default_processing_flow_id():
-    return OFFLINE_FLOW_ID if os.getenv("OSII_STANDALONE") == "1" else "bundled"
+    if os.getenv("OSII_STANDALONE") == "1":
+        return SEMANTIC_FLOW_ID if os.getenv("OSII_DEFAULT_EMBEDDER") else OFFLINE_FLOW_ID
+    return "bundled"
 
 
 def processing_flows(root):
@@ -40,7 +43,8 @@ def processing_flows(root):
     settings = load_tools_config()
     for identifier, value in settings.get("processing_flows", {}).items():
         values[identifier] = {**common, **value, "routes": active_extractor_routes(value.get("routes", bundled))}
-    if default_processing_flow_id() == OFFLINE_FLOW_ID:
+    default_flow = default_processing_flow_id()
+    if default_flow in {OFFLINE_FLOW_ID, SEMANTIC_FLOW_ID}:
         values[OFFLINE_FLOW_ID] = {
             **common,
             "name": "Text and keywords (offline)",
@@ -49,6 +53,12 @@ def processing_flows(root):
             "enricher_name": "local.stats-keywords",
             "build_embeddings": False,
             "editable": False,
+        }
+    if default_flow == SEMANTIC_FLOW_ID:
+        values[SEMANTIC_FLOW_ID] = {
+            **values[OFFLINE_FLOW_ID],
+            "name": "Text, keywords and semantic search",
+            "build_embeddings": True,
         }
     try:
         sample_hash = sha256(TEXT_LAYER_SAMPLE.read_bytes()).hexdigest()

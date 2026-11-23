@@ -53,6 +53,11 @@ def configure_ocr() -> None:
     os.environ["TESSDATA_PREFIX"] = str(root / "tessdata")
 
 
+def embedding_assets() -> tuple[Path, Path]:
+    root = resources() / "embedding"
+    return root / ("llama-server.exe" if os.name == "nt" else "llama-server"), root / "model.gguf"
+
+
 def run_role(role: str) -> None:
     import base64
     import importlib

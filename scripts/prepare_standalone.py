@@ -81,9 +81,76 @@ def prepare_ocr() -> None:
         list(pool.map(language, lock["languages"].items()))
 
 
+def windows_cpp_runtime() -> list[Path]:
+    """Select the app-local redistributable DLLs from the Windows build tools."""
+    filenames = ("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")
+    installed = os.getenv("VCToolsRedistDir")
+    if installed:
+        candidates = list(Path(installed).glob("x64/Microsoft.VC*.CRT"))
+    else:
+        installer = Path(os.environ["ProgramFiles(x86)"]) / "Microsoft Visual Studio" / "Installer"
+        vs_path = subprocess.check_output(
+            [str(installer / "vswhere.exe"), "-latest", "-products", "*", "-utf8",
+             "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+             "-property", "installationPath"], encoding="utf-8",
+        ).strip()
+        candidates = list((Path(vs_path) / "VC" / "Redist" / "MSVC").glob("*/x64/Microsoft.VC*.CRT"))
+    candidates = [
+        path for path in candidates
+        if all((path / filename).is_file() for filename in filenames)
+    ]
+    if not candidates:
+        raise RuntimeError("Install the Visual Studio C++ x64 build tools and redistributable files on the build machine.")
+    newest = max(candidates, key=lambda path: tuple(
+        int(part) for part in path.resolve().parents[1].name.split(".") if part.isdecimal()
+    ))
+    return [newest / filename for filename in filenames]
+
+
+def prepare_embedding() -> None:
+    if os.name != "nt":
+        raise RuntimeError("The Windows embedding payload must be prepared on Windows.")
+    lock = json.loads((ROOT / "osii-desktop" / "embedding-lock.json").read_text())
+    engine, model = lock["runtime"], lock["model"]
+    output = PAYLOAD / "embedding"
+    dlls = windows_cpp_runtime()
+    with tempfile.TemporaryDirectory(prefix="embedding-", dir=PAYLOAD) as directory:
+        staged = Path(directory) / "payload"
+        staged.mkdir()
+        with ZipFile(BytesIO(verified_download(engine["url"], engine["sha256"]))) as archive:
+            files = {"llama-server.exe", "llama-server-impl.dll", "llama-common.dll",
+                     "llama.dll", "mtmd.dll", "ggml.dll", "ggml-base.dll",
+                     "libomp.dll", "LICENSE-LLVM-OpenMP"}
+            files.update(name for name in archive.namelist() if name.startswith("ggml-cpu-") and name.endswith(".dll"))
+            if "ggml-cpu-x64.dll" not in files:
+                raise RuntimeError("The verified archive is missing the generic Windows x64 CPU backend.")
+            for name in files:
+                (staged / name).write_bytes(archive.read(name))
+        (staged / "model.gguf").write_bytes(verified_download(model["url"], model["sha256"]))
+        for name, entry in (("LICENSE-llama.cpp", engine), ("LICENSE-EmbeddingGemma", model)):
+            (staged / name).write_bytes(verified_download(entry["license_url"], entry["license_sha256"]))
+        for dll in dlls:
+            shutil.copy2(dll, staged / dll.name)
+        (staged / "NOTICE.txt").write_text(
+            "EmbeddingGemma 2 by Google, under Apache 2.0.\n"
+            "Source model: https://huggingface.co/google/embeddinggemma-2\n"
+            "Text-only GGUF conversion and UD-Q4_K_XL quantization by Unsloth.\n"
+            "Weights: " + model["url"] + "\nSHA-256: " + model["sha256"] + "\n"
+            "llama.cpp CPU runtime: " + engine["url"] + "\nSHA-256: " + engine["sha256"] + "\n"
+            "Microsoft Visual C++ Redistributable DLLs from the build machine: "
+            + dlls[0].parents[2].name + "\n"
+            "https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files\n",
+            encoding="utf-8",
+        )
+        if output.exists():
+            shutil.rmtree(output)
+        staged.rename(output)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ocr", action="store_true", help="Fetch and verify the pinned Windows OCR build assets")
+    parser.add_argument("--embedding", action="store_true", help="Prepare verified Windows CPU model assets")
     parser.add_argument("--dashboard", action="store_true", help="Include the already-built dashboard")
     args = parser.parse_args()
     PAYLOAD.mkdir(parents=True, exist_ok=True)
@@ -105,6 +172,8 @@ def main() -> None:
     (PAYLOAD / "THIRD_PARTY_NOTICES.txt").write_text("".join(notices), encoding="utf-8")
     if args.ocr:
         prepare_ocr()
+    if args.embedding:
+        prepare_embedding()
     if args.dashboard:
         dashboard = ROOT / "osii-dashboard" / "dashboard" / "dist"
         if not (dashboard / "index.html").is_file():

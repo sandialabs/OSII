@@ -16,12 +16,17 @@ function windowsProcessMemory(rootId) {
 }
 
 async function main() {
+  const useEmbeddingGemma = Boolean(process.env.OSII_DESKTOP_EXECUTABLE || process.env.OSII_SMOKE_BUNDLED_EMBEDDING);
+  const semanticQuery = 'How do I keep perishables cold on the road?';
   const temporary = process.env.OSII_SMOKE_DIRECTORY || await fs.mkdtemp(path.join(os.tmpdir(), 'OSII smoke — '));
   await fs.mkdir(temporary, { recursive: true });
   const documents = path.join(temporary, 'Documents with spaces');
   await fs.mkdir(documents, { recursive: true });
-  try { await fs.writeFile(path.join(documents, 'evidence.txt'), 'Portable evidence survives restart. The calibration result was measured twice.', { flag: 'wx' }); }
+  try { await fs.writeFile(path.join(documents, 'evidence.txt'), 'Portable evidence survives restart. The calibration result was measured twice. A portable insulated chest filled with frozen gel packs preserves sandwiches during travel.', { flag: 'wx' }); }
   catch (error) { if (error.code !== 'EEXIST') throw error; }
+  if (useEmbeddingGemma) {
+    await fs.writeFile(path.join(documents, 'telescope.txt'), 'Telescopes collect starlight with aligned mirrors.');
+  }
   let saved = false;
   try { saved = (await fs.readdir(path.join(temporary, 'application', 'profiles'))).length > 0; } catch { /* First installation. */ }
   const errors = [];
@@ -47,6 +52,15 @@ async function main() {
     }
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+/, { timeout: 150_000 });
     await page.locator('#root').waitFor({ state: 'visible' });
+    if (process.env.OSII_SMOKE_BLOCK_EXTERNAL === '1') {
+      const online = await application.evaluate(async ({ net }) => {
+        try {
+          await net.fetch('https://github.com/robots.txt', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+          return true;
+        } catch { return false; }
+      });
+      assert.equal(online, false, 'The installed application must have no external HTTPS access during this test');
+    }
     const api = async (route, method = 'GET', body) => page.evaluate(async ({ route, method, body }) => {
       const response = await fetch(route, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
       const value = await response.json();
@@ -73,22 +87,29 @@ async function main() {
     const setup = await api('/api/admin/setup');
     assert.equal(setup.extraction_ready, true);
     assert.equal(setup.ai_ready, false);
+    if (useEmbeddingGemma) {
+      assert.equal(setup.methods.embedder.model, 'embeddinggemma-2-text-256-v1', JSON.stringify(setup.methods));
+      assert.equal(setup.methods.embedder.available, true);
+    }
     assert.ok(setup.services.some(service => service.id === 'ocr' && service.ownership === 'osii'));
     metrics.dashboardReadySeconds = (Date.now() - started) / 1000;
     if (process.platform === 'win32') metrics.idleMemory = windowsProcessMemory(application.process().pid);
     const noToken = await fetch(new URL('/health', page.url()));
     assert.equal(noToken.status, 403, 'The API must reject requests outside the Electron session');
     await page.goto(new URL('/intake', page.url()).href);
-    await page.getByRole('combobox', { name: 'Processing flow' }).getByText('Text and keywords (offline)').waitFor();
+    const flow = useEmbeddingGemma ? 'Text, keywords and semantic search' : 'Text and keywords (offline)';
+    await page.getByRole('combobox', { name: 'Processing flow' }).getByText(flow).waitFor();
     await page.getByRole('button', { name: 'Browse files', exact: true }).click();
     const browser = page.getByRole('dialog');
     await browser.getByLabel('Folder path').fill(documents);
     await browser.getByRole('button', { name: 'Go', exact: true }).click();
     await browser.getByText('evidence.txt', { exact: true }).click();
-    await browser.getByRole('button', { name: 'Use 1 file', exact: true }).click();
+    if (useEmbeddingGemma) await browser.getByText('telescope.txt', { exact: true }).click();
+    const files = useEmbeddingGemma ? '2 files' : '1 file';
+    await browser.getByRole('button', { name: `Use ${files}`, exact: true }).click();
     const queued = page.waitForResponse(response => new URL(response.url()).pathname === '/api/runs'
       && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Queue 1 file', exact: true }).click();
+    await page.getByRole('button', { name: `Queue ${files}`, exact: true }).click();
     const run = await (await queued).json();
     const identifier = run.run_id || run.id;
     assert.ok(identifier, JSON.stringify(run));
@@ -104,6 +125,18 @@ async function main() {
     assert.equal(home.tools.research.enabled, false, 'Model-backed reports still require a model');
     const search = await api('/api/search', 'POST', { query: 'calibration', mode: 'lexical' });
     assert.ok(search.results.length > 0, JSON.stringify(search));
+    if (useEmbeddingGemma) {
+      const matched = page.waitForResponse(response => new URL(response.url()).pathname === '/api/search'
+        && response.request().method() === 'POST');
+      const searchPage = new URL('/search', page.url());
+      searchPage.searchParams.set('q', semanticQuery);
+      searchPage.searchParams.set('mode', 'semantic');
+      await page.goto(searchPage.href);
+      const results = await (await matched).json();
+      assert.equal(results.retrieval_mode_used, 'semantic', JSON.stringify(results));
+      assert.equal(results.results[0]?.filename, 'evidence.txt', JSON.stringify(results));
+      await page.getByText('evidence.txt', { exact: true }).first().waitFor();
+    }
     const chat = await api('/api/chat', 'POST', { query: 'What calibration result was measured?', scope: { scope_type: 'root' } });
     assert.ok(JSON.stringify(chat).includes('calibration'), 'Offline chat must contain grounded evidence');
     await page.goto(new URL('/research', page.url()).href);
@@ -126,10 +159,17 @@ async function main() {
     const reopened = await page.evaluate(async () => (await fetch('/api/search', { method: 'POST',
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: 'calibration', mode: 'lexical' }) })).json());
     assert.ok(reopened.results.length > 0, JSON.stringify(reopened));
+    if (useEmbeddingGemma) {
+      const semantic = await api('/api/search', 'POST', { query: semanticQuery, mode: 'semantic' });
+      assert.equal(semantic.retrieval_mode_used, 'semantic');
+      assert.equal(semantic.results[0]?.filename, 'evidence.txt');
+    }
     assert.deepEqual(errors, []);
     await fs.writeFile(path.join(output, 'standalone-metrics.json'), JSON.stringify(metrics, null, 2) + '\n');
     console.log(JSON.stringify({ metrics }));
-    console.log(JSON.stringify({ status: 'ok', checks: ['first-run', 'private-session', 'offline-mathematics', 'intake', 'preview', 'enrichment', 'keyword-search', 'offline-chat', 'spa-reload', 'ipc-boundary', 'restart'] }));
+    console.log(JSON.stringify({ status: 'ok', checks: ['first-run', 'private-session', 'offline-mathematics', 'intake', 'preview', 'enrichment', 'keyword-search', 'offline-chat', 'spa-reload', 'ipc-boundary', 'restart',
+      ...(useEmbeddingGemma ? ['bundled-cpu-semantic-search-after-restart'] : []),
+      ...(process.env.OSII_SMOKE_BLOCK_EXTERNAL === '1' ? ['external-https-blocked'] : [])] }));
   } catch (error) {
     const page = application?.windows()[0];
     if (page && !page.isClosed()) {

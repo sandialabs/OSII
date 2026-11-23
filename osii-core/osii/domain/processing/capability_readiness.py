@@ -154,7 +154,7 @@ def _embedding_probe(osii_root: Path | None = None) -> dict[str, Any]:
                             "request_id": "readiness",
                             "inputs": [{"id": "probe", "text": "OSII readiness probe"}],
                         },
-                        timeout=8,
+                        timeout=30 if selected == os.getenv("OSII_DEFAULT_EMBEDDER") else 8,
                     )
                     probe.raise_for_status()
                     payload = probe.json()

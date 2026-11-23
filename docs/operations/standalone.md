@@ -14,8 +14,14 @@ follow your organization's software approval policy. The delivered artifact's
 3. Choose **Create library**, enter a name and select the document folder.
    A connected mapped drive or UNC path is supported for documents.
 4. Select **Create and open library**. In **Intake & Queue**, select files and
-   use **Text and keywords (offline)** to read and search them. Set up an
-   optional model connection before choosing a flow that builds embeddings.
+   use **Text, keywords and semantic search**. When processing finishes, choose
+   **Semantic** in Search options to search by meaning.
+
+The installer includes the text-only EmbeddingGemma 2 model and its CPU
+runtime. A fresh library can build embeddings offline. **Text and keywords
+(offline)** remains available for batches that only need keyword search and
+extractive previews. An existing saved embedding connection keeps precedence.
+Chat and model-backed reports continue to use their own optional connections.
 
 Do not install Python, uv, Node, Java, Tesseract, Podman or Docker for this app.
 Ollama is separately installed and managed only when you choose to use it.
@@ -48,10 +54,10 @@ manually before switching applications.
 | --- | --- |
 | Native extraction | Text-layer PDF, DOCX, PPTX, XLSX, RTF and common text/data files |
 | OCR | Full-page Tesseract for PDF, PNG, JPEG and TIFF; English, French, German, Spanish, Japanese, Korean, Simplified Chinese and Arabic |
-| Without a model | Direct file selection, keyword search, extractive previews and grounded answers, statistics and keywords |
-| With an optional endpoint | Semantic search, model-backed synthesis/chat, and existing model-dependent workflows |
+| Offline | Direct file selection, keyword and semantic search, extractive previews and grounded answers, statistics and keywords |
+| With an optional endpoint | Alternate embedding models, model-backed synthesis/chat, and existing model-dependent workflows |
 | Preserved product interfaces | Browsing, collections, editing, provenance, reports and exports; Topic Explorer retains its existing requirements |
-| Not bundled | Java/Tika, PostgreSQL, Banyan, OpenCV region OCR, specialist dataset analysis, Haystack, Ollama and LLM/embedding weights |
+| Not bundled | Java/Tika, PostgreSQL, Banyan, OpenCV region OCR, specialist dataset analysis, Haystack, Ollama and generative LLM weights |
 
 Background discovery follows the shared beta workflow and is archived.
 Existing inventory records stay readable in their original SQLite database.
@@ -90,7 +96,8 @@ compatible; it never reverses a migration.
 ## Build an installer
 
 These requirements apply to the **maintainer's build machine only**: Windows
-11 x64, uv, Node.js 22.18+, and 7-Zip. Use a checkout of `osii-standalone`.
+11 x64, uv, Node.js 22.18+, 7-Zip, and Visual Studio C++ x64 build tools with
+the app-local redistributable files. Use a checkout of `osii-standalone`.
 GitHub's **Standalone Windows** workflow performs the same build and tests.
 
 ```powershell
@@ -112,6 +119,12 @@ The latter pins the upstream installer archive and language data by SHA-256.
 7-Zip extracts the verified runtime without installing Tesseract on the builder.
 Do not replace a failed dependency fetch with an unverified download.
 
+The processor source lives in `osii-processor-modules/embeddinggemma`.
+The Standalone build fetches its pinned CPU engine and
+quantized text weights using `osii-desktop/embedding-lock.json`. The packaged
+payload includes the model and engine licenses and the app-local Visual C++
+DLLs from the build tools. No weights are fetched at application startup.
+
 For a version change, update Core and workspace service versions, the dashboard
 and desktop package versions, and both dependency locks before building.
 The asset-preparation step rejects mismatched product versions. The delivered
@@ -121,10 +134,13 @@ runtime contains dependency notices and Electron includes its own notices.
 
 CI builds and tests the actual frozen distribution and installs the resulting
 NSIS artifact. It checks native formats/OCR/FAISS, archived inventory preservation,
-the offline processing flow and its sample, optional model/semantic/chat behavior, private API
+the offline processing flow and its sample, optional endpoint behavior, private API
 and IPC boundaries, shutdown/restart, and data-preserving reinstall/uninstall.
-The frozen tests clear dependency-tool paths. They do not establish that a
-GitHub-hosted machine is a clean end-user Windows installation.
+It also checks that a fresh installed library ranks a relevant document for a
+paraphrased query using the bundled model and can reopen its semantic index.
+Windows Firewall blocks external traffic for the installed app and its model
+helpers during this test. The runner stays connected so it can record results.
+Clean, standard-user Windows acceptance remains a separate release gate.
 
 Before broad distribution, record a run on a clean Windows 11 x64 VM with a
 standard user, no developer tools, no separate OCR/model runtime, and networking

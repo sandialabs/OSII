@@ -1,6 +1,7 @@
 param(
     [string]$Installer = "$PSScriptRoot/../release/standalone/OSII-Standalone-Setup.exe",
-    [switch]$RequireSignature
+    [switch]$RequireSignature,
+    [switch]$BlockExternalNetwork
 )
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
@@ -11,6 +12,8 @@ $workspace = Join-Path $testRoot 'Preserved library'
 $previousPath = $env:PATH
 $previousExecutable = $env:OSII_DESKTOP_EXECUTABLE
 $previousWorkspace = $env:OSII_SMOKE_DIRECTORY
+$previousOffline = $env:OSII_SMOKE_BLOCK_EXTERNAL
+$firewallGroup = "OSII installer test " + [Guid]::NewGuid().ToString()
 
 function Install-OSII {
     $process = Start-Process -FilePath (Resolve-Path $Installer).Path -ArgumentList "/S /D=$installation" -Wait -PassThru
@@ -28,6 +31,25 @@ try {
     }
     $env:OSII_DESKTOP_EXECUTABLE = Join-Path $installation 'OSII Standalone.exe'
     $env:OSII_SMOKE_DIRECTORY = $workspace
+    if ($BlockExternalNetwork) {
+        # Leave the Actions runner online. Isolate the installed application,
+        # the frozen Python helpers, and the model runtime from external hosts.
+        $probe = Invoke-WebRequest -Uri 'https://github.com/robots.txt' -TimeoutSec 15
+        if ($probe.StatusCode -ne 200) { throw 'External connectivity control did not pass' }
+        $programs = @($env:OSII_DESKTOP_EXECUTABLE,
+            (Join-Path $installation 'resources/runtime/osii-runtime.exe'),
+            (Join-Path $installation 'resources/runtime/_internal/embedding/llama-server.exe'))
+        foreach ($program in $programs) {
+            if (-not (Test-Path $program)) { throw "Missing installed executable: $program" }
+            New-NetFirewallRule -DisplayName $firewallGroup -Group $firewallGroup -Program $program `
+                -Profile Any -Direction Outbound -Action Block `
+                -RemoteAddress @('0.0.0.0-126.255.255.255', '128.0.0.0-255.255.255.255', '::/0') | Out-Null
+        }
+        if (@(Get-NetFirewallRule -PolicyStore ActiveStore -Group $firewallGroup).Count -ne $programs.Count) {
+            throw 'External-network restrictions were not applied'
+        }
+        $env:OSII_SMOKE_BLOCK_EXTERNAL = '1'
+    }
     # The test driver uses an explicit Node path. The installed app cannot find
     # Python, uv, npm, Java or a system OCR engine through this environment.
     $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
@@ -56,5 +78,9 @@ try {
     $env:PATH = $previousPath
     $env:OSII_DESKTOP_EXECUTABLE = $previousExecutable
     $env:OSII_SMOKE_DIRECTORY = $previousWorkspace
+    $env:OSII_SMOKE_BLOCK_EXTERNAL = $previousOffline
+    if ($BlockExternalNetwork) {
+        Remove-NetFirewallRule -Group $firewallGroup -ErrorAction SilentlyContinue
+    }
     if (Test-Path $testRoot) { Remove-Item -Recurse -Force $testRoot }
 }

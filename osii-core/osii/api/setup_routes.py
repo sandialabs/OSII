@@ -155,6 +155,9 @@ def setup_summary(request: Request):
     elif ai_ready:
         overall = "ready"
         headline = "Ready for Intake"
+    elif embedding_ready:
+        overall = "ready_optional"
+        headline = "Ready for semantic search. AI chat is optional."
     else:
         overall = "ready_optional"
         headline = "Complete model setup for semantic search and AI chat"
