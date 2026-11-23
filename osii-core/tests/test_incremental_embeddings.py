@@ -268,6 +268,28 @@ def test_connection_or_dimensions_cannot_mix_with_existing_vectors(library):
     assert client.calls == []
 
 
+def test_bundled_embedding_checkpoints_survive_a_new_loopback_port(library, monkeypatch):
+    from osii.configuration import save_models_config
+
+    root, client = library
+    save_models_config({"version": 1, "models": {}, "defaults": {}})
+    monkeypatch.setenv("OSII_DEFAULT_EMBEDDER", "local.test")
+    monkeypatch.setenv("EMBEDDING_MODEL", "test-model")
+    client.base_url = "http://127.0.0.1:45601"
+    monkeypatch.setenv("OSII_BUNDLED_EMBEDDER_URL", client.base_url)
+    first = document(root, "first.txt", "Existing")
+    identity = embed(root, [first])["identity"]
+
+    client.base_url = "http://127.0.0.1:45602"
+    monkeypatch.setenv("OSII_BUNDLED_EMBEDDER_URL", client.base_url)
+    second = document(root, "second.txt", "New")
+    client.calls.clear()
+    report = embed(root, [first, second], expected_identity=identity)
+    assert report["reused_chunks"] == 1
+    assert client.calls == [["New"]]
+    assert {row["file_id"] for row in published(root)[1]} == {first, second}
+
+
 def test_pause_retains_partial_document_chunks_and_preserves_previous_vectors(library):
     root, client = library
     first = document(root, "first.txt", "Already saved")

@@ -216,12 +216,16 @@ def _embed_selected(
     model = model or get_embedding_model()
     provider = selected_processor("embedder", osii_root=osii_root)
     client = create_embedding_client()
+    endpoint = str(getattr(client, "base_url", ""))
+    bundled_endpoint = os.getenv("OSII_BUNDLED_EMBEDDER_URL")
+    if bundled_endpoint and endpoint == bundled_endpoint and provider == os.getenv("OSII_DEFAULT_EMBEDDER"):
+        # The launcher assigns the bundled processor a fresh loopback port
+        # on each run. Its provider, model, and digest still identify the vectors.
+        endpoint = f"bundled:{provider}"
     identity = {
         "provider": provider,
         "model": model,
-        "endpoint_hash": hashlib.sha256(
-            str(getattr(client, "base_url", "")).encode()
-        ).hexdigest(),
+        "endpoint_hash": hashlib.sha256(endpoint.encode()).hexdigest(),
         "processor_version": str(getattr(client, "descriptor", {}).get("version", "")),
     }
     if expected_identity is not None and identity != expected_identity:
