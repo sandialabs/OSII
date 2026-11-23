@@ -382,14 +382,29 @@ def test_shared_drive_environment_keeps_artifacts_in_separate_local_root(monkeyp
     assert not (source / ".osii").exists()
 
 
-def test_shared_drive_environment_does_not_create_missing_source(monkeypatch, tmp_path):
+def test_shared_drive_environment_opens_saved_library_with_missing_source(monkeypatch, tmp_path, capsys):
     source = tmp_path / "offline-share"
+    runtime = tmp_path / "local-runtime"
+    store = runtime / ".osii"
+    store.mkdir(parents=True)
+    artifact = store / "root.synth.txt"
+    artifact.write_text("saved library summary")
     monkeypatch.setattr(DEV_STACK, "load_dotenv", lambda _path: {})
     monkeypatch.setenv("OSII_SOURCE_DIR", str(source))
+    monkeypatch.setenv("OSII_RUNTIME_DIR", str(runtime))
+    monkeypatch.setenv("OSII_ROOT", str(store))
 
-    with pytest.raises(RuntimeError, match="Connect or mount the shared drive"):
+    env = DEV_STACK.build_environment(core_only=True)
+
+    assert env["SHARED_VOLUME_ROOT"] == str(source)
+    assert env["OSII_ROOT"] == str(store)
+    assert "Documents folder is unavailable" in capsys.readouterr().out
+    assert artifact.read_text() == "saved library summary"
+    assert not source.exists()
+
+    monkeypatch.setenv("UPLOAD_ORIGINALS_ROOT", str(source / "uploads"))
+    with pytest.raises(RuntimeError, match="outside the unavailable source"):
         DEV_STACK.build_environment(core_only=True)
-
     assert not source.exists()
 
 

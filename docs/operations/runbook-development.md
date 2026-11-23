@@ -112,6 +112,8 @@ The default document folder is `osii-data/source/`. Set `OSII_SOURCE_DIR` to
 an existing readable folder to use your own files. Quote paths containing
 spaces and use forward slashes on Windows. Connect shared drives in Finder or
 Explorer first. OSII never mounts the share or stores share credentials.
+If the source folder is offline, OSII still opens the saved library. Reconnect
+the share at the same path to open originals and run intake on those files.
 
 Runtime data defaults to `osii-data/`, separately from original documents.
 Configuration is in `osii-data/config/`. Preserve these directories and your
