@@ -195,6 +195,7 @@ export type HashMeta = {
 export type ObjectMeta = {
   file: FileMeta;
   hash: HashMeta;
+  meta?: { source_path?: string };
 };
 
 export type Span = {

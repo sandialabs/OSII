@@ -89,6 +89,7 @@ def test_pdf_preview_recovers_after_source_returns(tmp_path):
                 expect(page.get_by_role("heading", name=SAMPLE.name)).to_be_visible()
                 page.get_by_role("button", name="Source and text").click()
                 expect(page.get_by_role("alert")).to_contain_text("Original file unavailable")
+                expect(page.get_by_role("alert")).to_contain_text(str(source.resolve()))
                 expect(page.get_by_text("ubiquitous, convenient, on-demand network access", exact=False).first).to_be_visible()
 
                 disconnected.rename(source)
