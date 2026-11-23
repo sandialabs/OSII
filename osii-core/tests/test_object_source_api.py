@@ -23,7 +23,14 @@ def test_get_object_source_route(client, temp_data_root, temp_osii_root):
 
     response = client.get(f"/api/objects/{file_id}/source")
     assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
     assert response.content.startswith(b"%PDF-1.4")
+
+    source_file.unlink()
+    unavailable = client.get(f"/api/objects/{file_id}/source", headers={"Range": "bytes=0-7"})
+    assert unavailable.status_code == 404
+    assert unavailable.json() == {"error": "source file not found"}
+    assert unavailable.headers["cache-control"] == "no-store"
 
 
 def test_get_object_source_route_with_data_volume_relative_path(
@@ -81,6 +88,6 @@ def test_external_original_reopens_from_verified_hint_without_basename_collision
         assert response.status_code == 200
         assert response.content == context["src"].read_bytes()
     first.write_bytes(b"%PDF-1.4 changed original")
-    assert client.get(f"/api/objects/{first_context['file_id']}/source").json() == {
-        "error": "source file not found",
-    }
+    unavailable = client.get(f"/api/objects/{first_context['file_id']}/source")
+    assert unavailable.status_code == 404
+    assert unavailable.json() == {"error": "source file not found"}

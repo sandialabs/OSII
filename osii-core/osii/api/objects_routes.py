@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from osii.domain.artifacts.artifact_staleness import (
     get_artifact_staleness,
@@ -158,7 +158,7 @@ async def get_object_summaries_route(request: Request, payload: dict):
     }
 
 
-@router.get("/{file_id}/source")
+@router.get("/{file_id}/source", responses={404: {"description": "Original file unavailable"}})
 async def get_object_source(request: Request, file_id: str):
     osii_root = request.app.state.osii_root.resolve()
     shared_root = request.app.state.shared_volume_root.resolve()
@@ -171,7 +171,11 @@ async def get_object_source(request: Request, file_id: str):
         file_id,
     )
     if source_path is None:
-        return {"error": "source file not found"}
+        return JSONResponse(
+            status_code=404,
+            content={"error": "source file not found"},
+            headers={"Cache-Control": "no-store"},
+        )
 
     return FileResponse(source_path)
 

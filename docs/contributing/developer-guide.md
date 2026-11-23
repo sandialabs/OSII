@@ -107,5 +107,29 @@ module's declared contract tests independently. Toolbox is frontend UI;
 processor modules are backend implementations. Historical `toolbox.*` Processor
 API IDs remain compatible and are not directory references.
 
+### Browser workflow tests
+
+Use unit tests for UI logic and API tests for storage contracts. Use browser
+tests for user-visible workflows that cross those boundaries. The local PDF
+smoke test runs Chromium against the built dashboard and real Core API with a
+temporary sidecar library. It checks saved text while an original is missing,
+then verifies that Retry renders the recovered PDF and page navigation works.
+CI uploads a Playwright trace with browser state and network requests on failure.
+
+From the repository root:
+
+```bash
+npm --prefix osii-dashboard/dashboard ci
+npm --prefix osii-dashboard/dashboard run build
+uv run --frozen --python 3.12 --package osii --extra dev --with playwright==1.65.2 python -m playwright install chromium
+uv run --frozen --python 3.12 --package osii --extra dev --with playwright==1.65.2 python -m pytest osii-dashboard/dashboard/tests/test_pdf_preview_browser.py -q
+```
+
+For new browser coverage, prioritize Intake through a finished job, OCR
+geometry, editing a saved product, and reopening the library. Use public or
+synthetic fixtures and deterministic model responses in CI. Before releasing a
+deployment, smoke-test its installed or hosted entry point and the storage it
+uses. For local releases, include disconnecting and reconnecting a mounted share.
+
 Optional downloads live on the `osii-demo-notebooks` and `osii-mcp` branches.
 Their source trees contain only the respective tool.

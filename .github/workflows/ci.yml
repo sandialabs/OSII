@@ -58,6 +58,19 @@ jobs:
       - name: Dashboard
         working-directory: osii-dashboard/dashboard
         run: npm ci && npm test --if-present && npm run build
+      - uses: astral-sh/setup-uv@v10.1.0
+      - name: Install Chromium for browser tests
+        run: uv run --frozen --python 3.12 --package osii --extra dev --with playwright==1.65.2 python -m playwright install --with-deps chromium
+      - name: OSII-local PDF workflow in Chromium
+        run: uv run --frozen --python 3.12 --package osii --extra dev --with playwright==1.65.2 python -m pytest osii-dashboard/dashboard/tests/test_pdf_preview_browser.py -q
+      - name: Upload browser trace on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pdf-preview-browser-trace
+          path: osii-dashboard/dashboard/.cache/browser/
+          include-hidden-files: true
+          if-no-files-found: ignore
 
   windows-startup:
     runs-on: windows-latest

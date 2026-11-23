@@ -16,6 +16,7 @@ import {
 import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
 import ChevronLeftOutlinedIcon from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlinedIcon from "@mui/icons-material/ChevronRightOutlined";
+import { InvalidPDFException, MissingPDFException, UnexpectedResponseException } from "pdfjs-dist";
 
 import { usePdfDocument } from "../../../hooks/usePdfDocument";
 import type { ManifestRecord } from "../../../api/types";
@@ -88,7 +89,7 @@ function PdfSourcePanel({
   compact: boolean;
   segments: ManifestRecord[];
 }) {
-  const { pdf, isLoading, error } = usePdfDocument(sourceUrl);
+  const { pdf, isLoading, error, retry } = usePdfDocument(sourceUrl);
   const [pageInput, setPageInput] = useState("");
   const [showBoundingBoxes, setShowBoundingBoxes] = useState(true);
 
@@ -108,9 +109,20 @@ function PdfSourcePanel({
   }
 
   if (error) {
+    const unavailable = error instanceof MissingPDFException;
+    let message = `Could not open the PDF preview. ${error.message}`;
+    if (unavailable) {
+      message = "Original file unavailable. Reconnect its drive or restore the file, then retry.";
+    } else if (error instanceof InvalidPDFException) {
+      message = "The original could not be read as a PDF.";
+    } else if (error instanceof UnexpectedResponseException && error.status === 409) {
+      message = "The original has changed. Process the updated file before previewing it.";
+    }
     return (
-      <Alert severity="error">
-        Failed to load PDF. {error.message}
+      <Alert severity="error" action={(
+        <Button color="inherit" size="small" onClick={retry}>Retry</Button>
+      )}>
+        {message}
       </Alert>
     );
   }
