@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -40,6 +41,7 @@ from osii.api.synthesizer_routes import router as synthesizer_router
 from osii.api.text_routes import router as text_router
 from osii.domain.processing.jobs import configure_job_store
 from osii.domain.catalog_db import ensure_catalog
+from osii.model_endpoints import CredentialFileError
 from osii.rag.strategies.http_reranker import create_reranker
 from osii.volume.api import create_app as create_inventory_app
 from osii.volume.store import database_path
@@ -87,7 +89,11 @@ app = FastAPI(
     openapi_url="/openapi.json",
     lifespan=lifespan,
     )
-app.state.rag_reranker = create_reranker()
+try:
+    app.state.rag_reranker = create_reranker()
+except CredentialFileError as exc:
+    logging.getLogger(__name__).warning("Reranking is unavailable. %s", exc)
+    app.state.rag_reranker = None
 
 # Local OSII has no accounts. The hosted composition supplies require("admin")
 # to this same router instead; authorization never lives in the query module.

@@ -307,6 +307,13 @@ def test_openai_environment_accepts_container_secret_file(client, monkeypatch, t
     assert blocked.status_code == 409
     assert "OPENAI_API_KEY_FILE" in blocked.json()["detail"]
 
+    secret.write_bytes(b"\xffinvalid-key")
+    response = client.get("/api/admin/model-providers")
+    assert response.status_code == 200
+    provider = next(item for item in response.json()["providers"] if item["id"] == "openai-compatible")
+    assert provider["credential_present"] is False
+    assert str(secret) not in response.text
+
 
 def test_openai_health_validates_selected_embedding_model(client, monkeypatch):
     client.put("/api/admin/model-providers/openai-probe", json={

@@ -200,10 +200,10 @@ OpenAI-compatible endpoints and require an appropriate gateway or adapter.
 
 A `provider-key` file is never required for startup. `*_API_KEY_FILE` is an
 optional alternative to inline or Setup credentials. Leave it blank unless you
-supply that file. Configuration loading reads endpoint metadata only, so a stale
-file setting cannot prevent browsing, local extraction, or opening Setup. If a
-request actually uses an unreadable configured file, its provider reports the
-problem. Clear that optional setting or save a replacement in local Setup.
+supply that file. Write the key on one line as UTF-8. Configuration loading
+reads endpoint metadata only, so an invalid or unavailable key file cannot
+prevent browsing, local extraction, or opening Setup. Clear the file setting
+or save a replacement key in Setup.
 
 
 Saved model selections also govern embedding jobs and search queries. An unrelated

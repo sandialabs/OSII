@@ -495,3 +495,16 @@ def test_local_replacement_overrides_optional_missing_key_file(monkeypatch, tmp_
     monkeypatch.setenv("OSII_ENV_FILE", str(secrets))
     secrets.write_text('OPENAI_API_KEY="local-replacement"\n')
     assert resolve_secret("OPENAI_API_KEY") == "local-replacement"
+
+
+def test_bridge_credential_file_must_contain_one_valid_key(monkeypatch, tmp_path):
+    from app.env_credentials import resolve_secret
+
+    secret = tmp_path / "provider-key"
+    monkeypatch.setenv("OPENAI_API_KEY_FILE", str(secret))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OSII_ENV_FILE", raising=False)
+    secret.write_bytes(b"\xffinvalid-key")
+    assert resolve_secret("OPENAI_API_KEY") == ""
+    secret.write_text("valid-key\n", encoding="utf-8")
+    assert resolve_secret("OPENAI_API_KEY") == "valid-key"
