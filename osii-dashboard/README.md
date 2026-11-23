@@ -2,13 +2,15 @@
 
 **Browse, search, view, and chat with your documents through OSII.**
 
-OSII Dashboard is a local browser-based workbench for exploring personal or project document collections backed by the OSII API. It is designed to make document-centric workflows feel natural: you can browse documents, search across extracted text, inspect source files like PDFs, organize documents into collections, and prepare for future chat workflows grounded in your own data.
+The dashboard shares document, search, collection, and model controls across
+OSII Dev, OSII Standalone, and OSII Server. Switch to `main` to work on any
+profile. OSII Dev opens the local dashboard in a browser, and the Windows
+installer opens it in Electron. The hosted shell adds sign-in, account
+navigation, and role-aware actions around the shared workbench.
 
-The dashboard is intentionally modular. It is a standalone frontend that talks to an existing OSII backend API, so it can be used when you want a rich browser experience without forcing every OSII workflow to go through a UI.
-
-Start the application with `make dev` (Windows: `scripts/osii.ps1 dev`).
-**Setup** manages model connections and processing rules. **Intake** selects
-files and processing steps and starts a reviewed run.
+For OSII Dev, run `make dev` (Windows: `scripts/osii.ps1 dev`). Use the
+[server runbook](../docs/operations/runbook-server.md) for a hosted development
+stack. The remaining workflow notes describe local use.
 
 In **Setup**, **Add LLM** opens one connection form, defaulting to an
 OpenAI-compatible endpoint. Ollama is an optional choice in the **Connection**
@@ -75,8 +77,8 @@ does not regenerate an existing product automatically; rerun its generation
 action when you want it updated. Keyword-based suggestions remain available in
 collection-scoped Search and Chat.
 
-Run `npm test` and `npm run build` from `osii-dashboard/dashboard` to check these
-changes. Tests use Node's built-in runner (Node 22.6+); no test dependency is
+From `osii-dashboard/dashboard`, run `npm test` and `npm run build` for the
+local dashboard. Run `npm run build -- --mode server` for the hosted shell. Tests use Node's built-in runner (Node 22.6+); no test dependency is
 installed. With `make dev` / `.\scripts\osii.ps1 dev`, refresh the browser;
 packaged deployments require rebuilding the dashboard image.
 

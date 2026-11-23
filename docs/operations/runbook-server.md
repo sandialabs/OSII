@@ -9,11 +9,13 @@ collections.
 
 Start with an ignored `.env.server` containing `DATABASE_URL`,
 `OSII_SOURCE_DIR`, and `OSII_ORIGINS=http://127.0.0.1:5174`. For an HTTP
-loopback development run, set `OSII_INSECURE_LOCAL_HTTP=true`. After explicit
-migration and administrator bootstrap, run:
+loopback development run, set `OSII_INSECURE_LOCAL_HTTP=true`. Initialize the
+schema and the first administrator explicitly, then start the development stack:
 
 ```sh
-uv run --no-project python scripts/server_dev_stack.py
+uv run --frozen --env-file .env.server --package osii --extra server python -m osii.server.cli migrate
+uv run --frozen --env-file .env.server --package osii --extra server python -m osii.server.cli bootstrap-admin
+uv run --no-project --python 3.12 python scripts/server_dev_stack.py
 ```
 
 Open `http://127.0.0.1:5174` and sign in. Setting `OSII_DEV_POSTGRES_DIR`
