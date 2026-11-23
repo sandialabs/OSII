@@ -17,11 +17,10 @@ The agent's job is to execute the human's command—nothing more.
 
 ## Architecture
 
-- `main` is OSII-local: standalone and sidecar-backed by default, with an explicit
-  optional PostgreSQL backend and non-destructive import. This branch,
-  `osii-server`, is the hosted PostgreSQL application. Preserve source identity,
-  text, locations, scopes, and provenance in PostgreSQL. Never fall back to a
-  `.osii` directory or SQLite here. Retrieval caches are derived and rebuildable.
+- This branch owns hosted PostgreSQL delivery. Preserve source
+  identity, text, locations, scopes, and provenance in PostgreSQL. Require the
+  hosted schema and treat retrieval caches as rebuildable. Develop shared
+  behavior on `main`.
 - Only Core API/worker access PostgreSQL; the UI and processors never do.
 - The Core owns canonical persistence, RAG orchestration, and grounded chat.
   Processors receive explicit bounded requests and return typed output; they do
@@ -63,6 +62,28 @@ The agent's job is to execute the human's command—nothing more.
   changes. Keep examples and demonstrations small and inspectable; do not
   create new example material unless explicitly requested.
 
+## Branches and merges
+
+- Use `main` for shared Core, shared dashboard behavior, and the local
+  source workflow. Keep Windows packaging on `osii-standalone` and hosted
+  authentication, persistence, and deployment on `osii-server`. Keep separate
+  worktrees for parallel Codex work.
+- Start a feature branch from the branch that owns the change. To update a
+  feature branch for shared work, fetch `origin`, check that its worktree is
+  clean, and merge `origin/main` into it. Land shared fixes on `main`,
+  including portable fixes found while working on a delivery branch.
+- Until the deployment branches are aligned with the restored `main`, bring
+  over needed shared commits and prerequisites with `git cherry-pick -x <commit>`.
+  Align each deployment branch on a temporary integration branch. A full merge
+  during this transition can carry packaging or hosted-code deletions from the
+  rollback. Review the result for the intended platform behavior before
+  updating the delivery branch.
+- After alignment, merge `origin/main` forward into each deployment branch.
+  Run the relevant profile checks. Windows changes need the installer checks
+  when they affect delivery. Hosted changes must preserve authorization, data
+  visibility, and PostgreSQL behavior. Treat migrations and deployment as
+  separate operations.
+
 ## Current delivery scope
 
 - The supported startup path on main is `make dev` (Windows:
@@ -72,9 +93,9 @@ The agent's job is to execute the human's command—nothing more.
   endpoints, and PostgreSQL. Migrations and administrator bootstrap are explicit
   CLI operations. Keep password authentication and server permission checks on
   every corpus/admin API; never expose a development authentication bypass.
-- Desktop installers, workstation catalogs, Compose, component splitting, and
-  image publishing are archived on `archive/workstation-deployment-2026-11-03`.
-  Do not reintroduce them without an explicit human request.
+- Historical container-based workstation deployment is archived on
+  `archive/workstation-deployment-2026-11-03`. Restore it only when explicitly
+  requested.
 - Preserve Core, dashboard, SDK, and processor boundaries while simplifying
   delivery. Optional tools stay optional. Do not replace existing persistence
   or delete user data as part of deployment cleanup.

@@ -1,5 +1,9 @@
 # OSII — server
 
+> Use `osii-server` for hosted builds and server-specific development. See the
+> [server runbook](docs/operations/runbook-server.md). Shared Core and dashboard work starts on `main`.
+> For the Windows desktop app, use the [installer in GitHub Releases](https://github.com/sandialabs/OSII/releases).
+
 > Keep the evidence. Grow the intelligence.
 
 OSII (the On-Store Intelligence Index) turns documents and datasets into a
