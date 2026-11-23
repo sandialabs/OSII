@@ -76,38 +76,49 @@ The agent's job is to execute the human's command—nothing more.
   changes. Keep examples and demonstrations small and inspectable; do not
   create new example material unless explicitly requested.
 
+## Branches and merges
+
+- Use `main` for current OSII Dev, Windows Standalone, and hosted Server work.
+  Start new feature branches from `origin/main` in their own worktrees when
+  working in parallel. Keep the existing branch folders in place for Codex.
+- To sync a feature branch, run `git fetch origin` from its worktree. Confirm the
+  checked-out branch and that the worktree is clean with `git status --short --branch`,
+  then run `git merge origin/main`. Resolve conflicts in that feature branch.
+  Review the merge against the current behavior of each affected delivery profile
+  and run its relevant checks before pushing to `origin`.
+- Treat `osii-standalone` and `osii-server` as maintenance branches for the
+  earlier Windows and hosted releases. Land shared fixes on `main`, then backport
+  only the needed commits and prerequisites with `git cherry-pick -x <commit>`
+  when an older release needs them. Adapt and test each backport against the
+  receiving branch. Merge the full `origin/main` history into a maintenance
+  branch only for an explicitly requested baseline upgrade.
+- Keep desktop packaging and loopback behavior with the desktop profile.
+  Keep hosted authorization, PostgreSQL, and deployment behavior with the
+  server profile. A merge does not authorize a database migration or deployment.
+
 ## Current delivery scope
 
-- `osii-standalone` is the explicitly requested Windows 11 x64 desktop delivery:
-  Electron, a PyInstaller one-folder Python runtime, bundled Tesseract, and the
-  compiled dashboard. Preserve its offline per-user installer, private loopback
-  session, library lock and native Windows packaging tests. Do not add container
-  engines, registries, runtime package installation, Java or model weights.
-  Signed broad distribution additionally requires clean standard-user Windows
-  acceptance; unsigned builds are pilots. Keep shared fixes small for transfer
-  back to `main`; do not overwrite work in the original checkout.
-
-- Develop shared Core and dashboard behavior on `main`. Build OSII Standalone
-  for Windows from the local API and default dashboard. Build OSII Server with
-  its own API, worker, and hosted dashboard mode. Keep account administration and
-  authorization in the server profile and shared controls behind explicit inputs.
-  The older product branches are retained for earlier releases.
-- Local uses sidecars by default and permits explicitly initialized PostgreSQL
-  in source development. Server requires its hosted PostgreSQL schema. Keep
-  stable storage contracts, and require explicit migration. Local inventory
-  evidence stays separate from rebuildable indexes.
-- Windows installers must remain self-contained and preserve existing libraries.
-  Validate the packaged application on Windows. Use the unsigned pilot label
-  until signing and clean standard-user acceptance are complete.
+- Windows Standalone builds on `main` from Electron, the frozen Python
+  runtime, bundled Tesseract, and the default dashboard. Preserve the offline
+  per-user installer, private loopback session, library lock, and existing
+  library data. Keep user startup free of runtime package installs, container
+  engines, registries, Java, and model weights. Validate the installed app on
+  Windows. Use the unsigned pilot label until signing and clean standard-user
+  acceptance are complete.
+- Hosted Server builds on `main` from its own API, worker, and hosted dashboard.
+  Keep account administration and authorization in that profile. Local uses
+  sidecars by default and permits explicitly initialized PostgreSQL in source
+  development. Server requires its hosted PostgreSQL schema. Keep storage
+  contracts stable and local inventory evidence separate from rebuildable indexes.
 
 - The supported startup path on main is `make dev` (Windows:
   `.\\scripts\\osii.ps1 dev`). Keep automatic dependency setup, logs, health
   checks, and Ctrl+C shutdown working. Do not add alternative startup menus.
 - Product direction is one shared OpenShift deployment, independent model capability
-  endpoints, and one shared database. This does not authorize an implicit
-  database migration or claim that hosted authentication is implemented.
+  endpoints, and one shared database. Hosted migrations and administrator
+  bootstrap remain explicit operations.
 - Historical container-based workstation deployment is archived on `archive/workstation-deployment-2026-11-03`.
-  Do not reintroduce them without an explicit human request.
+  Restore that deployment only when explicitly requested.
 - Preserve Core, dashboard, SDK, and processor boundaries while simplifying
   delivery. Optional tools stay optional. Do not replace existing persistence
   or delete user data as part of deployment cleanup.
