@@ -15,19 +15,6 @@ Dashboard / Python / optional MCP
                      extract / synthesize / embed / enrich
 ```
 
-## Delivery profiles
-
-`main` is the shared development branch. The default dashboard build serves
-OSII Dev and the Windows installer. The hosted dashboard build selects the
-server shell, which supplies sign-in, account navigation, and role-aware actions.
-Both shells use shared views for document browsing, collection fields, and other
-workbench tools. Hosted API routes independently enforce access and use hosted
-PostgreSQL. The desktop runtime owns a private loopback API and uses sidecars.
-
-Desktop and hosted artifacts can release on different schedules. Record the
-source commit for each build and apply shared fixes to `main` once. Run the
-local, hosted, and Windows delivery checks for shared changes.
-
 ## What is stored
 
 Original documents are read in place and remain unchanged. Extracted text,

@@ -8,7 +8,6 @@ import shutil
 import time
 
 import faiss
-from osii.indexing.faiss_io import read_index, write_index
 import numpy as np
 import tomli_w
 
@@ -278,7 +277,7 @@ def load_resumable_checkpoint(osii_root: Path):
             _write_partial_mapping(osii_root, [])
         return None, []
 
-    index = read_index(index_path)
+    index = faiss.read_index(str(index_path))
     if index.ntotal > len(rows):
         raise RuntimeError(
             "FAISS checkpoint contains more vectors than its partial mapping; "
@@ -330,7 +329,7 @@ def _embedding_mapping_row(
 
 def save_checkpoint_index(osii_root: Path, index) -> Path:
     path = build_index_tmp_path(osii_root)
-    write_index(index, path)
+    faiss.write_index(index, str(path))
     return path
 
 
@@ -397,7 +396,7 @@ def finalize_outputs(
     final_mapping = snapshot / "segments.mapping.jsonl"
     final_meta = snapshot / "segments.meta.toml"
 
-    write_index(index, final_index)
+    faiss.write_index(index, str(final_index))
 
     with final_mapping.open("w", encoding="utf-8") as f:
         for row in final_mapping_rows:

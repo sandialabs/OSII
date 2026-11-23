@@ -77,7 +77,7 @@ def test_six_metadata_fields_keep_descriptive_and_source_titles_distinct():
 def test_ollama_metadata_uses_schema_without_constraining_markdown(monkeypatch, tmp_path):
     monkeypatch.setenv("OSII_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("OSII_ROOT", str(tmp_path / ".osii"))
-    from osii_model_provider_bridge.main import CLIENTS, ProviderSynthesizer
+    from app.main import CLIENTS, ProviderSynthesizer
     calls = []
     def fake_request(method, path, **kwargs):
         payload = kwargs["payload"]

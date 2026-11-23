@@ -27,7 +27,6 @@ import urllib.request
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 # The loader uses only the standard library; startup works before uv sync.
 sys.path.insert(0, str(REPOSITORY_ROOT / "osii-core"))
-from osii.library_lock import LibraryLock
 from osii.processor_modules import active_processors, modules_directory, enabled, ModuleManifestError, load_startup_settings
 SERVICE_DISPLAY_NAMES = {
     "extractor": "Python text-layer PDF and Office extractor",
@@ -458,9 +457,9 @@ def service_commands(
         )
         for name, package, default_port, env_name, directory in reversed(processors):
             port = env.get(env_name, default_port)
-            services.insert(0, Service(name, (uv, "run", "--no-sync", "--package", package, "python", "-m", "uvicorn", f"{package.replace('-', '_')}.main:app", "--host", "127.0.0.1", "--port", port, "--reload", "--reload-dir", package.replace("-", "_")), REPOSITORY_ROOT / "osii-core" / "services" / directory, int(port)))
+            services.insert(0, Service(name, (uv, "run", "--no-sync", "--package", package, "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "osii-core" / "services" / directory, int(port)))
         bridge_port = env.get("OSII_MODEL_BRIDGE_PORT", "8095")
-        services.insert(4, Service("model-bridge", (uv, "run", "--no-sync", "--package", "osii-model-provider-bridge", "python", "-m", "uvicorn", "osii_model_provider_bridge.main:app", "--host", "127.0.0.1", "--port", bridge_port, "--reload", "--reload-dir", "osii_model_provider_bridge"), REPOSITORY_ROOT / "osii-core" / "services" / "model-provider-bridge", int(bridge_port)))
+        services.insert(4, Service("model-bridge", (uv, "run", "--no-sync", "--package", "osii-model-provider-bridge", "python", "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", bridge_port, "--reload", "--reload-dir", "app"), REPOSITORY_ROOT / "osii-core" / "services" / "model-provider-bridge", int(bridge_port)))
         services.extend(processor_module_services(uv, env))
     return services
 
@@ -853,7 +852,6 @@ def run(
                 print(render_command(service) + ("" if service.start_automatically else " (on demand)"))
             return 0
 
-        library_lock = LibraryLock(Path(env["OSII_ROOT"])).acquire()
         ensure_ports_available(services)
 
         if not skip_setup:
@@ -931,8 +929,6 @@ def run(
         if "processes" in locals():
             for _, process in reversed(list(processes.values())):
                 stop_service(process)
-        if "library_lock" in locals():
-            library_lock.close()
 
 
 def main() -> int:

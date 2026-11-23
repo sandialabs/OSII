@@ -1,5 +1,3 @@
-import type { TraceEvidence } from "../traceTypes";
-import { AgentTraceViewer } from "./AgentTraceViewer";
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import type { RagComparison, RagProfiles, RagTrace } from "../types";
@@ -37,19 +35,14 @@ export function RagRunDetails({ trace }: { trace: RagTrace }) {
   </Stack>;
 }
 
-export function RagComparisonPanel({ value, catalog, onDownload, onOpenEvidence }: {
-  value: RagComparison;
-  catalog: RagProfiles;
-  onDownload?: () => void;
-  onOpenEvidence?: (item: TraceEvidence) => void;
-}) {
+export function RagComparisonPanel({ value, catalog, onDownload }: { value: RagComparison; catalog: RagProfiles; onDownload: () => void }) {
   return <Stack spacing={2}>
-    <Stack direction="row" alignItems="center" justifyContent="space-between"><Typography variant="h6">Mode comparison</Typography>{onDownload && <Button onClick={onDownload}>Download comparison JSON</Button>}</Stack>
+    <Stack direction="row" alignItems="center" justifyContent="space-between"><Typography variant="h6">Mode comparison</Typography><Button onClick={onDownload}>Download comparison JSON</Button></Stack>
     <Typography variant="body2">Question: {value.query} · Chat model: {value.model}</Typography>
     <Stack direction={{ xs: "column", lg: "row" }} spacing={2} alignItems="stretch">{value.runs.map(run => <Paper variant="outlined" key={run.profile_id} sx={{ p: 2, flex: 1, minWidth: 0 }}><Stack spacing={2}>
       <Typography variant="subtitle1">{catalog.profiles.find(p => p.id === run.profile_id)?.name ?? run.profile_id}</Typography>
-      {(run.error || run.response?.error) && <Alert severity="error">{run.error || run.response?.error}</Alert>}
-      {run.response && <><Typography color="text.secondary" variant="caption">{run.response.provider} · {run.response.model} · Retrieval used: {run.response.retrieval_mode}</Typography><Typography sx={{ whiteSpace: "pre-wrap" }}>{run.response.answer}</Typography><Typography variant="caption">{run.response.citations.length} cited passages</Typography>{run.response.experiment && <RagRunDetails trace={run.response.experiment} />}{run.response.agent_trace && onOpenEvidence && <AgentTraceViewer trace={run.response.agent_trace} onOpenEvidence={onOpenEvidence} />}</>}
+      {run.error && <Alert severity="error">{run.error}</Alert>}
+      {run.response && <><Typography color="text.secondary" variant="caption">{run.response.provider} · {run.response.model} · Retrieval used: {run.response.retrieval_mode}</Typography><Typography sx={{ whiteSpace: "pre-wrap" }}>{run.response.answer}</Typography><Typography variant="caption">{run.response.citations.length} cited passages</Typography>{run.response.experiment && <RagRunDetails trace={run.response.experiment} />}</>}
     </Stack></Paper>)}</Stack>
   </Stack>;
 }

@@ -20,7 +20,7 @@ dev = ["httpx>=0.27,<1", "pytest>=8,<9"]
 osii = { path = "../..", editable = true }
 
 [tool.hatch.build.targets.wheel]
-packages = ["osii_local_tesseract"]
+packages = ["app"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

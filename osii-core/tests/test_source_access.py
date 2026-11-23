@@ -168,7 +168,7 @@ def test_corpus_survives_process_restart(tmp_path, location):
             for restart in (False, True):
                 with ExitStack() as stack:
                     extractor = stack.enter_context(process(
-                        ["uvicorn", "osii_local_extractor.main:app", "--host", "127.0.0.1", "--port", str(extractor_port)],
+                        ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(extractor_port)],
                         checkout / "osii-core/services/local-extractor", "extractor",
                     ))
                     api = stack.enter_context(process(

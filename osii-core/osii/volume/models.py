@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -56,7 +55,7 @@ class ScanOptions(BaseModel):
 class ProcessRequest(BaseModel):
     selection_id: int
     stage: Literal["extract", "ocr", "synthesize", "enrich"] = "extract"
-    endpoint: str = Field(default_factory=lambda: os.getenv("OSII_NATIVE_EXTRACTOR_URL", "http://127.0.0.1:8092"))
+    endpoint: str = "http://127.0.0.1:8092"
     config: dict = Field(default_factory=dict)
     max_file_bytes: int = Field(50 * 1024**2, ge=1, le=50 * 1024**2)
     max_seconds: int = Field(3600, ge=1)

@@ -1,5 +1,4 @@
 // src/features/collections/components/CreateCollectionDialog.tsx
-import { CollectionDetailsFields } from "./CollectionDetailsFields";
 import { useState } from "react";
 import {
   Alert,
@@ -9,6 +8,7 @@ import {
   DialogContent,
   DialogTitle,
   Stack,
+  TextField,
 } from "@mui/material";
 
 import { useCreateCollection } from "../../../hooks/useCollections";
@@ -46,7 +46,20 @@ export function CreateCollectionDialog({
       <DialogTitle>Create Collection</DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2}>
-          <CollectionDetailsFields name={name} description={description} onNameChange={setName} onDescriptionChange={setDescription} />
+          <TextField
+            fullWidth
+            label="Name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+          <TextField
+            fullWidth
+            label="Description"
+            multiline
+            minRows={3}
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
 
           {createMutation.isError ? (
             <Alert severity="error">

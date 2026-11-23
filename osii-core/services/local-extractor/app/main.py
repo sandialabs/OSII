@@ -107,10 +107,10 @@ class LocalNativeTextExtractor(Extractor):
                 )
         else:
             if suffix == ".docx":
-                with tempfile.TemporaryDirectory(prefix="osii-docx-") as directory:
-                    source = Path(directory) / "document.docx"
-                    source.write_bytes(content)
-                    text = docx2txt.process(source) or ""
+                with tempfile.NamedTemporaryFile(suffix=suffix) as temp:
+                    temp.write(content)
+                    temp.flush()
+                    text = docx2txt.process(temp.name) or ""
             elif suffix in {".pptx", ".xlsx"}:
                 text = _office_text(content)
             elif suffix == ".rtf":

@@ -36,8 +36,7 @@ def main() -> None:
         raise RuntimeError(f"Service source is missing from the image: {app_dir}")
 
     port = args.port or int(os.getenv("PORT", str(default_port)))
-    package = "osii_" + directory.replace("-", "_")
-    uvicorn.run(f"{package}.main:app", app_dir=str(app_dir), host=args.host, port=port)
+    uvicorn.run("app.main:app", app_dir=str(app_dir), host=args.host, port=port)
 
 
 if __name__ == "__main__":

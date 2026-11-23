@@ -21,7 +21,7 @@ The agent's job is to execute the human's command—nothing more.
   locations, scopes, provenance, and portable `.osii` sidecars. Catalogs,
   indexes, caches, and model output are derived and rebuildable.
 - OSII-local has no user authentication, accounts, roles, or login screen.
-  Hosted user authentication belongs exclusively to the server profile. Keep local
+  Hosted user authentication belongs exclusively to `osii-server`. Keep local
   processes on loopback; processor/provider credentials and private internal
   service tokens are separate from user authentication.
 - File metadata inventory is part of normal OSII-local, not a separate branch
@@ -78,47 +78,42 @@ The agent's job is to execute the human's command—nothing more.
 
 ## Branches and merges
 
-- Use `main` for current OSII Dev, Windows Standalone, and hosted Server work.
-  Start new feature branches from `origin/main` in their own worktrees when
-  working in parallel. Keep the existing branch folders in place for Codex.
-- To sync a feature branch, run `git fetch origin` from its worktree. Confirm the
-  checked-out branch and that the worktree is clean with `git status --short --branch`,
-  then run `git merge origin/main`. Resolve conflicts in that feature branch.
-  Review the merge against the current behavior of each affected delivery profile
-  and run its relevant checks before pushing to `origin`.
-- Treat `osii-standalone` and `osii-server` as maintenance branches for the
-  earlier Windows and hosted releases. Land shared fixes on `main`, then backport
-  only the needed commits and prerequisites with `git cherry-pick -x <commit>`
-  when an older release needs them. Adapt and test each backport against the
-  receiving branch. Merge the full `origin/main` history into a maintenance
-  branch only for an explicitly requested baseline upgrade.
-- Keep desktop packaging and loopback behavior with the desktop profile.
-  Keep hosted authorization, PostgreSQL, and deployment behavior with the
-  server profile. A merge does not authorize a database migration or deployment.
+- Use `main` for shared Core, shared dashboard behavior, and the local
+  source workflow. Keep Windows packaging on `osii-standalone` and hosted
+  authentication, persistence, and deployment on `osii-server`. Keep separate
+  worktrees for parallel Codex work.
+- Start a feature branch from the branch that owns the change. To update a
+  feature branch for shared work, fetch `origin`, check that its worktree is
+  clean, and merge `origin/main` into it. Land shared fixes on `main`,
+  including portable fixes found while working on a delivery branch.
+- Until the deployment branches are aligned with the restored `main`, bring
+  over needed shared commits and prerequisites with `git cherry-pick -x <commit>`.
+  Align each deployment branch on a temporary integration branch. A full merge
+  during this transition can carry packaging or hosted-code deletions from the
+  rollback. Review the result for the intended platform behavior before
+  updating the delivery branch.
+- After alignment, merge `origin/main` forward into each deployment branch.
+  Run the relevant profile checks. Windows changes need the installer checks
+  when they affect delivery. Hosted changes must preserve authorization, data
+  visibility, and PostgreSQL behavior. Treat migrations and deployment as
+  separate operations.
 
 ## Current delivery scope
 
-- Windows Standalone builds on `main` from Electron, the frozen Python
-  runtime, bundled Tesseract, and the default dashboard. Preserve the offline
-  per-user installer, private loopback session, library lock, and existing
-  library data. Keep user startup free of runtime package installs, container
-  engines, registries, Java, and model weights. Validate the installed app on
-  Windows. Use the unsigned pilot label until signing and clean standard-user
-  acceptance are complete.
-- Hosted Server builds on `main` from its own API, worker, and hosted dashboard.
-  Keep account administration and authorization in that profile. Local uses
-  sidecars by default and permits explicitly initialized PostgreSQL in source
-  development. Server requires its hosted PostgreSQL schema. Keep storage
-  contracts stable and local inventory evidence separate from rebuildable indexes.
+- `main` runs OSII Dev from source, using sidecars by default with optional,
+  explicitly initialized PostgreSQL storage. Never auto-import or silently fall
+  back between stores. The canonical inventory SQLite stays independent.
+  `osii-server` is developed separately for hosted accounts and OpenShift. Keep
+  portable fixes isolated for transfer between the branches.
 
 - The supported startup path on main is `make dev` (Windows:
   `.\\scripts\\osii.ps1 dev`). Keep automatic dependency setup, logs, health
   checks, and Ctrl+C shutdown working. Do not add alternative startup menus.
 - Product direction is one shared OpenShift deployment, independent model capability
   endpoints, and one shared database. Hosted migrations and administrator
-  bootstrap remain explicit operations.
-- Historical container-based workstation deployment is archived on `archive/workstation-deployment-2026-11-03`.
-  Restore that deployment only when explicitly requested.
+  bootstrap are explicit operations.
+- The Windows installer lives on `osii-standalone`. Container-based workstation
+  deployment is archived on `archive/workstation-deployment-2026-11-03`.
 - Preserve Core, dashboard, SDK, and processor boundaries while simplifying
   delivery. Optional tools stay optional. Do not replace existing persistence
   or delete user data as part of deployment cleanup.

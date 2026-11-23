@@ -16,13 +16,6 @@ NATIVE_EXTENSIONS = [
 
 
 def default_extractor_routes() -> list[dict]:
-    if os.getenv("OSII_STANDALONE") == "1":
-        return [
-            {"name": "pdf-native-ocr", "extractor": "local.native-text", "fallbacks": ["local.tesseract-page-ocr"], "extensions": [".pdf"]},
-            {"name": "images-ocr", "extractor": "local.tesseract-page-ocr", "fallbacks": [], "extensions": [".png", ".jpg", ".jpeg", ".tif", ".tiff"]},
-            {"name": "native-supported", "extractor": "local.native-text", "fallbacks": [], "extensions": NATIVE_EXTENSIONS},
-            {"name": "unsupported", "extractor": "local.native-text", "fallbacks": [], "extensions": ["*"]},
-        ]
     return [
         {"name": "native-supported", "extractor": "local.native-text", "fallbacks": [], "extensions": NATIVE_EXTENSIONS},
         {"name": "other-native", "extractor": "local.native-text", "fallbacks": [], "extensions": ["*"]},

@@ -1,4 +1,3 @@
-import { CollectionDetailsFields } from "../components/CollectionDetailsFields";
 import { CollectionProcessingStatus } from "../components/CollectionProcessingStatus";
 // src/features/collections/pages/CollectionPage.tsx
 import { useEffect, useState } from "react";
@@ -12,6 +11,7 @@ import {
   Stack,
   Tab,
   Tabs,
+  TextField,
   Typography,
 } from "@mui/material";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
@@ -213,7 +213,20 @@ export function CollectionPage() {
         <DialogTitle>Edit Collection</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2}>
-            <CollectionDetailsFields name={name} description={description} onNameChange={setName} onDescriptionChange={setDescription} />
+            <TextField
+              fullWidth
+              label="Name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+            <TextField
+              fullWidth
+              label="Description"
+              multiline
+              minRows={3}
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+            />
 
             {updateMutation.isError ? (
               <Alert severity="error">

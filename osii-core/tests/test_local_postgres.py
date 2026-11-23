@@ -973,7 +973,7 @@ def test_live_processor_http_baselines_work_offline_with_postgres(
         ("embedder", "local-embedder"),
         ("enricher", "local-enricher"),
     ):
-        path = Path(__file__).parents[1] / "services" / directory / ("osii_" + directory.replace("-", "_")) / "main.py"
+        path = Path(__file__).parents[1] / "services" / directory / "app/main.py"
         spec = importlib.util.spec_from_file_location("pg_http_" + kind, path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)

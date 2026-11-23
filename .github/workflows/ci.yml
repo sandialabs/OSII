@@ -2,7 +2,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, codex/unify-delivery]
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
@@ -25,11 +25,6 @@ jobs:
           sudo systemctl start postgresql
           sudo -u postgres psql -c "CREATE ROLE osii_read_test LOGIN PASSWORD 'osii-read-test-only';"
           sudo -u postgres createdb -O osii_read_test osii_reads_test
-          sudo -u postgres createdb -O osii_read_test osii_server_test
-      - name: Hosted contracts and permissions
-        env:
-          TEST_DATABASE_URL: postgresql+psycopg://osii_read_test:osii-read-test-only@localhost:5432/osii_server_test
-        run: uv run --frozen --python 3.12 --package osii --extra server --extra rag-haystack --extra dev python -m pytest osii-core/server-tests -q
       - name: Shared sidecar and PostgreSQL read contracts
         env:
           OSII_READ_TEST_DATABASE_URL: postgresql+psycopg://osii_read_test:osii-read-test-only@localhost:5432/osii_reads_test
@@ -62,7 +57,7 @@ jobs:
           cache-dependency-path: osii-dashboard/dashboard/package-lock.json
       - name: Dashboard
         working-directory: osii-dashboard/dashboard
-        run: npm ci && npm test --if-present && npm run build && npm run build -- --mode server
+        run: npm ci && npm test --if-present && npm run build
 
   windows-startup:
     runs-on: windows-latest

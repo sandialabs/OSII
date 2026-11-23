@@ -39,7 +39,7 @@ def test_selects_one_service_app_directory(monkeypatch, service, directory, port
 
     launcher.main()
 
-    assert call["app"] == "osii_" + directory.replace("-", "_") + ".main:app"
+    assert call["app"] == "app.main:app"
     assert Path(call["app_dir"]).name == directory
     assert call["host"] == "0.0.0.0"
     assert call["port"] == port

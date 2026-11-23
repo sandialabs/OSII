@@ -6,18 +6,6 @@ from osii.domain import workbench_local as home
 from osii.indexing.common import embedding_namespace
 
 
-def test_desktop_offers_extractive_chat_without_claiming_model_ready_reports(
-    client, temp_osii_root, sample_osii_object, monkeypatch
-):
-    monkeypatch.setenv("OSII_STANDALONE", "1")
-    monkeypatch.setattr(home, "get_chat_settings", lambda root: SimpleNamespace(chat_provider_chain=("extractive",)))
-    (temp_osii_root / "objects" / sample_osii_object["file_id"] / "provenance.toml").write_text('[provenance]\nstatus="done"\n')
-    data = client.get("/api/workbench/home").json()
-    assert data["tools"]["chat"]["enabled"]
-    assert "extractive" in data["tools"]["chat"]["reason"]
-    assert not data["tools"]["research"]["enabled"]
-
-
 def test_home_dismissal_is_persisted_and_no_text_or_vectors_are_loaded(
     client, temp_osii_root, sample_osii_object, monkeypatch
 ):

@@ -11,7 +11,6 @@ import tomllib
 from typing import Any
 
 import faiss
-from osii.indexing.faiss_io import read_index
 
 from osii.domain.artifacts.artifact_staleness import get_artifact_staleness
 from osii.domain.artifacts.edited_text import reconstruct_edited_full_text
@@ -68,7 +67,7 @@ def _read_semantic_index(directory: str, signature: tuple[tuple[int, int], ...])
         metadata = tomllib.loads((root / "segments.meta.toml").read_text(encoding="utf-8"))["embeddings"]
         if metadata.get("semantic") is not True:
             return {"status": "incompatible", "detail": "This is a lexical compatibility index, not semantic embeddings."}, frozenset()
-        index = read_index(root / "segments.faiss")
+        index = faiss.read_index(str(root / "segments.faiss"))
         count, dimension = index.ntotal, index.d
         del index
         file_ids: set[str] = set()
