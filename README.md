@@ -1,8 +1,8 @@
 # OSII Standalone
 
 > To install OSII on Windows, use the [installer in GitHub Releases](https://github.com/sandialabs/OSII/releases).
-> To develop OSII or build a new installer, switch to `main` and follow its README.
-> This branch records the earlier standalone delivery.
+> Build the installer from `osii-standalone` using the [Windows build guide](docs/operations/standalone.md#build-an-installer).
+> Use `main` for shared Core and dashboard development.
 
 > Keep the evidence. Grow the intelligence.
 

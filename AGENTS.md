@@ -78,31 +78,33 @@ The agent's job is to execute the human's command—nothing more.
 
 ## Branches and merges
 
-- Use `main` for current OSII Dev, Windows Standalone, and hosted Server work.
-  Start new feature branches from `origin/main` in their own worktrees when
-  working in parallel. Keep the existing branch folders in place for Codex.
-- To sync a feature branch, run `git fetch origin` from its worktree. Confirm the
-  checked-out branch and that the worktree is clean with `git status --short --branch`,
-  then run `git merge origin/main`. Resolve conflicts in that feature branch.
-  Review the merge against the current behavior of each affected delivery profile
-  and run its relevant checks before pushing to `origin`.
-- Treat `osii-standalone` and `osii-server` as maintenance branches for the
-  earlier Windows and hosted releases. Land shared fixes on `main`, then backport
-  only the needed commits and prerequisites with `git cherry-pick -x <commit>`
-  when an older release needs them. Adapt and test each backport against the
-  receiving branch. Merge the full `origin/main` history into a maintenance
-  branch only for an explicitly requested baseline upgrade.
-- Keep desktop packaging and loopback behavior with the desktop profile.
-  Keep hosted authorization, PostgreSQL, and deployment behavior with the
-  server profile. A merge does not authorize a database migration or deployment.
+- Use `main` for shared Core, shared dashboard behavior, and the local
+  source workflow. Keep Windows packaging on `osii-standalone` and hosted
+  authentication, persistence, and deployment on `osii-server`. Keep separate
+  worktrees for parallel Codex work.
+- Start a feature branch from the branch that owns the change. To update a
+  feature branch for shared work, fetch `origin`, check that its worktree is
+  clean, and merge `origin/main` into it. Land shared fixes on `main`,
+  including portable fixes found while working on a delivery branch.
+- Until the deployment branches are aligned with the restored `main`, bring
+  over needed shared commits and prerequisites with `git cherry-pick -x <commit>`.
+  Align each deployment branch on a temporary integration branch. A full merge
+  during this transition can carry packaging or hosted-code deletions from the
+  rollback. Review the result for the intended platform behavior before
+  updating the delivery branch.
+- After alignment, merge `origin/main` forward into each deployment branch.
+  Run the relevant profile checks. Windows changes need the installer checks
+  when they affect delivery. Hosted changes must preserve authorization, data
+  visibility, and PostgreSQL behavior. Treat migrations and deployment as
+  separate operations.
 
 ## Current delivery scope
 
-- This branch maintains the earlier Windows 11 x64 desktop release. Preserve
+- This branch owns Windows 11 x64 desktop delivery. Preserve
   its offline installer, private loopback session, bundled OCR, library lock, and
   native Windows packaging tests. Keep user startup free of runtime package
   installs, container engines, registries, Java, and model weights. Validate
-  the installer for backports that affect Windows startup, processing, or
+  the installer for changes that affect Windows startup, processing, or
   packaging. Use the unsigned pilot label until signing and clean standard-user
   acceptance are complete.
 - Use local sidecar storage for the desktop release. Preserve existing library
