@@ -1,0 +1,18 @@
+schema_version = 1
+id = "embeddinggemma"
+extras = []
+
+[[processors]]
+id = "embeddinggemma"
+processor_id = "local.embeddinggemma"
+kind = "embedder"
+display_name = "EmbeddingGemma 2"
+description = "Embeds queries and passages locally using Google's text-only EmbeddingGemma 2."
+command = ["-m", "uvicorn", "osii_embeddinggemma.main:app"]
+port = 8114
+enabled_by_default = false
+readiness_path = "/ready"
+
+[processors.capabilities]
+output_kinds = ["embedding_vector"]
+embedding_input_purpose = true

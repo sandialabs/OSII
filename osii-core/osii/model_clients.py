@@ -115,7 +115,7 @@ def create_embedding_client() -> EmbeddingClient:
 
     # Setup's saved choice is authoritative for the app, just as it is for
     # readiness tests. Standalone callers without a profile retain env support.
-    if models_path().is_file():
+    if models_path().is_file() or os.getenv("OSII_DEFAULT_EMBEDDER", "").strip():
         configuration = load_models_config()
         alias = configuration.get("defaults", {}).get("embedding")
         connection = model_connection(alias) if alias else None

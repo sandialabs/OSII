@@ -65,7 +65,9 @@ def selected_processor(
         provider_type = str(connection.get("type") or "")
         provider = "ollama" if provider_type == "ollama-local" else "openai"
         return _PROCESSOR_NAMES.get((provider, capability), "")
-    return "local.hashing" if capability == "embedder" else "local.extractive-preview"
+    if capability == "embedder":
+        return os.getenv("OSII_DEFAULT_EMBEDDER", "").strip() or "local.hashing"
+    return "local.extractive-preview"
 
 
 def selected_model(
@@ -79,7 +81,12 @@ def selected_model(
     connection = model_connection(alias, osii_root) if alias else None
     if connection:
         return str(connection.get("model") or "")
-    return "osii-local-hashing-v1" if capability == "embedder" else ""
+    if capability == "embedder":
+        processor = os.getenv("OSII_DEFAULT_EMBEDDER", "").strip()
+        if processor:
+            return os.getenv("EMBEDDING_MODEL", "").strip() or processor
+        return "osii-local-hashing-v1"
+    return ""
 
 
 def processor_model(

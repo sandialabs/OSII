@@ -91,6 +91,7 @@ Processor fields:
 | `command` | Required Python argument array, e.g. `["run.py", "enricher"]`; never a shell command |
 | `port` | Required default port, integer 1–65535 |
 | `port_env` | Optional override name; defaults to `OSII_<ID>_PORT` |
+| `enabled_by_default` | Defaults to `true`. Set `false` for processors that require explicit opt-in before dependency setup and launch. |
 | `aliases` | Optional legacy processor IDs |
 | `requires` | Optional executables to check for Setup's prerequisite message, e.g. `["tesseract"]` |
 | `model_requirements` | Optional table mapping `chat` or `embedding` to `required` or `optional` |

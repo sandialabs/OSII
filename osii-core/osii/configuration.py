@@ -93,6 +93,8 @@ def default_models_config() -> dict[str, Any]:
         if model:
             for name in capabilities:
                 config["defaults"][name] = alias
+    if os.getenv("OSII_DEFAULT_EMBEDDER", "").strip():
+        config["defaults"].pop("embedding", None)
     return config
 
 
