@@ -530,6 +530,9 @@ def save_processing_flow(request: Request, flow_id: str, payload: dict):
     from osii.configuration import load_tools_config, save_tools_config
     from osii.api.extractor_routes import validate_routes
     from osii.domain.processing.flows import get_flow
+    from osii.domain.processing.quick_intake import FLOW_ID
+    if flow_id == FLOW_ID:
+        raise HTTPException(422, "The standard flow is managed by OSII.")
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", flow_id):
         raise HTTPException(422, "Use a short flow ID with letters, numbers, and hyphens")
     existing = get_flow(request.app.state.osii_root.resolve(), flow_id)

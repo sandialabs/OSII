@@ -177,7 +177,9 @@ def model_fixture():
                 values = [values] if isinstance(values, str) else values
                 self.reply({"model": "fixture-embed", "data": [{"index": i, "embedding": [float(len(str(text))), 1.0, 0.0]} for i, text in enumerate(values)]})
             else:
-                self.reply({"model": "fixture-chat", "choices": [{"message": {"role": "assistant", "content": "The calibration result was measured twice. [1]"}, "finish_reason": "stop"}]})
+                content = ("The calibration result was measured twice. [1]" if "document_type" not in str(payload.get("messages"))
+                           else json.dumps({"descriptive_title": {"value": "Calibration report"}}))
+                self.reply({"model": "fixture-chat", "choices": [{"message": {"role": "assistant", "content": content}, "finish_reason": "stop"}]})
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -216,6 +218,15 @@ def check(executable: Path) -> dict:
             bundled = flow == "standalone-semantic"
             if os.name == "nt":
                 assert bundled, flow
+            if bundled:
+                quick = api(session, "/api/intake/quick-start")
+                assert quick["embedding"]["bundled"] and quick["embedding"]["state"] == "ready", quick
+                assert not quick["ready"] and quick["language"]["state"] != "ready", quick
+                try:
+                    api(session, "/api/runs", {"queue_paths": [str(original)], "processing_flow_id": "quick-start"})
+                    raise AssertionError("Simple intake accepted files before a language model was tested")
+                except RuntimeError as exc:
+                    assert ": 409:" in str(exc), exc
             report = api(session, "/api/processing-flows/standalone-offline/test", {})
             assert report["ok"], report
             assert {step["step"] for step in report["results"]} == {"extract", "synthesize", "enrich"}, report
@@ -242,6 +253,17 @@ def check(executable: Path) -> dict:
             finally:
                 other.close()
             with model_fixture() as endpoint:
+                if bundled:
+                    quick = api(session, "/api/intake/quick-start/connect", {
+                        "role": "language", "endpoint": endpoint, "model": "fixture-chat",
+                    })
+                    assert quick["ready"] and quick["embedding"]["bundled"], quick
+                    fresh = source / "Gauge inspection.txt"
+                    fresh.write_text("The inspection team used a calibrated gauge to measure the thickness.", encoding="utf-8")
+                    job = api(session, "/api/runs", {"queue_paths": [str(fresh)], "processing_flow_id": "quick-start"})
+                    result = wait_run(session, "/api/runs/" + job["id"])
+                    assert result["items"][0]["status"] == "done", result
+                    assert result["processing_flow"]["id"] == "quick-start" and result["indexing_status"] == "done", result
                 api(session, "/api/admin/model-providers/frozen-fixture", {"type": "openai", "base_url": endpoint,
                     "enabled": True, "chat_model": "fixture-chat", "synthesis_model": "fixture-chat",
                     "embedding_model": "fixture-embed", "default_chat": True, "default_embedding": True}, method="PUT")

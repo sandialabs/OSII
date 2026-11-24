@@ -125,7 +125,16 @@ def configured_processor_urls() -> list[str]:
             providers = json.loads((state_path / "model_providers.json").read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             providers = []
-        bridge_url = os.getenv("OSII_MODEL_BRIDGE_URL", "http://127.0.0.1:8095").rstrip("/")
+        bridge_url = (os.getenv("OSII_MODEL_BRIDGE_URL")
+                      or f"http://127.0.0.1:{os.getenv('OSII_MODEL_BRIDGE_PORT', '8095')}").rstrip("/")
+        from osii.configuration import load_models_config
+        config = load_models_config(root)
+        for capability, kind in (("embedding", "embedder"), ("synthesis", "synthesizer")):
+            alias = config.get("defaults", {}).get(capability)
+            connection = config.get("models", {}).get(alias, {})
+            protocol = {"ollama-local": "ollama", "openai-compatible": "openai"}.get(connection.get("type"))
+            if protocol and connection.get("enabled", True):
+                configured.append(f"{bridge_url}/{protocol}/{kind}")
         for provider in providers:
             if not provider.get("enabled"):
                 continue

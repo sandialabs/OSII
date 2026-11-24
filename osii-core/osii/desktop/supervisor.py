@@ -253,12 +253,18 @@ class Supervisor:
             self.environment.update(OSII_SERVICE_SUPERVISOR_URL=f"http://127.0.0.1:{ports['control']}",
                                     OSII_SERVICE_SUPERVISOR_TOKEN=secrets.token_urlsafe(48))
             self.profile = profile
-            for name in (*service_names, "api"):
+            for name in service_names:
                 service = self.services[name] = Service(name, ports[name])
                 self.spawn(service, reserved.pop(name))
+            # Core's first-run verification needs the bundled model ready during API startup.
+            if "embeddinggemma" in self.services:
+                self.wait_ready(self.services["embeddinggemma"])
+            api = self.services["api"] = Service("api", ports["api"])
+            self.spawn(api, reserved.pop("api"))
             self.start_control(reserved.pop("control"))
             for name in (*service_names, "api"):
-                self.wait_ready(self.services[name])
+                if name != "embeddinggemma":
+                    self.wait_ready(self.services[name])
             worker = self.services["worker"] = Service("worker")
             self.spawn(worker)
             self.stopping.wait(0.25)

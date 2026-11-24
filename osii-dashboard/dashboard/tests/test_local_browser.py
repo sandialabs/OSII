@@ -94,7 +94,8 @@ def baseline_processors(library):
         for name in ("local-extractor", "local-synthesizer", "local-enricher", "local-embedder"):
             port = available_port()
             endpoint = f"http://127.0.0.1:{port}"
-            command = [sys.executable, "-m", "uvicorn", "app.main:app", "--app-dir", str(services / name), "--port", str(port)]
+            module = "osii_" + name.replace("-", "_")
+            command = [sys.executable, "-m", "uvicorn", module + ".main:app", "--app-dir", str(services / name), "--port", str(port)]
             stack.enter_context(running_server(command, url=endpoint + "/health", cwd=root, env=env))
             endpoints.append(endpoint)
         env.update(OSII_PROCESSORS=",".join(endpoints), OSII_INTAKE_SYNTHESIZER="local.extractive-preview",
@@ -163,7 +164,7 @@ def test_pdf_preview_recovers_after_source_returns(isolated_library):
 
 
 def queue_directory(page, path, names, status, *, last_folder=None):
-    page.goto("/intake")
+    page.goto("/intake/advanced")
     clear = page.get_by_role("button", name="Clear selection", exact=True)
     browse = page.get_by_role("button", name="Browse files")
     browse.wait_for()
@@ -364,10 +365,10 @@ def test_intake_from_two_locations_is_browsable_even_after_source_goes_offline(i
 def test_processor_settings_are_saved_on_a_dedicated_page(isolated_library):
     _, _, env = isolated_library
     with baseline_processors(isolated_library), dashboard_page(isolated_library, "processor-details") as page:
-        page.goto("/intake")
+        page.goto("/intake/advanced")
         expect(page.get_by_role("combobox", name="Processing flow")).to_be_visible()
         expect(page.get_by_role("spinbutton", name="chunk chars")).to_have_count(0)
-        page.get_by_role("link", name="Configure and test flows in Setup").click()
+        page.get_by_role("link", name="Configure and test flows").click()
         page.get_by_role("button", name=re.compile(r"^Extractors")).click()
         extractor = "Python text-layer PDF and Office extractor"
         page.get_by_role("link", name=re.compile(extractor)).click()
@@ -466,7 +467,7 @@ def test_setup_build_index_queues_existing_text_without_reopening_intake(isolate
     ):
         queue_directory(page, source, [file.name], "Completed")
         file.rename(root / "offline-inspection.txt")
-        page.goto("/admin/processors")
+        page.goto("/admin/processors?view=advanced")
         page.get_by_role("button", name=re.compile(r"^6\. Build index")).click()
         expect(page).to_have_url(re.compile(r"/tools/search-index$"))
         expect(page.get_by_role("heading", name="Search index", exact=True)).to_be_visible()
@@ -511,3 +512,145 @@ def test_setup_build_index_queues_existing_text_without_reopening_intake(isolate
         page.goto("/intake/runs/" + tool.json()["run_id"])
         expect(page.get_by_role("region", name="Processors and models")).to_contain_text("stats_keywords")
         expect(page.get_by_role("table", name="Files and processors")).to_contain_text(file.name)
+
+
+def test_simple_intake_connects_models_before_document_selection(isolated_library):
+    root, source, env = isolated_library
+    text = source / "inspection.txt"
+    text.write_text("Inspection records cover thermal seals and copper joints.")
+    damaged = source / "damaged.pdf"
+    damaged.write_bytes(b"%PDF-1.7\nThis is an intentionally invalid PDF fixture.\n")
+    model_port, bridge_port = available_port(), available_port()
+    endpoint = f"http://127.0.0.1:{model_port}/v1"
+    bridge = f"http://127.0.0.1:{bridge_port}"
+    env.update(OSII_MODEL_BRIDGE_URL=bridge, OSII_MODEL_BRIDGE_PORT=str(bridge_port),
+               OSII_ENV_FILE=str(root / "secrets.env"), OSII_ALLOW_LOCAL_CONFIG_WRITES="true")
+    (root / "fixture_models.py").write_text(r"""
+from fastapi import FastAPI, HTTPException, Request
+app = FastAPI()
+calls = []
+
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+@app.get("/calls")
+def counts():
+    return calls
+
+@app.get("/v1/models")
+def models():
+    return {"data": [{"id": "fixture-writing"}, {"id": "fixture-vectors"}, {"id": "fixture-broken"}]}
+
+@app.post("/v1/embeddings")
+async def embeddings(request: Request):
+    body = await request.json()
+    calls.append(("embedding", body["model"]))
+    if body["model"] != "fixture-vectors":
+        raise HTTPException(400, "This model cannot embed")
+    return {"model": body["model"], "data": [{"index": i, "embedding": [1.0, 0.5, 0.25]} for i, _ in enumerate(body["input"])]}
+
+@app.post("/v1/chat/completions")
+async def chat(request: Request):
+    body = await request.json()
+    calls.append(("chat", body["model"]))
+    if body["model"] != "fixture-writing":
+        raise HTTPException(400, "This model cannot generate text")
+    prompt = str(body["messages"])
+    if "document_type" in prompt:
+        content = '{"descriptive_title":{"value":"Inspection records"},"title":{},"author":{},"date":{},"agency":{},"document_type":{}}'
+    else:
+        content = "# Inspection records\nThese documents cover inspections."
+    return {"choices": [{"message": {"content": content}}]}
+""")
+    services = DASHBOARD.parents[1] / "osii-core" / "services"
+    command = [sys.executable, "-m", "uvicorn", "osii_model_provider_bridge.main:app",
+               "--app-dir", str(services / "model-provider-bridge"), "--port", str(bridge_port)]
+    with (
+        baseline_processors(isolated_library),
+        running_server([sys.executable, "-m", "uvicorn", "fixture_models:app", "--port", str(model_port)],
+                       url=f"http://127.0.0.1:{model_port}/health", cwd=root, env=env),
+        running_server(command, url=bridge + "/health", cwd=root, env=env),
+        running_process([sys.executable, "-m", "osii.worker"], cwd=root, env=env),
+        dashboard_page(isolated_library, "quick-intake") as page,
+    ):
+        page.goto("/intake")
+        expect(page.get_by_role("button", name="Intake & Setup", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="Setup", exact=True)).to_have_count(0)
+        expect(page.get_by_role("heading", name="1. Connect models", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="Browse files", exact=True)).to_have_count(0)
+        blocked = page.request.post("/api/runs", data={"processing_flow_id": "quick-start", "queue_paths": [str(text)]})
+        assert blocked.status == 409, blocked.text()
+
+        page.get_by_role("button", name="Advanced", exact=True).click()
+        page.get_by_role("menuitem", name="Advanced intake", exact=True).click()
+        page.get_by_role("button", name="Browse files", exact=True).click()
+        dialog = page.get_by_role("dialog")
+        dialog.get_by_role("textbox", name="Folder path", exact=True).fill(str(source))
+        dialog.get_by_role("button", name="Go", exact=True).click()
+        dialog.get_by_text(text.name, exact=True).click()
+        dialog.get_by_text(damaged.name, exact=True).click()
+        dialog.get_by_role("button", name="Use 2 files", exact=True).click()
+        page.get_by_role("navigation", name="Breadcrumbs").get_by_role("link", name="Intake & Setup").click()
+
+        page.get_by_role("button", name="Connect embedding model", exact=True).click()
+        connect = page.get_by_role("dialog", name="Connect embedding model")
+        connect.get_by_role("textbox", name="Endpoint URL").fill(endpoint)
+        connect.get_by_label("API key").fill("fixture-key-original")
+        connect.get_by_role("button", name="Find models", exact=True).click()
+        connect.get_by_role("combobox", name="Embedding model", exact=True).click()
+        page.get_by_role("option", name="fixture-vectors", exact=True).click()
+        connect.get_by_role("button", name="Save and test", exact=True).click()
+        expect(connect).to_have_count(0)
+        expect(page.get_by_role("button", name="Browse files", exact=True)).to_have_count(0)
+
+        page.get_by_role("button", name="Connect language model", exact=True).click()
+        connect = page.get_by_role("dialog", name="Connect language model")
+        connect.get_by_role("combobox", name="Connection", exact=True).click()
+        page.get_by_role("option", name=endpoint).click()
+        connect.get_by_role("button", name="Find models", exact=True).click()
+        connect.get_by_role("combobox", name="Language model", exact=True).click()
+        page.get_by_role("option", name="fixture-broken", exact=True).click()
+        connect.get_by_role("button", name="Save and test", exact=True).click()
+        expect(connect.get_by_role("alert")).to_contain_text("400")
+        expect(page.get_by_role("button", name="Browse files", exact=True)).to_have_count(0)
+        connect.get_by_role("combobox", name="Language model").click()
+        page.get_by_role("option", name="fixture-writing", exact=True).click()
+        connect.get_by_role("button", name="Save and test", exact=True).click()
+        expect(connect).to_have_count(0)
+
+        process = page.get_by_role("button", name="Process 2 files", exact=True)
+        expect(process).to_be_enabled()
+        calls_url = f"http://127.0.0.1:{model_port}/calls"
+        calls = page.request.get(calls_url).json()
+        page.reload()
+        expect(process).to_be_enabled()
+        assert page.request.get(calls_url).json() == calls
+
+        with page.expect_response(lambda response: response.url.endswith("/api/runs")
+                                  and response.request.method == "POST") as queued:
+            process.click()
+        assert queued.value.ok, queued.value.text()
+        id = queued.value.json()["id"]
+        expect(page).to_have_url(re.compile(f"/intake/runs/{id}$"))
+        expect(page.get_by_text("Completed with issues", exact=True).first).to_be_visible(timeout=30_000)
+        run = page.request.get("/api/runs/" + id).json()
+        assert run["processing_flow"]["id"] == "quick-start"
+        assert run["indexing_status"] == "done"
+        good = next(item for item in run["items"] if item["status"] == "done")
+        assert good["steps"]["synthesizer"] == "done"
+        shutil.copyfile(SAMPLE, damaged)
+        page.get_by_role("button", name="Retry failed files", exact=True).click()
+        expect(page.get_by_role("button", name="Retry failed files", exact=True)).to_have_count(0)
+        expect(page.get_by_role("heading", name="Failures", exact=True)).to_have_count(0, timeout=30_000)
+        run_header = page.get_by_role("heading", level=1).locator("..")
+        expect(run_header.get_by_text("Completed", exact=True)).to_be_visible(timeout=30_000)
+        rerun = page.request.get("/api/runs/" + id).json()
+        assert all(item["status"] == "done" for item in rerun["items"])
+        assert next(item for item in rerun["items"] if item["file_id"] == good["file_id"])["finished_at"] == good["finished_at"]
+
+        secret = root / "secrets.env"
+        secret.write_text(secret.read_text().replace("fixture-key-original", "fixture-key-replaced"))
+        page.goto("/intake")
+        expect(page.get_by_role("button", name="Browse files", exact=True)).to_have_count(0)
+        assert not page.request.get("/api/intake/quick-start").json()["ready"]

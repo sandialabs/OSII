@@ -654,8 +654,11 @@ def _start_staged_run(request: Request, payload: dict):
 def _start_run(request: Request, payload: dict):
     flow = None
     if payload.get("processing_flow_id"):
-        from osii.domain.processing.flows import get_flow, flow_payload
-        flow = get_flow(request.app.state.osii_root.resolve(), payload["processing_flow_id"])
+        from osii.domain.processing.flows import resolve_requested_flow, flow_payload
+        try:
+            flow = resolve_requested_flow(request.app.state.osii_root.resolve(), payload["processing_flow_id"])
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
         if flow is None:
             raise HTTPException(404, "Processing flow not found")
         payload = {**payload, **flow_payload(flow)}

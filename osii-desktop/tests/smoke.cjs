@@ -102,6 +102,19 @@ async function main() {
     const noToken = await fetch(new URL('/health', page.url()));
     assert.equal(noToken.status, 403, 'The API must reject requests outside the Electron session');
     await page.goto(new URL('/intake', page.url()).href);
+    await page.getByRole('heading', { name: '1. Connect models', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Intake & Setup', exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Setup', exact: true }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: 'Browse files', exact: true }).count(), 0);
+    if (useEmbeddingGemma) {
+      await page.getByText('embeddinggemma-2-text-256-v1', { exact: true }).waitFor();
+      const quick = await api('/api/intake/quick-start');
+      assert.equal(quick.embedding.state, 'ready', JSON.stringify(quick));
+      assert.equal(quick.embedding.bundled, true);
+      assert.equal(quick.ready, false);
+    }
+    await page.getByRole('button', { name: 'Advanced', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Advanced intake', exact: true }).click();
     const flow = useEmbeddingGemma ? 'Text, keywords and semantic search' : 'Text and keywords (offline)';
     await page.getByRole('combobox', { name: 'Processing flow' }).getByText(flow).waitFor();
     await page.getByRole('button', { name: 'Browse files', exact: true }).click();
@@ -168,7 +181,7 @@ async function main() {
     assert.deepEqual(errors, []);
     await fs.writeFile(path.join(output, 'standalone-metrics.json'), JSON.stringify(metrics, null, 2) + '\n');
     console.log(JSON.stringify({ metrics }));
-    console.log(JSON.stringify({ status: 'ok', checks: ['first-run', 'private-session', 'offline-mathematics', 'intake', 'preview', 'enrichment', 'keyword-search', 'offline-chat', 'spa-reload', 'ipc-boundary', 'restart',
+    console.log(JSON.stringify({ status: 'ok', checks: ['first-run', 'private-session', 'offline-mathematics', 'simple-intake-model-gate', 'advanced-intake', 'preview', 'enrichment', 'keyword-search', 'offline-chat', 'spa-reload', 'ipc-boundary', 'restart',
       ...(useEmbeddingGemma ? ['bundled-cpu-semantic-search-after-restart'] : []),
       ...(process.env.OSII_SMOKE_BLOCK_EXTERNAL === '1' ? ['external-https-blocked'] : [])] }));
   } catch (error) {

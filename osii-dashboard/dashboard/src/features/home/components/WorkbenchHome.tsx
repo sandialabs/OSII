@@ -16,10 +16,9 @@ export function WorkbenchHome({ setupPath, toolsOnly = false }: { setupPath: str
     {home.isError ? <Alert severity="warning" action={<Button onClick={() => void home.refetch()}>Retry</Button>}>Could not check tool readiness. Your library and settings are unchanged.</Alert> : null}
     {!toolsOnly && !home.isError && home.data?.setup.visible ? <Card variant="outlined" component="section" aria-labelledby="home-setup-title"><CardContent><Stack spacing={1.5}>
       <Typography id="home-setup-title" variant="h6" fontWeight={700}>Setup</Typography>
-      <Typography>Connect your processors and models, then add documents. You can return to Setup from the sidebar at any time.</Typography>
+      <Typography>Connect models, then add documents.</Typography>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-        <Button component={Link} to={setupPath} variant="outlined">Open Setup</Button>
-        <Button component={Link} to="/intake" variant="contained">Add documents</Button>
+        <Button component={Link} to={setupPath} variant="contained">Open Intake &amp; Setup</Button>
         <Button disabled={dismiss.isPending} onClick={() => dismiss.mutate()}>Done with setup</Button>
       </Stack>
       {dismiss.isError ? <Alert severity="error">Could not save your choice. Please try again.</Alert> : null}

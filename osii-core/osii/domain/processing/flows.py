@@ -79,7 +79,15 @@ def get_flow(root, identifier):
 
 
 def flow_payload(flow):
-    return {"run_extraction": True, "synthesizer_name": flow["synthesizer_name"],
+    from osii.domain.processing.quick_intake import FLOW_ID
+    simple = {"workflow": "intake", "extract_mode": "missing", "extractor_overrides": {},
+              "extraction_policy": "auto", "include_subfolders": False} if flow["id"] == FLOW_ID else {}
+    return {**simple, "run_extraction": True, "synthesizer_name": flow["synthesizer_name"],
             "enricher_name": flow["enricher_name"], "build_embeddings": flow.get("build_embeddings", True),
             "chunk_size": flow["chunk_size"], "chunk_overlap": flow["chunk_overlap"],
             "processing_flow": deepcopy(flow)}
+
+
+def resolve_requested_flow(root: Path, identifier: str) -> dict | None:
+    from osii.domain.processing.quick_intake import FLOW_ID, flow
+    return flow(root) if identifier == FLOW_ID else get_flow(root, identifier)

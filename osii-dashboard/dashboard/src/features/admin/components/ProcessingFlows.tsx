@@ -96,7 +96,7 @@ export function ProcessingFlows({readers, synthesizers, enrichers}: {readers: Ca
       <Stack spacing={1.5}>
         <Typography><strong>A processing flow is a named set of instructions for processing files.</strong> It specifies which reader to try for each file type and which processors create summaries and enrichments. Embeddings follow.</Typography>
         <Typography><strong>Set up here, then choose a flow in Intake.</strong> The first matching file-type rule wins. OSII tries backup readers in order if needed. Put the catch-all rule (<code>*</code>) last.</Typography>
-        <Typography><strong>Test sample</strong> checks the processors on bundled examples. <strong>View errors</strong> reopens a failed test, and <strong>Copy report</strong> includes the technical details. Errors from your own files appear under <strong>Intake &amp; Queue → Queue &amp; activity</strong>.</Typography>
+        <Typography><strong>Test sample</strong> checks the processors on bundled examples. <strong>View errors</strong> reopens a failed test, and <strong>Copy report</strong> includes the technical details. Errors from your own files appear under <strong>Intake &amp; Setup → Queue &amp; activity</strong>.</Typography>
         <Typography>Flows are saved in <code>processors.toml</code>. Each queued job keeps the flow it started with. To add a reader, see <code>docs/extending/processor-modules.md</code>.</Typography>
       </Stack>
     </DialogContent>

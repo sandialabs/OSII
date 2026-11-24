@@ -290,6 +290,8 @@ class PostgresWorkflow:
             "extraction_policy",
             "extractor_overrides",
             "extractor_config",
+            "routes_snapshot",
+            "processing_flow",
             "synthesizer_name",
             "synthesizer_config",
             "enricher_name",
@@ -319,6 +321,7 @@ class PostgresWorkflow:
         payload = {
             "workflow": options.get("workflow", "intake"),
             "options": options,
+            "processing_flow": options.get("processing_flow"),
             "items": items,
             "configuration_stamp": configuration_stamp(self.root),
             "staging": staging,
@@ -657,7 +660,7 @@ class PostgresWorkflow:
 
             names = [options.get("extractor_overrides", {}).get(path.suffix.lower() or "(no extension)")]
             if not names[0]:
-                names = choose_parser_chain(path, load_extractor_routes())
+                names = choose_parser_chain(path, options.get("routes_snapshot") or load_extractor_routes())
             failures = []
             for name in names:
                 item["extractor"] = name

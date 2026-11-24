@@ -13,15 +13,17 @@ follow your organization's software approval policy. The delivered artifact's
 2. Open **OSII Standalone** from the Start menu.
 3. Choose **Create library**, enter a name and select the document folder.
    A connected mapped drive or UNC path is supported for documents.
-4. Select **Create and open library**. In **Intake & Queue**, select files and
-   use **Text, keywords and semantic search**. When processing finishes, choose
-   **Semantic** in Search options to search by meaning.
+4. Select **Create and open library**. Open **Intake & Setup**, connect and
+   test a language model, then add documents. OSII tests the included
+   EmbeddingGemma model when it opens the library.
+5. Select **Process files** and open the run report. When processing finishes,
+   choose **Semantic** in Search options to search by meaning.
 
 The installer includes the text-only EmbeddingGemma 2 model and its CPU
-runtime. A fresh library can build embeddings offline. **Text and keywords
-(offline)** remains available for batches that only need keyword search and
-extractive previews. An existing saved embedding connection keeps precedence.
-Chat and model-backed reports continue to use their own optional connections.
+runtime. For offline processing, choose **Advanced → Advanced intake**, then
+**Text, keywords and semantic search** or **Text and keywords (offline)**.
+An existing saved embedding connection keeps precedence and can be tested
+from Intake & Setup.
 
 Do not install Python, uv, Node, Java, Tesseract, Podman or Docker for this app.
 Ollama is separately installed and managed only when you choose to use it.

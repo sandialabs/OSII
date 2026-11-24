@@ -22,9 +22,9 @@ const pages: Record<string, ComponentType> = {
 };
 export const workbenchTools: readonly WorkbenchTool[] = [
   ...sharedNavigation.map(item => ({ ...item, Page: pages[item.id] })),
-  { id: "intake", path: "/intake", label: "Intake & Queue", group: "start", icon: MoveToInboxOutlined,
+  { id: "intake", path: "/intake", label: "Intake & Setup", group: "start", icon: MoveToInboxOutlined,
     Page: lazy(() => import("../features/queue/pages/QueuePage").then(m => ({ default: m.QueuePage }))) },
-  { id: "setup", path: "/admin/processors", label: "Setup", group: "setup", icon: SettingsOutlined,
+  { id: "setup", path: "/admin/processors", label: "Advanced setup", group: "setup", icon: SettingsOutlined, navigation: false,
     Page: lazy(() => import("../features/admin/pages/ProcessorsPage").then(m => ({ default: m.ProcessorsPage }))) },
   { id: "tool-workbench", path: "/tools/workbench", label: "Library-wide processing", group: "tools", icon: BuildOutlined,
     Page: lazy(() => import("../features/files/pages/ToolsPage").then(m => ({ default: m.ToolsWorkbench }))) },
