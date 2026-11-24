@@ -177,8 +177,13 @@ def model_fixture():
                 values = [values] if isinstance(values, str) else values
                 self.reply({"model": "fixture-embed", "data": [{"index": i, "embedding": [float(len(str(text))), 1.0, 0.0]} for i, text in enumerate(values)]})
             else:
-                content = ("The calibration result was measured twice. [1]" if "document_type" not in str(payload.get("messages"))
-                           else json.dumps({"descriptive_title": {"value": "Calibration report"}}))
+                if "document_type" in str(payload.get("messages")):
+                    content = json.dumps({
+                        "descriptive_title": {"value": "Calibration report"},
+                        "title": {}, "author": {}, "date": {}, "agency": {}, "document_type": {},
+                    })
+                else:
+                    content = "The calibration result was measured twice. [1]"
                 self.reply({"model": "fixture-chat", "choices": [{"message": {"role": "assistant", "content": content}, "finish_reason": "stop"}]})
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
