@@ -129,7 +129,13 @@ export async function deleteProcessorEndpoint(id: string) {
   return apiJson<{ deleted: string }>(`/api/admin/processors/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-export async function updateProcessorEndpoint(id: string, payload: { model_connection: string }) {
+export async function updateProcessorEndpoint(id: string, payload: {
+  model_connection?: string;
+  model_access?: ProcessorEndpoint["model_access"];
+  base_url?: string;
+  enabled?: boolean;
+  preserve_processor?: boolean;
+}) {
   return apiJson<{ processor: ProcessorEndpoint }>(`/api/admin/processors/${encodeURIComponent(id)}`, { method: "PUT", json: payload });
 }
 

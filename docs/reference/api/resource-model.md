@@ -322,3 +322,17 @@ edits require the returned revision. Missing document is `404`, stale write
 `enrichments/document_metadata--manual.json` with `method: "human"`; it takes
 precedence for display without changing filesystem metadata or the AI record.
 Display title prefers descriptive title, then source title, then filename.
+
+For a root scope, `POST /api/scopes/overview` aggregates saved document fields in
+`library_metadata.document_fields`. Each grouped row has `label`, `count`, and
+`sources` entries containing `kind` (`file`, `edited`, `ai`, or `unknown`),
+`processor` (the saved processor ID when known), and `count`.
+A field counts once per file. A saved edit takes precedence, followed by
+embedded file properties and saved suggestions. Unchanged suggestions keep their
+attribution when a metadata form is saved. Document type labels group case-insensitively. Analysis reads the saved store without opening originals or
+calling AI models.
+
+Extractor responses can include literal embedded title and author under
+`document_metadata.file_properties` as strings. Reserve this namespace for
+properties read from the file format itself. Model guesses belong in the
+typed suggestion record.

@@ -709,7 +709,6 @@ class PostgresWorkflow:
                 len(content),
                 {
                     "source_absolute_path": str(path.resolve()),
-                    "extraction_document_metadata": response.document_metadata,
                     "file": {
                         "mtime_utc": iso_mtime_utc(path),
                         "birthtime_utc": iso_birthtime_utc(path),

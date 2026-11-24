@@ -15,6 +15,7 @@ from urllib.request import urlopen
 import pytest
 from playwright.sync_api import expect, sync_playwright
 
+from osii.domain.storage.objects import update_synthesis_provenance
 from osii.extraction.native_text_extractor import NativeTextExtractor
 
 
@@ -255,8 +256,18 @@ def test_intake_from_two_locations_is_browsable_even_after_source_goes_offline(i
         expect(page).to_have_url(re.compile("/files/" + second_id))
         expect(page.get_by_text("The second source has inspection notes about copper joints.", exact=False).first).to_be_visible()
 
+        update_synthesis_provenance(root / ".osii", first_id, synthesizer_name="openai.synthesizer",
+            synthesizer_version="test", config={"document_metadata": {
+                "method": "text_llm", "title": {}, "author": {}, "date": {},
+                "agency": {"value": "Test Inspection Office"}, "document_type": {"value": "report"},
+            }})
+        saved = page.request.put(f"/api/objects/{first_id}/metadata", data={"expected_revision": None, "values": {
+            "author": "First File Editor", "agency": "Test Inspection Office", "document_type": "Report",
+        }})
+        assert saved.ok, saved.text()
         metadata = page.request.put(f"/api/objects/{second_id}/metadata", data={"expected_revision": None, "values": {
             "descriptive_title": "Copper joint inspections", "author": "Test Author", "agency": "Test Engineering Office",
+            "document_type": "Report",
         }})
         assert metadata.ok, metadata.text()
         page.goto("/files")
@@ -275,11 +286,52 @@ def test_intake_from_two_locations_is_browsable_even_after_source_goes_offline(i
         page.goto("/library-overview")
         expect(page.get_by_role("region", name="File locations")).to_contain_text(str(second))
         overview = page.get_by_role("region", name="Document metadata", exact=True)
+        expect(page.get_by_role("button", name="Reveal topics")).to_have_count(0)
         expect(overview).to_contain_text("Test Author")
         overview.get_by_role("combobox", name=re.compile("Group by")).click()
         page.get_by_role("option", name="Agencies", exact=True).click()
         expect(overview).to_contain_text("Test Engineering Office")
+        expect(overview).to_contain_text("Test Inspection Office")
+        expect(overview.get_by_text("AI · OpenAI-compatible synthesis", exact=True)).to_be_visible()
+        overview.get_by_role("combobox", name=re.compile("Group by")).click()
+        page.get_by_role("option", name="Document types", exact=True).click()
+        expect(overview.get_by_text("Report", exact=True)).to_have_count(1)
+        expect(overview.get_by_text("Edited · 1", exact=True)).to_be_visible()
+        expect(overview.get_by_text("AI · OpenAI-compatible synthesis · 1", exact=True)).to_be_visible()
 
         page.get_by_role("navigation", name="Main navigation").get_by_role("button", name="Toolbox", exact=True).click()
         expect(page).to_have_url(re.compile("/tools$"))
         expect(page.get_by_role("heading", name="Toolbox", exact=True)).to_be_visible()
+
+
+def test_processor_settings_are_saved_on_a_dedicated_page(isolated_library):
+    _, _, env = isolated_library
+    with baseline_processors(isolated_library), dashboard_page(isolated_library, "processor-details") as page:
+        page.goto("/intake")
+        expect(page.get_by_role("combobox", name="Processing flow")).to_be_visible()
+        expect(page.get_by_role("spinbutton", name="chunk chars")).to_have_count(0)
+        page.get_by_role("link", name="Configure and test flows in Setup").click()
+        page.get_by_role("button", name=re.compile(r"^Extractors")).click()
+        extractor = "Python text-layer PDF and Office extractor"
+        page.get_by_role("link", name=re.compile(extractor)).click()
+        expect(page.get_by_role("heading", name=extractor, exact=True)).to_be_visible()
+        detail_url = page.url
+        chunk_size = page.get_by_role("spinbutton", name="chunk chars")
+        expect(chunk_size).to_have_value("4000")
+        chunk_size.fill("4200")
+        page.get_by_role("button", name="Save settings", exact=True).click()
+        expect(page.get_by_role("alert").get_by_text("Processor settings saved.")).to_be_visible()
+        page.reload()
+        expect(page).to_have_url(detail_url)
+        expect(chunk_size).to_have_value("4200")
+        page.get_by_role("link", name="Setup", exact=True).click()
+        expect(page.get_by_role("heading", name="Processors", exact=True)).to_be_visible()
+
+        page.get_by_role("button", name="Register a processor service").click()
+        native_endpoint = env["OSII_PROCESSORS"].split(",")[0]
+        page.get_by_role("textbox", name="Running processor URL").fill(native_endpoint)
+        page.get_by_role("button", name="Discover and register").click()
+        expect(page).to_have_url(re.compile(r"/admin/processors/registered/local\.native-text$"))
+        expect(page.get_by_role("textbox", name="Processor address")).to_have_value(native_endpoint)
+        page.get_by_role("button", name="Check health", exact=True).click()
+        expect(page.get_by_role("alert").get_by_text("Processor is reachable.")).to_be_visible()

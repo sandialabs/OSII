@@ -149,6 +149,12 @@ export type ScopeOverview = {
   warnings: string[];
 };
 
+export type LibraryMetadataSource = {
+  kind: "file" | "edited" | "ai" | "unknown";
+  processor: string | null;
+  count: number;
+};
+
 export type LibraryMetadataOverview = {
   source_root: string;
   locations: { label: string; browse_path: string; count: number }[];
@@ -156,7 +162,7 @@ export type LibraryMetadataOverview = {
   document_fields: Record<"author" | "agency" | "document_type" | "date" | "title", {
     recorded_count: number;
     distinct_count: number;
-    rows: { label: string; count: number }[];
+    rows: { label: string; count: number; sources?: LibraryMetadataSource[] }[];
   }>;
 };
 
@@ -834,6 +840,11 @@ export type ProcessorEndpoint = {
   kind: "extractor" | "synthesizer" | "embedder" | "enricher";
   base_url: string;
   enabled: boolean;
+  built_in?: boolean;
+  description?: string | null;
+  config_schema?: ProcessorConfigSchema | null;
+  manifest?: string | null;
+  implementation?: string | null;
   model_access?: { mode: "none" | "gateway"; bindings?: Record<string, string> };
   model_requirements?: Record<string, "required" | "optional">;
   capabilities?: {

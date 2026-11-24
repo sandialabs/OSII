@@ -39,14 +39,16 @@ export function ScopeOverviewPanel({ scope }: { scope: ScopeDescribeRequest }) {
     refetchInterval: scope.scope_type === "root" ? false : 15_000,
     staleTime: 5_000,
   });
-  const topics = useScopeKeywordSuggestions(scope);
-  const tools = useQuery({ queryKey: ["tool-catalog"], queryFn: getToolCatalog, staleTime: 30_000 });
+  const showTopics = scope.scope_type !== "root";
+  const topics = useScopeKeywordSuggestions(scope, showTopics);
+  const tools = useQuery({ queryKey: ["tool-catalog"], queryFn: getToolCatalog, enabled: showTopics, staleTime: 30_000 });
   const keywordMethod = tools.data?.methods.find(method => method.id === "noun_adjective_ngrams" && method.scopes.includes(scope.scope_type) && !method.configuration_error)
     ?? tools.data?.methods.find(method => method.id === "local.stats-keywords" && method.scopes.includes(scope.scope_type) && !method.configuration_error);
   const enrichment = useEnrichmentJob();
   const runs = useQuery({
     queryKey: ["processing-runs"],
     queryFn: listProcessingRuns,
+    enabled: showTopics,
     refetchInterval: (query) =>
       query.state.data?.runs.some((run) =>
         ["queued", "pending", "running"].includes(run.status),
@@ -292,7 +294,7 @@ export function ScopeOverviewPanel({ scope }: { scope: ScopeDescribeRequest }) {
                 </Typography>
               </Stack>
             </Box>
-            <Stack
+            {showTopics && <Stack
               spacing={1}
               sx={{ borderTop: "1px solid", borderColor: "divider", pt: 2 }}
             >
@@ -374,7 +376,7 @@ export function ScopeOverviewPanel({ scope }: { scope: ScopeDescribeRequest }) {
                     : "Topic generation started. The saved snapshot appears when processing finishes."}
                 </Typography>
               ) : null}
-            </Stack>
+            </Stack>}
             {data.warnings.length || data.missing_metadata_count ? (
               <Alert severity="warning">
                 Metadata is incomplete for some documents.{" "}

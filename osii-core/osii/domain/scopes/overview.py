@@ -18,7 +18,7 @@ from osii.domain.artifacts.text_representations import list_text_representations
 from osii.domain.model_provider_config import selected_model, selected_processor
 from osii.domain.read.docs import get_doc_meta
 from osii.domain.read.synthesis import get_suggested_metadata, list_syntheses
-from osii.domain.scopes.library_metadata import LibraryMetadata
+from osii.domain.scopes.library_metadata import LibraryMetadata, sidecar_file_properties
 from osii.domain.scopes.membership import list_scope_file_ids
 from osii.indexing.common import embedding_namespace
 
@@ -131,8 +131,10 @@ def get_scope_overview(osii_root: Path, scope: dict, *, source_root: Path | None
             file = (meta or {}).get("file", {})
             if library_metadata is not None:
                 recorded_path = (meta or {}).get("meta", {}).get("source_path")
-                fields = get_suggested_metadata(osii_root, file_id).get("document_metadata") or {}
-                library_metadata.add(file.get("source_relpath"), recorded_path, fields)
+                library_metadata.add(
+                    file.get("source_relpath"), recorded_path, get_suggested_metadata(osii_root, file_id),
+                    sidecar_file_properties(osii_root, file_id),
+                )
             if not meta:
                 missing_metadata += 1
             size = file.get("size_bytes")

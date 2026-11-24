@@ -65,6 +65,7 @@ def _cached_descriptor(base_url: str) -> dict[str, Any]:
 
 def _records(osii_root: Path) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
+    defaults = builtin_tools_config()["tools"]
     for tool_id, tool in configured_tools(osii_root).items():
         if not isinstance(tool, dict):
             continue
@@ -88,7 +89,12 @@ def _records(osii_root: Path) -> list[dict[str, Any]]:
             "kind": str(tool.get("kind") or "enricher"),
             "base_url": endpoint,
             "enabled": bool(tool.get("enabled", True)),
+            "built_in": tool_id in defaults,
             "runtime": runtime,
+            "description": descriptor.get("description") or tool.get("description"),
+            "config_schema": descriptor.get("config_schema") or tool.get("config_schema"),
+            "manifest": tool.get("manifest_path"),
+            "implementation": tool.get("implementation"),
             "model_access": tool.get("model_access") or {"mode": "none"},
             "model_requirements": descriptor.get("model_requirements") or tool.get("model_requirements") or {},
             "capabilities": descriptor.get("capabilities") or tool.get("capabilities") or {},
@@ -185,8 +191,18 @@ async def update_processor_endpoint(request: Request, endpoint_id: str, payload:
     if existing is None:
         raise HTTPException(status_code=404, detail="processor endpoint not found")
     merged = {**existing, **payload}
-    descriptor = _descriptor(str(merged["base_url"]), payload.get("token"))
-    _save_tool(osii_root, endpoint_id, _tool_from_descriptor(merged, descriptor, osii_root))
+    base_url = str(merged["base_url"] or "").strip().rstrip("/")
+    if not base_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=422, detail="base_url must start with http:// or https://")
+    descriptor = _descriptor(base_url, payload.get("token"))
+    if payload.get("preserve_processor") and (
+        descriptor["name"] != existing["processor_id"] or descriptor["kind"] != existing["kind"]
+    ):
+        raise HTTPException(status_code=422, detail="The new address must serve the same processor and capability.")
+    tool = _tool_from_descriptor({**merged, "base_url": base_url}, descriptor, osii_root)
+    if base_url == existing["base_url"]:
+        tool["runtime"] = existing["runtime"]
+    _save_tool(osii_root, endpoint_id, tool)
     return {"processor": next(item for item in _records(osii_root) if item["id"] == endpoint_id)}
 
 

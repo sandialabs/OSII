@@ -213,9 +213,23 @@ def test_postgres_browse_opens_recorded_intake_folders(pg_client, monkeypatch):
 
 
 def test_postgres_file_display_and_overview_use_saved_metadata(pg_client, monkeypatch):
-    file_id, _ = intake(pg_client, monkeypatch)
+    file_id, _ = intake(pg_client, monkeypatch, synthesizer_name="test.metadata-synthesis")
     client, _, source, _ = pg_client
-    recorded = {"descriptive_title": "Detector calibration", "author": "Test Author", "document_type": "Report"}
+
+    initial = client.post("/api/scopes/overview", json={"scope_type": "root"})
+    assert initial.status_code == 200, initial.text
+    fields = initial.json()["library_metadata"]["document_fields"]
+    assert fields["agency"]["rows"] == [{
+        "label": "Calibration Office", "count": 1,
+        "sources": [{"kind": "ai", "processor": "test.metadata-synthesis", "count": 1}],
+    }]
+    assert fields["author"]["rows"] == [{
+        "label": "Recorded Author", "count": 1,
+        "sources": [{"kind": "file", "processor": None, "count": 1}],
+    }]
+
+    recorded = {"descriptive_title": "Detector calibration", "author": "Test Author",
+                "agency": "Calibration Office", "document_type": "Report"}
     saved = client.put(f"/api/objects/{file_id}/metadata", json={"expected_revision": None, "values": recorded})
     assert saved.status_code == 200, saved.text
 
@@ -228,7 +242,11 @@ def test_postgres_file_display_and_overview_use_saved_metadata(pg_client, monkey
     metadata = response.json()["library_metadata"]
     assert metadata["source_root"] == str(source)
     assert metadata["locations"] == [{"label": str(source), "browse_path": "source", "count": 1}]
-    assert metadata["document_fields"]["author"]["rows"] == [{"label": "Test Author", "count": 1}]
+    assert metadata["document_fields"]["author"]["rows"] == [{
+        "label": "Test Author", "count": 1, "sources": [{"kind": "edited", "processor": None, "count": 1}],
+    }]
+    assert metadata["document_fields"]["agency"] == fields["agency"]
+    assert metadata["document_fields"]["document_type"] == fields["document_type"]
 
 
 def test_local_database_explorer_is_read_only_and_does_not_add_auth(pg_client):
@@ -330,6 +348,7 @@ def fake_processor(root, name, kind):
             return ExtractionResponse(
                 request_id=request.request_id,
                 processor=descriptor,
+                document_metadata={"file_properties": {"author": "Recorded Author"}},
                 segments=[
                     TextSegment(
                         id="seg-000001",
@@ -342,10 +361,15 @@ def fake_processor(root, name, kind):
             )
 
         def synthesize(self, request):
+            metadata = {"document_metadata": {
+                "method": "text_llm", "title": {}, "author": {"value": "Suggested Author"},
+                "date": {}, "agency": {"value": "Calibration Office"}, "document_type": {"value": "report"},
+            }} if name == "test.metadata-synthesis" else {}
             return SynthesisResponse(
                 request_id=request.request_id,
                 processor=descriptor,
                 markdown="# A grounded summary",
+                metadata=metadata,
             )
 
         def enrich(self, request):

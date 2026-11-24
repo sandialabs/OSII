@@ -466,7 +466,8 @@ class PostgresLibrary:
                 labels = postgres_document_labels(connection, [doc.file_id for doc in docs])
             for doc in docs:
                 recorded_path = doc.metadata.get("source_absolute_path") or (doc.metadata.get("meta") or {}).get("source_path")
-                stats.add(doc.source_relpath, recorded_path, labels.get(doc.file_id, {}).get("document_metadata") or {})
+                extraction_metadata = doc.metadata.get("extraction_document_metadata") or {}
+                stats.add(doc.source_relpath, recorded_path, labels.get(doc.file_id, {}), extraction_metadata.get("file_properties"))
             library_metadata["library_metadata"] = stats.summary()
         return {
             **library_metadata,

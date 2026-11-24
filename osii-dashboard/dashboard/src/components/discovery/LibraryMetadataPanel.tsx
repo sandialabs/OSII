@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Box, Button, Link, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
+import { Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Link, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import { Link as RouterLink } from "react-router-dom";
-import type { LibraryMetadataOverview } from "../../api/types";
+import type { LibraryMetadataOverview, LibraryMetadataSource } from "../../api/types";
 
 const fieldNames = {
   author: "Authors",
@@ -11,10 +12,27 @@ const fieldNames = {
   title: "Document titles",
 } as const;
 const PAGE_SIZE = 8;
+const processorNames: Record<string, string> = {
+  "core.document-metadata": "Suggest metadata",
+  "openai.synthesizer": "OpenAI-compatible synthesis",
+  "ollama.synthesizer": "Ollama synthesis",
+};
+
+function sourceLabel({kind, processor}: LibraryMetadataSource) {
+  if (kind === "file") return "File metadata";
+  if (kind === "edited") return "Edited";
+  if (kind === "ai") return "AI · " + processorLabel(processor);
+  return "Source unrecorded";
+}
+
+function processorLabel(processor: string | null) {
+  return processor ? processorNames[processor] ?? processor : "Process unrecorded";
+}
 
 export function LibraryMetadataPanel({ data, fileCount }: { data: LibraryMetadataOverview; fileCount: number }) {
   const [field, setField] = useState<keyof typeof fieldNames>("author");
   const [query, setQuery] = useState("");
+  const [help, setHelp] = useState(false);
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [visibleLocations, setVisibleLocations] = useState(PAGE_SIZE);
   const facet = data.document_fields[field];
@@ -49,7 +67,10 @@ export function LibraryMetadataPanel({ data, fileCount }: { data: LibraryMetadat
 
       <Paper component="section" variant="outlined" aria-labelledby="library-metadata-title" sx={{ p: 1.5, minWidth: 0 }}>
         <Stack spacing={1}>
-          <Typography id="library-metadata-title" component="h3" variant="subtitle1" fontWeight={700}>Document metadata</Typography>
+          <Stack direction="row" alignItems="center" spacing={0.5}>
+            <Typography id="library-metadata-title" component="h3" variant="subtitle1" fontWeight={700}>Document metadata</Typography>
+            <IconButton size="small" aria-label="About metadata sources" onClick={() => setHelp(true)}><HelpOutlineIcon fontSize="small" /></IconButton>
+          </Stack>
           <Stack direction="row" alignItems="center" flexWrap="wrap" spacing={1} useFlexGap>
             <TextField select size="small" label="Group by" value={field}
               onChange={event => { setField(event.target.value as keyof typeof fieldNames); setQuery(""); setVisible(PAGE_SIZE); }}>
@@ -63,7 +84,18 @@ export function LibraryMetadataPanel({ data, fileCount }: { data: LibraryMetadat
           </Typography>
           {matching.slice(0, visible).map(row => (
             <Stack key={row.label} direction="row" spacing={1} justifyContent="space-between" sx={rowStyle}>
-              <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>{row.label}</Typography>
+              <Stack spacing={0.5} minWidth={0}>
+                <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>{row.label}</Typography>
+                <Stack direction="row" flexWrap="wrap" spacing={0.5} useFlexGap>
+                  {(row.sources ?? [{ kind: "unknown", processor: null, count: row.count }] as LibraryMetadataSource[]).map(source => (
+                    <Chip key={JSON.stringify([source.kind, source.processor])}
+                      size="small" variant="outlined" color={source.kind === "ai" ? "info" : "default"}
+                      label={sourceLabel(source) + (source.count === row.count ? "" : " · " + source.count.toLocaleString())}
+                      title={source.processor ?? undefined}
+                      sx={{ maxWidth: "100%", height: "auto", "& .MuiChip-label": { whiteSpace: "normal", overflowWrap: "anywhere" } }} />
+                  ))}
+                </Stack>
+              </Stack>
               <Typography variant="body2" color="text.secondary">{row.count.toLocaleString()}</Typography>
             </Stack>
           ))}
@@ -76,6 +108,17 @@ export function LibraryMetadataPanel({ data, fileCount }: { data: LibraryMetadat
           </Typography>}
         </Stack>
       </Paper>
+      <Dialog open={help} onClose={() => setHelp(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Metadata sources</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1}>
+            <Typography><strong>Edited</strong> values come from a saved correction. <strong>File metadata</strong> comes from properties recorded during extraction.</Typography>
+            <Typography><strong>AI</strong> identifies a saved suggestion and names the process that produced it. For example, a model reads the extracted text to suggest an agency or a document type such as report, memo, or article.</Typography>
+            <Typography>Analyze Library reads the saved values. Document types that differ only by capitalization are counted together.</Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setHelp(false)}>Close</Button></DialogActions>
+      </Dialog>
     </Box>
   );
 }

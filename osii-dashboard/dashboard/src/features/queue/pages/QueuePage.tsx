@@ -1,6 +1,6 @@
-import { LibraryFlow } from "../../../components/workbench/LibraryFlow";
 import {useEffect, useState} from "react";
-import {Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Paper, Stack, Typography} from "@mui/material";
+import {Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Paper, Stack, Tooltip, Typography} from "@mui/material";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import {useQuery, useQueryClient} from "@tanstack/react-query";
 import {Link, useSearchParams} from "react-router-dom";
@@ -51,16 +51,18 @@ export function QueuePage() {
     <IntakeSections value={section} onChange={tab => setParams(tab === "activity" ? {tab: "activity"} : {})} activeCount={runs.data?.runs.filter(run => ["queued", "pending", "running"].includes(run.status)).length ?? 0} />
     {notice && <Alert severity={notice.severity}>{notice.text}</Alert>}
     {section === "add" ? <><FileSelectionPanel files={files} onFiles={setFiles} /><Paper variant="outlined" sx={{p: 2}}><Stack spacing={1.5}>
-      <Typography variant="h6" fontWeight={700}>2. Process</Typography>
-      <Typography fontWeight={650}>Extract → synthesize → enrich → embed</Typography>
-      <LibraryFlow reads={["source"]} writes={["text", "metadata", "summaries", "artifacts", "index", "runs"]} />
+      <Stack direction="row" alignItems="center" justifyContent="space-between">
+        <Typography variant="h6" fontWeight={700}>2. Process</Typography>
+        <Tooltip title="Configure and test flows in Setup">
+          <IconButton component={Link} to="/admin/processors#processing-flows" aria-label="Configure and test flows in Setup"><SettingsOutlinedIcon /></IconButton>
+        </Tooltip>
+      </Stack>
       <ProcessingFlowSelect value={flow} onChange={setFlow} />
-      <Button component={Link} to="/admin/processors#processing-flows" sx={{alignSelf: "start"}}>Configure & test flows in Setup</Button>
       {preview.isFetching && <Typography role="status" variant="body2">Checking access to selected files…</Typography>}
       {preview.isError && <Alert severity="error" action={<Button onClick={() => void preview.refetch()}>Retry file check</Button>}>{preview.error.message}</Alert>}
       {runs.data?.worker?.available === false && <Alert severity="warning">Worker unavailable. Queued files will wait.</Alert>}
       <Button variant="contained" disabled={!count || preview.isFetching || starting} onClick={() => void queue()}>{starting ? "Queueing…" : `Queue ${count} ${count === 1 ? "file" : "files"}`}</Button>
     </Stack></Paper></> : <><ProcessingActivity recentRuns={runs.data?.runs ?? []} workerAvailable={runs.data?.worker?.available} selectedLogRunId={logId} setSelectedLogRunId={setLogId} controllingRun={controlling} controlRun={control} displayedLogLines={logs.data?.logs ?? []} refreshLogs={() => void logs.refetch()} logError={logs.isError} />{runs.isError && <Alert severity="error">{runs.error.message}</Alert>}</>}
-    <Dialog open={help} onClose={() => setHelp(false)} fullWidth maxWidth="sm"><DialogTitle>Intake & Queue</DialogTitle><DialogContent><Stack spacing={1.5}><Typography><strong>Select files, choose a named flow, then queue.</strong> Intake always starts with all processes. Completed work is reused; failed files can be retried from the queue.</Typography><Typography><strong>Configure once in Setup.</strong> Each flow defines reader and fallback order and has a sample test. A passed sample cannot guarantee that an endpoint stays available or every PDF is readable. Errors remain available in the queue; your file selection is saved in this browser when visiting Setup.</Typography><Typography><strong>Collection reprocessing</strong> belongs in the collection’s Processing status section. The queue shows processes, files, backends, logs, and copyable errors. Read generated content from Files or Collections.</Typography></Stack></DialogContent><DialogActions><Button onClick={() => setHelp(false)}>Close</Button></DialogActions></Dialog>
+    <Dialog open={help} onClose={() => setHelp(false)} fullWidth maxWidth="sm"><DialogTitle>Intake & Queue</DialogTitle><DialogContent><Stack spacing={1.5}><Typography><strong>Select files, choose a named flow, then queue.</strong> The default flow reads files, creates summaries and metadata, and updates the search index. Retry failed files from the queue.</Typography><Typography><strong>Configure once in Setup.</strong> Each flow defines reader and fallback order and has a sample test. Your file selection is saved in this browser when visiting Setup.</Typography><Typography><strong>Collection reprocessing</strong> belongs in the collection’s Processing status section. The queue shows processes, files, backends, logs, and copyable errors. Read generated content from Files or Collections.</Typography></Stack></DialogContent><DialogActions><Button onClick={() => setHelp(false)}>Close</Button></DialogActions></Dialog>
   </Stack>;
 }

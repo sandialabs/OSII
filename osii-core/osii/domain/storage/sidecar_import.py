@@ -237,6 +237,7 @@ def apply_import(engine, plan: ImportPlan, *, merge: bool = False) -> dict:
                     for seg in canonical.segments
                 ],
                 extraction_provenance=canonical.provenance,
+                extraction_document_metadata=canonical.provenance.get("response_metadata", {}),
                 sidecar_source={
                     "file_id": file_id,
                     "import_fingerprint": plan.fingerprint,

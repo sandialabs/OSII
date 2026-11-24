@@ -7,6 +7,7 @@ import { workbenchTools } from "./tools";
 import { ToolBoundary } from "./ToolBoundary";
 
 const CollectionPage = lazy(() => import("../features/collections/pages/CollectionPage").then(m => ({ default: m.CollectionPage })));
+const ProcessorDetailsPage = lazy(() => import("../features/admin/pages/ProcessorDetailsPage").then(m => ({ default: m.ProcessorDetailsPage })));
 const FilePage = lazy(() => import("../features/files/pages/FilePage").then(m => ({ default: m.FilePage })));
 
 function NotFoundPage() {
@@ -24,6 +25,8 @@ export function AppRouter() {
         ))}
         <Route path="/collections/:collectionId" element={<ToolBoundary key="collection"><CollectionPage /></ToolBoundary>} />
         <Route path="/files/:fileId" element={<ToolBoundary key="file"><FilePage /></ToolBoundary>} />
+        <Route path="/admin/processors/:processorId" element={<ToolBoundary key="processor"><ProcessorDetailsPage /></ToolBoundary>} />
+        <Route path="/admin/processors/registered/:registrationId" element={<ToolBoundary key="processor-registration"><ProcessorDetailsPage /></ToolBoundary>} />
         <Route path="/queue" element={<Navigate to="/intake" replace />} />
         <Route path="/home" element={<Navigate to="/" replace />} />
         <Route path="*" element={<NotFoundPage />} />

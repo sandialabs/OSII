@@ -7,5 +7,5 @@ export function useProcessingFlows() {return useQuery({queryKey: ["processing-fl
 export function ProcessingFlowSelect({value, onChange}: {value: string; onChange: (id: string) => void}) {
   const flows = useProcessingFlows();
   const flow = flows.data?.flows.find(item => item.id === value);
-  return <Stack spacing={1}><TextField select size="small" fullWidth label="Processing flow" value={value} onChange={event => onChange(event.target.value)}>{(flows.data?.flows ?? [{id: "bundled", name: "Default bundled processes"}]).map(item => <MenuItem key={item.id} value={item.id}>{item.name}</MenuItem>)}</TextField><Typography variant="caption" color={flow?.test?.ok ? "success.main" : "text.secondary"}>{flow?.test ? `${flow.test.ok ? "Sample passed" : "Sample had errors"} · ${new Date(flow.test.tested_at).toLocaleString()}` : "Sample not tested yet · Test and configure flows in Setup"}</Typography></Stack>;
+  return <Stack spacing={1}><TextField select size="small" fullWidth label="Processing flow" value={value} onChange={event => onChange(event.target.value)}>{(flows.data?.flows ?? [{id: "bundled", name: "Default bundled processes"}]).map(item => <MenuItem key={item.id} value={item.id}>{item.name}</MenuItem>)}</TextField>{flow?.test?.ok === false && <Typography variant="caption" color="warning.main">Sample test failed</Typography>}</Stack>;
 }

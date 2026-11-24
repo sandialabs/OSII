@@ -251,6 +251,14 @@ Changing the flow, models, or processor settings
 invalidates its displayed test result; passing a sample is not a future
 availability guarantee. Model-backed tests may use provider credits.
 
+Under **Setup → Processors**, expand the capability and open a processor’s
+details page. The processor descriptor supplies the processing settings.
+Installed modules can also expose startup settings and restart controls.
+Registered services show their endpoint, health and descriptor checks, and a
+model selectors when the processor declares a model requirement. Use **?** for the
+implementation or module manifest path. Register external Processor API services
+from the same Processors section.
+
 **Intake & Queue always starts with All processes**: extract, synthesize, enrich,
 then embed. Select files and a flow, then queue. It does not ask users to rebuild
 reader rules or repeat endpoint tests after file selection. Paths and selected
@@ -352,9 +360,15 @@ offline. Go to **Intake & Queue** to find and add new files from the drive.
 **Analyze Library** shows the configured source folder and the recorded folders
 that contain library files. Open a location to browse its saved entries. Group
 saved metadata by author, agency, document type, date, or title, and filter the
-values by name. Counts show how many files have a value. Document dates come
-from saved document metadata; the filesystem timeline shows creation and
-modification times. The overview also has format, processing, and topic summaries.
+values by name. Counts show how many files have a value. Labels identify edited
+fields, file properties saved during extraction, and AI suggestions with their
+producer. Document type describes the genre. Model-backed synthesis and
+**Suggest metadata** can infer it, along with agencies, from extracted text.
+Document type counts ignore capitalization. Embedded title and author are
+recorded by the native reader for PDF and supported Office files on extraction.
+Previously extracted files can show these properties once a reader has saved
+them. Document dates come from saved metadata. The filesystem timeline shows
+creation and modification times.
 
 Use **Search metadata**
 in Files to open the drawer and combine filename/path words, file format, size,
