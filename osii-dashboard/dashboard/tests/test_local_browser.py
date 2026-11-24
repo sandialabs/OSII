@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import time
+from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import urlopen
 
 import pytest
@@ -134,7 +135,7 @@ def test_pdf_preview_recovers_after_source_returns(isolated_library):
     with dashboard_page(isolated_library, "pdf-preview-trace") as page:
         page.goto(f"/files/{file_id}")
         expect(page.get_by_role("heading", name=SAMPLE.name)).to_be_visible()
-        page.get_by_role("button", name="Source and text").click()
+        page.get_by_role("button", name="Split view", exact=True).click()
         expect(page.get_by_role("alert")).to_contain_text("Original file unavailable")
         expect(page.get_by_role("alert")).to_contain_text(str(source.resolve()))
         expect(page.get_by_text("ubiquitous, convenient, on-demand network access", exact=False).first).to_be_visible()
@@ -147,18 +148,53 @@ def test_pdf_preview_recovers_after_source_returns(isolated_library):
         )
         page.get_by_role("button", name="Next", exact=True).click()
         expect(page.get_by_text("Page 2 of 7", exact=True)).to_be_visible()
+        page.get_by_role("button", name="Document metadata", exact=True).click()
+        expect(page.get_by_role("separator", name="Resize document panes")).to_be_visible()
+        expect(page.get_by_text("Page 1 of 7", exact=True)).to_be_visible()
+        expect(page.get_by_role("main").get_by_role("link", name="Open OCR Workbench")).to_have_count(0)
+        page.get_by_role("button", name="Single view", exact=True).click()
+        expect(page.get_by_role("separator", name="Resize document panes")).to_have_count(0)
 
 
-def queue_directory(page, path, names, status):
+def queue_directory(page, path, names, status, *, last_folder=None):
     page.goto("/intake")
     clear = page.get_by_role("button", name="Clear selection", exact=True)
-    page.get_by_role("button", name="Browse files").wait_for()
+    browse = page.get_by_role("button", name="Browse files")
+    browse.wait_for()
     if clear.count():
         clear.click()
-    page.get_by_role("button", name="Browse files").click()
+
+    def opens(url, folder):
+        parts = urlsplit(url)
+        return parts.path == "/api/browse/page" and parse_qs(parts.query).get("path") == [str(folder)]
+
+    held = []
+    route_pattern = "**/api/browse/page?*"
+    if last_folder:
+        def delay_last_folder(route):
+            if opens(route.request.url, last_folder):
+                held.append(route)
+            else:
+                route.continue_()
+
+        page.route(route_pattern, delay_last_folder)
+        with page.expect_request(lambda request: opens(request.url, last_folder)):
+            browse.click()
+    else:
+        browse.click()
     dialog = page.get_by_role("dialog", name="Select files")
-    dialog.get_by_role("textbox", name="Folder path").fill(str(path))
-    dialog.get_by_role("button", name="Go", exact=True).click()
+    address = dialog.get_by_role("textbox", name="Folder path")
+    address.fill(str(path))
+    if last_folder:
+        # Let the old request finish after the new path has been typed.
+        previous, = held
+        with page.expect_response(lambda response: opens(response.url, last_folder)):
+            previous.continue_()
+        page.unroute(route_pattern)
+        expect(address).to_have_value(str(path))
+    with page.expect_response(lambda response: opens(response.url, path)) as opened:
+        dialog.get_by_role("button", name="Go", exact=True).click()
+    assert opened.value.ok, opened.value.text()
     for name in names:
         dialog.get_by_text(name, exact=True).click()
     count = len(names)
@@ -191,7 +227,7 @@ def test_intake_from_two_locations_is_browsable_even_after_source_goes_offline(i
         dashboard_page(isolated_library, "intake-browse-trace") as page,
     ):
         first_run = queue_directory(page, first, ["report.txt"], "done")
-        second_run = queue_directory(page, second, ["report.txt", "damaged.pdf"], "Completed with issues")
+        second_run = queue_directory(page, second, ["report.txt", "damaged.pdf"], "Completed with issues", last_folder=first)
         assert [item["status"] for item in first_run["items"]] == ["done"]
         assert sorted(item["status"] for item in second_run["items"]) == ["done", "error"]
         first_id, = first_run["indexing_file_ids"]
@@ -218,6 +254,31 @@ def test_intake_from_two_locations_is_browsable_even_after_source_goes_offline(i
         page.get_by_role("button", name="Open file report.txt").click()
         expect(page).to_have_url(re.compile("/files/" + second_id))
         expect(page.get_by_text("The second source has inspection notes about copper joints.", exact=False).first).to_be_visible()
+
+        metadata = page.request.put(f"/api/objects/{second_id}/metadata", data={"expected_revision": None, "values": {
+            "descriptive_title": "Copper joint inspections", "author": "Test Author", "agency": "Test Engineering Office",
+        }})
+        assert metadata.ok, metadata.text()
+        page.goto("/files")
+        page.get_by_role("button", name="Display settings", exact=True).click()
+        dialog = page.get_by_role("dialog", name="Display settings")
+        dialog.get_by_role("combobox", name=re.compile("Tile label")).click()
+        page.get_by_role("option", name="Descriptive title", exact=True).click()
+        dialog.get_by_role("button", name="Save defaults").click()
+        expect(page.get_by_role("button", name="Open file Copper joint inspections")).to_be_visible()
+        expect(page.get_by_role("button", name="Open file report.txt", exact=True)).to_be_visible()
+
+        folder = "external/" + second.as_posix().lstrip("/")
+        page.goto("/browse?" + urlencode({"path": folder, "view": "icons"}))
+        expect(page.get_by_role("button", name="Open file Copper joint inspections")).to_be_visible()
+
+        page.goto("/library-overview")
+        expect(page.get_by_role("region", name="File locations")).to_contain_text(str(second))
+        overview = page.get_by_role("region", name="Document metadata", exact=True)
+        expect(overview).to_contain_text("Test Author")
+        overview.get_by_role("combobox", name=re.compile("Group by")).click()
+        page.get_by_role("option", name="Agencies", exact=True).click()
+        expect(overview).to_contain_text("Test Engineering Office")
 
         page.get_by_role("navigation", name="Main navigation").get_by_role("button", name="Toolbox", exact=True).click()
         expect(page).to_have_url(re.compile("/tools$"))

@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useScopeSummaries } from "../../../hooks/useScopeSummaries";
 import { toFileCardModel } from "../../../domain/files";
 import { FileGrid } from "../../files/components/FileGrid";
+import { FileDisplaySettings } from "../../files/components/FileDisplaySettings";
 import { buildFileRoute } from "../../../utils/routes";
 import { MetadataSearchDrawer } from "../components/MetadataSearchDrawer";
 import { emptyFileFilters, fileFormat, filterFiles } from "../../../domain/fileFilters";
@@ -39,6 +40,7 @@ export function FilesPage() {
           Search metadata
         </Button>
         {filtered && <Button size="small" onClick={() => setFilters({ ...emptyFileFilters })}>Clear filters</Button>}
+        <FileDisplaySettings />
       </Stack>
 
       <FileGrid

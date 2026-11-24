@@ -283,7 +283,7 @@ citation spans still support every changed passage.
 
 ### Document metadata
 
-Synthesis returns `metadata.document_metadata` using the shared SDK
+Model-backed synthesis returns `metadata.document_metadata` using the shared SDK
 `DocumentMetadata` schema version 1. It contains nullable suggestions for
 `descriptive_title`, `title`, `author`, `date`, `agency`, and `document_type`.
 Each has `value`, optional `qualifier`, and optional exact-quote `evidence`.
@@ -291,10 +291,13 @@ A descriptive title labels content; title records the printed/source title.
 Neither needs to equal the filename or each other. Blank means unknown.
 New fields are optional for older schema-1 clients. See the [synthesis
 spec](../processor-api/synthesis.md#suggested-document-metadata-and-long-inputs).
+**Suggest document metadata** (`core.document-metadata`) can also generate this
+record from saved text as an enricher. It is the default method for the Toolbox's
+**Suggest metadata** operation and uses the configured chat model.
 
 `GET /api/objects/{file_id}/metadata` returns `{file_id, revision,
 document_metadata}`. Revision is null until a human overlay exists; the record
-otherwise comes from current synthesis suggestions or is null.
+otherwise comes from the current saved suggestions or is null.
 
 `PUT /api/objects/{file_id}/metadata` accepts:
 

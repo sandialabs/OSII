@@ -721,7 +721,9 @@ def scope_summaries(request: Request, payload: dict):
 
 @router.post("/api/scopes/overview")
 def scope_overview(request: Request, payload: dict):
-    return library(request).overview(payload.get("scope") or payload)
+    state = request.app.state
+    source = state.shared_volume_root if state.filesystem_mode == "local" else None
+    return library(request).overview(payload.get("scope") or payload, source_root=source)
 
 
 @router.post("/api/scopes/artifacts")
@@ -1774,13 +1776,14 @@ def document_metadata(request: Request, file_id: str):
             "document_metadata": history["data"].get("document_metadata"),
         }
     except KeyError:
+        from osii.domain.read.postgres_metadata import postgres_document_labels
+
+        with lib.engine.connect() as connection:
+            labels = postgres_document_labels(connection, [file_id]).get(file_id, {})
         return {
             "file_id": file_id,
             "revision": None,
-            "document_metadata": lib.reader.get_document(file_id).metadata.get(
-                "document_metadata"
-            )
-            or None,
+            "document_metadata": labels.get("document_metadata"),
         }
 
 

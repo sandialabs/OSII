@@ -4,6 +4,8 @@ from pathlib import Path
 
 from osii.processor_sdk.document_metadata import DocumentMetadata
 
+METADATA_ENRICHER = "core.document-metadata"
+
 
 def document_labels(document: dict) -> dict:
     return {
@@ -40,6 +42,14 @@ def synthesis_labels(metadata: dict) -> dict:
     return labels
 
 
+def saved_descriptive_title(labels: dict) -> str | None:
+    """Use reviewed or inferred titles and older model headings for display."""
+    if not (labels.get("document_metadata") or labels.get("title_method") in {"model_generated", "text_llm"}):
+        return None
+    title = labels.get("document_title")
+    return " ".join(title.split())[:240] or None if isinstance(title, str) else None
+
+
 METADATA_FIELDS = (
     "descriptive_title",
     "title",
@@ -51,13 +61,12 @@ METADATA_FIELDS = (
 
 
 def metadata_product_path(root: Path, file_id: str) -> Path:
-    from osii.domain.artifacts.products import product_path
+    from osii.domain.read.sidecar import SidecarLibraryReader
 
-    return product_path(
-        root,
-        {"scope_type": "object", "file_id": file_id},
-        "document_metadata--manual.json",
-    )
+    path = SidecarLibraryReader(root)._object(file_id) / "enrichments" / "document_metadata--manual.json"
+    if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):
+        raise ValueError("Metadata must remain inside the local store")
+    return path
 
 
 def read_manual_metadata(root: Path, file_id: str) -> tuple[str | None, dict | None]:

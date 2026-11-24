@@ -20,6 +20,7 @@ import { listProcessingRuns } from "../../api/queue";
 import type { ScopeDescribeRequest } from "../../api/types";
 import { useEnrichmentJob } from "../../hooks/useEnrichmentJob";
 import { useScopeKeywordSuggestions } from "../../hooks/useScopeKeywordSuggestions";
+import { LibraryMetadataPanel } from "./LibraryMetadataPanel";
 
 function sizeLabel(value: number | null): string {
   if (value === null) return "Not recorded";
@@ -35,7 +36,7 @@ export function ScopeOverviewPanel({ scope }: { scope: ScopeDescribeRequest }) {
   const overview = useQuery({
     queryKey: ["scopes", "overview", scope],
     queryFn: () => getScopeOverview(scope),
-    refetchInterval: 15_000,
+    refetchInterval: scope.scope_type === "root" ? false : 15_000,
     staleTime: 5_000,
   });
   const topics = useScopeKeywordSuggestions(scope);
@@ -100,8 +101,7 @@ export function ScopeOverviewPanel({ scope }: { scope: ScopeDescribeRequest }) {
           </Button>
         </Stack>
         <Typography variant="body2" color="text.secondary">
-          Recorded documents in OSII—not a live inventory of unprocessed files
-          in your source folder.
+          Files recorded by Intake.
         </Typography>
         {overview.isLoading ? (
           <LinearProgress aria-label="Loading collection overview" />
@@ -158,6 +158,7 @@ export function ScopeOverviewPanel({ scope }: { scope: ScopeDescribeRequest }) {
               have summaries and {data.processing.enrichment_count} have
               enrichments.
             </Typography>
+            {data.library_metadata && <LibraryMetadataPanel data={data.library_metadata} fileCount={data.file_count} />}
             {data.file_count === 0 ? (
               <Typography variant="body2" color="text.secondary">
                 This scope is empty. Read documents in Intake, then this

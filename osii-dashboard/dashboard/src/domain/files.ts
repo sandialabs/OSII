@@ -3,6 +3,7 @@ import type { ObjectAggregate, ObjectSummary } from "../api/types";
 
 export type FileCardModel = {
   textPreview?: string | null;
+  descriptiveTitle?: string | null;
   fileId: string;
   title: string;
   subtitle: string;

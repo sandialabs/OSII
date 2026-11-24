@@ -117,6 +117,7 @@ export type ScopeSummariesResponse = {
 };
 
 export type ScopeOverview = {
+  library_metadata?: LibraryMetadataOverview;
   permissions?: { run: boolean };
   scope: ScopeDescribeRequest;
   file_count: number;
@@ -146,6 +147,17 @@ export type ScopeOverview = {
     };
   };
   warnings: string[];
+};
+
+export type LibraryMetadataOverview = {
+  source_root: string;
+  locations: { label: string; browse_path: string; count: number }[];
+  location_count: number;
+  document_fields: Record<"author" | "agency" | "document_type" | "date" | "title", {
+    recorded_count: number;
+    distinct_count: number;
+    rows: { label: string; count: number }[];
+  }>;
 };
 
 export type ObjectSummariesRequest = {

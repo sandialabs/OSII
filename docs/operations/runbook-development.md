@@ -349,8 +349,14 @@ contain the same filename. **Folder Details** shows the current location and
 its saved summary when one is available. Browse still works if a source goes
 offline. Go to **Intake & Queue** to find and add new files from the drive.
 
-**Library at a glance** is a left-menu tool with format, date, processing, and
-topic summaries. It is separate from the home **Files** grid. Use **Search metadata**
+**Analyze Library** shows the configured source folder and the recorded folders
+that contain library files. Open a location to browse its saved entries. Group
+saved metadata by author, agency, document type, date, or title, and filter the
+values by name. Counts show how many files have a value. Document dates come
+from saved document metadata; the filesystem timeline shows creation and
+modification times. The overview also has format, processing, and topic summaries.
+
+Use **Search metadata**
 in Files to open the drawer and combine filename/path words, file format, size,
 modification date, extracted-text availability, summaries, and enrichments.
 Filters apply to recorded metadata for the files in the local library; they do

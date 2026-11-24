@@ -4,7 +4,8 @@ import {
 import FolderOutlined from "@mui/icons-material/FolderOutlined";
 import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 import type { BrowseEntry } from "../../../api/catalogBrowse";
-import { useFilePreviews } from "../../../hooks/useFileDisplay";
+import { useFileDisplay, useFilePreviews } from "../../../hooks/useFileDisplay";
+import { defaultFileDisplay } from "../../../domain/fileDisplay";
 import { FileCard, formatFileSize, formatModifiedDate } from "../../files/components/FileCard";
 import { folderLabel } from "../contents";
 import { FolderTile } from "./FolderTile";
@@ -15,7 +16,10 @@ export function BrowseGrid({ entries, view, onOpenFolder, onOpenFile }: {
   onOpenFolder: (path: string) => void;
   onOpenFile: (id: string) => void;
 }) {
-  const previews = useFilePreviews(view === "icons" ? entries.flatMap(entry => entry.kind === "file" ? [entry.file_id] : []) : []);
+  const { query } = useFileDisplay();
+  const display = query.data?.settings ?? defaultFileDisplay;
+  const previews = useFilePreviews(view === "icons" ? entries.flatMap(entry => entry.kind === "file" ? [entry.file_id] : []) : [],
+    display.show_name && display.name_source === "descriptive_title");
   if (view === "icons") {
     return (
       <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(170px, 100%), 1fr))", gap: 1.5 }}>
@@ -24,7 +28,7 @@ export function BrowseGrid({ entries, view, onOpenFolder, onOpenFile }: {
             return <FolderTile key={entry.path} name={folderLabel(entry.path)} onOpen={() => onOpenFolder(entry.path)} />;
           }
           const preview = previews.items[entry.file_id];
-          return <FileCard key={entry.file_id} compact onOpen={onOpenFile} file={{
+          return <FileCard key={entry.file_id} compact onOpen={onOpenFile} display={display} file={{
             fileId: entry.file_id,
             title: entry.name,
             subtitle: entry.path,
@@ -33,6 +37,7 @@ export function BrowseGrid({ entries, view, onOpenFolder, onOpenFile }: {
             sizeBytes: entry.size_bytes,
             modifiedAt: entry.mtime_utc,
             textPreview: preview?.text_preview,
+            descriptiveTitle: preview?.descriptive_title,
             synthesisPreview: preview?.synthesis_preview ?? null,
             previewAvailable: entry.mime === "application/pdf",
             hasPreferredText: Boolean(preview?.text_preview),

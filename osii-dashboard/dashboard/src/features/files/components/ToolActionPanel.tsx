@@ -21,20 +21,29 @@ export function ToolActionPanel({ scope, action, title }: { scope: ScopeDescribe
   const [selected, setSelected] = useState("");
   const [model, setModel] = useState("__configured__");
   const [config, setConfig] = useState<Record<string, unknown>>({});
-  const method = methods.find(item => item.id === selected) ?? methods[0];
+  const defaultMethod = action === "metadata.suggest"
+    ? methods.find(item => item.id === "core.document-metadata")
+    : undefined;
+  const method = methods.find(item => item.id === selected) ?? defaultMethod ?? methods[0];
   const job = useEnrichmentJob();
   const key = `osii:tool-run:${catalog.data?.library_id}:${JSON.stringify(scope)}:${action ?? "all"}`;
   const [runId, setRunId] = useState("");
   useEffect(() => { setRunId(localStorage.getItem(key) ?? ""); }, [key]);
   const run = useQuery({ queryKey: ["processing-run", runId], queryFn: () => getProcessingRun(runId), enabled: Boolean(runId),
     refetchInterval: query => query.state.error ? false : activeStatuses.includes(query.state.data?.status ?? "queued") ? 1200 : false });
+  const metadataFileId = action === "metadata.suggest" && scope.scope_type === "object" ? scope.file_id : undefined;
   useEffect(() => {
     if (run.data && ["done", "error", "cancelled"].includes(run.data.status)) {
       void client.invalidateQueries({ queryKey: ["enrichments"] });
       void client.invalidateQueries({ queryKey: ["product-history"] });
       void client.invalidateQueries({ queryKey: ["products"] });
+      if (metadataFileId && run.data.status === "done") {
+        void client.invalidateQueries({ queryKey: ["file-previews"] });
+        void client.invalidateQueries({ queryKey: ["scopes", "overview"] });
+        void client.invalidateQueries({ queryKey: ["objects", metadataFileId, "metadata"] });
+      }
     }
-  }, [run.data?.status, client]);
+  }, [run.data?.status, metadataFileId, client]);
   const control = useMutation({ mutationFn: (command: "pause" | "resume" | "cancel" | "retry") => controlProcessingRun(runId, command), onSuccess: () => { void run.refetch(); } });
   const active = job.isPending || Boolean(runId && !run.data && !run.isError) || activeStatuses.includes(run.data?.status ?? "");
   const chatModels = catalog.data?.models.filter(item => item.capabilities.includes("chat")) ?? [];

@@ -8,13 +8,15 @@ from pydantic import BaseModel, Field, StringConstraints
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
 from osii.domain.file_display import FileDisplay, display_settings
+from osii.domain.document_metadata import saved_descriptive_title
 
 
 class PreviewRequest(BaseModel):
     file_ids: list[Annotated[str, StringConstraints(min_length=1,max_length=200)]] = Field(max_length=48)
+    include_titles: bool = False
 
 
-def postgres_previews(engine: Engine, file_ids: list[str]) -> dict[str, dict]:
+def postgres_previews(engine: Engine, file_ids: list[str], *, include_titles: bool = False) -> dict[str, dict]:
     from sqlalchemy import text
     # Only bounded excerpts leave PostgreSQL; never fetch entire OCR/LLM bodies.
     with engine.connect() as connection:
@@ -36,7 +38,14 @@ def postgres_previews(engine: Engine, file_ids: list[str]) -> dict[str, dict]:
             ) s ON true
             WHERE d.active AND d.file_id=ANY(:ids)
         """), {'ids':file_ids}).mappings().all()
-    return {row['file_id']:dict(row) for row in rows}
+        result = {row['file_id']:dict(row) for row in rows}
+        if include_titles:
+            from osii.domain.read.postgres_metadata import postgres_document_labels
+
+            for file_id, labels in postgres_document_labels(connection, file_ids).items():
+                if file_id in result:
+                    result[file_id]['descriptive_title'] = saved_descriptive_title(labels)
+    return result
 
 
 def _read_prefix(path: Path, limit: int) -> str:
@@ -47,15 +56,15 @@ def _read_prefix(path: Path, limit: int) -> str:
         return ''
 
 
-def sidecar_previews(root: Path, file_ids: list[str]) -> dict[str, dict]:
+def sidecar_previews(root: Path, file_ids: list[str], *, include_titles: bool = False) -> dict[str, dict]:
     from osii.domain.read.sidecar import SidecarLibraryReader
+    from osii.domain.read.synthesis import get_suggested_metadata
     reader = SidecarLibraryReader(root)
     result = {}
     for file_id in dict.fromkeys(file_ids):
         try:
             if reader.get_document(file_id) is None:
                 continue
-            obj = root / 'objects' / file_id
             path = reader.representation_path(file_id)
             if path.name == 'edited_text.json':
                 # Segment overrides are JSON. Bound the parse; preserve the canonical
@@ -69,6 +78,8 @@ def sidecar_previews(root: Path, file_ids: list[str]) -> dict[str, dict]:
                 preview = _read_prefix(path,1200)
             result[file_id] = {'text_preview':preview,
                 'synthesis_preview':_read_prefix(reader._path('objects',file_id,'synth.txt'),1000)}
+            if include_titles:
+                result[file_id]['descriptive_title'] = saved_descriptive_title(get_suggested_metadata(root, file_id))
         except (ValueError, KeyError, json.JSONDecodeError):
             continue
     return result
@@ -119,5 +130,5 @@ def register_file_display_routes(app: FastAPI, *, store=None) -> None:
     def previews(request: Request, payload: PreviewRequest, actor=Depends(reader_guard)):
         service = backend(request)
         if service is not None:
-            return {'items':postgres_previews(service.engine,payload.file_ids)}
-        return {'items':sidecar_previews(request.app.state.osii_root.resolve(),payload.file_ids)}
+            return {'items':postgres_previews(service.engine,payload.file_ids,include_titles=payload.include_titles)}
+        return {'items':sidecar_previews(request.app.state.osii_root.resolve(),payload.file_ids,include_titles=payload.include_titles)}

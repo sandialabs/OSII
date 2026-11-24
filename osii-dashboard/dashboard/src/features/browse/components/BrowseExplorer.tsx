@@ -7,6 +7,7 @@ import InfoOutlined from "@mui/icons-material/InfoOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import { BrowseBreadcrumbs } from "./BrowseBreadcrumbs";
 import { BrowseDetailsPane } from "./BrowseDetailsPane";
+import { FileDisplaySettings } from "../../files/components/FileDisplaySettings";
 
 export function BrowseExplorer({ path, sourceName, onNavigate, onRefresh, children }: {
   path: string;
@@ -34,6 +35,7 @@ export function BrowseExplorer({ path, sourceName, onNavigate, onRefresh, childr
         <Typography component="h1" variant="h5" fontWeight={700}>Browse</Typography>
         <BrowseBreadcrumbs path={path} onNavigate={onNavigate} />
         <Stack direction="row" sx={{ ml: "auto" }}>
+          <FileDisplaySettings />
           <Tooltip title="Refresh folder"><IconButton onClick={onRefresh}><RefreshOutlined /></IconButton></Tooltip>
           <Tooltip title="Folder details">
             <IconButton aria-label="Folder details" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(open => !open)}>

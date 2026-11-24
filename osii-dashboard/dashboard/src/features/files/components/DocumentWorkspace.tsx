@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Box, List, ListItemButton, ListSubheader, Paper, Stack, Typography } from "@mui/material";
+import { DocumentSplitPane } from "./SplitFileView";
 
 export type DocumentViewMode = "source" | "split" | "text";
 
@@ -8,12 +9,13 @@ export type DocumentProductGroup = {
   entries: { id: string; label: string; detail?: string }[];
 };
 
-export function DocumentWorkspace({ header, groups, selected, onSelect, catalogStatus, children }: {
+export function DocumentWorkspace({ header, groups, selected, onSelect, catalogStatus, sourcePane, children }: {
   header: ReactNode;
   groups: DocumentProductGroup[];
   selected: string;
   onSelect: (id: string) => void;
   catalogStatus?: ReactNode;
+  sourcePane?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -21,12 +23,16 @@ export function DocumentWorkspace({ header, groups, selected, onSelect, catalogS
       {header}
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "240px minmax(0, 1fr)" }, gap: 2, alignItems: "start" }}>
         <Paper component="nav" aria-label="File products" variant="outlined" sx={{ maxHeight: { xs: 250, md: "calc(100vh - 120px)" }, overflow: "auto", position: { md: "sticky" }, top: 80 }}>
-          <Typography variant="subtitle1" fontWeight={750} sx={{ px: 1.5, pt: 1 }}>File products</Typography>
+          <Typography component="h2" variant="subtitle1" fontWeight={750} sx={{ px: 1.5, py: 1 }}>File products</Typography>
           {catalogStatus}
           {groups.map(group => (
-            <List key={group.label} dense subheader={<ListSubheader disableSticky>{group.label}</ListSubheader>}>
+            <List key={group.label} dense disablePadding aria-label={group.label}
+              sx={{ borderTop: 1, borderColor: "divider", pb: 0.5 }}
+              subheader={<ListSubheader disableSticky sx={{ px: 1.5, py: 0.5, lineHeight: 2,
+                bgcolor: "action.hover", color: "text.primary", fontWeight: 700 }}>{group.label}</ListSubheader>}>
               {group.entries.map(entry => (
-                <ListItemButton key={entry.id} selected={selected === entry.id} aria-current={selected === entry.id ? "true" : undefined} onClick={() => onSelect(entry.id)}>
+                <ListItemButton key={entry.id} selected={selected === entry.id} aria-current={selected === entry.id ? "true" : undefined}
+                  onClick={() => onSelect(entry.id)} sx={{ mx: 0.5, px: 1, mt: 0.5, borderRadius: 1 }}>
                   <Stack minWidth={0}>
                     <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>{entry.label}</Typography>
                     {entry.detail && <Typography variant="caption" color="text.secondary">{entry.detail}</Typography>}
@@ -36,7 +42,9 @@ export function DocumentWorkspace({ header, groups, selected, onSelect, catalogS
             </List>
           ))}
         </Paper>
-        <Box component="section" aria-labelledby="file-product-title" sx={{ minWidth: 0 }}>{children}</Box>
+        <Box component="section" aria-labelledby="file-product-title" sx={{ minWidth: 0 }}>
+          {sourcePane ? <DocumentSplitPane source={sourcePane}>{children}</DocumentSplitPane> : children}
+        </Box>
       </Box>
     </Stack>
   );

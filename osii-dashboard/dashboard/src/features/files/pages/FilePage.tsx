@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { Alert, Button, CircularProgress, LinearProgress, Stack, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
-import DocumentScannerOutlined from "@mui/icons-material/DocumentScannerOutlined";
+import { Alert, Button, CircularProgress, LinearProgress, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from "@mui/material";
+import ArticleOutlined from "@mui/icons-material/ArticleOutlined";
+import ViewColumnOutlined from "@mui/icons-material/ViewColumnOutlined";
 import { useQuery } from "@tanstack/react-query";
 
 import { useObject } from "../../../hooks/useObject";
@@ -12,13 +13,13 @@ import { libraryProducts } from "../../../domain/libraryProducts";
 import { documentProducts } from "../../../domain/documentProducts";
 import { toFileDetailModel } from "../../../domain/files";
 import { buildCollectionRoute } from "../../../utils/routes";
-import { buildOcrRoute } from "../../ocr/routes";
 import { DerivedProductEditor } from "../components/DerivedProductEditor";
 import { DocumentWorkspace, type DocumentProductGroup, type DocumentViewMode } from "../components/DocumentWorkspace";
 import { DocumentReadingPane } from "../components/DocumentReadingPane";
 import { ExtractionArtifacts } from "../components/ExtractionArtifacts";
 import { FileActionBar } from "../components/FileActionBar";
 import { FileHeader } from "../components/FileHeader";
+import { FileSourcePanel } from "../components/FileSourcePanel";
 import { SuggestedMetadata } from "../components/SuggestedMetadata";
 
 const readingModes = ["source", "split", "text"] as const;
@@ -119,47 +120,43 @@ function FileProducts({ fileId }: { fileId: string }) {
     if (id === selected || !canLeaveText()) return;
     setEditing(false);
     update({
-      product: id, view: id === "source" ? "source" : id.startsWith("extraction:") ? "split" : "text",
+      product: id, view: mode === "split" || id.startsWith("extraction:") ? "split" : id === "source" ? "source" : "text",
       tab: null, extraction_id: null, page: null, segment_id: null, char_start: null, char_end: null,
     });
   };
 
   const textView = selected === "text" || Boolean(variantId);
-  const ocrPath = buildOcrRoute(fileId);
+  const split = mode === "split";
+  const separateSource = split && !textView && selected !== "source";
   return (
     <DocumentWorkspace
       header={<Stack direction="row" spacing={1.5} justifyContent="space-between" alignItems="center" flexWrap="wrap" useFlexGap>
-        <Stack minWidth={0}>
-          <Typography variant="h5" component="h1" fontWeight={750} sx={{ overflowWrap: "anywhere" }}>{detail.filename}</Typography>
-          <Typography variant="caption" color="text.secondary">One file · Review saved products</Typography>
-        </Stack>
-        <Button component={Link} to={ocrPath} variant="outlined" startIcon={<DocumentScannerOutlined />}
-          onClick={event => { if (!canLeaveText()) event.preventDefault(); }}>Open OCR Workbench</Button>
+        <Typography variant="h5" component="h1" fontWeight={750} sx={{ overflowWrap: "anywhere", minWidth: 0 }}>{detail.filename}</Typography>
+        <ToggleButtonGroup exclusive size="small" value={split ? "split" : "single"} aria-label="Reading layout"
+          onChange={(_, layout: "single" | "split" | null) => {
+            if (!layout || !canLeaveText()) return;
+            setEditing(false);
+            update({ view: layout === "split" ? "split" : selected === "source" ? "source" : "text", product: selected, tab: null }, true);
+          }}>
+          <ToggleButton value="single" aria-label="Single view"><Tooltip title="Single view"><ArticleOutlined fontSize="small" /></Tooltip></ToggleButton>
+          <ToggleButton value="split" aria-label="Split view"><Tooltip title="Split view with original file"><ViewColumnOutlined fontSize="small" /></Tooltip></ToggleButton>
+        </ToggleButtonGroup>
       </Stack>}
       groups={groups} selected={selected} onSelect={selectProduct}
+      sourcePane={separateSource ? <FileSourcePanel fileId={fileId} mime={detail.mime} page={page}
+        compact onPageChange={value => update({ page: String(value) }, true)} /> : undefined}
       catalogStatus={versions.isError || saved.isError
         ? <Button size="small" onClick={() => { if (versions.isError) void versions.refetch(); if (saved.isError) void saved.refetch(); }}>Retry loading products</Button>
         : versions.isPending || saved.isPending ? <LinearProgress aria-label="Loading file products" /> : null}
     >
       <Stack spacing={2} key={selected}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} flexWrap="wrap" useFlexGap>
-          <Typography id="file-product-title" component="h2" variant="h6" fontWeight={700} sx={{ overflowWrap: "anywhere" }}>{selectedEntry?.label ?? "Saved product"}</Typography>
-          {textView && <ToggleButtonGroup exclusive size="small" value={mode === "source" ? "text" : mode} aria-label="Reading layout"
-            onChange={(_, view: DocumentViewMode | null) => {
-              if (!view || !canLeaveText()) return;
-              setEditing(false);
-              update({ view, product: selected, tab: null }, true);
-            }}>
-            <ToggleButton value="text">Text</ToggleButton>
-            <ToggleButton value="split">Source and text</ToggleButton>
-          </ToggleButtonGroup>}
-        </Stack>
+        <Typography id="file-product-title" component="h2" variant="h6" fontWeight={700} sx={{ overflowWrap: "anywhere" }}>{selectedEntry?.label ?? "Saved product"}</Typography>
 
         {(textView || selected === "source" || selected === "citation") && (
           <DocumentReadingPane
             key={`${selectedVersion ?? "current"}:${mode}`}
             fileId={fileId} mime={detail.mime} versionId={selectedVersion}
-            mode={selected === "source" ? "source" : mode === "source" ? "text" : mode}
+            mode={split && !separateSource ? "split" : selected === "source" ? "source" : "text"}
             page={page} segmentId={segmentId} charStart={charStart} charEnd={charEnd}
             onPageChange={value => update({ page: String(value) }, true)}
             onJumpToSource={target => {
@@ -180,7 +177,6 @@ function FileProducts({ fileId }: { fileId: string }) {
         {selected === "collections" && <Stack spacing={1} alignItems="flex-start">
           {detail.collections.map(collection => <Button key={collection.id} component={Link} to={buildCollectionRoute(collection.id)}>{collection.name}</Button>)}
           {!detail.collections.length && <Typography color="text.secondary">This file has no collections.</Typography>}
-          <Button component={Link} to={`/tools/collections?file_id=${encodeURIComponent(fileId)}`}>Add to a collection</Button>
         </Stack>}
         {product?.editable && <DerivedProductEditor scope={scope} filename={product.filename} family={product.family === "synthesis" ? "synthesis" : "enrichment"} />}
         {product?.relpath && <Button component="a" download href={getArtifactUrl(product.relpath)} sx={{ alignSelf: "flex-start" }}>Download saved artifact</Button>}

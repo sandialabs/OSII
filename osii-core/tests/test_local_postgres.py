@@ -212,6 +212,25 @@ def test_postgres_browse_opens_recorded_intake_folders(pg_client, monkeypatch):
     assert not (runtime / "state/catalog.sqlite3").exists()
 
 
+def test_postgres_file_display_and_overview_use_saved_metadata(pg_client, monkeypatch):
+    file_id, _ = intake(pg_client, monkeypatch)
+    client, _, source, _ = pg_client
+    recorded = {"descriptive_title": "Detector calibration", "author": "Test Author", "document_type": "Report"}
+    saved = client.put(f"/api/objects/{file_id}/metadata", json={"expected_revision": None, "values": recorded})
+    assert saved.status_code == 200, saved.text
+
+    previews = client.post("/api/files/previews", json={"file_ids": [file_id], "include_titles": True})
+    assert previews.status_code == 200, previews.text
+    assert previews.json()["items"][file_id]["descriptive_title"] == "Detector calibration"
+
+    response = client.post("/api/scopes/overview", json={"scope_type": "root"})
+    assert response.status_code == 200, response.text
+    metadata = response.json()["library_metadata"]
+    assert metadata["source_root"] == str(source)
+    assert metadata["locations"] == [{"label": str(source), "browse_path": "source", "count": 1}]
+    assert metadata["document_fields"]["author"]["rows"] == [{"label": "Test Author", "count": 1}]
+
+
 def test_local_database_explorer_is_read_only_and_does_not_add_auth(pg_client):
     client, _, _, runtime = pg_client
     schema = client.get("/api/admin/database/schema")
