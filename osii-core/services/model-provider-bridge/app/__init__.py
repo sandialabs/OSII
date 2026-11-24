@@ -1,1 +1,0 @@
-"""OSII model-provider bridge."""

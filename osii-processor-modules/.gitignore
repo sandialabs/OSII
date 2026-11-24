@@ -1,4 +1,0 @@
-# Keep optional runtime assets out of source control.
-models/
-.cache/
-.venv*/

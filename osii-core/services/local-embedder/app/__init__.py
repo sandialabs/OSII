@@ -1,2 +1,0 @@
-"""OSII local embedding service."""
-

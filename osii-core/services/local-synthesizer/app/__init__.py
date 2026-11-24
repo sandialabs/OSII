@@ -1,2 +1,0 @@
-"""OSII deterministic synthesis service."""
-

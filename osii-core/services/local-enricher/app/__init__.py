@@ -1,2 +1,0 @@
-"""OSII deterministic enrichment service."""
-
