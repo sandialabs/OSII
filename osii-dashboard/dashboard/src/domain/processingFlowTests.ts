@@ -4,7 +4,9 @@ export type FlowTestReport = {ok: boolean; tested_at: string; sample?: string; r
 export function flowTestStatus(report?: FlowTestReport | null): {label: string; color: "success" | "warning" | "error" | "default"} {
   if (!report) return {label: "Not tested", color: "default"};
   if (!report.ok) return {label: "Needs attention", color: "error"};
-  if (report.results.some(step => step.attempts?.some(attempt => attempt.ok === false))) return {label: "Ready · fallback used", color: "warning"};
+  const readerWarnings = report.results.filter(step => step.attempts?.some(attempt => attempt.ok === false));
+  if (readerWarnings.some(step => step.attempts?.[0]?.ok === false)) return {label: "Ready · fallback used", color: "warning"};
+  if (readerWarnings.length) return {label: "Ready · backup reader failed", color: "warning"};
   return {label: "Ready", color: "success"};
 }
 export function flowTestError(attempt: FlowTestAttempt): string {
