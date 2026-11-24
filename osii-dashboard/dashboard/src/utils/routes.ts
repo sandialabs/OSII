@@ -1,6 +1,8 @@
 // src/utils/routes.ts
 import type { SearchMode } from "../api/types";
 
+export const SEARCH_INDEX_PATH = "/tools/search-index";
+
 export function buildFileRoute(params: {
   fileId: string;
   charStart?: number | null;

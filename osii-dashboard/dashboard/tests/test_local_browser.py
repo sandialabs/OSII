@@ -357,6 +357,7 @@ def test_tool_and_collection_wiki_breadcrumbs_follow_stable_routes(isolated_libr
             ("/topics", "Explore Topics"),
             ("/tools/ocr", "OCR Workbench"),
             ("/tools/workbench", "Library-wide processing"),
+            ("/tools/search-index", "Search index"),
             ("/admin/database", "Database explorer"),
         ]:
             page.goto(route)
@@ -398,3 +399,51 @@ def test_tool_and_collection_wiki_breadcrumbs_follow_stable_routes(isolated_libr
         expect(page).to_have_url(re.compile(collection_url + "$"))
         breadcrumbs.get_by_role("link", name="Collections", exact=True).click()
         expect(page).to_have_url(re.compile(r"/collections$"))
+
+
+def test_setup_build_index_queues_existing_text_without_reopening_intake(isolated_library):
+    root, source, env = isolated_library
+    file = source / "inspection.txt"
+    file.write_text("Inspection records cover thermal seals and copper joints.")
+
+    with (
+        baseline_processors(isolated_library),
+        running_process([sys.executable, "-m", "osii.worker"], cwd=root, env=env),
+        dashboard_page(isolated_library, "build-index") as page,
+    ):
+        queue_directory(page, source, [file.name], "done")
+        file.rename(root / "offline-inspection.txt")
+        page.goto("/admin/processors")
+        page.get_by_role("button", name=re.compile(r"^6\. Build index")).click()
+        expect(page).to_have_url(re.compile(r"/tools/search-index$"))
+        expect(page.get_by_role("heading", name="Search index", exact=True)).to_be_visible()
+        expect(page.get_by_text("Connect a working semantic embedding model.", exact=True)).to_be_visible()
+        expect(page.get_by_role("button", name="Build index", exact=True)).to_be_disabled()
+
+        # Exercise the UI's semantic readiness gate with synthetic readiness
+        # while the isolated worker performs the real rebuild using local hashing.
+        def show_semantic_readiness(route):
+            response = route.fetch()
+            readiness = response.json()
+            readiness["defaults"]["embedder"] = "test.semantic"
+            readiness["embedders"].append({
+                "id": "test.semantic", "available": True, "model": "test-embedding",
+                "display_name": "Test semantic embedder", "detail": "Available", "bundled": False,
+            })
+            route.fulfill(response=response, json=readiness)
+
+        page.route("**/api/intake/readiness", show_semantic_readiness)
+        page.reload()
+        expect(page.get_by_text("test-embedding", exact=True)).to_be_visible()
+        with page.expect_response(lambda response: response.url.endswith("/api/embeddings/build")
+                                  and response.request.method == "POST") as queued:
+            page.get_by_role("button", name="Build index", exact=True).click()
+        assert queued.value.ok, queued.value.text()
+        expect(page).to_have_url(re.compile(r"/intake\?tab=activity$"))
+        expect(page.get_by_role("tab", name=re.compile(r"^Queue & activity"))).to_have_attribute("aria-selected", "true")
+        run_card = page.get_by_role("button", name=re.compile(r"Full index rebuild.*done", re.DOTALL))
+        expect(run_card).to_be_visible(timeout=30_000)
+        run = page.request.get("/api/runs/" + queued.value.json()["run_id"]).json()
+        assert run["operations"] == {"extract": False, "embed": True}
+        assert run["indexing_status"] == "done"
+        assert run["indexing_progress"]["completed_documents"] == 1

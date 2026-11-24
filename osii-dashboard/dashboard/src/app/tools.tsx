@@ -2,6 +2,8 @@ import { lazy, type ComponentType } from "react";
 import MoveToInboxOutlined from "@mui/icons-material/MoveToInboxOutlined";
 import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
 import BuildOutlined from "@mui/icons-material/BuildOutlined";
+import ManageSearchOutlined from "@mui/icons-material/ManageSearchOutlined";
+import { SEARCH_INDEX_PATH } from "../utils/routes";
 import { sharedNavigation } from "./layout/workbenchNavigation";
 import type { NavigationItem } from "./layout/WorkbenchLayout";
 export type WorkbenchTool = NavigationItem & { path: string; Page: ComponentType; navigation?: boolean };
@@ -28,6 +30,8 @@ export const workbenchTools: readonly WorkbenchTool[] = [
     Page: lazy(() => import("../features/files/pages/ToolsPage").then(m => ({ default: m.ToolsWorkbench }))) },
   { id: "tools", path: "/tools", label: "Toolbox", group: "tools", icon: BuildOutlined,
     Page: lazy(() => import("../features/files/pages/ToolsPage").then(m => ({ default: m.ToolsPage }))) },
+  { id: "search-index", path: SEARCH_INDEX_PATH, label: "Search index", group: "tools", icon: ManageSearchOutlined, navigation: false,
+    Page: lazy(() => import("../features/library/pages/SearchIndexPage").then(m => ({ default: m.SearchIndexPage }))) },
   { id: "database", path: "/admin/database", label: "Database explorer", group: "tools", icon: BuildOutlined, navigation: false,
     Page: lazy(() => import("../features/admin/pages/DatabaseExplorerPage").then(m => ({ default: m.DatabaseExplorerPage }))) },
 ];

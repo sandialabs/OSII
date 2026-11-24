@@ -31,6 +31,7 @@ import { matchingEndpoint, processorDetailsPath } from "../processorDetails";
 import { WorkflowProgress } from "../../../components/discovery/WorkflowProgress";
 import type { WorkflowStepId } from "../../../domain/workflow";
 
+import { SEARCH_INDEX_PATH } from "../../../utils/routes";
 import { apiJson } from "../../../api/client";
 import { type ModelOption } from "../../models/components/ModelPicker";
 import { suggestedConnectionName, sameEndpoint, groupModelConnections } from "../../models/connectionName";
@@ -201,7 +202,7 @@ export function ProcessorsPage() {
       setExpandedCapability("extractor");
       document.getElementById("setup-extractor-heading")?.scrollIntoView({ behavior: "smooth", block: "center" });
     } else {
-      navigate(`/intake?step=${step}`);
+      navigate(step === "index" ? SEARCH_INDEX_PATH : `/intake?step=${step}`);
     }
   };
 

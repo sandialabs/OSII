@@ -47,6 +47,10 @@ export async function createProcessingRun(payload: Record<string, unknown>): Pro
   return apiJson<ProcessingRun>("/api/runs", { method: "POST", json: payload });
 }
 
+export function queueSearchIndex(options: { chunk_size: number; chunk_overlap: number }) {
+  return apiJson<{ run_id: string }>("/api/embeddings/build", { method: "POST", json: options });
+}
+
 export async function resolveIntake(payload: Record<string, unknown>, signal?: AbortSignal): Promise<IntakeResolveResponse> {
   const controller = new AbortController();
   let timedOut = false;

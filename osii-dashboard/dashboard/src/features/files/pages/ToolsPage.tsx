@@ -11,6 +11,7 @@ import { ScopePicker } from "../../../components/discovery/ScopePicker";
 import { ScopeWikiPanel } from "../components/ScopeWikiPanel";
 import { ScopeEnrichmentsPanel } from "../components/ScopeEnrichmentsPanel";
 import { ToolActionPanel } from "../components/ToolActionPanel";
+import { SEARCH_INDEX_PATH } from "../../../utils/routes";
 import type { ScopeDescribeRequest } from "../../../api/types";
 
 const labels: Record<string, string> = { "text.read": "Read text", "summary.write": "Summarize", "metadata.suggest": "Suggest metadata", "wiki.write": "Write a wiki", "embedding.build": "Build embeddings", "topics.model": "Model topics", "topics.project": "Project embeddings", "documents.recommend": "Recommend documents", analyze: "Analyze" };
@@ -54,7 +55,9 @@ export function ToolsWorkbench() {
       <ScopePicker value={scope} onChange={setScope} />
       {ready ? <ToolActionPanel key={`${action}:${JSON.stringify(scope)}`} scope={scope} action={action} /> : <Typography color="text.secondary">Choose documents, or run tools directly from a document or collection.</Typography>}
       {ready ? action === "wiki.write" ? <ScopeWikiPanel scope={scope} title="Wiki" showActions={false} /> : <ScopeEnrichmentsPanel scope={scope} showActions={false} /> : null}
-    </Stack></CardContent></Card> : <Button component={Link} to="/intake" variant="contained" sx={{ alignSelf: "flex-start" }}>Open Intake</Button>}
+    </Stack></CardContent></Card> : action === "embedding.build"
+      ? <Button component={Link} to={SEARCH_INDEX_PATH} variant="contained" sx={{ alignSelf: "flex-start" }}>Open search index</Button>
+      : <Button component={Link} to="/intake" variant="contained" sx={{ alignSelf: "flex-start" }}>Open Intake</Button>}
     {methods.length > 0 ? <>
       <Divider />
       <Typography variant="h6" fontWeight={700}>Available methods</Typography>
@@ -78,7 +81,10 @@ export function ToolsPage() {
     <WorkbenchHome setupPath="/admin/processors" toolsOnly />
     <Card variant="outlined"><CardContent><Stack spacing={1.5}>
       <Typography variant="h6" fontWeight={700}>Library-wide processing</Typography>
-      <Button component={Link} to="/tools/workbench" variant="outlined" sx={{ alignSelf: "start" }}>Open processing workbench</Button>
+      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+        <Button component={Link} to="/tools/workbench" variant="outlined">Open processing workbench</Button>
+        <Button component={Link} to={SEARCH_INDEX_PATH} variant="outlined">Search index</Button>
+      </Stack>
     </Stack></CardContent></Card>
     {database.data?.available ? <Button component={Link} to="/admin/database" variant="outlined" sx={{ alignSelf: "start" }}>Database explorer — read-only ↗</Button> : null}
   </Stack>;

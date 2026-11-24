@@ -267,6 +267,12 @@ selection preview reads metadata only. Flow-backed queue submissions defer
 provider operation tests to the worker; errors remain retryable in the queue.
 Legacy APIs retain explicit operation flags and saved preset compatibility.
 
+To build the semantic index for the existing library, select **Build index**
+in Setup’s readiness steps or open **Toolbox → Search index**. The page shows
+saved-text coverage and the selected embedding model. It queues a full index
+build from saved text using the bundled flow’s chunk sizes and opens **Queue &
+activity** for progress. Intake continues to embed only the files you queue there.
+
 Use a collection's **Processing status** panel to process existing text or reread
 originals while preserving extraction history. Current semantic vectors depend
 on the selected embedding model; this panel reports read, synthesis, enrichment,
