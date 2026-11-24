@@ -586,7 +586,8 @@ def control_run(run_id: str, action: str) -> dict:
             run["completed"] = sum(
                 1
                 for item in run.get("items", [])
-                if item.get("status") in ({"done", "partial", "error"} if run.get("error_phase") == "embedding" else {"done", "partial"})
+                if item.get("status") in {"done", "partial", "metadata_only"}
+                or item.get("status") == "error" and run.get("error_phase") == "embedding"
             )
         elif action == "pause":
             if queue_status == "paused":

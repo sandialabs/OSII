@@ -266,6 +266,21 @@ steps for the selected files and opens the run report. Refreshing the page reads
 saved verification results. A changed model or key requires a new check and
 the file selection remains saved in the browser.
 
+**Browse files** opens the last folder you used. Choose **Locations** for
+shortcuts or paste a path into **Folder path**. Select files in the list and
+choose **Use files** to return to Intake.
+
+The standard reader handles text-layer PDFs, common Office files, and text
+formats. PNG, JPEG, and TIFF go to Tesseract. Native Tesseract must be installed
+for image OCR in OSII-local. Advanced intake offers named OCR and custom flows.
+
+With the default sidecar storage, Simple Intake saves basic file metadata for
+other formats. Files shows the original's name, location, size, and detected
+type. Those records have no extracted text, summaries, or semantic vectors.
+If a supported reader fails, Simple Intake keeps the file record and reports
+the failure in the run. Processor modules can add format coverage independently.
+The archived Tika adapter requires a Java runtime and its own validation.
+
 Use **Advanced → Advanced intake** to choose a saved processing flow.
 **Advanced setup** contains the readiness checklist, sample tests, processor
 settings, and service diagnostics. Both intake workflows share the file

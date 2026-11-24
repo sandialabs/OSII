@@ -74,6 +74,7 @@ def execute_job(job: dict) -> None:
             collection_id=payload.get("collection_id") or None,
             staging=payload.get("staging"),
             routes_snapshot=payload.get("routes_snapshot"),
+            continue_to_embeddings=bool(payload.get("build_embeddings")),
         )
 
     run = get_run(job["run_id"])
@@ -105,6 +106,13 @@ def execute_job(job: dict) -> None:
                 }
             )
             run["indexing_file_ids"] = file_ids
+        if not file_ids and payload.get("job_kind") != "full_index":
+            append_log(job["run_id"], "No selected files had text to embed.")
+            run = get_run(job["run_id"])
+            run.update(status="done", indexing_status="skipped", indexing_file_ids=[],
+                       finished_at=datetime.now(UTC).isoformat())
+            save_run(run)
+            return
         run.update(
             status="running",
             indexing_status="running",
@@ -148,6 +156,10 @@ def execute_job(job: dict) -> None:
                 run["indexing_status"] = run["status"]
                 save_run(run)
                 return
+            append_log(
+                job["run_id"],
+                "Full index saved." if payload.get("job_kind") == "full_index" else "Selected-document embeddings saved; existing library vectors preserved.",
+            )
             run = get_run(job["run_id"])
             run.update(
                 status="done",
@@ -157,11 +169,11 @@ def execute_job(job: dict) -> None:
                 finished_at=datetime.now(UTC).isoformat(),
             )
             save_run(run)
+        except Exception as exc:
             append_log(
                 job["run_id"],
-                "Full index saved." if payload.get("job_kind") == "full_index" else "Selected-document embeddings saved; existing library vectors preserved.",
+                f"Embeddings incomplete; retry will reuse saved vectors and completed file processing: {exc}",
             )
-        except Exception as exc:
             run = get_run(job["run_id"])
             if run:
                 run.update(
@@ -180,10 +192,6 @@ def execute_job(job: dict) -> None:
                         if key != "identity"
                     }
                 save_run(run)
-            append_log(
-                job["run_id"],
-                f"Embeddings incomplete; retry will reuse saved vectors and completed file processing: {exc}",
-            )
             raise
 
     run = get_run(job["run_id"])

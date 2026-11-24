@@ -17,6 +17,7 @@ export function runHasFailures(run: ProcessingRun): boolean {
 
 const statusLabels: Record<string, string> = {
   done: "Completed", error: "Failed", partial: "Completed with issues",
+  metadata_only: "Added without text",
   pending: "Pending", staged: "Staged", queued: "Queued", running: "Running", skipped: "Skipped",
   pausing: "Pausing", paused: "Paused", cancelling: "Cancelling", cancelled: "Cancelled", reused: "Reused",
 };

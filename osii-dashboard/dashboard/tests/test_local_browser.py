@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import urlopen
 
 import pytest
+import pymupdf
 from playwright.sync_api import expect, sync_playwright
 
 from osii.domain.artifacts.products import product_path, publish_product
@@ -86,10 +87,10 @@ def isolated_library(tmp_path):
 
 
 @contextmanager
-def baseline_processors(library):
+def baseline_processors(library, extra_endpoints=()):
     root, _, env = library
     services = DASHBOARD.parents[1] / "osii-core" / "services"
-    endpoints = []
+    endpoints = list(extra_endpoints)
     with ExitStack() as stack:
         for name in ("local-extractor", "local-synthesizer", "local-enricher", "local-embedder"):
             port = available_port()
@@ -271,8 +272,9 @@ def test_intake_from_two_locations_is_browsable_even_after_source_goes_offline(i
         expect(page.get_by_role("textbox", name="Run report")).to_have_value(re.compile(r"python"))
         page.get_by_role("button", name="Hide diagnostics", exact=True).click()
 
-        with page.expect_response(lambda response: response.url.endswith(f"/api/runs/{second_run['id']}/logs")):
-            page.get_by_text("Run log", exact=True).click()
+        page.get_by_text("Run log", exact=True).click()
+        expect(page.locator("details").filter(has_text="Run log")).to_contain_text("Extractor 'local.native-text' failed for damaged.pdf")
+        assert not log_requests
         expect(page.get_by_role("button", name="Refresh log", exact=True)).to_be_visible()
         page.reload()
         expect(failures).to_be_visible()
@@ -519,6 +521,13 @@ def test_simple_intake_connects_models_before_document_selection(isolated_librar
     text.write_text("Inspection records cover thermal seals and copper joints.")
     damaged = source / "damaged.pdf"
     damaged.write_bytes(b"%PDF-1.7\nThis is an intentionally invalid PDF fixture.\n")
+    unknown = source / "sensor-export.bin"
+    unknown.write_bytes(b"\x00\x01\x02\xff")
+    image = source / "inspection.png"
+    with pymupdf.open() as document:
+        page_image = document.new_page(width=600, height=175)
+        page_image.insert_text((35, 95), "Inspection records", fontsize=28)
+        page_image.get_pixmap(dpi=150).save(image)
     model_port, bridge_port = available_port(), available_port()
     endpoint = f"http://127.0.0.1:{model_port}/v1"
     bridge = f"http://127.0.0.1:{bridge_port}"
@@ -563,9 +572,25 @@ async def chat(request: Request):
     return {"choices": [{"message": {"content": content}}]}
 """)
     services = DASHBOARD.parents[1] / "osii-core" / "services"
+    ocr_port = available_port()
+    ocr_url = f"http://127.0.0.1:{ocr_port}"
+    (root / "fixture_ocr.py").write_text(f"""
+import shutil
+import sys
+sys.path.insert(0, {str(services / 'local-tesseract')!r})
+from app import main
+app = main.app
+
+if shutil.which("tesseract") is None:
+    def ocr_fixture(*args, **kwargs):
+        return {{"text": "Inspection records", "regions": [], "page_width": 600, "page_height": 175}}
+    main._ocr_page = ocr_fixture
+""")
     command = [sys.executable, "-m", "uvicorn", "app.main:app", "--app-dir", str(services / "model-provider-bridge"), "--port", str(bridge_port)]
     with (
-        baseline_processors(isolated_library),
+        running_server([sys.executable, "-m", "uvicorn", "fixture_ocr:app", "--port", str(ocr_port)],
+                       url=ocr_url + "/health", cwd=root, env=env),
+        baseline_processors(isolated_library, [ocr_url]),
         running_server([sys.executable, "-m", "uvicorn", "fixture_models:app", "--port", str(model_port)],
                        url=f"http://127.0.0.1:{model_port}/health", cwd=root, env=env),
         running_server(command, url=bridge + "/health", cwd=root, env=env),
@@ -584,11 +609,17 @@ async def chat(request: Request):
         page.get_by_role("menuitem", name="Advanced intake", exact=True).click()
         page.get_by_role("button", name="Browse files", exact=True).click()
         dialog = page.get_by_role("dialog")
+        expect(dialog.get_by_role("list", name="Locations", exact=True)).to_be_visible()
+        expect(dialog.get_by_role("navigation", name="Folder breadcrumbs")).to_have_count(0)
         dialog.get_by_role("textbox", name="Folder path", exact=True).fill(str(source))
         dialog.get_by_role("button", name="Go", exact=True).click()
+        expect(dialog.get_by_role("list", name="Locations", exact=True)).to_have_count(0)
+        expect(dialog.get_by_role("button", name="Parent folder", exact=True)).to_be_enabled()
         dialog.get_by_text(text.name, exact=True).click()
         dialog.get_by_text(damaged.name, exact=True).click()
-        dialog.get_by_role("button", name="Use 2 files", exact=True).click()
+        dialog.get_by_text(unknown.name, exact=True).click()
+        dialog.get_by_text(image.name, exact=True).click()
+        dialog.get_by_role("button", name="Use 4 files", exact=True).click()
         page.get_by_role("navigation", name="Breadcrumbs").get_by_role("link", name="Intake & Setup").click()
 
         page.get_by_role("button", name="Connect embedding model", exact=True).click()
@@ -617,7 +648,7 @@ async def chat(request: Request):
         connect.get_by_role("button", name="Save and test", exact=True).click()
         expect(connect).to_have_count(0)
 
-        process = page.get_by_role("button", name="Process 2 files", exact=True)
+        process = page.get_by_role("button", name="Process 4 files", exact=True)
         expect(process).to_be_enabled()
         calls_url = f"http://127.0.0.1:{model_port}/calls"
         calls = page.request.get(calls_url).json()
@@ -631,21 +662,39 @@ async def chat(request: Request):
         assert queued.value.ok, queued.value.text()
         id = queued.value.json()["id"]
         expect(page).to_have_url(re.compile(f"/intake/runs/{id}$"))
-        expect(page.get_by_text("Completed with issues", exact=True).first).to_be_visible(timeout=30_000)
+        run_header = page.get_by_role("heading", level=1).locator("..")
+        page.get_by_text("Run log", exact=True).click()
+        log = page.locator("details").filter(has_text="Run log")
+        expect(run_header.get_by_text("Completed with issues", exact=True)).to_be_visible(timeout=30_000)
+        expect(log).to_contain_text("Extractor 'local.native-text' failed for damaged.pdf")
+        expect(log).to_contain_text("No built-in reader for .bin")
         run = page.request.get("/api/runs/" + id).json()
         assert run["processing_flow"]["id"] == "quick-start"
         assert run["indexing_status"] == "done"
         good = next(item for item in run["items"] if item["status"] == "done")
         assert good["steps"]["synthesizer"] == "done"
+        ocr = next(item for item in run["items"] if item["display"].endswith(image.name))
+        assert ocr["status"] == "done" and ocr["extractor"] == "local.tesseract-page-ocr"
+        assert ocr["file_id"] in run["indexing_file_ids"]
+        ocr_text = Path(env["OSII_ROOT"]) / "objects" / ocr["file_id"] / "text.txt"
+        assert "Inspection records" in ocr_text.read_text(encoding="utf-8")
+        metadata = next(item for item in run["items"] if item["status"] == "metadata_only")
+        assert metadata["file_id"] not in run["indexing_file_ids"]
+        expect(page.get_by_role("row", name=re.compile(unknown.name))).to_contain_text("Added without text")
+        bundle = Path(env["OSII_ROOT"]) / "objects" / metadata["file_id"]
+        assert (bundle / "meta.toml").is_file() and not (bundle / "text.txt").exists()
+        catalog = page.request.get("/api/catalog/files?status=metadata_only").json()
+        assert any(item["file_id"] == metadata["file_id"] for item in catalog["items"])
         shutil.copyfile(SAMPLE, damaged)
         page.get_by_role("button", name="Retry failed files", exact=True).click()
         expect(page.get_by_role("button", name="Retry failed files", exact=True)).to_have_count(0)
         expect(page.get_by_role("heading", name="Failures", exact=True)).to_have_count(0, timeout=30_000)
-        run_header = page.get_by_role("heading", level=1).locator("..")
         expect(run_header.get_by_text("Completed", exact=True)).to_be_visible(timeout=30_000)
         rerun = page.request.get("/api/runs/" + id).json()
-        assert all(item["status"] == "done" for item in rerun["items"])
+        assert sorted(item["status"] for item in rerun["items"]) == ["done", "done", "done", "metadata_only"]
+        assert rerun["completed"] == 4
         assert next(item for item in rerun["items"] if item["file_id"] == good["file_id"])["finished_at"] == good["finished_at"]
+        assert next(item for item in rerun["items"] if item["file_id"] == metadata["file_id"])["finished_at"] == metadata["finished_at"]
 
         secret = root / "secrets.env"
         secret.write_text(secret.read_text().replace("fixture-key-original", "fixture-key-replaced"))

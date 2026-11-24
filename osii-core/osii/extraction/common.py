@@ -2,7 +2,7 @@ import mimetypes
 from pathlib import Path
 from osii.domain.processing.pathing import source_relpath
 
-from osii.domain.storage.ids import compute_file_id, sha256_hex
+from osii.domain.storage.ids import compute_file_id
 from osii.domain.storage.objects import (
     append_manifest_record,
     append_text_file,
@@ -19,7 +19,7 @@ def guess_mime(path: Path) -> str:
     return mime or "application/octet-stream"
 
 
-def init_doc_context(source_path: Path, data_volume_root: Path) -> dict:
+def init_doc_context(source_path: Path, data_volume_root: Path, *, file_id: str | None = None) -> dict:
     src = source_path.resolve()
     if not src.exists() or not src.is_file():
         raise FileNotFoundError(f"Source file not found: {src}")
@@ -29,11 +29,12 @@ def init_doc_context(source_path: Path, data_volume_root: Path) -> dict:
     except Exception:
         size_bytes = None
 
+    file_id = file_id or compute_file_id(src)
     return {
         "src": src,
         "source_relpath": source_relpath(src, data_volume_root),
-        "file_id": compute_file_id(src),
-        "sha256_hex": sha256_hex(src),
+        "file_id": file_id,
+        "sha256_hex": file_id.removeprefix("sha256-"),
         "size_bytes": size_bytes,
         "mtime_utc": iso_mtime_utc(src),
         "birthtime_utc": iso_birthtime_utc(src),
@@ -58,6 +59,19 @@ def initialize_bundle(
         extra_meta={"source_path": str(doc_ctx["src"])},
         birthtime_utc=doc_ctx.get("birthtime_utc"),
     )
+
+
+def record_source_metadata(osii_store: Path, doc_ctx: dict, reason: str) -> None:
+    from osii.domain.catalog_db import upsert_document
+    from osii.extraction.base import ExtractionState
+
+    initialize_bundle(osii_store=osii_store, doc_ctx=doc_ctx)
+    update_provenance(
+        osii_store=osii_store, doc_ctx=doc_ctx, extractor_name="core.source-metadata",
+        extractor_version="1", status="metadata_only", tools=None, config=None,
+        state=ExtractionState(warnings=[reason]),
+    )
+    upsert_document(osii_store, doc_ctx["file_id"])
 
 
 def update_provenance(

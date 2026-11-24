@@ -14,6 +14,11 @@ NATIVE_EXTENSIONS = [
     ".pptx", ".py", ".rst", ".rtf", ".sql", ".toml", ".ts",
     ".tsv", ".txt", ".xlsx", ".xml", ".yaml", ".yml",
 ]
+IMAGE_OCR_EXTENSIONS = [".png", ".jpg", ".jpeg", ".tif", ".tiff"]
+
+
+def has_default_reader(path: Path) -> bool:
+    return path.suffix.lower() in (*NATIVE_EXTENSIONS, *IMAGE_OCR_EXTENSIONS)
 
 
 def require_source_type(path: Path, capabilities: dict, extractor: str) -> None:
@@ -39,6 +44,7 @@ def require_source_type(path: Path, capabilities: dict, extractor: str) -> None:
 def default_extractor_routes() -> list[dict]:
     return [
         {"name": "native-supported", "extractor": "local.native-text", "fallbacks": [], "extensions": NATIVE_EXTENSIONS},
+        {"name": "images-ocr", "extractor": "local.tesseract-page-ocr", "fallbacks": [], "extensions": IMAGE_OCR_EXTENSIONS},
         {"name": "other-native", "extractor": "local.native-text", "fallbacks": [], "extensions": ["*"]},
     ]
 

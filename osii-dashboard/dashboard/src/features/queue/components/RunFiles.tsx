@@ -23,12 +23,12 @@ export function RunFiles({ run }: { run: ProcessingRun }) {
   const next = batch ? sources.data?.next_cursor : cursor + PAGE_SIZE < total ? cursor + PAGE_SIZE : null;
   const rows = batch ? (sources.data?.items ?? []).map(item => ({
     label: item.filename || item.file_id, path: item.source_relpath, stages: [],
-    status: item.has_text ? "Text available at submission" : "Skipped · no saved text",
+    status: item.has_text ? "Text available at submission" : "Skipped · no saved text", note: undefined,
   })) : scoped ? memberIds.slice(cursor, cursor + PAGE_SIZE).map(fileId => ({
-    label: fileId, path: undefined, stages: [], status: "Included",
+    label: fileId, path: undefined, stages: [], status: "Included", note: undefined,
   })) : items.slice(cursor, cursor + PAGE_SIZE).map(item => ({
     label: item.display, path: item.source_relpath ?? item.path, stages: recordedFileStages(run, item, indexingFiles),
-    status: processingStatus(item.status),
+    status: processingStatus(item.status), note: item.note,
   }));
 
   return (
@@ -48,7 +48,10 @@ export function RunFiles({ run }: { run: ProcessingRun }) {
                     <Typography variant="body2" fontWeight={650}>{row.label}</Typography>
                     {row.path && row.path !== row.label && <Typography variant="caption" color="text.secondary">{row.path}</Typography>}
                   </TableCell>
-                  <TableCell>{row.status}</TableCell>
+                  <TableCell>
+                    {row.status}
+                    {row.note && <Typography variant="body2" color="text.secondary">{row.note}</Typography>}
+                  </TableCell>
                   {!scoped && <TableCell>
                     {row.stages.map(stage => (
                       <Typography key={stage.label} variant="body2">

@@ -806,6 +806,7 @@ export type ProcessingRun = {
     synthesizer?: string | null;
     synthesis?: string | null;
     synthesis_error?: string | null;
+    note?: string | null;
     enrichment?: unknown;
     enrichment_error?: string | null;
     extract_error?: string | null;
