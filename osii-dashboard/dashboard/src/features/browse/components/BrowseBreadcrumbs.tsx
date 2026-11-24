@@ -1,70 +1,21 @@
-// src/features/browse/components/BrowseBreadcrumbs.tsx
 import { Breadcrumbs, Link, Typography } from "@mui/material";
+import { folderBreadcrumbs } from "../contents";
 
-import type { FolderScopeDescriptor } from "../../../api/types";
-import { folderName } from "../contents";
-
-type BrowseBreadcrumbsProps = {
-  items: FolderScopeDescriptor[];
-  onNavigate: (folderId: string) => void;
-};
-
-export function BrowseBreadcrumbs({
-  items,
-  onNavigate,
-}: BrowseBreadcrumbsProps) {
-  if (items.length === 0) {
-    return null;
-  }
-
+export function BrowseBreadcrumbs({ path, onNavigate }: {
+  path: string;
+  onNavigate: (path: string) => void;
+}) {
+  const items = folderBreadcrumbs(path);
   return (
-    <Breadcrumbs
-      aria-label="folder breadcrumbs"
-      separator="›"
-      sx={{
-        "& .MuiBreadcrumbs-separator": {
-          color: "text.secondary",
-          mx: 0.5,
-        },
-      }}
-    >
-      {items.map((item, index) => {
-        const isLast = index === items.length - 1;
-        const label = folderName(item);
-
-        if (isLast) {
-          return (
-            <Typography
-              key={item.folder_id}
-              variant="body2"
-              color="text.primary"
-              fontWeight={600}
-            >
-              {label}
-            </Typography>
-          );
-        }
-
-        return (
-          <Link
-            key={item.folder_id}
-            component="button"
-            type="button"
-            underline="hover"
-            color="text.secondary"
-            onClick={() => onNavigate(item.folder_id)}
-            sx={{
-              fontSize: "0.9rem",
-              cursor: "pointer",
-              background: "none",
-              border: "none",
-              p: 0,
-            }}
-          >
-            {label}
-          </Link>
-        );
-      })}
+    <Breadcrumbs aria-label="Folder path" separator="›" maxItems={6} itemsAfterCollapse={3}>
+      {items.map((item, index) => index === items.length - 1 ? (
+        <Typography key={item.path} variant="body2" fontWeight={600} aria-current="location">{item.label}</Typography>
+      ) : (
+        <Link key={item.path} component="button" type="button" underline="hover"
+          onClick={() => onNavigate(item.path)} sx={{ fontSize: "0.875rem" }}>
+          {item.label}
+        </Link>
+      ))}
     </Breadcrumbs>
   );
 }

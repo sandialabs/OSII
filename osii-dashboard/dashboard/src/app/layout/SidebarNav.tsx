@@ -16,7 +16,7 @@ export function SidebarNav() {
     <WorkbenchNavigation
       availability={availability}
       items={workbenchTools.filter(tool => tool.navigation !== false)}
-      selected={current?.id === "tools" ? "overview" : current?.id ?? "home"}
+      selected={current?.id ?? "home"}
       onNavigate={(id) => {
         const tool = workbenchTools.find((item) => item.id === id);
         if (tool) navigate(tool.path);

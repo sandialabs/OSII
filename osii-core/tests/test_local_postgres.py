@@ -200,6 +200,18 @@ def test_empty_workbench_has_no_auth_no_catalog_or_silent_import(pg_client):
     assert client.post("/api/catalog/rebuild").status_code == 409
 
 
+def test_postgres_browse_opens_recorded_intake_folders(pg_client, monkeypatch):
+    file_id, _ = intake(pg_client, monkeypatch)
+    client, _, source, runtime = pg_client
+    source.rename(source.with_name("offline-source"))
+    folders = client.get("/api/catalog/browse").json()["items"]
+    assert [(item["name"], item["kind"]) for item in folders] == [("source", "folder")]
+    response = client.get("/api/catalog/browse", params={"path": "source", "sort": "size-desc"})
+    assert response.status_code == 200, response.text
+    assert [(item["name"], item["file_id"]) for item in response.json()["items"]] == [("one.txt", file_id)]
+    assert not (runtime / "state/catalog.sqlite3").exists()
+
+
 def test_local_database_explorer_is_read_only_and_does_not_add_auth(pg_client):
     client, _, _, runtime = pg_client
     schema = client.get("/api/admin/database/schema")

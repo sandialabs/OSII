@@ -340,7 +340,14 @@ launch it with `make dev ENV_FILE=.env.example.openrouter`. For corporate transf
 replace URLs, model IDs, credential locations, and source/runtime paths; keep
 runtime databases on local disk. Do not copy provider secrets into committed files.
 
-## Library overview and file metadata search
+## Browse, library overview, and file metadata search
+
+**Browse** opens the folders and files recorded by Intake. Use the breadcrumb
+trail to go back up a folder. Intake from outside the configured source appears
+under **Other locations** when its recorded path is external. Both locations can
+contain the same filename. **Folder Details** shows the current location and
+its saved summary when one is available. Browse still works if a source goes
+offline. Go to **Intake & Queue** to find and add new files from the drive.
 
 **Library at a glance** is a left-menu tool with format, date, processing, and
 topic summaries. It is separate from the home **Files** grid. Use **Search metadata**

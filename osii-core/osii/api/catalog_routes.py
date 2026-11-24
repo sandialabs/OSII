@@ -7,9 +7,29 @@ from osii.domain.catalog_db import (
     rebuild_catalog,
     verify_catalog,
 )
+from osii.domain.read.browse import BrowseSort, browse_catalog
 
 
 router = APIRouter(prefix="/api/catalog", tags=["catalog"])
+browse_router = APIRouter(prefix="/api/catalog", tags=["catalog"])
+
+
+@browse_router.get("/browse")
+def browse(
+    request: Request,
+    path: str = Query("", max_length=4096),
+    query: str = Query("", max_length=256),
+    sort: BrowseSort = "name-asc",
+    limit: int = Query(48, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    return {
+        **browse_catalog(
+            request.app.state.osii_root, path=path, query=query, sort=sort, limit=limit, offset=offset,
+            postgres=getattr(request.app.state, "postgres_library", None),
+        ),
+        "source_name": request.app.state.shared_volume_root.name,
+    }
 
 
 @router.get("/status")

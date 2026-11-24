@@ -31,8 +31,8 @@ type DocumentTool = {
 };
 
 export const documentTools = [
-  { id: "browse", path: "/browse", label: "Browse", illustration: "📂", icon: "folder", description: "Find documents in folders and collections.",
-    scope: "Library folders", input: "library", flow: { reads: ["metadata", "collections", "summaries"], writes: [] } },
+  { id: "browse", path: "/browse", label: "Browse", illustration: "📂", icon: "folder", description: "Open files by folder.",
+    scope: "Library folders", input: "library", flow: { reads: ["metadata"], writes: [] } },
   { id: "search", path: "/search", label: "Search", illustration: "🔎", icon: "search", description: "Find relevant passages.",
     scope: "Library or collection", input: "library", flow: { reads: ["text", "index"], writes: [] } },
   { id: "chat", path: "/chat", label: "Chat", illustration: "💬", icon: "chat", description: "Ask questions grounded in your documents.",

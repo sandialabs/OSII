@@ -13,8 +13,9 @@
   server use Core APIs. Reuse dashboard components across profiles and keep
   processors behind the public `osii.processor_sdk` contract.
 - Give each page or view one defined scope and primary action. Use layout,
-  headings, and controls to show the order. Keep copy short and put optional
-  explanation behind a labeled question-mark button. Avoid nested drawers.
+  headings, and controls to show the order. Use short, plain-language labels
+  and put optional explanation behind a labeled question-mark button. Avoid
+  nested drawers.
   Use the left menu or Toolbox to open tools. Keep related controls on one row
   when space permits.
 - Use the shared library product names and show what each tool reads and writes

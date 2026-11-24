@@ -11,7 +11,7 @@ export function WorkbenchHome({ setupPath, toolsOnly = false }: { setupPath: str
   const client = useQueryClient();
   const dismiss = useMutation({ mutationFn: dismissHomeSetup, onSuccess: () => client.invalidateQueries({ queryKey: ["workbench-home"] }) });
   return <Stack spacing={3} sx={{ maxWidth: 1200, mx: "auto" }}>
-    <Stack spacing={0.5}><Typography id="workbench-title" variant="h4" fontWeight={750}>{toolsOnly ? "Toolbox" : "Welcome to OSII"}</Typography></Stack>
+    <Typography component="h1" id="workbench-title" variant="h4" fontWeight={750}>{toolsOnly ? "Toolbox" : "Welcome to OSII"}</Typography>
     {home.isPending ? <Stack spacing={1}><LinearProgress aria-label="Checking tool readiness" /><Typography role="status">Checking what’s ready…</Typography></Stack> : null}
     {home.isError ? <Alert severity="warning" action={<Button onClick={() => void home.refetch()}>Retry</Button>}>Could not check tool readiness. Your library and settings are unchanged.</Alert> : null}
     {!toolsOnly && !home.isError && home.data?.setup.visible ? <Card variant="outlined" component="section" aria-labelledby="home-setup-title"><CardContent><Stack spacing={1.5}>
@@ -25,7 +25,10 @@ export function WorkbenchHome({ setupPath, toolsOnly = false }: { setupPath: str
       {dismiss.isError ? <Alert severity="error">Could not save your choice. Please try again.</Alert> : null}
     </Stack></CardContent></Card> : null}
     <Stack component="section" spacing={2} aria-labelledby={toolsOnly ? "workbench-title" : "document-tools-title"}>
-      {!toolsOnly && <Typography id="document-tools-title" variant="h5" fontWeight={700}>Toolbox</Typography>}
+      {!toolsOnly && <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
+        <Typography component="h2" id="document-tools-title" variant="h5" fontWeight={700}>Toolbox</Typography>
+        <Button component={Link} to="/tools" variant="outlined" size="small">Open Toolbox</Button>
+      </Stack>}
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))", lg: "repeat(3, minmax(0, 1fr))" }, gap: 2 }}>
         {documentTools.map(tool => {
           const state = home.isError || home.isPending ? undefined : home.data?.tools[tool.id];

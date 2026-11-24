@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from osii.api.collection_synthesis_routes import router as collection_synthesis_router
-from osii.api.catalog_routes import router as catalog_router
+from osii.api.catalog_routes import browse_router, router as catalog_router
 from osii.api.chat_routes import router as chat_router
 from osii.api.research_routes import router as research_router
 from osii.api.collections_routes import router as collections_router
@@ -104,6 +104,7 @@ app.include_router(create_database_router(
     lambda request: getattr(request.app.state, "database_explorer", None),
     authorize=local_operator,
 ))
+app.include_router(browse_router)
 
 app.state.shared_volume_root = Path(
     os.getenv("SHARED_VOLUME_ROOT", "./data_volume/my_data")
