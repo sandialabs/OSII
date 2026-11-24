@@ -172,6 +172,12 @@ how it handles absent or conflicting representations. `ScopeInput` requires
 a scope type and ID; its documents default to an empty list. A scope is not
 permission to discover additional sources.
 
+For whole-scope wiki methods, `scope.metadata.scope_batch.phase` is `map`
+when the inputs are original document text and `reduce` when they are draft
+sections. Combine drafts into one article, keeping original citations where
+supported. Keep temporary draft IDs and writing instructions out of the wiki
+text. The optional `expert_context` field carries user guidance in either phase.
+
 ### ModelContext
 
 | Field | Type | Required / default | Meaning |

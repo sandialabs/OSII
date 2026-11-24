@@ -5,7 +5,7 @@ import { Accordion, AccordionDetails, AccordionSummary, Alert, Button, Chip, Cir
 import PlayArrowOutlined from "@mui/icons-material/PlayArrowOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import { Link } from "react-router-dom";
-import { buildRunRoute } from "../../../utils/routes";
+import { buildRunRoute, buildWikiRoute, READ_WIKIS_PATH, wikiRunRoute } from "../../../utils/routes";
 import { getToolCatalog } from "../../../api/tools";
 import { controlProcessingRun, getProcessingRun } from "../../../api/queue";
 import type { ScopeDescribeRequest } from "../../../api/types";
@@ -55,6 +55,8 @@ export function ToolActionPanel({ scope, action, title, methodId, compact = fals
   const configuredModel = chatModels.find(item => item.id === method?.bindings.chat);
   const libraryModel = chatModels.find(item => item.id === catalog.data?.defaults.chat) ?? chatModels[0];
   const error = job.error ?? control.error ?? run.error;
+  const reader = wikiRunRoute(run.data) ?? (action === "wiki.write" && run.data?.status === "done"
+    ? buildWikiRoute(READ_WIKIS_PATH, scope, { method: run.data.tool_id }) : undefined);
   const generate = async () => {
     if (!method) return;
     const properties = method.config_schema.properties ?? {};
@@ -92,6 +94,7 @@ export function ToolActionPanel({ scope, action, title, methodId, compact = fals
     {!compact && runId && run.data?.batch_progress ? <ScopeBatchResults runId={runId} progress={run.data.batch_progress} /> : null}
     {runId ? <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
       <Chip size="small" icon={active ? <CircularProgress size={12} /> : undefined} label={run.data?.status === "done" ? "Saved" : run.data?.status ?? "Queued"} color={run.data?.status === "error" ? "error" : run.data?.status === "done" ? "success" : "default"} />
+      {reader && <Button component={Link} to={reader} size="small" variant="contained">Read wiki</Button>}
       <Button component={Link} to={buildRunRoute(runId)} size="small">View run</Button>
       {!compact && <>
         {run.data?.status === "running" || run.data?.status === "queued" ? <Button size="small" disabled={catalog.data?.permissions?.run === false || control.isPending} onClick={() => control.mutate("pause")}>Pause</Button> : null}

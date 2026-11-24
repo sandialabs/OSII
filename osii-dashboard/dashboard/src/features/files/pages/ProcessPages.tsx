@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Alert, Button, LinearProgress, Stack, TextField, MenuItem, Typography } from "@mui/material";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { getToolCatalog, type ToolMethod } from "../../../api/tools";
 import { createProcessingRun } from "../../../api/queue";
 import type { ScopeDescribeRequest } from "../../../api/types";
@@ -10,11 +10,10 @@ import { ScopePicker } from "../../../components/discovery/ScopePicker";
 import { LibraryFlow } from "../../../components/workbench/LibraryFlow";
 import { PageBreadcrumbs } from "../../../components/workbench/PageBreadcrumbs";
 import { useObjectSynthesisJob } from "../../../hooks/useObjectSynthesisJob";
-import { buildRunRoute } from "../../../utils/routes";
+import { buildRunRoute, buildWikiRoute, READ_WIKIS_PATH, wikiRouteScope } from "../../../utils/routes";
 import { FileSelectionPanel } from "../../queue/components/FileSelectionPanel";
 import { useProcessingFlows } from "../../queue/components/ProcessingFlowSelect";
 import { ScopeEnrichmentsPanel } from "../components/ScopeEnrichmentsPanel";
-import { ScopeWikiPanel } from "../components/ScopeWikiPanel";
 import { SuggestedMetadata } from "../components/SuggestedMetadata";
 import { ToolActionPanel } from "../components/ToolActionPanel";
 
@@ -34,20 +33,23 @@ function ScopeProcess({ title, action, methods, methodId }: {
   const metadata = action === "metadata.suggest";
   const matchingScopes = scopeTypes.filter(type => methods.some(method => method.scopes.includes(type)));
   const allowed = matchingScopes.length ? matchingScopes : metadata ? ["object" as const] : [...scopeTypes];
-  const [selection, setSelection] = useState<ScopeDescribeRequest>();
+  const [search] = useSearchParams();
+  const [selection, setSelection] = useState(() => wiki ? wikiRouteScope(search) : undefined);
   const scope = selection && allowed.includes(selection.scope_type) ? selection : toEmptyScope[allowed[0]];
   const ready = scope.scope_type === "root" || Boolean(scope.scope_type === "object" ? scope.file_id
     : scope.scope_type === "collection" ? scope.collection_id : scope.folder_id);
 
   return <Stack spacing={2} sx={{ maxWidth: 1000 }}>
-    <Typography component="h1" variant="h5" fontWeight={750}>{title}</Typography>
+    <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} flexWrap="wrap">
+      <Typography component="h1" variant="h5" fontWeight={750}>{title}</Typography>
+      {wiki && <Button component={Link} to={buildWikiRoute(READ_WIKIS_PATH, ready ? scope : undefined)}>Saved wikis</Button>}
+    </Stack>
     <LibraryFlow reads={["text"]} writes={metadata ? ["metadata"] : ["artifacts"]} />
     <ScopePicker value={scope} onChange={setSelection} allowedTypes={allowed} />
     {methods.length === 0 && <Alert severity="info" action={<Button component={Link} to="/admin/processors">Setup</Button>}>
       Connect a {wiki ? "wiki" : "metadata"} processor to run this tool.
     </Alert>}
     {ready && methods.length > 0 && <ToolActionPanel key={JSON.stringify(scope)} scope={scope} action={action} methodId={methodId} compact />}
-    {ready && wiki && <ScopeWikiPanel scope={scope} title="Wiki" showActions={false} />}
     {ready && metadata && scope.scope_type === "object" && <SuggestedMetadata fileId={scope.file_id} />}
     {ready && methodId && <ScopeEnrichmentsPanel scope={scope} showActions={false}
       filter={product => product.family === "enrichment" && product.filename.endsWith(`--${methodId}.json`)} />}

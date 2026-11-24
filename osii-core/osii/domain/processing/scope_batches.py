@@ -348,6 +348,8 @@ def execute_batches(
 
 
 def publication_outputs(run_id, summary, title, final, first=None):
+    from osii.processor_sdk.wiki import clean_wiki_markdown, has_wiki_body
+
     outputs = [
         {
             "id": "batch-results",
@@ -359,27 +361,40 @@ def publication_outputs(run_id, summary, title, final, first=None):
     ]
     selected = final or (first if summary["map_batches"] == 1 else None)
     if selected is not None:
-        if wiki_text(selected) is not None:
+        markdown = wiki_text(selected)
+        if markdown is not None:
+            cleaned = clean_wiki_markdown(markdown)
+            if cleaned != markdown.strip() and not has_wiki_body(cleaned):
+                raise ValueError(
+                    "The writing model returned generation notes without a wiki article. "
+                    "Start a new run with a different prompt or model."
+                )
+            wiki = next(
+                (
+                    item["data"]
+                    for item in selected.get("artifacts", [])
+                    if item["data"].get("artifact_type") == "wiki_markdown"
+                ),
+                {},
+            )
+            citations = selected.get("citations", wiki.get("citations", []))
             outputs.append(
                 {
                     "id": "wiki",
                     "family": "synthesis",
                     "data": {
                         "artifact_type": "wiki_markdown",
-                        "title": title,
-                        "markdown": wiki_text(selected),
-                        "citations": selected.get(
-                            "citations",
-                            next(
-                                (
-                                    item["data"].get("citations", [])
-                                    for item in selected.get("artifacts", [])
-                                    if item["data"].get("artifact_type")
-                                    == "wiki_markdown"
-                                ),
-                                [],
-                            ),
-                        ),
+                        "title": wiki.get("title") or title,
+                        "markdown": cleaned + "\n"
+                        if cleaned != markdown.strip()
+                        else markdown,
+                        "citations": [
+                            citation
+                            for citation in citations
+                            if not (citation.get("source_origin") or {}).get(
+                                "derived_batch"
+                            )
+                        ],
                     },
                 }
             )

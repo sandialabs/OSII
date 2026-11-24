@@ -7,6 +7,9 @@ import { AppLayout } from "./layout/AppLayout";
 import { workbenchTools } from "./tools";
 import { ToolBoundary } from "./ToolBoundary";
 import { PageBreadcrumbs } from "../components/workbench/PageBreadcrumbs";
+import { READ_WIKIS_PATH } from "../utils/routes";
+
+const toolbox = { label: "Toolbox", to: "/tools" };
 
 const CollectionPage = lazy(() => import("../features/collections/pages/CollectionPage").then(m => ({ default: m.CollectionPage })));
 const CollectionWikisPage = lazy(() => import("../features/collections/pages/CollectionWikisPage").then(m => ({ default: m.CollectionWikisPage })));
@@ -30,7 +33,9 @@ export function AppRouter() {
           <Route key={id} path={path} element={
             <ToolBoundary key={id}>
               {group === "tools" && id !== "tools" && (
-                <Box sx={{ mb: 1.5 }}><PageBreadcrumbs parents={[{ label: "Toolbox", to: "/tools" }]} current={label} /></Box>
+                <Box sx={{ mb: 1.5 }}><PageBreadcrumbs
+                  parents={id === "create-wiki" ? [toolbox, { label: "Wikis", to: READ_WIKIS_PATH }] : [toolbox]}
+                  current={label} /></Box>
               )}
               <Page />
             </ToolBoundary>

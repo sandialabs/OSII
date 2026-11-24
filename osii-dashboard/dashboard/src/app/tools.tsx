@@ -2,8 +2,9 @@ import { lazy, type ComponentType } from "react";
 import MoveToInboxOutlined from "@mui/icons-material/MoveToInboxOutlined";
 import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
 import BuildOutlined from "@mui/icons-material/BuildOutlined";
+import AutoStoriesOutlined from "@mui/icons-material/AutoStoriesOutlined";
 import ManageSearchOutlined from "@mui/icons-material/ManageSearchOutlined";
-import { READ_FILES_PATH, SEARCH_INDEX_PATH, SUGGEST_METADATA_PATH, SUMMARIZE_FILE_PATH } from "../utils/routes";
+import { CREATE_WIKI_PATH, READ_FILES_PATH, SEARCH_INDEX_PATH, SUGGEST_METADATA_PATH, SUMMARIZE_FILE_PATH } from "../utils/routes";
 import { sharedNavigation } from "./layout/workbenchNavigation";
 import type { NavigationItem } from "./layout/WorkbenchLayout";
 export type WorkbenchTool = NavigationItem & { path: string; Page: ComponentType; navigation?: boolean };
@@ -16,7 +17,7 @@ const pages: Record<string, ComponentType> = {
   "create-collections": lazy(() => import("../features/collections/pages/CreateCollectionsPage").then(m => ({ default: m.CreateCollectionsPage }))),
   collections: lazy(() => import("../features/collections/pages/CollectionsPage").then(m => ({ default: m.CollectionsPage }))),
   research: lazy(() => import("../features/research/ResearchPage").then(m => ({ default: m.ResearchPage }))),
-  wiki: lazy(() => import("../features/files/pages/ProcessPages").then(m => ({ default: m.CreateWikiPage }))),
+  wiki: lazy(() => import("../features/files/pages/ReadWikisPage").then(m => ({ default: m.ReadWikisPage }))),
   overview: lazy(() => import("../features/library/pages/LibraryOverviewPage").then(m => ({ default: m.LibraryOverviewPage }))),
   ocr: lazy(() => import("../features/ocr/OcrWorkbenchPage").then(m => ({ default: m.OcrWorkbenchPage }))),
   topics: lazy(() => import("../features/topics/pages/TopicExplorerPage").then(m => ({ default: m.TopicExplorerPage }))),
@@ -29,6 +30,8 @@ export const workbenchTools: readonly WorkbenchTool[] = [
     Page: lazy(() => import("../features/admin/pages/ProcessorsPage").then(m => ({ default: m.ProcessorsPage }))) },
   { id: "tools", path: "/tools", label: "Toolbox", group: "tools", icon: BuildOutlined,
     Page: lazy(() => import("../features/files/pages/ToolsPage").then(m => ({ default: m.ToolsPage }))) },
+  { id: "create-wiki", path: CREATE_WIKI_PATH, label: "Create a wiki", group: "tools", icon: AutoStoriesOutlined, navigation: false,
+    Page: lazy(() => import("../features/files/pages/ProcessPages").then(m => ({ default: m.CreateWikiPage }))) },
   { id: "read-files", path: READ_FILES_PATH, label: "Read files", group: "tools", icon: BuildOutlined, navigation: false,
     Page: lazy(() => import("../features/files/pages/ProcessPages").then(m => ({ default: m.ReadFilesPage }))) },
   { id: "summarize-file", path: SUMMARIZE_FILE_PATH, label: "Create a summary", group: "tools", icon: BuildOutlined, navigation: false,

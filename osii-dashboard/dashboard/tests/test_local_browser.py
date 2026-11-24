@@ -425,6 +425,7 @@ def test_tool_and_collection_wiki_breadcrumbs_follow_stable_routes(isolated_libr
             ("/tools/collections", "Create Collections"),
             ("/topics", "Explore Topics"),
             ("/tools/ocr", "OCR Workbench"),
+            ("/tools/wikis", "Wikis"),
             ("/tools/wiki", "Create a wiki"),
             ("/tools/read-files", "Read files"),
             ("/tools/summary", "Create a summary"),
@@ -443,7 +444,8 @@ def test_tool_and_collection_wiki_breadcrumbs_follow_stable_routes(isolated_libr
         navigation = page.get_by_role("navigation", name="Main navigation")
         expect(navigation.get_by_text("Menu", exact=True)).to_have_count(0)
         expect(page.get_by_text("Library-wide processing", exact=True)).to_have_count(0)
-        expect(page.get_by_role("link", name="Create a wiki", exact=False)).to_have_attribute("href", "/tools/wiki")
+        expect(page.get_by_role("link", name=re.compile("^Wikis "))).to_have_attribute("href", "/tools/wikis")
+        expect(navigation.get_by_text("Create a wiki", exact=True)).to_have_count(0)
         expect(page.get_by_role("link", name="Search index", exact=True)).to_have_attribute("href", "/tools/search-index")
         page.goto("/tools/workbench")
         expect(page).to_have_url(re.compile(r"/tools$"))
@@ -629,17 +631,30 @@ app = create_processor_app(FixtureWiki())
         collection_id = collection.json()["collection"]["id"]
         assert page.request.post(f"/api/collections/{collection_id}/members", data={"file_ids": [file_id]}).ok
         page.goto("/tools")
-        page.get_by_role("link", name="Create a wiki", exact=False).click()
+        page.get_by_role("link", name=re.compile("^Wikis ")).click()
+        page.get_by_role("link", name="Create a wiki", exact=True).click()
         page.get_by_role("combobox", name="Choose a collection", exact=True).fill("Inspection team")
         page.get_by_role("option", name="Inspection team", exact=True).click()
         with page.expect_response(lambda response: response.url.endswith("/api/enrichment-jobs/run")
                                   and response.request.method == "POST") as wiki:
             page.get_by_role("button", name="Create wiki", exact=True).click()
         assert wiki.value.ok, wiki.value.text()
-        expect(page.get_by_text("The inspection team documented thermal seals and copper joints.", exact=True)).to_be_visible(timeout=30_000)
+        read_wiki = page.get_by_role("link", name="Read wiki", exact=True)
+        expect(read_wiki).to_be_visible(timeout=30_000)
         expect(page.get_by_role("link", name="View run", exact=True)).to_have_attribute("href", f"/intake/runs/{wiki.value.json()['run_id']}")
+        page.get_by_role("link", name="View run", exact=True).click()
+        page.get_by_role("link", name="Read wiki", exact=True).click()
+        expect(page.get_by_role("heading", name="Wikis", exact=True)).to_be_visible()
+        expect(page.get_by_role("article").get_by_text("The inspection team documented thermal seals and copper joints.", exact=True)).to_be_visible()
+        page.reload()
+        expect(page.get_by_role("article").get_by_role("heading", name="Inspection guidance")).to_be_visible()
+        page.get_by_text("Source documents (1)", exact=True).click()
+        expect(page.get_by_role("link", name=file.name, exact=True)).to_have_attribute("href", f"/files/{file_id}")
         page.get_by_role("tab", name="Edit", exact=True).click()
         expect(page.get_by_role("textbox", name="Wiki Markdown")).to_be_visible()
+        page.get_by_role("link", name="Recent wikis", exact=True).click()
+        page.get_by_role("link", name="Inspection team", exact=False).click()
+        expect(page.get_by_role("article").get_by_role("heading", name="Inspection guidance")).to_be_visible()
 
 
 def test_simple_intake_connects_models_before_document_selection(isolated_library):

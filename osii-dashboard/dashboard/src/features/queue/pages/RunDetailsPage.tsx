@@ -4,7 +4,7 @@ import {
 } from "@mui/material";
 import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../../api/client";
 import { controlProcessingRun, getProcessingRun } from "../../../api/queue";
 import type { ProcessingRun } from "../../../api/types";
@@ -12,7 +12,7 @@ import { PageBreadcrumbs } from "../../../components/workbench/PageBreadcrumbs";
 import { failedRunFiles, processingStatus, recordedFileStages, runHasFailures, runReport, runStatusLabel, runTitle } from "../../../domain/processingRun";
 import { flowTestError } from "../../../domain/processingFlowTests";
 import { isActiveRun } from "../../../domain/workflow";
-import { QUEUE_ACTIVITY_PATH } from "../../../utils/routes";
+import { QUEUE_ACTIVITY_PATH, wikiRunRoute } from "../../../utils/routes";
 import { RunFiles } from "../components/RunFiles";
 
 const parents = [{ label: "Queue & activity", to: QUEUE_ACTIVITY_PATH }];
@@ -111,6 +111,7 @@ function RunDetails({ run, refresh }: { run: ProcessingRun; refresh: () => Promi
       .filter(stage => !["skipped", "reused", "queued"].includes(stage.status)).map(stage => stage.processor)),
   ].filter(Boolean))];
   const lines = run.logs ?? [];
+  const reader = wikiRunRoute(run);
   return (
     <>
       <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" spacing={1} useFlexGap>
@@ -123,6 +124,7 @@ function RunDetails({ run, refresh }: { run: ProcessingRun; refresh: () => Promi
         </Stack>
         <Stack spacing={0.5}>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            {reader && <Button component={Link} to={reader} variant="outlined">Read wiki</Button>}
             <Button variant="contained" startIcon={<ContentCopyOutlined />} onClick={() => void copy()}>Copy run report</Button>
             <Button aria-expanded={report !== null} onClick={() => setReport(report === null ? formattedReport() : null)}>
               {report === null ? "View diagnostics" : "Hide diagnostics"}
