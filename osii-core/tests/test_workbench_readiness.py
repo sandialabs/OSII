@@ -43,6 +43,6 @@ def test_incomplete_information_never_enables_an_unusable_tile(
     )
     assert {
         key for key, value in state["tools"].items() if value["enabled"]
-    } == expected
+    } == expected | {"wiki"}  # The wiki reader opens even before a wiki exists.
     assert all(value["reason"] for value in state["tools"].values())
     assert not state["setup"]["visible"]
