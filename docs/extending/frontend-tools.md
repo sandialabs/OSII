@@ -242,6 +242,13 @@ OSII-local remains authentication-free. Add readiness behavior and tests if the
 new tile needs prerequisites. Do not advertise a tile before its route and both
 product adapters are implemented.
 
+Local Toolbox routes get a breadcrumb back to Toolbox through the route
+registry. Use `PageBreadcrumbs` on nested views with a named parent, such as
+`Collections → Collection name → Wikis`, or a parent section with a stable
+anchor, such as Setup’s Processors list. Link each parent to its canonical
+destination so the trail works when opening a bookmark. Use tabs for modes
+within the same task, such as reading, editing, and comparing wiki revisions.
+
 Run dashboard tests and build on each affected branch, plus
 `python scripts/check_extensions.py`. Keep durable processing and result storage
 behind Core APIs; reuse ScopePicker, ToolActionPanel, and standard artifact viewers.

@@ -5,6 +5,7 @@ import ArticleOutlined from "@mui/icons-material/ArticleOutlined";
 import ViewColumnOutlined from "@mui/icons-material/ViewColumnOutlined";
 import { useQuery } from "@tanstack/react-query";
 
+import { PageBreadcrumbs } from "../../../components/workbench/PageBreadcrumbs";
 import { useObject } from "../../../hooks/useObject";
 import { getObjectExtractions } from "../../../api/objects";
 import { listProducts } from "../../../api/tools";
@@ -45,8 +46,12 @@ function FileProducts({ fileId }: { fileId: string }) {
   const versions = useQuery({ queryKey: ["objects", fileId, "extractions", "catalog"], queryFn: () => getObjectExtractions(fileId, true), enabled: object.isSuccess });
   const saved = useQuery({ queryKey: ["products", "list", fileId], queryFn: () => listProducts(scope), enabled: object.isSuccess });
 
-  if (object.isPending) return <CircularProgress size={24} aria-label="Loading file" />;
-  if (object.isError) return <Alert severity="error">Could not load file. {object.error.message}</Alert>;
+  const parents = [{ label: "Files", to: "/files" }];
+  if (object.isPending || object.isError) return <Stack spacing={1.5}>
+    <PageBreadcrumbs parents={parents} current="File" />
+    {object.isPending ? <CircularProgress size={24} aria-label="Loading file" />
+      : <Alert severity="error">Could not load file. {object.error.message}</Alert>}
+  </Stack>;
 
   const detail = toFileDetailModel(object.data);
   const savedArtifacts = object.data.artifact_summary.artifacts;
@@ -130,17 +135,20 @@ function FileProducts({ fileId }: { fileId: string }) {
   const separateSource = split && !textView && selected !== "source";
   return (
     <DocumentWorkspace
-      header={<Stack direction="row" spacing={1.5} justifyContent="space-between" alignItems="center" flexWrap="wrap" useFlexGap>
-        <Typography variant="h5" component="h1" fontWeight={750} sx={{ overflowWrap: "anywhere", minWidth: 0 }}>{detail.filename}</Typography>
-        <ToggleButtonGroup exclusive size="small" value={split ? "split" : "single"} aria-label="Reading layout"
-          onChange={(_, layout: "single" | "split" | null) => {
-            if (!layout || !canLeaveText()) return;
-            setEditing(false);
-            update({ view: layout === "split" ? "split" : selected === "source" ? "source" : "text", product: selected, tab: null }, true);
-          }}>
-          <ToggleButton value="single" aria-label="Single view"><Tooltip title="Single view"><ArticleOutlined fontSize="small" /></Tooltip></ToggleButton>
-          <ToggleButton value="split" aria-label="Split view"><Tooltip title="Split view with original file"><ViewColumnOutlined fontSize="small" /></Tooltip></ToggleButton>
-        </ToggleButtonGroup>
+      header={<Stack spacing={1}>
+        <PageBreadcrumbs parents={parents} current={detail.filename} />
+        <Stack direction="row" spacing={1.5} justifyContent="space-between" alignItems="center" flexWrap="wrap" useFlexGap>
+          <Typography variant="h5" component="h1" fontWeight={750} sx={{ overflowWrap: "anywhere", minWidth: 0 }}>{detail.filename}</Typography>
+          <ToggleButtonGroup exclusive size="small" value={split ? "split" : "single"} aria-label="Reading layout"
+            onChange={(_, layout: "single" | "split" | null) => {
+              if (!layout || !canLeaveText()) return;
+              setEditing(false);
+              update({ view: layout === "split" ? "split" : selected === "source" ? "source" : "text", product: selected, tab: null }, true);
+            }}>
+            <ToggleButton value="single" aria-label="Single view"><Tooltip title="Single view"><ArticleOutlined fontSize="small" /></Tooltip></ToggleButton>
+            <ToggleButton value="split" aria-label="Split view"><Tooltip title="Split view with original file"><ViewColumnOutlined fontSize="small" /></Tooltip></ToggleButton>
+          </ToggleButtonGroup>
+        </Stack>
       </Stack>}
       groups={groups} selected={selected} onSelect={selectProduct}
       sourcePane={separateSource ? <FileSourcePanel fileId={fileId} mime={detail.mime} page={page}

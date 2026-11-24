@@ -15,6 +15,7 @@ from urllib.request import urlopen
 import pytest
 from playwright.sync_api import expect, sync_playwright
 
+from osii.domain.artifacts.products import product_path, publish_product
 from osii.domain.storage.objects import update_synthesis_provenance
 from osii.extraction.native_text_extractor import NativeTextExtractor
 
@@ -136,6 +137,9 @@ def test_pdf_preview_recovers_after_source_returns(isolated_library):
     with dashboard_page(isolated_library, "pdf-preview-trace") as page:
         page.goto(f"/files/{file_id}")
         expect(page.get_by_role("heading", name=SAMPLE.name)).to_be_visible()
+        breadcrumbs = page.get_by_role("navigation", name="Breadcrumbs")
+        expect(breadcrumbs.get_by_role("link", name="Files")).to_have_attribute("href", "/files")
+        expect(breadcrumbs.locator('[aria-current="page"]')).to_have_text(SAMPLE.name)
         page.get_by_role("button", name="Split view", exact=True).click()
         expect(page.get_by_role("alert")).to_contain_text("Original file unavailable")
         expect(page.get_by_role("alert")).to_contain_text(str(source.resolve()))
@@ -324,7 +328,11 @@ def test_processor_settings_are_saved_on_a_dedicated_page(isolated_library):
         page.reload()
         expect(page).to_have_url(detail_url)
         expect(chunk_size).to_have_value("4200")
-        page.get_by_role("link", name="Setup", exact=True).click()
+        breadcrumbs = page.get_by_role("navigation", name="Breadcrumbs")
+        expect(breadcrumbs.locator('[aria-current="page"]')).to_have_text(extractor)
+        expect(breadcrumbs.get_by_role("link", name="Setup", exact=True)).to_have_attribute("href", "/admin/processors")
+        breadcrumbs.get_by_role("link", name="Processors", exact=True).click()
+        expect(page).to_have_url(re.compile(r"/admin/processors#processors-heading$"))
         expect(page.get_by_role("heading", name="Processors", exact=True)).to_be_visible()
 
         page.get_by_role("button", name="Register a processor service").click()
@@ -335,3 +343,58 @@ def test_processor_settings_are_saved_on_a_dedicated_page(isolated_library):
         expect(page.get_by_role("textbox", name="Processor address")).to_have_value(native_endpoint)
         page.get_by_role("button", name="Check health", exact=True).click()
         expect(page.get_by_role("alert").get_by_text("Processor is reachable.")).to_be_visible()
+
+
+def test_tool_and_collection_wiki_breadcrumbs_follow_stable_routes(isolated_library):
+    _, _, env = isolated_library
+    with dashboard_page(isolated_library, "breadcrumbs") as page:
+        for route, label in [
+            ("/search", "Search"),
+            ("/chat", "Chat"),
+            ("/research", "Create a Report"),
+            ("/library-overview", "Analyze Library"),
+            ("/tools/collections", "Create Collections"),
+            ("/topics", "Explore Topics"),
+            ("/tools/ocr", "OCR Workbench"),
+            ("/tools/workbench", "Library-wide processing"),
+            ("/admin/database", "Database explorer"),
+        ]:
+            page.goto(route)
+            breadcrumbs = page.get_by_role("navigation", name="Breadcrumbs")
+            expect(breadcrumbs.get_by_role("link", name="Toolbox")).to_have_attribute("href", "/tools")
+            expect(breadcrumbs.locator('[aria-current="page"]')).to_have_text(label)
+
+        breadcrumbs.get_by_role("link", name="Toolbox").click()
+        expect(page).to_have_url(re.compile(r"/tools$"))
+        expect(page.get_by_role("navigation", name="Breadcrumbs")).to_have_count(0)
+
+        response = page.request.post("/api/collections", data={"name": "Inspection notes"})
+        assert response.ok, response.text()
+        collection_id = response.json()["collection"]["id"]
+        store = Path(env["OSII_ROOT"])
+        scope = {"scope_type": "collection", "collection_id": collection_id}
+        publish_product(store, product_path(store, scope, "inspection-wiki.json"), {
+            "artifact_type": "wiki_markdown", "title": "Inspection wiki",
+            "markdown": "Original inspection guidance.", "citations": [],
+        })
+        collection_url = f"/collections/{collection_id}"
+        page.goto(collection_url)
+        expect(breadcrumbs.locator('[aria-current="page"]')).to_have_text("Inspection notes")
+        page.get_by_role("link", name="Wikis", exact=True).click()
+        expect(page).to_have_url(re.compile(collection_url + r"/wikis$"))
+        expect(breadcrumbs.get_by_role("link", name="Collections", exact=True)).to_have_attribute("href", "/collections")
+        expect(breadcrumbs.get_by_role("link", name="Inspection notes")).to_have_attribute("href", collection_url)
+        expect(breadcrumbs.locator('[aria-current="page"]')).to_have_text("Wikis")
+
+        expect(page.get_by_text("Original inspection guidance.", exact=True)).to_be_visible()
+        page.get_by_role("tab", name="Edit", exact=True).click()
+        page.get_by_role("textbox", name="Wiki Markdown").fill("Updated inspection guidance.")
+        page.get_by_role("button", name="Save", exact=True).click()
+        expect(page.get_by_text("Updated inspection guidance.", exact=True)).to_be_visible()
+        page.reload()
+        expect(page.get_by_text("Updated inspection guidance.", exact=True)).to_be_visible()
+        expect(page.get_by_role("tab", name="History (2)", exact=True)).to_be_visible()
+        breadcrumbs.get_by_role("link", name="Inspection notes").click()
+        expect(page).to_have_url(re.compile(collection_url + "$"))
+        breadcrumbs.get_by_role("link", name="Collections", exact=True).click()
+        expect(page).to_have_url(re.compile(r"/collections$"))

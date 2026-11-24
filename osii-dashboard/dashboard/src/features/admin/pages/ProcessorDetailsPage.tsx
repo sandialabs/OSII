@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
   Divider, IconButton, LinearProgress, MenuItem, Paper, Stack, TextField, Typography,
 } from "@mui/material";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import {
   checkProcessorEndpoint, controlCapabilityService, deleteProcessorEndpoint,
@@ -13,6 +12,7 @@ import {
   listProcessorEndpoints, saveProcessorSettings, updateProcessorEndpoint,
 } from "../../../api/queue";
 import type { ModelProvider, ProcessorConfigProperty, ProcessorEndpoint } from "../../../api/types";
+import { PageBreadcrumbs } from "../../../components/workbench/PageBreadcrumbs";
 import { ProcessorConfigInput } from "../../queue/components/ProcessorConfigInput";
 import { ProcessorStartupSettings } from "../components/ProcessorStartupSettings";
 import { ServiceRow } from "../components/ServiceRow";
@@ -152,7 +152,10 @@ export function ProcessorDetailsPage() {
   });
 
   return <Stack spacing={2} sx={{ maxWidth: 780, mx: "auto" }}>
-    <Button component={Link} to={SETUP_PATH + "#processors-heading"} startIcon={<ArrowBackIcon />} sx={{ alignSelf: "start" }}>Setup</Button>
+    <PageBreadcrumbs parents={[
+      { label: "Setup", to: SETUP_PATH },
+      { label: "Processors", to: SETUP_PATH + "#processors-heading" },
+    ]} current={name ?? processorId ?? registrationId ?? "Processor"} />
     {loading && !name && <LinearProgress aria-label="Loading processor" />}
     {!loading && !name && <Alert severity={loadError ? "error" : "warning"}>{loadError ?? "This processor is no longer listed in Setup."}</Alert>}
     {name && <>

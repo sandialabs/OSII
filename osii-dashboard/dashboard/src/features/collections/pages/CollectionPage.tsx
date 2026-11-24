@@ -9,8 +9,6 @@ import {
   DialogContent,
   DialogTitle,
   Stack,
-  Tab,
-  Tabs,
   TextField,
   Typography,
 } from "@mui/material";
@@ -20,7 +18,7 @@ import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import ChatOutlinedIcon from "@mui/icons-material/ChatOutlined";
 import AddOutlinedIcon from "@mui/icons-material/AddOutlined";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { useBrowsingScope } from "../../../app/providers/BrowsingScopeProvider";
 import {
@@ -30,7 +28,8 @@ import {
 } from "../../../hooks/useCollections";
 import { CollectionFileGrid } from "../components/CollectionFileGrid";
 import { ScopeEnrichmentsPanel } from "../../files/components/ScopeEnrichmentsPanel";
-import { ScopeWikiPanel } from "../../files/components/ScopeWikiPanel";
+import { PageBreadcrumbs } from "../../../components/workbench/PageBreadcrumbs";
+import { buildCollectionRoute } from "../../../utils/routes";
 import { AddFilesToCollectionDialog } from "../components/AddFilesToCollectionDialog";
 import { ScopeSection } from "../../../components/discovery/ScopeSection";
 import { ScopeOverviewPanel } from "../../../components/discovery/ScopeOverviewPanel";
@@ -53,11 +52,6 @@ export function CollectionPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [addFilesOpen, setAddFilesOpen] = useState(false);
-  const [enrichmentTab, setEnrichmentTab] = useState("wiki");
-
-  useEffect(() => {
-    setEnrichmentTab("wiki");
-  }, [collectionId]);
 
   useEffect(() => {
     if (data?.collection) {
@@ -65,30 +59,16 @@ export function CollectionPage() {
     }
   }, [data?.collection, setCollectionScope]);
 
-  if (!collectionId) {
-    return <Alert severity="error">Missing collection ID.</Alert>;
-  }
-
-  if (isLoading) {
-    return (
-      <Stack spacing={2}>
-        <Typography>Loading collection…</Typography>
-      </Stack>
-    );
-  }
-
-  if (isError) {
-    return (
-      <Alert severity="error">
-        Failed to load collection.
-        {error instanceof Error ? ` ${error.message}` : ""}
-      </Alert>
-    );
-  }
-
-  if (!data) {
-    return <Alert severity="info">Collection not found.</Alert>;
-  }
+  const breadcrumbs = <PageBreadcrumbs parents={[{ label: "Collections", to: "/collections" }]}
+    current={data?.collection.name ?? "Collection"} />;
+  if (!collectionId || !data) return (
+    <Stack spacing={1.5}>
+      {breadcrumbs}
+      {isLoading ? <Typography>Loading collection…</Typography>
+        : isError ? <Alert severity="error">Failed to load collection. {error.message}</Alert>
+        : <Alert severity="info">Collection not found.</Alert>}
+    </Stack>
+  );
 
   const handleOpenEdit = () => {
     setName(data.collection.name);
@@ -125,6 +105,7 @@ export function CollectionPage() {
   return (
     <>
       <Stack spacing={3}>
+        {breadcrumbs}
         <Stack
           direction={{ xs: "column", md: "row" }}
           spacing={1.5}
@@ -132,7 +113,7 @@ export function CollectionPage() {
           alignItems={{ xs: "flex-start", md: "center" }}
         >
           <Stack spacing={0.5}>
-            <Typography variant="h5" fontWeight={700}>
+            <Typography component="h1" variant="h5" fontWeight={700}>
               {data.collection.name}
             </Typography>
             <Typography variant="body2" color="text.secondary">
@@ -141,6 +122,7 @@ export function CollectionPage() {
           </Stack>
 
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Button component={Link} to={buildCollectionRoute(collectionId) + "/wikis"} variant="outlined">Wikis</Button>
             <Button variant="contained" onClick={() => navigate(`/research?collection_id=${encodeURIComponent(collectionId)}`)}>Write research report</Button>
             <Button
               variant="outlined"
@@ -188,22 +170,8 @@ export function CollectionPage() {
         <CollectionProcessingStatus collectionId={collectionId} />
         <ScopeSection key={collectionId} id={`collection:${collectionId}:overview`} title="At a glance"><ScopeOverviewPanel scope={{ scope_type: "collection", collection_id: collectionId }} /></ScopeSection>
 
-        <ScopeSection key={`${collectionId}:products`} id={`collection:${collectionId}:products`} title="Wikis & products">
-            <Stack spacing={2}>
-              <Tabs value={enrichmentTab} onChange={(_, value: string) => setEnrichmentTab(value)} aria-label="Collection enrichment views">
-                <Tab value="wiki" label="Wiki" id="collection-wiki-tab" aria-controls="collection-wiki-panel" />
-                <Tab value="artifacts" label="Other products" id="collection-artifacts-tab" aria-controls="collection-artifacts-panel" />
-              </Tabs>
-              {enrichmentTab === "wiki" ? (
-                <Stack role="tabpanel" id="collection-wiki-panel" aria-labelledby="collection-wiki-tab">
-                  <ScopeWikiPanel scope={{ scope_type: "collection", collection_id: collectionId }} title={data.collection.name} />
-                </Stack>
-              ) : (
-                <Stack role="tabpanel" id="collection-artifacts-panel" aria-labelledby="collection-artifacts-tab">
-                  <ScopeEnrichmentsPanel scope={{ scope_type: "collection", collection_id: collectionId }} />
-                </Stack>
-              )}
-            </Stack>
+        <ScopeSection key={`${collectionId}:products`} id={`collection:${collectionId}:products`} title="Other products">
+          <ScopeEnrichmentsPanel scope={{ scope_type: "collection", collection_id: collectionId }} />
         </ScopeSection>
         <Typography variant="h6" fontWeight={700}>Documents</Typography>
         <CollectionFileGrid collectionId={collectionId} />

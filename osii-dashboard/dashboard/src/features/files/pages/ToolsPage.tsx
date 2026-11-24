@@ -38,7 +38,6 @@ export function ToolsWorkbench() {
   }, [action, browsesSavedProducts, catalog.data]);
   return <Stack spacing={3} sx={{ maxWidth: 1100, mx: "auto" }}>
     <Typography component="h1" variant="h4" fontWeight={750}>Library-wide processing</Typography>
-    <Button component={Link} to="/tools">← Toolbox</Button>
     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
       <Button component={Link} to="/research" variant="contained">Write a research report ↗</Button>
       <Button component={Link} to="/topics" variant="outlined">Topic explorer ↗</Button>
