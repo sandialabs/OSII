@@ -61,6 +61,7 @@ export function LocationBrowser({
   const [error, setError] = useState<string | null>(null);
   const pending = useRef<AbortController | null>(null);
   const cursor = useRef<string | null>(null);
+  const addressEdited = useRef(false);
   const roots = useQuery({
     queryKey: ["browse", "roots"],
     queryFn: ({ signal }) =>
@@ -91,7 +92,10 @@ export function LocationBrowser({
       setError("Choose another location using Add location.");
       return;
     }
-    if (!next) release();
+    if (!next) {
+      release();
+      addressEdited.current = false;
+    }
     const controller = new AbortController();
     pending.current = controller;
     setBusy(true);
@@ -107,7 +111,7 @@ export function LocationBrowser({
       if (controller.signal.aborted) return;
       cursor.current = result.cursor;
       setPage(result);
-      setAddress(result.current_path);
+      if (!addressEdited.current) setAddress(result.current_path);
     } catch (e) {
       if (!controller.signal.aborted)
         setError(e instanceof Error ? e.message : String(e));
@@ -155,7 +159,10 @@ export function LocationBrowser({
               size="small"
               label="Folder path"
               value={address}
-              onChange={(e) => setAddress(e.target.value)}
+              onChange={(e) => {
+                addressEdited.current = true;
+                setAddress(e.target.value);
+              }}
             />
             <Button type="submit">Go</Button>
           </Stack>
