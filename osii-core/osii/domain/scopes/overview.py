@@ -18,7 +18,8 @@ from osii.domain.artifacts.edited_text import reconstruct_edited_full_text
 from osii.domain.artifacts.text_representations import list_text_representations
 from osii.domain.model_provider_config import selected_model, selected_processor
 from osii.domain.read.docs import get_doc_meta
-from osii.domain.read.synthesis import list_syntheses
+from osii.domain.read.synthesis import get_suggested_metadata, list_syntheses
+from osii.domain.scopes.library_metadata import LibraryMetadata, sidecar_file_properties
 from osii.domain.scopes.membership import list_scope_file_ids
 from osii.indexing.common import embedding_namespace
 
@@ -109,7 +110,7 @@ def _semantic_index(osii_root: Path) -> tuple[dict[str, Any], frozenset[str]]:
     return details, file_ids
 
 
-def get_scope_overview(osii_root: Path, scope: dict) -> dict[str, Any]:
+def get_scope_overview(osii_root: Path, scope: dict, *, source_root: Path | None = None) -> dict[str, Any]:
     """Use recorded source metadata and derived artifacts, never browse ambient files."""
     file_ids = list(dict.fromkeys(list_scope_file_ids(osii_root, scope)))
     index, indexed_file_ids = _semantic_index(osii_root)
@@ -119,6 +120,7 @@ def get_scope_overview(osii_root: Path, scope: dict) -> dict[str, Any]:
     file_types: Counter[str] = Counter()
     text_count = synthesis_count = enrichment_count = indexed_count = missing_metadata = 0
     unreadable: list[str] = []
+    library_metadata = LibraryMetadata(source_root) if source_root is not None and scope.get("scope_type") == "root" else None
     for file_id in file_ids:
         # Object identity must remain inside this explicit canonical store.
         if (osii_root / "objects" / file_id).resolve().parent != (osii_root / "objects").resolve():
@@ -128,6 +130,12 @@ def get_scope_overview(osii_root: Path, scope: dict) -> dict[str, Any]:
         try:
             meta = get_doc_meta(osii_root, file_id)
             file = (meta or {}).get("file", {})
+            if library_metadata is not None:
+                recorded_path = (meta or {}).get("meta", {}).get("source_path")
+                library_metadata.add(
+                    file.get("source_relpath"), recorded_path, get_suggested_metadata(osii_root, file_id),
+                    sidecar_file_properties(osii_root, file_id),
+                )
             if not meta:
                 missing_metadata += 1
             size = file.get("size_bytes")
@@ -161,6 +169,7 @@ def get_scope_overview(osii_root: Path, scope: dict) -> dict[str, Any]:
         except (OSError, ValueError, TypeError, AttributeError) as exc:
             unreadable.append(f"{file_id}: {exc}")
     return {
+        **({"library_metadata": library_metadata.summary()} if library_metadata is not None else {}),
         "scope": scope, "file_count": len(file_ids), "size_known_count": len(sizes),
         "total_size_bytes": sum(sizes), "average_size_bytes": sum(sizes) / len(sizes) if sizes else None,
         "missing_metadata_count": missing_metadata,

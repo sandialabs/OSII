@@ -112,6 +112,8 @@ The default document folder is `osii-data/source/`. Set `OSII_SOURCE_DIR` to
 an existing readable folder to use your own files. Quote paths containing
 spaces and use forward slashes on Windows. Connect shared drives in Finder or
 Explorer first. OSII never mounts the share or stores share credentials.
+If the source folder is offline, OSII still opens the saved library. Reconnect
+the share at the same path to open originals and run intake on those files.
 
 Runtime data defaults to `osii-data/`, separately from original documents.
 Configuration is in `osii-data/config/`. Preserve these directories and your
@@ -249,6 +251,14 @@ Changing the flow, models, or processor settings
 invalidates its displayed test result; passing a sample is not a future
 availability guarantee. Model-backed tests may use provider credits.
 
+Under **Setup → Processors**, expand the capability and open a processor’s
+details page. The processor descriptor supplies the processing settings.
+Installed modules can also expose startup settings and restart controls.
+Registered services show their endpoint, health and descriptor checks, and a
+model selectors when the processor declares a model requirement. Use **?** for the
+implementation or module manifest path. Register external Processor API services
+from the same Processors section.
+
 **Intake & Queue always starts with All processes**: extract, synthesize, enrich,
 then embed. Select files and a flow, then queue. It does not ask users to rebuild
 reader rules or repeat endpoint tests after file selection. Paths and selected
@@ -257,12 +267,20 @@ selection preview reads metadata only. Flow-backed queue submissions defer
 provider operation tests to the worker; errors remain retryable in the queue.
 Legacy APIs retain explicit operation flags and saved preset compatibility.
 
+To build the semantic index for the existing library, select **Build index**
+in Setup’s readiness steps or open **Toolbox → Search index**. The page shows
+saved-text coverage and the selected embedding model. It queues a full index
+build from saved text using the bundled flow’s chunk sizes and opens **Queue &
+activity** for progress. Intake continues to embed only the files you queue there.
+
 Use a collection's **Processing status** panel to process existing text or reread
 originals while preserving extraction history. Current semantic vectors depend
 on the selected embedding model; this panel reports read, synthesis, enrichment,
-and embedding coverage. Queue cards contain process information, files,
-backends, errors, logs, and a copyable run report. Products are viewed on Files
-and Collections, not embedded in queue cards.
+and embedding coverage. Open a run in **Queue & activity** for a bookmarkable
+report with failures first, the recorded file and processor steps, and retry or
+pause controls. **Copy run report** includes diagnostics and saved log lines.
+Open **Run log** when you need the timeline. Read generated products from
+Files or Collections.
 
 Large-volume scanning is archived on `archive/large-volume-discovery-2026-11-19`.
 The beta launcher does not start its worker. Inventory history remains intact.
@@ -338,10 +356,29 @@ launch it with `make dev ENV_FILE=.env.example.openrouter`. For corporate transf
 replace URLs, model IDs, credential locations, and source/runtime paths; keep
 runtime databases on local disk. Do not copy provider secrets into committed files.
 
-## Library overview and file metadata search
+## Browse, library overview, and file metadata search
 
-**Library at a glance** is a left-menu tool with format, date, processing, and
-topic summaries. It is separate from the home **Files** grid. Use **Search metadata**
+**Browse** opens the folders and files recorded by Intake. Use the breadcrumb
+trail to go back up a folder. Intake from outside the configured source appears
+under **Other locations** when its recorded path is external. Both locations can
+contain the same filename. **Folder Details** shows the current location and
+its saved summary when one is available. Browse still works if a source goes
+offline. Go to **Intake & Queue** to find and add new files from the drive.
+
+**Analyze Library** shows the configured source folder and the recorded folders
+that contain library files. Open a location to browse its saved entries. Group
+saved metadata by author, agency, document type, date, or title, and filter the
+values by name. Counts show how many files have a value. Labels identify edited
+fields, file properties saved during extraction, and AI suggestions with their
+producer. Document type describes the genre. Model-backed synthesis and
+**Suggest metadata** can infer it, along with agencies, from extracted text.
+Document type counts ignore capitalization. Embedded title and author are
+recorded by the native reader for PDF and supported Office files on extraction.
+Previously extracted files can show these properties once a reader has saved
+them. Document dates come from saved metadata. The filesystem timeline shows
+creation and modification times.
+
+Use **Search metadata**
 in Files to open the drawer and combine filename/path words, file format, size,
 modification date, extracted-text availability, summaries, and enrichments.
 Filters apply to recorded metadata for the files in the local library; they do

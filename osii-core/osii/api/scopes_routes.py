@@ -83,7 +83,9 @@ async def scope_summaries_route(request: Request, payload: dict):
 @router.post("/overview")
 def scope_overview_route(request: Request, payload: dict):
     try:
-        return get_scope_overview(request.app.state.osii_root.resolve(), payload.get("scope") or payload)
+        state = request.app.state
+        source = state.shared_volume_root if state.filesystem_mode == "local" else None
+        return get_scope_overview(state.osii_root.resolve(), payload.get("scope") or payload, source_root=source)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

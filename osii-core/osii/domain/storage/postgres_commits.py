@@ -176,6 +176,7 @@ class PostgresProcessingCommitter:
                 path=source.source_relpath, id=command.file_id)
             metadata = {**(previous["metadata"] if previous else {}), **source.metadata,
                 "segments": spans, "extractor": response.processor.model_dump(mode="json"),
+                "extraction_document_metadata": response.document_metadata,
                 "primary_extraction_id": command.commit_id, "processing_commit_id": command.commit_id,
                 "extraction_config": command.request.config, "extraction_expert_context": command.request.expert_context,
                 "processing_provenance": command.provenance}

@@ -9,6 +9,7 @@ import osii.domain.catalog_db as catalog_db
 from osii.domain.catalog_db import catalog_path, list_documents, rebuild_catalog, verify_catalog
 from osii.domain.scopes.collections import init_collections_db, list_collections
 from osii.domain.storage.folders import write_folder_manifest
+from osii.domain.storage.objects import write_meta_toml, write_provenance_toml
 
 
 def test_catalog_rebuild_closes_temporary_descriptor(temp_osii_root):
@@ -81,6 +82,36 @@ def test_catalog_rebuild_and_cursor_pagination(temp_osii_root):
     assert first["total"] == 12
     assert {item["file_id"] for item in first["items"]}.isdisjoint(item["file_id"] for item in second["items"])
     assert verify_catalog(temp_osii_root)["ok"] is True
+
+
+def test_browse_pages_recorded_locations_and_ignores_unprocessed_manifest_entries(client, temp_osii_root):
+    paths = {
+        "one": "source/Team_%/report.txt",
+        "two": "source/Team_%/nested/report.txt",
+        "three": "external/Volumes/other/report.txt",
+        "four": "source/team_%/separate.txt",
+    }
+    for identifier, path in paths.items():
+        write_meta_toml(temp_osii_root, identifier, path, path.split("/")[-1], "text/plain", 12, "2026-01-01T00:00:00Z", identifier)
+        write_provenance_toml(temp_osii_root, identifier, "test", status="done", extractor_name="native_text", extractor_version="1")
+    write_folder_manifest(temp_osii_root, "legacy", "Team_%", [
+        {"source_relpath": "source/Team_%/failed.pdf", "file_id": "failed"},
+    ], [], None, None)
+    rebuild_catalog(temp_osii_root)
+
+    def browse(**params):
+        response = client.get("/api/catalog/browse", params=params)
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    assert [row["path"] for row in browse()["items"]] == ["external", "source"]
+    assert [row["name"] for row in browse(query="Other locations")["items"]] == ["Other locations"]
+    first = browse(path="source/Team_%", limit=1)
+    assert first["has_more"] and first["items"][0]["path"] == "source/Team_%/nested"
+    second = browse(path="source/Team_%", limit=1, offset=1)
+    assert not second["has_more"] and second["items"][0]["file_id"] == "one"
+    assert not browse(path="source/Team_%", query="failed")["items"]
+    assert browse(path="external/Volumes/other")["items"][0]["file_id"] == "three"
 
 
 def test_duplicate_legacy_folder_paths_rebuild_without_deleting_manifests(temp_osii_root):

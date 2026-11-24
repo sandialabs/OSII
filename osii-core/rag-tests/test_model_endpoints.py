@@ -1,7 +1,7 @@
 import pytest
 import requests
 
-from osii.model_endpoints import endpoint_from_environment
+from osii.model_endpoints import CredentialFileError, endpoint_from_environment
 from osii.rag.strategies.contracts import Evidence, RerankRequest, StrategyError
 from osii.rag.strategies.http_reranker import create_reranker
 from osii.rag.strategies.reranking import rerank_evidence
@@ -33,6 +33,20 @@ def test_capability_file_beats_shared_inline_and_missing_file_fails_closed(tmp_p
     with pytest.raises(ValueError, match="key file") as error:
         endpoint_from_environment("embedding", environment=env)
     assert str(secret) not in str(error.value)
+
+
+@pytest.mark.parametrize("contents", [b" \r\n", b"private\nsecond", b"private\x00key", b"\xff"])
+def test_malformed_credential_files_are_rejected_without_disclosing_contents(tmp_path, contents):
+    secret = tmp_path / "deployment-secret"
+    secret.write_bytes(contents)
+    env = {"OSII_CHAT_BASE_URL": "https://models.test/v1", "OSII_CHAT_API_KEY_FILE": str(secret),
+           "OSII_CHAT_API_KEY": "fallback"}
+
+    with pytest.raises(CredentialFileError, match="OSII_CHAT_API_KEY_FILE") as error:
+        endpoint_from_environment("chat", environment=env)
+    assert str(secret) not in str(error.value)
+    assert "private" not in str(error.value)
+    assert endpoint_from_environment("chat", environment=env, resolve_credentials=False).api_key == ""
 
 
 @pytest.mark.parametrize("url", ["https://user:secret@models.test/v1", "https://models.test?key=secret", "file:///private", "https://models.test/#secret"])

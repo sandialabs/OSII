@@ -92,14 +92,18 @@ export function libraryWorkflowSteps(
           embedding.dimensions ===
             overview?.processing.semantic_index.dimensions),
       detail: count
-        ? `${indexedCount} of ${count} library documents have current vectors for the selected model. ${overview?.processing.semantic_index.detail ?? ""}`
-        : "Build embeddings after reading documents. Changing the embedding model requires a matching index.",
-      action: "Build semantic index",
+        ? `${indexedCount} of ${count} library documents have current vectors. Open Search index to build from saved text.`
+        : "Build embeddings once your library has saved text.",
+      action: "Open search index",
     },
   ];
 }
 
+export function isActiveRun(status: string | undefined): boolean {
+  return status !== undefined && ["queued", "pending", "running", "pausing", "cancelling"].includes(status);
+}
+
 /** Busy queues refresh promptly; empty and terminal queues stay quiet. */
 export function queuePollInterval(runs?: readonly {status: string}[]): number {
-  return runs?.some(run => ["queued", "pending", "running", "pausing", "cancelling"].includes(run.status)) ? 3000 : 30_000;
+  return runs?.some(run => isActiveRun(run.status)) ? 3000 : 30_000;
 }

@@ -2,6 +2,8 @@ import { lazy, type ComponentType } from "react";
 import MoveToInboxOutlined from "@mui/icons-material/MoveToInboxOutlined";
 import SettingsOutlined from "@mui/icons-material/SettingsOutlined";
 import BuildOutlined from "@mui/icons-material/BuildOutlined";
+import ManageSearchOutlined from "@mui/icons-material/ManageSearchOutlined";
+import { SEARCH_INDEX_PATH } from "../utils/routes";
 import { sharedNavigation } from "./layout/workbenchNavigation";
 import type { NavigationItem } from "./layout/WorkbenchLayout";
 export type WorkbenchTool = NavigationItem & { path: string; Page: ComponentType; navigation?: boolean };
@@ -15,6 +17,7 @@ const pages: Record<string, ComponentType> = {
   collections: lazy(() => import("../features/collections/pages/CollectionsPage").then(m => ({ default: m.CollectionsPage }))),
   research: lazy(() => import("../features/research/ResearchPage").then(m => ({ default: m.ResearchPage }))),
   overview: lazy(() => import("../features/library/pages/LibraryOverviewPage").then(m => ({ default: m.LibraryOverviewPage }))),
+  ocr: lazy(() => import("../features/ocr/OcrWorkbenchPage").then(m => ({ default: m.OcrWorkbenchPage }))),
   topics: lazy(() => import("../features/topics/pages/TopicExplorerPage").then(m => ({ default: m.TopicExplorerPage }))),
 };
 export const workbenchTools: readonly WorkbenchTool[] = [
@@ -23,8 +26,12 @@ export const workbenchTools: readonly WorkbenchTool[] = [
     Page: lazy(() => import("../features/queue/pages/QueuePage").then(m => ({ default: m.QueuePage }))) },
   { id: "setup", path: "/admin/processors", label: "Setup", group: "setup", icon: SettingsOutlined,
     Page: lazy(() => import("../features/admin/pages/ProcessorsPage").then(m => ({ default: m.ProcessorsPage }))) },
-  { id: "tool-workbench", path: "/tools/workbench", label: "Processing workbench", group: "tools", icon: BuildOutlined, navigation: false,
+  { id: "tool-workbench", path: "/tools/workbench", label: "Library-wide processing", group: "tools", icon: BuildOutlined,
     Page: lazy(() => import("../features/files/pages/ToolsPage").then(m => ({ default: m.ToolsWorkbench }))) },
-  { id: "tools", path: "/tools", label: "Toolbox", group: "tools", icon: BuildOutlined, navigation: false,
+  { id: "tools", path: "/tools", label: "Toolbox", group: "tools", icon: BuildOutlined,
     Page: lazy(() => import("../features/files/pages/ToolsPage").then(m => ({ default: m.ToolsPage }))) },
+  { id: "search-index", path: SEARCH_INDEX_PATH, label: "Search index", group: "tools", icon: ManageSearchOutlined, navigation: false,
+    Page: lazy(() => import("../features/library/pages/SearchIndexPage").then(m => ({ default: m.SearchIndexPage }))) },
+  { id: "database", path: "/admin/database", label: "Database explorer", group: "tools", icon: BuildOutlined, navigation: false,
+    Page: lazy(() => import("../features/admin/pages/DatabaseExplorerPage").then(m => ({ default: m.DatabaseExplorerPage }))) },
 ];

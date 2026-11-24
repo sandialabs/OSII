@@ -16,7 +16,9 @@ import {
 import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
 import ChevronLeftOutlinedIcon from "@mui/icons-material/ChevronLeftOutlined";
 import ChevronRightOutlinedIcon from "@mui/icons-material/ChevronRightOutlined";
+import { InvalidPDFException, MissingPDFException, UnexpectedResponseException } from "pdfjs-dist";
 
+import { useObject } from "../../../hooks/useObject";
 import { usePdfDocument } from "../../../hooks/usePdfDocument";
 import type { ManifestRecord } from "../../../api/types";
 import { PdfPageViewer, BoundingRegionOverlay } from "./PdfPageViewer";
@@ -44,6 +46,7 @@ export function FileSourcePanel({
   if (mime === "application/pdf") {
     return (
       <PdfSourcePanel
+        fileId={fileId}
         sourceUrl={sourceUrl}
         page={page}
         onPageChange={onPageChange}
@@ -76,19 +79,24 @@ export function FileSourcePanel({
 }
 
 function PdfSourcePanel({
+  fileId,
   sourceUrl,
   page,
   onPageChange,
   compact,
   segments,
 }: {
+  fileId: string;
   sourceUrl: string;
   page?: number | null;
   onPageChange?: (page: number) => void;
   compact: boolean;
   segments: ManifestRecord[];
 }) {
-  const { pdf, isLoading, error } = usePdfDocument(sourceUrl);
+  const { pdf, isLoading, error, retry } = usePdfDocument(sourceUrl);
+  const unavailable = error instanceof MissingPDFException;
+  const { data: object } = useObject(fileId, unavailable);
+  const sourcePath = object?.meta?.meta?.source_path || object?.meta?.file.source_relpath;
   const [pageInput, setPageInput] = useState("");
   const [showBoundingBoxes, setShowBoundingBoxes] = useState(true);
 
@@ -108,9 +116,26 @@ function PdfSourcePanel({
   }
 
   if (error) {
+    let message = `Could not open the PDF preview. ${error.message}`;
+    if (unavailable) {
+      message = "Original file unavailable. Reconnect the drive or restore the file, then retry.";
+    } else if (error instanceof InvalidPDFException) {
+      message = "The original could not be read as a PDF.";
+    } else if (error instanceof UnexpectedResponseException && error.status === 409) {
+      message = "The original has changed. Process the updated file before previewing it.";
+    }
     return (
-      <Alert severity="error">
-        Failed to load PDF. {error.message}
+      <Alert
+        severity="error"
+        sx={{ "& .MuiAlert-message": { minWidth: 0 } }}
+        action={<Button color="inherit" size="small" onClick={retry}>Retry</Button>}
+      >
+        {message}
+        {unavailable && sourcePath && (
+          <Typography component="div" variant="body2" sx={{ mt: 0.5, overflowWrap: "anywhere" }}>
+            Recorded location <code>{sourcePath}</code>
+          </Typography>
+        )}
       </Alert>
     );
   }
@@ -219,15 +244,8 @@ function PdfSourcePanel({
       {regions.length ? (
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
           <Chip size="small" color="error" variant="outlined" label={`${regions.length} grounded OCR regions`} />
-          <Typography variant="caption" color="text.secondary">
-            Boxes use normalized source coordinates and resize with the PDF page.
-          </Typography>
         </Stack>
-      ) : (
-        <Typography variant="caption" color="text.secondary">
-          No region-level provenance is available for this page.
-        </Typography>
-      )}
+      ) : null}
 
       <Box
         sx={{

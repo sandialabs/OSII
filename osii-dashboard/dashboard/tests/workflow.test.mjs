@@ -133,6 +133,8 @@ test("flow reports distinguish fatal errors from successful fallback recovery", 
   const recovered = {step: "extract", ok: true, attempts: [failed, {processor: "reader-b", ok: true}]};
   const report = {ok: true, tested_at: "2026-11-19T00:00:00Z", results: [recovered]};
   assert.equal(flowTestStatus(report).label, "Ready · fallback used");
+  const workingPrimary = {...recovered, attempts: [{processor: "reader-a", ok: true}, failed]};
+  assert.equal(flowTestStatus({...report, results: [workingPrimary]}).label, "Ready · backup reader failed");
   assert.equal(flowTestStatus({...report, ok: false}).label, "Needs attention");
   assert.equal(flowTestStatus({...report, results: [{ok: true}]}).label, "Ready");
   assert.equal(flowTestStatus(null).label, "Not tested");

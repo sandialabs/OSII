@@ -64,7 +64,7 @@ function MetadataEditor({
       setDraft(null);
       onSaved?.();
       await Promise.all(
-        ["objects", "scopes", "topics", "products", "enrichments"].map((key) =>
+        ["objects", "scopes", "topics", "products", "enrichments", "file-previews"].map((key) =>
           client.invalidateQueries({ queryKey: [key] }),
         ),
       );

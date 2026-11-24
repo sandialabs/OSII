@@ -35,6 +35,7 @@ def mark_artifacts_stale(
             "search_chunks": bool(current.get("search_chunks") or search_chunks),
             "syntheses": bool(current.get("syntheses") or syntheses),
             "enrichments": bool(current.get("enrichments") or enrichments),
+            "document_metadata": bool(current.get("document_metadata", current.get("enrichments")) or enrichments),
         },
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

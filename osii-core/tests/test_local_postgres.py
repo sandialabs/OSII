@@ -200,6 +200,65 @@ def test_empty_workbench_has_no_auth_no_catalog_or_silent_import(pg_client):
     assert client.post("/api/catalog/rebuild").status_code == 409
 
 
+def test_postgres_browse_opens_recorded_intake_folders(pg_client, monkeypatch):
+    file_id, _ = intake(pg_client, monkeypatch)
+    client, _, source, runtime = pg_client
+    source.rename(source.with_name("offline-source"))
+    folders = client.get("/api/catalog/browse").json()["items"]
+    assert [(item["name"], item["kind"]) for item in folders] == [("source", "folder")]
+    response = client.get("/api/catalog/browse", params={"path": "source", "sort": "size-desc"})
+    assert response.status_code == 200, response.text
+    assert [(item["name"], item["file_id"]) for item in response.json()["items"]] == [("one.txt", file_id)]
+    assert not (runtime / "state/catalog.sqlite3").exists()
+
+
+def test_postgres_file_display_and_overview_use_saved_metadata(pg_client, monkeypatch):
+    file_id, _ = intake(pg_client, monkeypatch, synthesizer_name="test.metadata-synthesis")
+    client, _, source, _ = pg_client
+
+    initial = client.post("/api/scopes/overview", json={"scope_type": "root"})
+    assert initial.status_code == 200, initial.text
+    fields = initial.json()["library_metadata"]["document_fields"]
+    assert fields["agency"]["rows"] == [{
+        "label": "Calibration Office", "count": 1,
+        "sources": [{"kind": "ai", "processor": "test.metadata-synthesis", "count": 1}],
+    }]
+    assert fields["author"]["rows"] == [{
+        "label": "Recorded Author", "count": 1,
+        "sources": [{"kind": "file", "processor": None, "count": 1}],
+    }]
+
+    recorded = {"descriptive_title": "Detector calibration", "author": "Test Author",
+                "agency": "Calibration Office", "document_type": "Report"}
+    saved = client.put(f"/api/objects/{file_id}/metadata", json={"expected_revision": None, "values": recorded})
+    assert saved.status_code == 200, saved.text
+
+    previews = client.post("/api/files/previews", json={"file_ids": [file_id], "include_titles": True})
+    assert previews.status_code == 200, previews.text
+    assert previews.json()["items"][file_id]["descriptive_title"] == "Detector calibration"
+
+    response = client.post("/api/scopes/overview", json={"scope_type": "root"})
+    assert response.status_code == 200, response.text
+    metadata = response.json()["library_metadata"]
+    assert metadata["source_root"] == str(source)
+    assert metadata["locations"] == [{"label": str(source), "browse_path": "source", "count": 1}]
+    assert metadata["document_fields"]["author"]["rows"] == [{
+        "label": "Test Author", "count": 1, "sources": [{"kind": "edited", "processor": None, "count": 1}],
+    }]
+    assert metadata["document_fields"]["agency"] == fields["agency"]
+    assert metadata["document_fields"]["document_type"] == fields["document_type"]
+
+
+def test_local_database_explorer_is_read_only_and_does_not_add_auth(pg_client):
+    client, _, _, runtime = pg_client
+    schema = client.get("/api/admin/database/schema")
+    assert schema.status_code == 200 and schema.json()["available"]
+    result = client.post("/api/admin/database/query", json={"sql": "SELECT count(*) FROM documents"})
+    assert result.status_code == 200 and result.json()["rows"] == [{"c0": 0}]
+    assert client.post("/api/admin/database/query", json={"sql": "DELETE FROM documents"}).status_code == 422
+    assert not (runtime / "objects").exists()
+
+
 def test_postgres_research_and_source_rescan_use_saved_library(pg_client, monkeypatch):
     file_id, _ = intake(pg_client, monkeypatch)
     client, app, source, runtime = pg_client
@@ -289,6 +348,7 @@ def fake_processor(root, name, kind):
             return ExtractionResponse(
                 request_id=request.request_id,
                 processor=descriptor,
+                document_metadata={"file_properties": {"author": "Recorded Author"}},
                 segments=[
                     TextSegment(
                         id="seg-000001",
@@ -301,10 +361,15 @@ def fake_processor(root, name, kind):
             )
 
         def synthesize(self, request):
+            metadata = {"document_metadata": {
+                "method": "text_llm", "title": {}, "author": {"value": "Suggested Author"},
+                "date": {}, "agency": {"value": "Calibration Office"}, "document_type": {"value": "report"},
+            }} if name == "test.metadata-synthesis" else {}
             return SynthesisResponse(
                 request_id=request.request_id,
                 processor=descriptor,
                 markdown="# A grounded summary",
+                metadata=metadata,
             )
 
         def enrich(self, request):
@@ -1423,7 +1488,7 @@ def test_reextraction_variants_and_promotion_preserve_corrections(
     pg_client, monkeypatch
 ):
     from osii.domain.processing import postgres_workflow
-    from osii.processor_sdk import TextSegment
+    from osii.processor_sdk import Artifact, TextSegment
 
     file_id, _ = intake(pg_client, monkeypatch)
     client, app, source, _ = pg_client
@@ -1446,7 +1511,16 @@ def test_reextraction_variants_and_promotion_preserve_corrections(
                         text="Better grounded OCR",
                         source_origin={"page": 2, "bbox": [0.1, 0.2, 0.5, 0.6]},
                     )
-                ]
+                ],
+                "artifacts": [
+                    Artifact(
+                        id="page-stats",
+                        kind="metadata",
+                        media_type="application/json",
+                        json_data={"words": 3},
+                        source_origin={"page": 2},
+                    )
+                ],
             }
         )
         return descriptor, service
@@ -1465,6 +1539,14 @@ def test_reextraction_variants_and_promotion_preserve_corrections(
         for r in lib.query("SELECT id,response FROM extractions")
         if r["response"]["processor"]["name"] == "test.better"
     )
+    run = client.get(f"/api/runs/{response.json()['id']}").json()
+    assert run["items"][0]["extraction_variant_id"] == alternate["id"]
+    versions = client.get(f"/api/objects/{file_id}/extractions?include_artifacts=true").json()
+    result = next(row for row in versions["variants"] if row["id"] == alternate["id"])
+    [artifact] = result["artifacts"]
+    assert artifact["id"] == "page-stats"
+    assert artifact["source_origin"] == {"page": 2}
+    assert artifact["data"] is None
     promoted = client.post(
         f"/api/objects/{file_id}/extractions/{alternate['id']}/primary"
     )

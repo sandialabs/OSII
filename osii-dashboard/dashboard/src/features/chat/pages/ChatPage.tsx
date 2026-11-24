@@ -1,3 +1,4 @@
+import { ToolContext } from "../../../components/workbench/ToolContext";
 // src/features/chat/pages/ChatPage.tsx
 import { useMemo } from "react";
 import { Stack, Typography } from "@mui/material";
@@ -47,9 +48,7 @@ export function ChatPage() {
         <Typography variant="h5" fontWeight={700}>
           Chat
         </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Ask grounded questions, get concise answers, and jump directly to supporting evidence.
-        </Typography>
+        <ToolContext id="chat" />
       </Stack>
 
       <ChatPanel scope={scope} />

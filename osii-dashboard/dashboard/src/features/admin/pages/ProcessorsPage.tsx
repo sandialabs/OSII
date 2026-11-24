@@ -1,37 +1,37 @@
 import { ConnectionModelRow } from "../../models/components/ConnectionModelRow";
 import { ProcessingFlows } from "../components/ProcessingFlows";
 import { IntakeDefaults } from "../components/IntakeDefaults";
-import { ProcessorStartupSettings } from "../components/ProcessorStartupSettings";
 import { ServiceRow } from "../components/ServiceRow";
-import { CapabilitySection, SetupLayout } from "../components/SetupLayout";
-import { ProcessorConfigInput as ConfigInput } from "../../queue/components/ProcessorConfigInput";
+import { CapabilitySection, SetupLayout, type CapabilityKind } from "../components/SetupLayout";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip,
   Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel,
-  IconButton, LinearProgress, MenuItem, Paper, Snackbar, Stack, Switch, TextField, Tooltip, Typography,
+  IconButton, LinearProgress, ListItemButton, MenuItem, Paper, Snackbar, Stack, Switch, TextField, Tooltip, Typography,
 } from "@mui/material";
 import type { AlertColor } from "@mui/material";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import {
-  checkModelProvider, checkProcessorEndpoint, controlCapabilityService,
-  createModelProvider, createProcessorEndpoint, deleteModelProvider, deleteModelProviderCredential, deleteProcessorEndpoint,
-  getCapabilityServiceLogs, getOllamaPullStatus, getProcessorSettings,
+  checkModelProvider, controlCapabilityService,
+  createModelProvider, createProcessorEndpoint, deleteModelProvider, deleteModelProviderCredential,
+  getCapabilityServiceLogs, getOllamaPullStatus,
   getSetupSummary, listModelProviders, listProcessorEndpoints, pullOllamaModel,
-  saveModelProviderCredential, saveProcessorSettings, updateProcessorEndpoint,
+  saveModelProviderCredential,
 } from "../../../api/queue";
 import type {
   CapabilityReadiness, ManagedCapabilityService, ModelProvider,
   ModelProviderHealth, ModelPullJob, OllamaRecommendation,
-  ProcessorConfigProperty, ProcessorEndpoint,
 } from "../../../api/types";
+import { matchingEndpoint, processorDetailsPath } from "../processorDetails";
 import { WorkflowProgress } from "../../../components/discovery/WorkflowProgress";
 import type { WorkflowStepId } from "../../../domain/workflow";
 
+import { SEARCH_INDEX_PATH } from "../../../utils/routes";
 import { apiJson } from "../../../api/client";
 import { type ModelOption } from "../../models/components/ModelPicker";
 import { suggestedConnectionName, sameEndpoint, groupModelConnections } from "../../models/connectionName";
@@ -39,12 +39,6 @@ import { EndpointFields } from "../../models/components/EndpointFields";
 
 const DEFAULT_EMBEDDING_MODEL = "all-minilm";
 const DEFAULT_CHAT_MODEL = "llama3.2:1b";
-const CAPABILITY_COPY = {
-  extractor: ["Extractors", "Readers available to named processing flows."],
-  synthesizer: ["Synthesizers", "Use a language model to create grounded summaries and wiki text."],
-  embedder: ["Embedders", "Connect an embedding model for semantic search and related documents."],
-  enricher: ["Enrichers", "Create keywords, entities, tables, graphs, and other reusable knowledge products."],
-} as const;
 const BUNDLED_FALLBACKS = new Set(["native_text", "local.native-text", "local.extractive-preview", "local.hashing", "local.stats-keywords"]);
 
 function blankProvider(type: ModelProvider["type"]): ModelProvider {
@@ -96,12 +90,11 @@ export function ProcessorsPage() {
   const setup = useQuery({ queryKey: ["admin", "setup"], queryFn: getSetupSummary, refetchInterval: 30_000 });
   const providerData = useQuery({ queryKey: ["admin", "model-providers"], queryFn: listModelProviders, refetchInterval: 30_000 });
   const processors = useQuery({ queryKey: ["admin", "processors"], queryFn: listProcessorEndpoints, refetchInterval: 30_000 });
-  const settings = useQuery({ queryKey: ["admin", "processor-settings"], queryFn: getProcessorSettings });
 
   const [notice, setNotice] = useState<{ text: string; severity: AlertColor; id: number } | null>(null);
   const notify = (text: string, severity: AlertColor = "success") => setNotice({ text, severity, id: Date.now() });
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [expandedCapability, setExpandedCapability] = useState<keyof typeof CAPABILITY_COPY | false>(false);
+  const [expandedCapability, setExpandedCapability] = useState<CapabilityKind | false>(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
   const [editingMembers, setEditingMembers] = useState<ModelProvider[]>([]);
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
@@ -138,13 +131,9 @@ export function ProcessorsPage() {
   const [serviceBusy, setServiceBusy] = useState<string | null>(null);
   const [serviceLogs, setServiceLogs] = useState<{ title: string; lines: string[] } | null>(null);
   const [pullJobs, setPullJobs] = useState<Record<string, ModelPullJob>>({});
-  const [editingCapability, setEditingCapability] = useState<string | null>(null);
-  const [capabilityDraft, setCapabilityDraft] = useState<Record<string, unknown>>({});
-  const [sourceHelp, setSourceHelp] = useState<CapabilityReadiness | null>(null);
   const [modelHelp, setModelHelp] = useState(false);
-  const [processorForm, setProcessorForm] = useState({
-    base_url: "http://", model_connection: "",
-  });
+  const [processorAddress, setProcessorAddress] = useState("");
+  const [registeringProcessor, setRegisteringProcessor] = useState(false);
 
   const refreshSetup = async () => {
     await Promise.all([
@@ -210,11 +199,10 @@ export function ProcessorsPage() {
       if (provider) openExistingConnection(provider);
       else document.getElementById("setup-model-connections")?.scrollIntoView({ behavior: "smooth", block: "center" });
     } else if (step === "extractor") {
-      setAdvancedOpen(true);
       setExpandedCapability("extractor");
       document.getElementById("setup-extractor-heading")?.scrollIntoView({ behavior: "smooth", block: "center" });
     } else {
-      navigate(`/intake?step=${step}`);
+      navigate(step === "index" ? SEARCH_INDEX_PATH : `/intake?step=${step}`);
     }
   };
 
@@ -406,63 +394,15 @@ export function ProcessorsPage() {
 
   const addProcessor = async (event: FormEvent) => {
     event.preventDefault();
+    setRegisteringProcessor(true);
     try {
-      await createProcessorEndpoint(processorForm);
-      setProcessorForm({ base_url: "http://", model_connection: "" });
-      notify("Running processor discovered and registered.");
-      await queryClient.invalidateQueries({ queryKey: ["admin", "processors"] });
+      const {processor} = await createProcessorEndpoint({ base_url: processorAddress.trim() });
+      await queryClient.invalidateQueries({ queryKey: ["admin"] });
+      navigate(processorDetailsPath(processor.id, true));
     } catch (error) {
       notify(error instanceof Error ? error.message : "Could not add the service.", "error");
-    }
-  };
-
-  const removeProcessor = async (processor: ProcessorEndpoint) => {
-    try {
-      await deleteProcessorEndpoint(processor.id);
-      notify(`${processor.display_name}: registration removed.`);
-      await queryClient.invalidateQueries({ queryKey: ["admin", "processors"] });
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Could not remove the service.", "error");
-    }
-  };
-
-  const changeProcessorBinding = async (processor: ProcessorEndpoint, modelConnection: string) => {
-    try {
-      await updateProcessorEndpoint(processor.id, { model_connection: modelConnection });
-      notify(`${processor.display_name}: model connection changed to ${modelConnection || "the library default"}.`);
-      await queryClient.invalidateQueries({ queryKey: ["admin"] });
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Could not change the model connection.", "error");
-    }
-  };
-
-  const schemaFor = (item: CapabilityReadiness) => item.config_schema ?? item.descriptor?.config_schema;
-  const editCapability = (item: CapabilityReadiness) => {
-    const saved = settings.data?.settings[item.id] ?? {};
-    const properties = schemaFor(item)?.properties ?? {};
-    setCapabilityDraft(Object.fromEntries(Object.entries(properties).flatMap(([name, property]) => (
-      saved[name] !== undefined || property.default !== undefined ? [[name, saved[name] ?? property.default]] : []
-    ))));
-    setEditingCapability(item.id);
-  };
-  const saveCapability = async (item: CapabilityReadiness) => {
-    try {
-      await saveProcessorSettings(item.id, {...settings.data?.settings[item.id], ...capabilityDraft});
-      setEditingCapability(null);
-      notify(`${item.display_name}: settings saved.`);
-      await queryClient.invalidateQueries({ queryKey: ["admin"] });
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Could not save processor settings.", "error");
-    }
-  };
-
-  const testProcessor = async (processor: ProcessorEndpoint, runTest: boolean) => {
-    notify(`${processor.display_name}: ${runTest ? "testing processor" : "checking health"}…`, "info");
-    try {
-      const result = await checkProcessorEndpoint(processor.id, runTest);
-      notify(`${processor.display_name}: ${result.ok ? (runTest ? "test passed" : "healthy") : result.detail}`, result.ok ? "success" : "error");
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Could not check the processor.", "error");
+    } finally {
+      setRegisteringProcessor(false);
     }
   };
 
@@ -473,11 +413,16 @@ export function ProcessorsPage() {
     focusedWorkflowStep.current = requestedStep;
     followWorkflowStep(requestedStep as WorkflowStepId);
   }, [requestedStep, providerData.data, data]);
+  useEffect(() => {
+    if (window.location.hash === "#processors-heading") {
+      document.getElementById("processors-heading")?.scrollIntoView();
+    }
+  }, []);
   const configurationErrors = Object.entries(data?.configuration?.errors ?? {});
   const savedEndpointMatches = providerData.data?.providers.some(provider => provider.id === editingProviderId && provider.base_url === providerForm.base_url.replace(/\/$/, ""));
   const discoveredModels = catalogQueried ? catalogModels : (savedEndpointMatches ? providerHealth[providerForm.id]?.model_details ?? [] : []).map(model => ({ id: model.name, name: model.display_name || model.name, capabilities: model.capabilities || [] }));
 
-  const capabilityMethods = (kind: keyof typeof CAPABILITY_COPY): CapabilityReadiness[] => {
+  const capabilityMethods = (kind: CapabilityKind): CapabilityReadiness[] => {
     if (!data) return [];
     const group = kind === "extractor" ? data.readiness.extractors
       : kind === "synthesizer" ? data.readiness.synthesizers
@@ -488,7 +433,7 @@ export function ProcessorsPage() {
       .filter((item) => !["firstN", "recursive"].includes(item.id));
   };
 
-  const renderCapabilityDrawer = (kind: keyof typeof CAPABILITY_COPY) => {
+  const renderCapabilityDrawer = (kind: CapabilityKind) => {
     const selected = data?.methods[kind];
     const methods = capabilityMethods(kind);
     const defaultLabel = !selected ? "Checking configured methods…"
@@ -499,38 +444,28 @@ export function ProcessorsPage() {
       onChange={expanded => setExpandedCapability(expanded ? kind : false)} summary={defaultLabel}
       available={data ? methods.filter(item => item.available).length : undefined}>
       <Divider />
-      {methods.map((item) => {
-        const schema = schemaFor(item);
-        const processor = processors.data?.processors.find(p => p.processor_id === item.id || p.id === item.id);
-        const binding = processor?.model_access?.bindings?.chat ?? "";
-        const languageConnections = (providerData.data?.providers ?? []).filter(provider => provider.enabled && provider.chat_model);
-        const isSelected = kind !== "extractor" && (selected?.id === item.id || Boolean(item.aliases?.includes(selected?.id ?? "")));
-        return <Box key={item.id} sx={{ color: item.available ? "text.primary" : "text.disabled", bgcolor: item.available ? "transparent" : "action.hover", px: 1, py: 1, borderBottom: "1px solid", borderColor: "divider", "&:last-child": { borderBottom: 0 } }}><Stack spacing={0.6}>
-          <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-            <Typography variant="body2" fontWeight={700}>{item.display_name}</Typography>
-            {isSelected ? <Chip size="small" color="primary" label="Default" /> : null}
-            {item.origin ? <Chip size="small" variant="outlined" label={item.origin.label} /> : null}
-            <Chip size="small" color={item.available ? "success" : "default"} label={item.available ? "Available" : "Unavailable"} />
-          </Stack>
-          <Typography variant="caption" color="text.secondary">{item.description}</Typography>
-
-          {!item.available ? <Typography variant="caption" color="text.secondary">{item.detail}</Typography> : null}
-          {processor?.model_requirements?.chat ? <Stack direction={{xs: "column", sm: "row"}} spacing={1} alignItems={{sm: "center"}}>
-            <TextField select size="small" label="Writing model endpoint" value={binding} onChange={event => void changeProcessorBinding(processor, event.target.value)} sx={{minWidth: 280}}>
-              <MenuItem value="">Automatic · {processor.resolved_models?.chat ?? "connect a language model"}</MenuItem>
-              {binding && !languageConnections.some(provider => provider.id === binding) ? <MenuItem value={binding}>{binding} · unavailable</MenuItem> : null}
-              {languageConnections.map(provider => <MenuItem key={provider.id} value={provider.id}>{provider.display_name || provider.id} · {provider.chat_model} · {provider.base_url}</MenuItem>)}
-            </TextField>
-            {processor.model_error ? <Typography variant="caption" color="error">{processor.model_error}</Typography> : null}
-            <Button size="small" onClick={() => openNewConnection()}>Connect model</Button>
-          </Stack> : null}
-          {Object.keys(schema?.properties ?? {}).length ? <Button size="small" sx={{ alignSelf: "flex-start", px: 0 }} onClick={() => editingCapability === item.id ? setEditingCapability(null) : editCapability(item)}>{editingCapability === item.id ? "Hide settings" : "Settings"}</Button> : null}
-          {editingCapability === item.id ? <Stack spacing={1}>{Object.entries(schema?.properties ?? {}).map(([name, property]) => <ConfigInput key={name} name={name} property={property} value={capabilityDraft[name]} onChange={(value) => setCapabilityDraft((current) => ({ ...current, [name]: value }))} />)}<Button variant="contained" size="small" onClick={() => void saveCapability(item)} sx={{ alignSelf: "flex-start" }}>Save settings</Button></Stack> : null}
-          <ProcessorStartupSettings processorId={item.id} />
-          <IconButton size="small" aria-label={`About ${item.display_name} implementation and configuration`} onClick={() => setSourceHelp(item)} sx={{alignSelf: "flex-start"}}><HelpOutlineIcon fontSize="small" /></IconButton>
-        </Stack></Box>;
+      {methods.map(item => {
+        const processor = matchingEndpoint(item, processors.data?.processors ?? []);
+        const isSelected = kind !== "extractor" && (selected?.id === item.id || item.aliases?.includes(selected?.id ?? ""));
+        return <ListItemButton key={item.id} component={Link} to={processorDetailsPath(processor?.id ?? item.id, Boolean(processor))}
+          divider sx={{ gap: 1, flexWrap: "wrap" }}>
+          <Typography variant="body2" fontWeight={700} color={item.available ? "text.primary" : "text.secondary"} sx={{ flex: 1 }}>{item.display_name}</Typography>
+          {isSelected && <Chip size="small" variant="outlined" label="Default" />}
+          <Chip size="small" variant="outlined" color={item.available ? "success" : "default"} label={item.available ? "Available" : "Unavailable"} />
+          <ChevronRightIcon fontSize="small" />
+        </ListItemButton>;
       })}
-      {!methods.length ? <Typography variant="body2" color="text.secondary">Checking methods…</Typography> : null}
+      {(processors.data?.processors ?? []).filter(processor => processor.kind === kind &&
+        !methods.some(item => matchingEndpoint(item, processors.data?.processors ?? [])?.id === processor.id)).map(processor => (
+        <ListItemButton key={processor.id} component={Link} to={processorDetailsPath(processor.id, true)} divider sx={{ gap: 1 }}>
+          <Stack sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="body2" fontWeight={700}>{processor.display_name}</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>{processor.base_url}</Typography>
+          </Stack>
+          <ChevronRightIcon fontSize="small" />
+        </ListItemButton>
+      ))}
+      {!data && <Typography variant="body2" color="text.secondary">Checking processors…</Typography>}
     </CapabilitySection>;
   };
 
@@ -549,7 +484,6 @@ export function ProcessorsPage() {
   );
 
   return <SetupLayout>
-    <Dialog open={Boolean(sourceHelp)} onClose={() => setSourceHelp(null)} fullWidth maxWidth="sm"><DialogTitle>{sourceHelp?.display_name}</DialogTitle><DialogContent><Stack spacing={1} sx={{overflowWrap: "anywhere"}}><Typography>{sourceHelp?.description}</Typography><Typography variant="body2">Processor: <code>{sourceHelp?.id}</code></Typography>{sourceHelp?.base_url ? <Typography variant="body2">Service address: <code>{sourceHelp.base_url}</code></Typography> : null}<Typography variant="body2">Registration source: <code>{sourceHelp?.origin?.implementation}</code></Typography><Typography variant="body2">Configuration overrides: <code>{sourceHelp?.origin?.configuration_file}</code></Typography>{sourceHelp?.origin?.manifest ? <Typography variant="body2">Module manifest: <code>{sourceHelp.origin.manifest}</code></Typography> : null}{sourceHelp?.origin?.endpoint_source ? <Typography variant="body2">Endpoint configuration: {sourceHelp.origin.endpoint_source}</Typography> : null}<Typography variant="body2">Built-in registrations provide defaults. The configuration file stores your overrides, so it can be nearly empty. Independently deployed tool code lives in osii-processor-modules/; Core adapters live in osii-core/osii/extraction/. Model-backed tools use the Writing model endpoint selector in their service row.</Typography></Stack></DialogContent><DialogActions><Button onClick={() => setSourceHelp(null)}>Close</Button></DialogActions></Dialog>
     <WorkflowProgress readiness={data?.readiness} checking={setup.isLoading} failed={setup.isError} onStep={followWorkflowStep} />
 
     {!connectionOpen && !serviceLogs ? renderNotice() : null}
@@ -575,28 +509,33 @@ export function ProcessorsPage() {
     </Stack>
 
 
+    <Stack component="section" spacing={1.25} aria-labelledby="processors-heading">
+      <Typography id="processors-heading" variant="h6" component="h2" fontWeight={700}>Processors</Typography>
+      {renderCapabilityDrawer("extractor")}
+      {renderCapabilityDrawer("synthesizer")}
+      {renderCapabilityDrawer("embedder")}
+      {renderCapabilityDrawer("enricher")}
+      <Accordion variant="outlined" disableGutters>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>Register a processor service</Typography></AccordionSummary>
+        <AccordionDetails>
+          <Stack component="form" spacing={1} onSubmit={event => void addProcessor(event)}>
+            <TextField size="small" label="Running processor URL" type="url" required value={processorAddress}
+              onChange={event => setProcessorAddress(event.target.value)} />
+            <Button type="submit" variant="contained" disabled={registeringProcessor} sx={{ alignSelf: "start" }}>Discover and register</Button>
+          </Stack>
+        </AccordionDetails>
+      </Accordion>
+    </Stack>
+
     <Accordion expanded={advancedOpen} onChange={(_, open) => setAdvancedOpen(open)} variant="outlined" disableGutters elevation={0} sx={{ borderRadius: "12px !important", overflow: "hidden" }}>
-      <AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>Processor settings &amp; diagnostics</Typography></AccordionSummary>
+      <AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>Configuration &amp; service status</Typography></AccordionSummary>
       <AccordionDetails><Stack spacing={2}>
         <IntakeDefaults path={data?.configuration?.files.processors} />
-        {renderCapabilityDrawer("extractor")}
-        {renderCapabilityDrawer("synthesizer")}
-        {renderCapabilityDrawer("embedder")}
-        {renderCapabilityDrawer("enricher")}
         {data?.configuration ? <Stack spacing={0.75}><Typography variant="body2" fontWeight={700}>Active configuration · {data.configuration.active_profile}</Typography><Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere" }}><code>{data.configuration.directory}</code></Typography><Typography variant="body2" color="text.secondary">Development defaults to the checkout&apos;s ignored osii-data/config/ directory. Installed launchers use a writable profile workspace. OSII_CONFIG_DIR overrides either location. Originals and portable .osii artifacts are separate.</Typography>{Object.entries(data.configuration.files).map(([name, path]) => <Stack key={name} direction="row" spacing={1} alignItems="center"><Typography variant="caption" sx={{ overflowWrap: "anywhere", flex: 1 }}><code>{path}</code></Typography><Button size="small" sx={{ flexShrink: 0 }} onClick={() => void copyConfigurationPath(path)}>Copy path</Button></Stack>)}</Stack> : null}
         <Accordion variant="outlined" disableGutters><AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>Service status</Typography></AccordionSummary><AccordionDetails><Stack divider={<Divider flexItem />}>
           <Typography variant="body2" color="text.secondary">The launcher normally starts and stops container services. The controls below apply only to a local development session.</Typography>
           {(data?.services ?? []).map((service) => <ServiceRow key={service.id} service={service} busy={serviceBusy === service.id} onAction={(action) => void runServiceAction(service, action)} onLogs={() => void showLogs(service)} />)}
           {!data?.service_control_available ? <Alert severity="info">Lifecycle controls are available with <code>make dev</code> or <code>.\scripts\osii.ps1 dev</code>. This deployment reports health only.</Alert> : null}
-        </Stack></AccordionDetails></Accordion>
-
-        <Accordion variant="outlined" disableGutters><AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography fontWeight={700}>Custom Processor API services</Typography></AccordionSummary><AccordionDetails><Stack spacing={1.5}>
-          <Typography variant="body2" color="text.secondary">Paste a running service&apos;s base address. OSII reads its descriptor and learns its name, capability, scopes, outputs, and model needs automatically.</Typography>
-          <Box component="form" onSubmit={(event) => void addProcessor(event)}><Stack spacing={1}><TextField size="small" label="Running processor URL" required value={processorForm.base_url} onChange={(event) => setProcessorForm({ ...processorForm, base_url: event.target.value })} helperText="For example, http://127.0.0.1:8099" /><TextField size="small" select label="Writing model" value={processorForm.model_connection} onChange={(event) => setProcessorForm({ ...processorForm, model_connection: event.target.value })}><MenuItem value="">Library default</MenuItem>{(providerData.data?.providers ?? []).filter((provider) => provider.chat_model).map((provider) => <MenuItem key={provider.id} value={provider.id}>{provider.display_name || provider.id} · {provider.chat_model}</MenuItem>)}</TextField><Button type="submit" variant="contained" sx={{ alignSelf: "flex-start" }}>Discover and register</Button></Stack></Box>
-          {(processors.data?.processors ?? []).map((processor) => {
-            const binding = processor.model_access?.mode === "gateway" ? Object.values(processor.model_access.bindings ?? {})[0] : null;
-            return <Stack key={processor.id} direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}><Stack><Typography variant="body2" fontWeight={700}>{processor.display_name}</Typography><Typography variant="caption" color="text.secondary">{processor.kind} · {processor.base_url} · {binding ? `Language model: ${binding}` : processor.model_requirements?.chat ? "Library default" : "No model required"}</Typography></Stack><Stack direction="row" spacing={1}><Button size="small" onClick={() => void testProcessor(processor, false)}>Health</Button><Button size="small" variant="outlined" onClick={() => void testProcessor(processor, true)}>Descriptor</Button><Button size="small" color="error" onClick={() => void removeProcessor(processor)}>Remove</Button></Stack></Stack>;
-          })}
         </Stack></AccordionDetails></Accordion>
       </Stack></AccordionDetails>
     </Accordion>

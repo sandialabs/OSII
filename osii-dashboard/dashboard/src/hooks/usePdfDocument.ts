@@ -10,12 +10,14 @@ type UsePdfDocumentResult = {
   pdf: pdfjsLib.PDFDocumentProxy | null;
   isLoading: boolean;
   error: Error | null;
+  retry: () => void;
 };
 
 export function usePdfDocument(sourceUrl: string | null): UsePdfDocumentResult {
   const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(Boolean(sourceUrl));
   const [error, setError] = useState<Error | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,7 +65,7 @@ export function usePdfDocument(sourceUrl: string | null): UsePdfDocumentResult {
     return () => {
       cancelled = true;
     };
-  }, [sourceUrl]);
+  }, [sourceUrl, attempt]);
 
-  return { pdf, isLoading, error };
+  return { pdf, isLoading, error, retry: () => setAttempt(value => value + 1) };
 }

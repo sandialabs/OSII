@@ -1,249 +1,197 @@
-import { ReportPassage } from "../../research/ReportPassage";
+import { useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Alert, Button, CircularProgress, LinearProgress, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from "@mui/material";
+import ArticleOutlined from "@mui/icons-material/ArticleOutlined";
+import ViewColumnOutlined from "@mui/icons-material/ViewColumnOutlined";
 import { useQuery } from "@tanstack/react-query";
-import { getObjectExtractions, getExtractionText } from "../../../api/objects";
-// src/features/files/pages/FilePage.tsx
-import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams, useParams } from "react-router-dom";
-import {
-  Alert,
-  Button,
-  MenuItem,
-  TextField, Accordion, AccordionSummary, AccordionDetails, Typography,
-  CircularProgress,
-  Stack,
-} from "@mui/material";
 
+import { PageBreadcrumbs } from "../../../components/workbench/PageBreadcrumbs";
 import { useObject } from "../../../hooks/useObject";
-import { useObjectTexts } from "../../../hooks/useObjectTexts";
-import { useObjectPreferredText } from "../../../hooks/useObjectPreferredText";
+import { getObjectExtractions } from "../../../api/objects";
+import { listProducts } from "../../../api/tools";
+import { getArtifactUrl } from "../../../api/artifacts";
+import { libraryProducts } from "../../../domain/libraryProducts";
+import { documentProducts } from "../../../domain/documentProducts";
 import { toFileDetailModel } from "../../../domain/files";
-import { findBestMatchingSegment } from "../../../domain/textGrounding";
-import { FileHeader } from "../components/FileHeader";
-import { GroundedSegmentEditor } from "../components/GroundedSegmentEditor";
-import { DocumentWorkspace, type DocumentViewMode, type SavedDocumentPanel } from "../components/DocumentWorkspace";
-import { useScopeEnrichments } from "../../../hooks/useScopeEnrichments";
+import { buildCollectionRoute } from "../../../utils/routes";
 import { DerivedProductEditor } from "../components/DerivedProductEditor";
-import { ExpandMore } from "@mui/icons-material";
-import { FileSourcePanel } from "../components/FileSourcePanel";
-import { ExtractionArtifacts } from "../components/FileExtractionsPanel";
-import { FileEnrichmentsPanel } from "../components/FileEnrichmentsPanel";
-import { FileSynthesesPanel } from "../components/FileSynthesesPanel";
+import { DocumentWorkspace, type DocumentProductGroup, type DocumentViewMode } from "../components/DocumentWorkspace";
+import { DocumentReadingPane } from "../components/DocumentReadingPane";
+import { ExtractionArtifacts } from "../components/ExtractionArtifacts";
 import { FileActionBar } from "../components/FileActionBar";
-import { SplitFileView } from "../components/SplitFileView";
+import { FileHeader } from "../components/FileHeader";
+import { FileSourcePanel } from "../components/FileSourcePanel";
+import { SuggestedMetadata } from "../components/SuggestedMetadata";
 
-type FileTab = DocumentViewMode;
+const readingModes = ["source", "split", "text"] as const;
+function readingMode(value: string | null): DocumentViewMode | undefined {
+  return readingModes.find(mode => mode === value);
+}
+
+function numberParam(params: URLSearchParams, name: string) {
+  const value = params.get(name);
+  return value !== null && Number.isFinite(Number(value)) ? Number(value) : null;
+}
 
 export function FilePage() {
   const { fileId } = useParams<{ fileId: string }>();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const requestedTab = searchParams.get("view") || searchParams.get("tab");
-  const [tab, setTab] = useState<FileTab>(["text", "source", "split"].includes(requestedTab ?? "") ? requestedTab as FileTab : "split");
+  return fileId ? <FileProducts key={fileId} fileId={fileId} /> : <Alert severity="error">Missing file ID.</Alert>;
+}
 
-  const charStartValue = searchParams.get("char_start");
-  const charEndValue = searchParams.get("char_end");
-  const pageValue = searchParams.get("page");
-  const querySegmentId = searchParams.get("segment_id");
+function FileProducts({ fileId }: { fileId: string }) {
+  const [params, setParams] = useSearchParams();
+  const [editing, setEditing] = useState(false);
+  const scope = { scope_type: "object", file_id: fileId } as const;
+  const object = useObject(fileId);
+  const versions = useQuery({ queryKey: ["objects", fileId, "extractions", "catalog"], queryFn: () => getObjectExtractions(fileId, true), enabled: object.isSuccess });
+  const saved = useQuery({ queryKey: ["products", "list", fileId], queryFn: () => listProducts(scope), enabled: object.isSuccess });
 
-  const charStart = charStartValue != null ? Number(charStartValue) : null;
-  const charEnd = charEndValue != null ? Number(charEndValue) : null;
-  const initialPage = pageValue != null ? Number(pageValue) : 1;
+  const parents = [{ label: "Files", to: "/files" }];
+  if (object.isPending || object.isError) return <Stack spacing={1.5}>
+    <PageBreadcrumbs parents={parents} current="File" />
+    {object.isPending ? <CircularProgress size={24} aria-label="Loading file" />
+      : <Alert severity="error">Could not load file. {object.error.message}</Alert>}
+  </Stack>;
 
-  const [activePage, setActivePage] = useState<number>(
-    Number.isFinite(initialPage) ? initialPage : 1,
+  const detail = toFileDetailModel(object.data);
+  const savedArtifacts = object.data.artifact_summary.artifacts;
+  const products = documentProducts(saved.data?.products ?? [], object.data.enrichments);
+  if (savedArtifacts.has_synthesis && !products.some(product => product.id === "synthesis:current")) {
+    products.unshift({ id: "synthesis:current", family: "synthesis", filename: "current", title: "Current summary", editable: true });
+  }
+  const variants = versions.data?.variants ?? [];
+  const extracted = variants.flatMap(version => (version.artifacts ?? []).map(artifact => ({
+    id: `extraction-artifact:${JSON.stringify([version.id, artifact.id])}`,
+    label: artifact.filename,
+    detail: version.extractor.name,
+    versionId: version.id,
+    artifactId: artifact.id,
+  })));
+  const hasText = savedArtifacts.has_extraction || savedArtifacts.text_representations.some(item => item.exists);
+  const extractionId = params.get("extraction_id") || undefined;
+  const legacyTab = params.get("tab");
+  const charStart = numberParam(params, "char_start");
+  const charEnd = numberParam(params, "char_end");
+  const page = numberParam(params, "page");
+  const segmentId = params.get("segment_id");
+  const hasCitation = params.has("report_source");
+  const mode = readingMode(params.get("view")) ?? readingMode(legacyTab) ?? (
+    detail.mime === "application/pdf" && (extractionId || page || segmentId || charStart !== null) ? "split" : "text"
   );
-  const [activeSegmentId, setActiveSegmentId] = useState<string | null>(
-    querySegmentId,
+  const groups: DocumentProductGroup[] = [
+    { label: "Source", entries: [{ id: "source", label: "Original file" }, { id: "details", label: "File details" }] },
+    { label: libraryProducts.text, entries: [
+      { id: "text", label: "Current text", detail: hasText ? undefined : "No text saved" },
+      ...variants.map(version => ({
+        id: `extraction:${version.id}`,
+        label: version.extractor.name,
+        detail: new Date(version.created_utc).toLocaleString() + (version.primary ? " · Primary" : ""),
+      })),
+      ...(hasCitation ? [{ id: "citation", label: "Cited passage" }] : []),
+    ] },
+    { label: libraryProducts.metadata, entries: [{ id: "metadata", label: "Document metadata" }] },
+    { label: libraryProducts.summaries, entries: products.filter(product => product.family === "synthesis").map(product => ({ id: product.id, label: product.title })) },
+    { label: libraryProducts.artifacts, entries: [
+      ...products.filter(product => product.family === "enrichment").map(product => ({ id: product.id, label: product.title, detail: product.artifact_type?.replace(/_/g, " ") ?? undefined })),
+      ...extracted,
+    ] },
+    { label: libraryProducts.collections, entries: [{ id: "collections", label: "Collection membership", detail: detail.collections.length.toLocaleString() }] },
+  ].filter(group => group.entries.length);
+  const legacyProduct = legacyTab === "syntheses" ? products.find(product => product.family === "synthesis")
+    : legacyTab === "wiki" ? products.find(product => product.artifact_type === "wiki_markdown")
+    : legacyTab === "enrichments" ? products.find(product => product.family === "enrichment")
+    : undefined;
+  const selected = params.get("product") || legacyProduct?.id || (
+    hasCitation ? "citation" : extractionId && extractionId !== "canonical" ? `extraction:${extractionId}`
+      : legacyTab === "extractions" && variants.length ? `extraction:${variants[0].id}`
+      : mode === "source" || (!hasText && !readingMode(params.get("view")) && !readingMode(legacyTab)) ? "source" : "text"
   );
+  const selectedEntry = groups.flatMap(group => group.entries).find(entry => entry.id === selected);
+  const variantId = selected.startsWith("extraction:") ? selected.slice("extraction:".length) : undefined;
+  const selectedVersion = variantId ?? ((selected === "text" || selected === "citation") ? extractionId : undefined);
+  const product = products.find(item => item.id === selected);
+  const extractionArtifact = extracted.find(item => item.id === selected);
 
-  const enrichments = useScopeEnrichments({scope_type:"object",file_id:fileId ?? ""},Boolean(fileId));
-  const savedProducts = useQuery({queryKey:["document-products",fileId],queryFn:()=>import("../../../api/client").then(({apiJson})=>apiJson<{products:{filename:string;family:string;title:string;artifact_type?:string}[]}>("/api/products/list",{method:"POST",json:{scope_type:"object",file_id:fileId}})),enabled:Boolean(fileId)});
-  const objectQuery = useObject(fileId ?? "", Boolean(fileId));
-  const textsQuery = useObjectTexts(fileId ?? "", Boolean(fileId));
-  const preferredTextQuery = useObjectPreferredText(fileId ?? "", Boolean(fileId));
-  const [editing,setEditing]=useState(false);
-  const extractionId = searchParams.get("extraction_id") ?? "";
-  const versions = useQuery({ queryKey: ["objects", fileId, "extractions"], queryFn: () => getObjectExtractions(fileId!), enabled: Boolean(fileId) });
-  const versionText = useQuery({ queryKey: ["objects", fileId, "extractions", extractionId, "texts"], queryFn: () => getExtractionText(fileId!, extractionId), enabled: Boolean(fileId && extractionId) });
-  const visibleSegments = extractionId ? versionText.data?.segments ?? [] : textsQuery.data?.segments ?? [];
-  const visibleText = extractionId ? versionText.data?.text ?? "" : preferredTextQuery.data?.text ?? "";
-  useEffect(() => {
-    const value = searchParams.get("view") || searchParams.get("tab");
-    if (["text", "source", "split"].includes(value ?? "")) setTab(value as FileTab);
-  }, [searchParams]);
-  const inspectExtraction = (id: string) => {
-    if(editing && !window.confirm("Discard unsaved text edits?"))return;
+  const update = (changes: Record<string, string | null>, replace = false) => {
+    const next = new URLSearchParams(params);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === null) next.delete(key);
+      else next.set(key, value);
+    }
+    if (next.toString() !== params.toString()) setParams(next, { replace });
+  };
+  const canLeaveText = () => !editing || window.confirm("Discard unsaved text edits?");
+  const selectProduct = (id: string) => {
+    if (id === selected || !canLeaveText()) return;
     setEditing(false);
-    const next = new URLSearchParams(searchParams);
-    next.set("extraction_id", id); next.set("view", "split"); next.delete("tab");
-    for (const key of ["char_start", "char_end", "segment_id", "page"]) next.delete(key);
-    setActivePage(1); setActiveSegmentId(null); setSearchParams(next); setTab("split");
-  };
-
-  const detail = useMemo(
-    () => (objectQuery.data ? toFileDetailModel(objectQuery.data) : null),
-    [objectQuery.data],
-  );
-
-  const bestMatchSegment = useMemo(() => {
-    return findBestMatchingSegment({
-      segments: visibleSegments,
-      charStart: Number.isFinite(charStart) ? charStart : null,
-      charEnd: Number.isFinite(charEnd) ? charEnd : null,
+    update({
+      product: id, view: mode === "split" || id.startsWith("extraction:") ? "split" : id === "source" ? "source" : "text",
+      tab: null, extraction_id: null, page: null, segment_id: null, char_start: null, char_end: null,
     });
-  }, [visibleSegments, charStart, charEnd]);
-
-  useEffect(() => {
-    const nextPage = pageValue != null ? Number(pageValue) : 1;
-    if (Number.isFinite(nextPage)) {
-      setActivePage(nextPage);
-    }
-  }, [pageValue]);
-
-  useEffect(() => {
-    setActiveSegmentId(querySegmentId);
-  }, [querySegmentId]);
-
-  useEffect(() => {
-    if (!bestMatchSegment) {
-      return;
-    }
-
-    const nextSegmentId = bestMatchSegment.id;
-    const nextPage =
-      typeof bestMatchSegment.source_origin?.page === "number"
-        ? bestMatchSegment.source_origin.page
-        : null;
-
-    setActiveSegmentId(nextSegmentId);
-
-    if (nextPage != null) {
-      setActivePage(nextPage);
-    }
-
-    if (detail?.mime === "application/pdf") {
-      setTab("split");
-    } else {
-      setTab("text");
-    }
-  }, [bestMatchSegment, detail?.mime]);
-
-  if (!fileId) {
-    return <Alert severity="error">Missing file ID.</Alert>;
-  }
-
-  if (objectQuery.isLoading) {
-    return <CircularProgress size={24} />;
-  }
-
-  if (objectQuery.isError) {
-    return (
-      <Alert severity="error">
-        Failed to load file.
-        {objectQuery.error instanceof Error ? ` ${objectQuery.error.message}` : ""}
-      </Alert>
-    );
-  }
-
-  if (!objectQuery.data || !detail) {
-    return <Alert severity="info">File not found.</Alert>;
-  }
-
-  const handleJumpToSource = (params: {
-    page?: number | null;
-    segmentId?: string | null;
-  }) => {
-    const nextPage =
-      params.page != null && Number.isFinite(params.page) ? params.page : activePage;
-
-    setActivePage(nextPage);
-    setActiveSegmentId(params.segmentId ?? null);
-
-    const next = new URLSearchParams(searchParams);
-    next.set("page", String(nextPage)); next.set("view", "split"); next.delete("tab");
-
-    if (params.segmentId) {
-      next.set("segment_id", params.segmentId);
-    } else {
-      next.delete("segment_id");
-    }
-
-    setSearchParams(next);
-    setTab("split");
   };
 
-  const handlePageChange = (nextPage: number) => {
-    setActivePage(nextPage);
+  const textView = selected === "text" || Boolean(variantId);
+  const split = mode === "split";
+  const separateSource = split && !textView && selected !== "source";
+  return (
+    <DocumentWorkspace
+      header={<Stack spacing={1}>
+        <PageBreadcrumbs parents={parents} current={detail.filename} />
+        <Stack direction="row" spacing={1.5} justifyContent="space-between" alignItems="center" flexWrap="wrap" useFlexGap>
+          <Typography variant="h5" component="h1" fontWeight={750} sx={{ overflowWrap: "anywhere", minWidth: 0 }}>{detail.filename}</Typography>
+          <ToggleButtonGroup exclusive size="small" value={split ? "split" : "single"} aria-label="Reading layout"
+            onChange={(_, layout: "single" | "split" | null) => {
+              if (!layout || !canLeaveText()) return;
+              setEditing(false);
+              update({ view: layout === "split" ? "split" : selected === "source" ? "source" : "text", product: selected, tab: null }, true);
+            }}>
+            <ToggleButton value="single" aria-label="Single view"><Tooltip title="Single view"><ArticleOutlined fontSize="small" /></Tooltip></ToggleButton>
+            <ToggleButton value="split" aria-label="Split view"><Tooltip title="Split view with original file"><ViewColumnOutlined fontSize="small" /></Tooltip></ToggleButton>
+          </ToggleButtonGroup>
+        </Stack>
+      </Stack>}
+      groups={groups} selected={selected} onSelect={selectProduct}
+      sourcePane={separateSource ? <FileSourcePanel fileId={fileId} mime={detail.mime} page={page}
+        compact onPageChange={value => update({ page: String(value) }, true)} /> : undefined}
+      catalogStatus={versions.isError || saved.isError
+        ? <Button size="small" onClick={() => { if (versions.isError) void versions.refetch(); if (saved.isError) void saved.refetch(); }}>Retry loading products</Button>
+        : versions.isPending || saved.isPending ? <LinearProgress aria-label="Loading file products" /> : null}
+    >
+      <Stack spacing={2} key={selected}>
+        <Typography id="file-product-title" component="h2" variant="h6" fontWeight={700} sx={{ overflowWrap: "anywhere" }}>{selectedEntry?.label ?? "Saved product"}</Typography>
 
-    const next = new URLSearchParams(searchParams);
-    next.set("page", String(nextPage));
-    setSearchParams(next);
-  };
-
-  const textControls=<Accordion disableGutters variant="outlined" slotProps={{transition:{unmountOnExit:true}}}><AccordionSummary expandIcon={<ExpandMore/>}><Typography variant="body2">Text options</Typography></AccordionSummary><AccordionDetails>{versions.data?.variants.length ? <TextField select disabled={editing} size="small" label="Text version" slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }} value={extractionId} onChange={event => {
-        const next = new URLSearchParams(searchParams);
-        if (event.target.value) next.set("extraction_id", event.target.value); else next.delete("extraction_id");
-        for (const key of ["char_start", "char_end", "segment_id"]) next.delete(key);
-        setActiveSegmentId(null); setSearchParams(next);
-      }} sx={{ maxWidth: 620 }}>
-        <MenuItem value="">Primary text / corrections</MenuItem>
-        {extractionId === "canonical" && <MenuItem value="canonical">Canonical extracted text</MenuItem>}
-        {versions.data.variants.map(item => <MenuItem key={item.id} value={item.id}>{item.extractor.name} · {new Date(item.created_utc).toLocaleString()}{item.primary ? " · Primary" : ""}</MenuItem>)}
-      </TextField> : null}</AccordionDetails></Accordion>;
-  const panels:SavedDocumentPanel[]=[];
-  if(detail.hasSynthesis)panels.push({id:"summary",label:"Summary",description:"A short account of this document."});
-  const named=(enrichments.data?.enrichments ?? []).filter(entry=>entry.kind==="file"&&!entry.name.endsWith(".meta.json"));
-  for(const entry of named)panels.push({id:"saved:"+entry.name,label:entry.kind==="file"&&entry.artifact_type==="wiki_markdown"?"Wiki":(entry.kind==="file"?entry.title:undefined)||entry.name,description:entry.kind==="file"&&entry.artifact_type==="wiki_markdown"?"A structured reference organized by topic.":"Saved document data."});
-  for(const item of savedProducts.data?.products ?? [])if(!named.some(entry=>entry.name===item.filename))panels.push({id:"product:"+item.filename,label:item.title,description:item.family==="synthesis"?"A short account of the document.":"Saved document data."});
-  if(enrichments.data?.enrichments.some(entry=>entry.kind==="bundle"))panels.push({id:"enrichments",label:"Other saved data"});
-  if(versions.data?.variants.length)panels.push({id:"versions",label:"Text versions"});
-  panels.push({id:"collections",label:"Collections"});
-  panels.push({id:"details",label:"File details"});
-  if(searchParams.has("report_source"))panels.push({id:"citation",label:"Cited passage"});
-  return <DocumentWorkspace mode={tab} onMode={value=>{if(editing && !window.confirm("Discard unsaved text edits?"))return;setEditing(false);setTab(value);const next=new URLSearchParams(searchParams);next.set("view",value);next.delete("tab");setSearchParams(next,{replace:true});}}
-    header={<Typography fontWeight={700} sx={{overflowWrap:"anywhere"}}>{detail.filename}</Typography>}
-    panels={panels} initialPanel={searchParams.get("tab")==="extractions"?"versions":searchParams.get("tab")==="syntheses"?"summary":searchParams.get("tab")==="wiki"?panels.find(panel=>panel.label==="Wiki")?.id:searchParams.get("tab")==="enrichments"?panels.find(panel=>panel.id.startsWith("saved:")||panel.id==="enrichments")?.id:undefined} renderPanel={id=>id==="collections"?<Button component={Link} to={`/tools/collections?file_id=${encodeURIComponent(fileId)}`}>Create or choose a collection</Button>:id==="enrichments"?<FileEnrichmentsPanel fileId={fileId} showActions={false}/>:id==="citation"?<ReportPassage text={visibleText} loading={extractionId?versionText.isLoading:preferredTextQuery.isLoading}/>:id==="summary"?<FileSynthesesPanel fileId={fileId} showActions={false}/>:id==="details"?<Stack spacing={2}><FileHeader file={detail}/><FileActionBar fileId={fileId}/></Stack>:id==="versions"?<Stack spacing={1}>{versions.data?.variants.map(item=><Accordion key={item.id} disableGutters variant="outlined" slotProps={{transition:{unmountOnExit:true}}}><AccordionSummary expandIcon={<ExpandMore/>}><Typography variant="body2">{item.primary?"Current text":item.extractor.name}</Typography></AccordionSummary><AccordionDetails><Button onClick={()=>inspectExtraction(item.id)}>Read this text</Button><ExtractionArtifacts fileId={fileId} variantId={item.id}/></AccordionDetails></Accordion>)}</Stack>:id.startsWith("saved:")?<DerivedProductEditor scope={{scope_type:"object",file_id:fileId}} filename={id.slice(6)}/>:<DerivedProductEditor scope={{scope_type:"object",file_id:fileId}} filename={id.slice(8)} family={savedProducts.data?.products.find(item=>item.filename===id.slice(8))?.family as "synthesis"|"enrichment"}/> }>
-    <Stack spacing={1.5}>
-      {extractionId && versionText.isError ? <Alert severity="error">This text version could not be loaded.</Alert> : null}
-      {tab === "text" && <GroundedSegmentEditor key={extractionId||"primary"} fileId={fileId} readOnly={Boolean(extractionId)} canonicalText={visibleText} segments={visibleSegments} onEditingChange={setEditing} controls={textControls} onJumpToSource={handleJumpToSource} />}
-
-      {tab === "source" && (
-        <FileSourcePanel
-          fileId={fileId}
-          mime={detail.mime}
-          page={activePage}
-          onPageChange={handlePageChange}
-          segments={visibleSegments}
-        />
-      )}
-
-      {tab === "split" && (
-        (extractionId ? versionText.isLoading : textsQuery.isLoading || preferredTextQuery.isLoading) ? (
-          <CircularProgress size={24} />
-        ) : (extractionId ? versionText.isError : textsQuery.isError) ? (
-          <Alert severity="error">
-            Failed to load grounded text segments.
-          </Alert>
-        ) : !extractionId && preferredTextQuery.isError ? (
-          <Alert severity="error">
-            Failed to load preferred text.
-          </Alert>
-        ) : (
-          <SplitFileView
-            key={`${fileId}:${extractionId || "primary"}`}
-            fileId={fileId}
-            textControls={textControls}
-            mime={detail.mime}
-            readOnly={Boolean(extractionId)}
+        {(textView || selected === "source" || selected === "citation") && (
+          <DocumentReadingPane
+            key={`${selectedVersion ?? "current"}:${mode}`}
+            fileId={fileId} mime={detail.mime} versionId={selectedVersion}
+            mode={split && !separateSource ? "split" : selected === "source" ? "source" : "text"}
+            page={page} segmentId={segmentId} charStart={charStart} charEnd={charEnd}
+            onPageChange={value => update({ page: String(value) }, true)}
+            onJumpToSource={target => {
+              if (mode !== "split") {
+                if (!canLeaveText()) return;
+                setEditing(false);
+              }
+              update({ product: selected, view: "split", tab: null, page: String(target.page ?? page ?? 1), segment_id: target.segmentId ?? null, char_start: null, char_end: null });
+            }}
             onEditingChange={setEditing}
-            canonicalText={visibleText}
-            segments={visibleSegments}
-            activeSegmentId={activeSegmentId}
-            page={activePage}
-            onPageChange={handlePageChange}
-            onJumpToSource={handleJumpToSource}
+            citedPassage={selected === "citation"}
           />
-        )
-      )}
-
-    </Stack></DocumentWorkspace>;
+        )}
+        {variantId && <ExtractionArtifacts fileId={fileId} variantId={variantId} />}
+        {extractionArtifact && <ExtractionArtifacts fileId={fileId} variantId={extractionArtifact.versionId} artifactId={extractionArtifact.artifactId} />}
+        {selected === "metadata" && <SuggestedMetadata fileId={fileId} />}
+        {selected === "details" && <Stack spacing={2}><FileHeader file={detail} /><FileActionBar fileId={fileId} /></Stack>}
+        {selected === "collections" && <Stack spacing={1} alignItems="flex-start">
+          {detail.collections.map(collection => <Button key={collection.id} component={Link} to={buildCollectionRoute(collection.id)}>{collection.name}</Button>)}
+          {!detail.collections.length && <Typography color="text.secondary">This file has no collections.</Typography>}
+        </Stack>}
+        {product?.editable && <DerivedProductEditor scope={scope} filename={product.filename} family={product.family === "synthesis" ? "synthesis" : "enrichment"} />}
+        {product?.relpath && <Button component="a" download href={getArtifactUrl(product.relpath)} sx={{ alignSelf: "flex-start" }}>Download saved artifact</Button>}
+        {selected !== "source" && selected !== "citation" && !selectedEntry && !variantId && !saved.isPending && (
+          <Alert severity="info">This saved product is unavailable.</Alert>
+        )}
+      </Stack>
+    </DocumentWorkspace>
+  );
 }

@@ -105,6 +105,9 @@ export function FileCard({
   display?: FileDisplay;
   list?: boolean;
 }) {
+  const label = display.name_source === "descriptive_title"
+    ? file.descriptiveTitle?.trim() || file.title
+    : file.title;
   const metadata =
     display.metadata === "path"
       ? file.subtitle
@@ -134,7 +137,7 @@ export function FileCard({
     >
       <CardActionArea
         onClick={() => onOpen(file.fileId)}
-        aria-label={`Open file ${file.title}`}
+        aria-label={`Open file ${label}`}
         sx={{
           height: "100%",
           display: "flex",
@@ -150,10 +153,11 @@ export function FileCard({
               <Typography
                 variant="body2"
                 fontWeight={display.show_name ? 600 : 400}
+                title={label === file.title ? label : `${label} · ${file.title}`}
                 noWrap
               >
                 {display.show_name || !list
-                  ? file.title
+                  ? label
                   : file.synthesisPreview?.slice(0, 120) ||
                     file.textPreview?.slice(0, 120) ||
                     "Document"}

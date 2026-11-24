@@ -240,6 +240,7 @@ class SidecarProcessingCommitter:
         return {"path": path.relative_to(self.root).as_posix(), "identity": identity}
 
     def _product(self, command: ProcessingCommit) -> dict:
+        from osii.domain.document_metadata import METADATA_ENRICHER
         from osii.domain.artifacts.products import product_provenance
         from osii.domain.artifacts.artifact_staleness import clear_artifacts_stale
         from osii.domain.storage.objects import update_synthesis_provenance
@@ -292,4 +293,6 @@ class SidecarProcessingCommitter:
                     "method": method, "data_path": path.relative_to(self.root).as_posix(),
                     "metadata_path": meta_path.relative_to(self.root).as_posix()})
             clear_artifacts_stale(self.root, command.file_id, "enrichments")
+            if response.processor.name == METADATA_ENRICHER and any(item.kind == "document_metadata" for item in response.artifacts):
+                clear_artifacts_stale(self.root, command.file_id, "document_metadata")
             return {"artifacts": results}

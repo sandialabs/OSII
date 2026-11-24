@@ -55,6 +55,16 @@ Collection membership must reference stable object identifiers such as `file_id`
 
 ## Core endpoint families
 
+### Tool compatibility
+
+`GET /api/enrichment-jobs/tools` includes `source_types.file_extensions` and
+`source_types.media_types` for extractor methods in OSII-local. Methods
+working on saved products continue to declare their input and output kinds.
+`GET /api/objects/{file_id}/extractions?include_artifacts=true` adds artifact
+names and provenance to the version list without inline payloads. Versioned
+sidecar extraction artifacts include `relpath` for downloading via the existing
+artifact endpoint.
+
 ### Scopes
 
 - `GET /api/scopes/root`

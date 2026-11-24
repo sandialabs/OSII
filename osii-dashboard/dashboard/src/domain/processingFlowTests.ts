@@ -4,11 +4,13 @@ export type FlowTestReport = {ok: boolean; tested_at: string; sample?: string; r
 export function flowTestStatus(report?: FlowTestReport | null): {label: string; color: "success" | "warning" | "error" | "default"} {
   if (!report) return {label: "Not tested", color: "default"};
   if (!report.ok) return {label: "Needs attention", color: "error"};
-  if (report.results.some(step => step.attempts?.some(attempt => attempt.ok === false))) return {label: "Ready · fallback used", color: "warning"};
+  const readerWarnings = report.results.filter(step => step.attempts?.some(attempt => attempt.ok === false));
+  if (readerWarnings.some(step => step.attempts?.[0]?.ok === false)) return {label: "Ready · fallback used", color: "warning"};
+  if (readerWarnings.length) return {label: "Ready · backup reader failed", color: "warning"};
   return {label: "Ready", color: "success"};
 }
-export function flowTestError(attempt: FlowTestAttempt): string {
-  let message = attempt.detail || attempt.diagnostics?.error || (attempt.ok === null ? "No compatible sample was available." : "The test failed. Copy the report for full diagnostics.");
+export function flowTestError(attempt: FlowTestAttempt, copyAction = "Copy report"): string {
+  let message = attempt.detail || attempt.diagnostics?.error || (attempt.ok === null ? "No compatible sample was available." : `The operation failed. Use ${copyAction} for full diagnostics.`);
   // SDK failures can wrap another service's JSON diagnostics. Surface its cause
   // here; the untouched report retains the full traceback and Python runtime.
   const start = message.indexOf("{");
@@ -20,7 +22,7 @@ export function flowTestError(attempt: FlowTestAttempt): string {
       if (typeof cause === "string" && cause) message = cause;
     } catch { /* Ordinary provider errors do not have a JSON body. */ }
   }
-  return message.length > 600 ? `${message.slice(0, 600)}… Full details are in Copy report.` : message;
+  return message.length > 600 ? `${message.slice(0, 600)}… Full details are in ${copyAction}.` : message;
 }
 export function flowStepLabel(step: FlowTestStep): string {
   if (step.step === "synthesize") return "Generate summaries";

@@ -400,7 +400,7 @@ def text_span(
 
 
 @router.get("/api/objects/{file_id}/extractions")
-def extractions(request: Request, file_id: str):
+def extractions(request: Request, file_id: str, include_artifacts: bool = False):
     lib = library(request)
     doc = lib.reader.get_document(file_id)
     if doc is None:
@@ -418,6 +418,10 @@ def extractions(request: Request, file_id: str):
                 "created_utc": row["created_at"],
                 "extractor": row["response"]["processor"],
                 "status": "done",
+                **({"artifacts": [
+                    extraction_artifact_view(artifact, preview=False)
+                    for artifact in row["response"].get("artifacts", [])
+                ]} if include_artifacts else {}),
                 "text_chars": len(
                     lib.reader.get_representation(file_id, row["id"]).text
                 ),
@@ -453,6 +457,18 @@ def extraction_text(request: Request, file_id: str, variant_id: str):
     }
 
 
+def extraction_artifact_view(row, *, preview: bool):
+    return {
+        "id": row["id"],
+        "kind": row["kind"],
+        "media_type": row["media_type"],
+        "source_origin": row.get("source_origin", {}),
+        "filename": row["id"],
+        "size_bytes": None,
+        "data": (row.get("standard_data") or row.get("json_data")) if preview else None,
+    }
+
+
 @router.get("/api/objects/{file_id}/extractions/{variant_id}/artifacts")
 def extraction_artifacts(request: Request, file_id: str, variant_id: str):
     rows = library(request).query(
@@ -466,15 +482,7 @@ def extraction_artifacts(request: Request, file_id: str, variant_id: str):
         "file_id": file_id,
         "variant_id": variant_id,
         "artifacts": [
-            {
-                "id": row["id"],
-                "kind": row["kind"],
-                "media_type": row["media_type"],
-                "source_origin": row.get("source_origin", {}),
-                "filename": row["id"],
-                "size_bytes": None,
-                "data": row.get("standard_data") or row.get("json_data"),
-            }
+            extraction_artifact_view(row, preview=True)
             for row in rows[0]["response"].get("artifacts", [])
         ],
     }
@@ -713,7 +721,9 @@ def scope_summaries(request: Request, payload: dict):
 
 @router.post("/api/scopes/overview")
 def scope_overview(request: Request, payload: dict):
-    return library(request).overview(payload.get("scope") or payload)
+    state = request.app.state
+    source = state.shared_volume_root if state.filesystem_mode == "local" else None
+    return library(request).overview(payload.get("scope") or payload, source_root=source)
 
 
 @router.post("/api/scopes/artifacts")
@@ -1766,40 +1776,29 @@ def document_metadata(request: Request, file_id: str):
             "document_metadata": history["data"].get("document_metadata"),
         }
     except KeyError:
+        from osii.domain.read.postgres_metadata import postgres_document_labels
+
+        with lib.engine.connect() as connection:
+            labels = postgres_document_labels(connection, [file_id]).get(file_id, {})
         return {
             "file_id": file_id,
             "revision": None,
-            "document_metadata": lib.reader.get_document(file_id).metadata.get(
-                "document_metadata"
-            )
-            or None,
+            "document_metadata": labels.get("document_metadata"),
         }
 
 
 @router.put("/api/objects/{file_id}/metadata")
 def edit_document_metadata(request: Request, file_id: str, payload: dict):
-    from osii.domain.document_metadata import METADATA_FIELDS
-    from osii.processor_sdk import DocumentMetadata
+    from osii.domain.document_metadata import manual_metadata_product
+    from osii.domain.read.postgres_metadata import postgres_document_labels
 
     lib = library(request)
     lib.meta(file_id)
     if "expected_revision" not in payload:
         raise ValueError("expected_revision is required")
-    values = payload.get("values")
-    if not isinstance(values, dict) or set(values) - set(METADATA_FIELDS):
-        raise ValueError("Provide document metadata fields only")
-    metadata = DocumentMetadata.model_validate(
-        {
-            "method": "human",
-            "model": None,
-            **{name: {"value": values.get(name)} for name in METADATA_FIELDS},
-        }
-    ).model_dump(mode="json")
-    data = {
-        "artifact_type": "document_metadata",
-        "title": "Document metadata",
-        "document_metadata": metadata,
-    }
+    with lib.engine.connect() as connection:
+        current = postgres_document_labels(connection, [file_id]).get(file_id, {})
+    data = manual_metadata_product(payload.get("values"), current)
     ref = ProductRef(ReadScope("object", file_id), "document_metadata--manual.json")
     if payload["expected_revision"] is None:
         lib.create_manual_product(ref, data)
@@ -1879,6 +1878,9 @@ def promote_extraction(request: Request, file_id: str, variant_id: str):
         ).scalar()
         if response:
             metadata["extractor"] = response.get("processor", {})
+            metadata["extraction_document_metadata"] = response.get(
+                "document_metadata", record.provenance.get("response_metadata", {})
+            )
         lib.sql(
             conn,
             "UPDATE documents SET text=:text,metadata=CAST(:meta AS jsonb),updated_at=CURRENT_TIMESTAMP WHERE file_id=:id",

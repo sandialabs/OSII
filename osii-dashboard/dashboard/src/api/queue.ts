@@ -47,6 +47,10 @@ export async function createProcessingRun(payload: Record<string, unknown>): Pro
   return apiJson<ProcessingRun>("/api/runs", { method: "POST", json: payload });
 }
 
+export function queueSearchIndex(options: { chunk_size: number; chunk_overlap: number }) {
+  return apiJson<{ run_id: string }>("/api/embeddings/build", { method: "POST", json: options });
+}
+
 export async function resolveIntake(payload: Record<string, unknown>, signal?: AbortSignal): Promise<IntakeResolveResponse> {
   const controller = new AbortController();
   let timedOut = false;
@@ -99,8 +103,18 @@ export async function recoverProcessingQueue(): Promise<{
   return apiJson("/api/runs/recover", { method: "POST", json: {} });
 }
 
-export async function getProcessingRunLogs(runId: string): Promise<{ run_id: string; logs: string[] }> {
-  return apiJson(`/api/runs/${encodeURIComponent(runId)}/logs`);
+export function getProcessingRun(runId: string, signal?: AbortSignal): Promise<ProcessingRun> {
+  return apiJson(`/api/runs/${encodeURIComponent(runId)}`, { signal });
+}
+
+export async function getProcessingRunLogs(runId: string, signal?: AbortSignal): Promise<{ run_id: string; logs: string[] }> {
+  return apiJson(`/api/runs/${encodeURIComponent(runId)}/logs`, { signal });
+}
+
+export function getRunSources(runId: string, cursor: number, signal?: AbortSignal) {
+  return apiJson<{ items: { file_id: string; filename: string; source_relpath?: string; has_text: boolean }[]; next_cursor: number | null }>(
+    `/api/enrichment-jobs/runs/${encodeURIComponent(runId)}/sources?limit=25&cursor=${cursor}`, { signal },
+  );
 }
 
 export async function controlProcessingRun(
@@ -125,7 +139,13 @@ export async function deleteProcessorEndpoint(id: string) {
   return apiJson<{ deleted: string }>(`/api/admin/processors/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-export async function updateProcessorEndpoint(id: string, payload: { model_connection: string }) {
+export async function updateProcessorEndpoint(id: string, payload: {
+  model_connection?: string;
+  model_access?: ProcessorEndpoint["model_access"];
+  base_url?: string;
+  enabled?: boolean;
+  preserve_processor?: boolean;
+}) {
   return apiJson<{ processor: ProcessorEndpoint }>(`/api/admin/processors/${encodeURIComponent(id)}`, { method: "PUT", json: payload });
 }
 
@@ -208,5 +228,3 @@ export async function pullOllamaModel(id: string, model: string): Promise<ModelP
 export async function getOllamaPullStatus(id: string, jobId: string): Promise<ModelPullJob> {
   return apiJson<ModelPullJob>(`/api/admin/model-providers/${encodeURIComponent(id)}/models/pull/${encodeURIComponent(jobId)}`);
 }
-
-export const getProcessingRun = (id: string) => apiJson<import("./types").ProcessingRun>(`/api/runs/${encodeURIComponent(id)}`);

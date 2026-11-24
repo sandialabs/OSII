@@ -1,3 +1,4 @@
+import { ToolContext } from "../../components/workbench/ToolContext";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Alert, Box, Button, ButtonGroup, Card, CardContent, Chip, CircularProgress, Divider, Stack, TextField, Typography } from "@mui/material";
@@ -111,9 +112,10 @@ export function ResearchPage({ draftKey = "local" }: { draftKey?: string }) {
   };
 
   return <Stack spacing={2.5} sx={{ maxWidth: 1500, mx: "auto" }}>
-    <Stack spacing={0.5}><Typography variant="overline" color="primary">From evidence to understanding</Typography>
+    <Stack spacing={0.5}>
       <Typography variant="h4" fontWeight={750}>Research reports</Typography>
-      <Typography color="text.secondary">Write with your documents. Follow every reference back to the passage behind it.</Typography></Stack>
+      <ToolContext id="research" />
+    </Stack>
     <Card variant="outlined"><CardContent><Stack spacing={2}>
       <Box component="fieldset" disabled={busy || Boolean(proposal)} sx={{ border: 0, p: 0, m: 0, minWidth: 0 }}>
         <Stack spacing={2}>

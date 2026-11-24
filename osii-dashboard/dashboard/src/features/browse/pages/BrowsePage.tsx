@@ -1,129 +1,109 @@
-// src/features/browse/pages/BrowsePage.tsx
-import { useMemo } from "react";
-import { Alert, CircularProgress, Stack, Typography } from "@mui/material";
+import { useState } from "react";
+import {
+  Alert, Button, InputAdornment, LinearProgress, MenuItem, Stack, TextField, ToggleButton,
+  ToggleButtonGroup, Typography,
+} from "@mui/material";
+import SearchOutlined from "@mui/icons-material/SearchOutlined";
+import ViewListOutlined from "@mui/icons-material/ViewListOutlined";
+import GridViewOutlined from "@mui/icons-material/GridViewOutlined";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-
+import { browseCatalog, type BrowseSort } from "../../../api/catalogBrowse";
 import { listFolderScopes } from "../../../api/scopes";
-import type { FolderScopeDescriptor } from "../../../api/types";
-import { useScopeSummaries } from "../../../hooks/useScopeSummaries";
-import { toFileCardModel } from "../../../domain/files";
-import { BrowseExplorer } from "../components/BrowseExplorer";
 import { buildFileRoute } from "../../../utils/routes";
-import { useBrowsingScope } from "../../../app/providers/BrowsingScopeProvider";
-import { immediateFiles, immediateFolders, normalizeFolderPath } from "../contents";
+import { BrowseExplorer } from "../components/BrowseExplorer";
+import { BrowseGrid } from "../components/BrowseGrid";
+import { normalizeFolderPath } from "../contents";
 
-function getRootFolder(scopes: FolderScopeDescriptor[]): FolderScopeDescriptor | null {
-  return scopes.find((scope) => normalizeFolderPath(scope.path) === "") ?? null;
-}
+const PAGE_SIZE = 48;
+type View = "list" | "icons";
 
-function getFolderById(
-  scopes: FolderScopeDescriptor[],
-  folderId: string,
-): FolderScopeDescriptor | null {
-  return scopes.find((scope) => scope.folder_id === folderId) ?? null;
-}
+function FolderListing({ path, view, onNavigate, onChangeView }: {
+  path: string;
+  view: View;
+  onNavigate: (path: string) => void;
+  onChangeView: (view: View) => void;
+}) {
+  const navigate = useNavigate();
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<BrowseSort>("name-asc");
+  const [offset, setOffset] = useState(0);
+  const folder = useQuery({
+    queryKey: ["catalog-browse", path, query.trim(), sort, offset],
+    queryFn: ({ signal }) => browseCatalog(path, { query, sort, offset, signal }),
+  });
+  const entries = folder.data?.items ?? [];
 
-function getBreadcrumbs(
-  scopes: FolderScopeDescriptor[],
-  current: FolderScopeDescriptor,
-): FolderScopeDescriptor[] {
-  if (!normalizeFolderPath(current.path)) {
-    return [current];
-  }
-
-  const result: FolderScopeDescriptor[] = [];
-  const parts = normalizeFolderPath(current.path).split("/");
-
-  for (let i = 0; i <= parts.length; i += 1) {
-    const partialPath = parts.slice(0, i).join("/");
-    const match = scopes.find((scope) => normalizeFolderPath(scope.path) === partialPath);
-    if (match) {
-      result.push(match);
-    }
-  }
-
-  if (result.length === 0) {
-    return [current];
-  }
-
-  return result;
+  return (
+    <BrowseExplorer path={path} sourceName={folder.data?.source_name ?? ""}
+      onNavigate={onNavigate} onRefresh={() => void folder.refetch()}>
+      <Stack spacing={1.5}>
+        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
+          <TextField size="small" label={path ? "Filter this folder" : "Filter names"} value={query}
+            onChange={event => { setQuery(event.target.value); setOffset(0); }} inputProps={{ maxLength: 256 }}
+            InputProps={{ startAdornment: <InputAdornment position="start"><SearchOutlined fontSize="small" /></InputAdornment> }}
+            sx={{ flex: "1 1 190px" }} />
+          <TextField select size="small" label="Sort by" value={sort} sx={{ minWidth: 145 }}
+            onChange={event => { setSort(event.target.value as BrowseSort); setOffset(0); }}>
+            <MenuItem value="name-asc">Name (A–Z)</MenuItem>
+            <MenuItem value="name-desc">Name (Z–A)</MenuItem>
+            <MenuItem value="modified-desc">Recently modified</MenuItem>
+            <MenuItem value="size-desc">Largest first</MenuItem>
+          </TextField>
+          <ToggleButtonGroup exclusive size="small" value={view} aria-label="Folder view"
+            onChange={(_, next: View | null) => { if (next) onChangeView(next); }}>
+            <ToggleButton value="list" aria-label="List view"><ViewListOutlined fontSize="small" /></ToggleButton>
+            <ToggleButton value="icons" aria-label="Icon view"><GridViewOutlined fontSize="small" /></ToggleButton>
+          </ToggleButtonGroup>
+        </Stack>
+        {folder.isPending ? <LinearProgress aria-label="Loading folder contents" />
+          : folder.isError ? <Alert severity="error" action={<Button onClick={() => void folder.refetch()}>Retry</Button>}>Could not load this folder.</Alert>
+          : entries.length ? <BrowseGrid entries={entries} view={view} onOpenFolder={onNavigate} onOpenFile={fileId => navigate(buildFileRoute({ fileId }))} />
+          : <Typography color="text.secondary" sx={{ py: 2 }}>{query.trim() ? "No matching names." : "No files here yet."}</Typography>}
+        {(offset > 0 || folder.data?.has_more) && <Stack direction="row" spacing={1} alignItems="center">
+          <Button size="small" disabled={!offset || folder.isFetching} onClick={() => setOffset(offset - PAGE_SIZE)}>Previous</Button>
+          <Typography variant="body2" color="text.secondary">Page {offset / PAGE_SIZE + 1}</Typography>
+          <Button size="small" disabled={!folder.data?.has_more || folder.isFetching} onClick={() => setOffset(offset + PAGE_SIZE)}>Next</Button>
+        </Stack>}
+      </Stack>
+    </BrowseExplorer>
+  );
 }
 
 export function BrowsePage() {
-  const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const { setFolderScope } = useBrowsingScope();
-  const view = searchParams.get("view") === "icons" ? "icons" : "list";
-
-  const folderQuery = useQuery({
-    queryKey: ["scopes", "folders"],
-    queryFn: listFolderScopes,
+  const [params, setParams] = useSearchParams();
+  const pathParam = params.get("path");
+  const folderId = params.get("folder_id");
+  const view = params.get("view") === "icons" ? "icons" : "list";
+  const legacyPath = useQuery({
+    queryKey: ["catalog-browse-legacy", folderId],
+    enabled: pathParam === null && Boolean(folderId),
+    queryFn: async ({ signal }) => {
+      const { scopes } = await listFolderScopes();
+      const folder = scopes.find(item => item.folder_id === folderId);
+      const path = normalizeFolderPath(folder?.path ?? "");
+      if (!path) return path;
+      const result = await browseCatalog(path, { signal });
+      // Older sidecar folder records were relative to the configured source
+      // while document records can include the source folder as a prefix.
+      return result.items.length || !result.source_name || path.startsWith("external/")
+        ? path : result.source_name + "/" + path;
+    },
   });
-
-  const scopes = folderQuery.data?.scopes ?? [];
-  const rootFolder = getRootFolder(scopes);
-  const folderIdFromQuery = searchParams.get("folder_id");
-
-  const currentFolder = useMemo(() => {
-    if (folderIdFromQuery) {
-      const explicit = getFolderById(scopes, folderIdFromQuery);
-      if (explicit) return explicit;
-    }
-    return rootFolder;
-  }, [folderIdFromQuery, scopes, rootFolder]);
-
-  const summariesQuery = useScopeSummaries(
-    currentFolder
-      ? { scope_type: "folder", folder_id: currentFolder.folder_id }
-      : { scope_type: "root" },
-    Boolean(currentFolder),
-  );
-
-  const childFolders = useMemo(() => {
-    if (!currentFolder) return [];
-    return immediateFolders(scopes, currentFolder);
-  }, [scopes, currentFolder]);
-
-  const breadcrumbs = useMemo(() => {
-    if (!currentFolder) return [];
-    return getBreadcrumbs(scopes, currentFolder);
-  }, [scopes, currentFolder]);
-
-  const fileCards = useMemo(
-    () => immediateFiles(summariesQuery.data?.summaries ?? [], currentFolder?.path ?? "").map(toFileCardModel),
-    [summariesQuery.data?.summaries, currentFolder?.path],
-  );
-
-  const handleOpenFolder = (folder: FolderScopeDescriptor) => {
-    setFolderScope(folder);
-
-    const next = new URLSearchParams(searchParams);
-    next.set("folder_id", folder.folder_id);
-    setSearchParams(next);
+  if (legacyPath.fetchStatus !== "idle" && legacyPath.isPending) return <LinearProgress aria-label="Loading folder" />;
+  const path = normalizeFolderPath(pathParam ?? legacyPath.data ?? "");
+  const openFolder = (next: string) => {
+    const updated = new URLSearchParams(params);
+    updated.delete("folder_id");
+    if (next) updated.set("path", next);
+    else updated.delete("path");
+    setParams(updated);
   };
 
-  if (folderQuery.isLoading) {
-    return (
-      <Stack direction="row" spacing={2} alignItems="center">
-        <CircularProgress size={24} />
-        <Typography>Loading browser…</Typography>
-      </Stack>
-    );
-  }
-
-  if (folderQuery.isError) {
-    return <Alert severity="error">Failed to load folder hierarchy.</Alert>;
-  }
-
-  if (!currentFolder) {
-    return <Alert severity="info">No folder root is available.</Alert>;
-  }
-
-  return <BrowseExplorer key={currentFolder.folder_id} currentFolder={currentFolder} breadcrumbs={breadcrumbs}
-    onNavigate={id => { const folder = getFolderById(scopes, id); if (folder) handleOpenFolder(folder); }}
-    folders={childFolders} files={fileCards} view={view}
-    loading={summariesQuery.isLoading} error={summariesQuery.isError ? "Failed to load folder contents." : undefined}
-    onChangeView={nextView => { const next = new URLSearchParams(searchParams); next.set("view", nextView); setSearchParams(next, { replace: true }); }}
-    onOpenFolder={handleOpenFolder} onOpenFile={fileId => navigate(buildFileRoute({ fileId }))} />;
+  return <FolderListing key={path} path={path} view={view} onNavigate={openFolder}
+    onChangeView={next => {
+      const updated = new URLSearchParams(params);
+      updated.set("view", next);
+      setParams(updated, { replace: true });
+    }} />;
 }

@@ -101,10 +101,11 @@ def default_models_config() -> dict[str, Any]:
 def builtin_tools_config() -> dict[str, Any]:
     """Core registrations plus metadata discovered from processor manifests."""
     from osii.processor_modules import active_processors, modules_directory
+    bridge_url = os.getenv("OSII_MODEL_BRIDGE_URL") or f"http://127.0.0.1:{os.getenv('OSII_MODEL_BRIDGE_PORT', '8095')}"
     tools = {
         "document-metadata": {
             "enabled": True, "processor_id": "core.document-metadata",
-            "runtime": {"endpoint": os.getenv("OSII_MODEL_BRIDGE_URL", "http://127.0.0.1:8095").rstrip("/") + "/metadata"},
+            "runtime": {"endpoint": bridge_url.rstrip("/") + "/metadata"},
             "model_access": {"mode": "gateway", "bindings": {}},
             "model_requirements": {"chat": "required"},
         },

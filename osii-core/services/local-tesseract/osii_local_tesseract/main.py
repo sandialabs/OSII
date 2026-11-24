@@ -171,7 +171,7 @@ class LocalTesseractPageExtractor(Extractor):
         capabilities=Capability(
             media_types=["application/pdf", "image/png", "image/jpeg", "image/tiff"],
             file_extensions=SUPPORTED_EXTENSIONS,
-            output_kinds=["text_segments"],
+            output_kinds=["text_segments", "ocr_text"],
         ),
         config_schema={
             "type": "object",

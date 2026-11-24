@@ -29,6 +29,16 @@ def wiki(text):
     }
 
 
+def test_sidecar_database_explorer_stays_unavailable_without_optional_drivers(client):
+    schema = client.get("/api/admin/database/schema")
+    assert schema.status_code == 200
+    assert schema.json()["available"] is False
+    assert schema.json()["backend"] == "sidecar"
+    assert schema.json()["tables"] == []
+    result = client.post("/api/admin/database/query", json={"sql": "SELECT 1"})
+    assert result.status_code == 409
+
+
 @pytest.mark.parametrize(
     "scope",
     [

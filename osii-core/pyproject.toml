@@ -35,6 +35,7 @@ standalone-build = [
   "truststore>=0.10,<1",
 ]
 postgres = [
+  "sqlglot==30.31.0",
   "SQLAlchemy>=2.0,<3",
   "psycopg[binary]>=3.2,<4",
 ]

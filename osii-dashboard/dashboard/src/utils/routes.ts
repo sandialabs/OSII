@@ -1,6 +1,14 @@
 // src/utils/routes.ts
 import type { SearchMode } from "../api/types";
 
+export const QUEUE_ACTIVITY_PATH = "/intake?tab=activity";
+
+export function buildRunRoute(runId: string): string {
+  return `/intake/runs/${encodeURIComponent(runId)}`;
+}
+
+export const SEARCH_INDEX_PATH = "/tools/search-index";
+
 export function buildFileRoute(params: {
   fileId: string;
   charStart?: number | null;

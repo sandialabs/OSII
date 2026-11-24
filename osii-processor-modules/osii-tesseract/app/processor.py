@@ -54,6 +54,7 @@ class TesseractRegionExtractor(Extractor):
         capabilities=Capability(
             media_types=["application/pdf", "image/png", "image/jpeg", "image/tiff"],
             file_extensions=[".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff"],
+            output_kinds=["text_segments", "ocr_text"],
         ),
         config_schema={
             "type": "object",

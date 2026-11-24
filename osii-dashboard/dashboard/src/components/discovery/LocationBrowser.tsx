@@ -25,6 +25,7 @@ export type PickedFile = {
   path: string;
   name: string;
   size_bytes: number | null;
+  mime?: string | null;
 };
 type Page = {
   current_path: string;
@@ -37,6 +38,7 @@ export function LocationBrowser({
   initialPath,
   boundaryPath,
   foldersOnly = false,
+  singleFile = false,
   selected = [],
   onClose,
   onFolder,
@@ -46,6 +48,7 @@ export function LocationBrowser({
   initialPath?: string;
   boundaryPath?: string;
   foldersOnly?: boolean;
+  singleFile?: boolean;
   selected?: PickedFile[];
   onClose: () => void;
   onFolder?: (path: string) => void;
@@ -58,6 +61,7 @@ export function LocationBrowser({
   const [error, setError] = useState<string | null>(null);
   const pending = useRef<AbortController | null>(null);
   const cursor = useRef<string | null>(null);
+  const addressEdited = useRef(false);
   const roots = useQuery({
     queryKey: ["browse", "roots"],
     queryFn: ({ signal }) =>
@@ -88,7 +92,10 @@ export function LocationBrowser({
       setError("Choose another location using Add location.");
       return;
     }
-    if (!next) release();
+    if (!next) {
+      release();
+      addressEdited.current = false;
+    }
     const controller = new AbortController();
     pending.current = controller;
     setBusy(true);
@@ -104,7 +111,7 @@ export function LocationBrowser({
       if (controller.signal.aborted) return;
       cursor.current = result.cursor;
       setPage(result);
-      setAddress(result.current_path);
+      if (!addressEdited.current) setAddress(result.current_path);
     } catch (e) {
       if (!controller.signal.aborted)
         setError(e instanceof Error ? e.message : String(e));
@@ -129,12 +136,12 @@ export function LocationBrowser({
     setFiles((current) =>
       current.some((item) => item.path === file.path)
         ? current.filter((item) => item.path !== file.path)
-        : [...current, file],
+        : singleFile ? [file] : [...current, file],
     );
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
       <DialogTitle>
-        {foldersOnly ? "Choose a location" : "Select files"}
+        {foldersOnly ? "Choose a location" : singleFile ? "Select a file" : "Select files"}
       </DialogTitle>
       <DialogContent>
         <Stack spacing={1.5} sx={{ pt: 1 }}>
@@ -152,7 +159,10 @@ export function LocationBrowser({
               size="small"
               label="Folder path"
               value={address}
-              onChange={(e) => setAddress(e.target.value)}
+              onChange={(e) => {
+                addressEdited.current = true;
+                setAddress(e.target.value);
+              }}
             />
             <Button type="submit">Go</Button>
           </Stack>
@@ -255,7 +265,7 @@ export function LocationBrowser({
                 </ListItem>
               ))}
           </List>
-          {!foldersOnly && page && (
+          {!foldersOnly && !singleFile && page && (
             <Stack direction="row" spacing={1}>
               <Button
                 disabled={

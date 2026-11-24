@@ -123,7 +123,9 @@ def _archive_legacy_primary(osii_root: Path, file_id: str) -> dict | None:
     return record
 
 
-def list_extraction_variants(osii_root: Path, file_id: str) -> dict | None:
+def list_extraction_variants(
+    osii_root: Path, file_id: str, *, include_artifacts: bool = False
+) -> dict | None:
     obj = object_dir(osii_root, file_id)
     if not obj.is_dir():
         return None
@@ -135,8 +137,14 @@ def list_extraction_variants(osii_root: Path, file_id: str) -> dict | None:
         variant_id = str(record.get("id") or "")
         if not variant_id:
             continue
+        artifact_catalog = (
+            {"artifacts": _extraction_artifacts(osii_root, file_id, variant_id, maximum_json_bytes=0)}
+            if include_artifacts
+            else {}
+        )
         variants.append({
             **record,
+            **artifact_catalog,
             "primary": variant_id == primary_id,
             "text_path": f"objects/{file_id}/extractions/{variant_id}/text.txt",
             "manifest_path": f"objects/{file_id}/extractions/{variant_id}/manifest.jsonl",
@@ -159,6 +167,12 @@ def list_extraction_artifacts(
     if not any(item.get("id") == variant_id for item in state["variants"]):
         raise FileNotFoundError(f"Extraction variant not found: {variant_id}")
 
+    return _extraction_artifacts(osii_root, file_id, variant_id, maximum_json_bytes=maximum_json_bytes)
+
+
+def _extraction_artifacts(
+    osii_root: Path, file_id: str, variant_id: str, *, maximum_json_bytes: int
+) -> list[dict]:
     bundle = (extractions_dir(osii_root, file_id) / variant_id).resolve()
     try:
         bundle.relative_to(extractions_dir(osii_root, file_id).resolve())
@@ -180,6 +194,7 @@ def list_extraction_artifacts(
         artifact_path = (bundle / str(record["path"])).resolve()
         try:
             artifact_path.relative_to(bundle)
+            relpath = artifact_path.relative_to(osii_root.resolve()).as_posix()
         except ValueError:
             continue
         item = {
@@ -188,11 +203,13 @@ def list_extraction_artifacts(
             "media_type": str(record.get("type") or "application/octet-stream"),
             "source_origin": record.get("source_origin") or {},
             "filename": artifact_path.name,
+            "relpath": relpath,
             "size_bytes": artifact_path.stat().st_size if artifact_path.is_file() else None,
             "data": None,
         }
         if (
-            artifact_path.is_file()
+            maximum_json_bytes > 0
+            and artifact_path.is_file()
             and item["media_type"] == "application/json"
             and artifact_path.stat().st_size <= maximum_json_bytes
         ):

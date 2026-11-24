@@ -31,6 +31,19 @@ TEXT_EXTENSIONS = {
 SUPPORTED_EXTENSIONS = sorted(TEXT_EXTENSIONS | {".docx", ".pdf", ".pptx", ".rtf", ".xlsx"})
 
 
+def _office_properties(content: bytes) -> dict[str, str]:
+    try:
+        with zipfile.ZipFile(BytesIO(content)) as package:
+            entry = package.getinfo("docProps/core.xml")
+            if entry.file_size > 65536:
+                return {}
+            root = ElementTree.fromstring(package.read(entry))
+    except (KeyError, OSError, RuntimeError, ElementTree.ParseError, zipfile.BadZipFile):
+        return {}
+    namespace = {"dc": "http://purl.org/dc/elements/1.1/"}
+    return {"title": root.findtext("dc:title", "", namespace), "author": root.findtext("dc:creator", "", namespace)}
+
+
 def _office_text(content: bytes) -> str:
     parts: list[str] = []
     with zipfile.ZipFile(BytesIO(content)) as package:
@@ -87,8 +100,10 @@ class LocalNativeTextExtractor(Extractor):
         chunk_chars = int(request.config.get("chunk_chars", 4000))
         segments: list[TextSegment] = []
 
+        properties = {}
         if suffix == ".pdf":
             with fitz.open(stream=content, filetype="pdf") as pdf:
+                properties = pdf.metadata or {}
                 for page_number, page in enumerate(pdf, start=1):
                     text = page.get_text("text").strip()
                     if text:
@@ -98,14 +113,9 @@ class LocalNativeTextExtractor(Extractor):
                             segment_type="page",
                             source_origin={"source_type": "pdf", "unit_type": "page", "page": page_number},
                         ))
-            if not segments:
-                return ExtractionResponse(
-                    request_id=request.request_id,
-                    processor=self.descriptor,
-                    segments=[],
-                    warnings=["No embedded PDF text was found. This appears to require an OCR processor."],
-                )
         else:
+            if suffix in {".docx", ".pptx", ".xlsx"}:
+                properties = _office_properties(content)
             if suffix == ".docx":
                 with tempfile.TemporaryDirectory(prefix="osii-docx-") as directory:
                     source = Path(directory) / "document.docx"
@@ -131,12 +141,21 @@ class LocalNativeTextExtractor(Extractor):
                 for index, chunk in enumerate(_chunks(text, chunk_chars), start=1)
             ]
 
+        document_metadata = {"source_filename": document.filename}
+        file_properties = {field: value.strip()[:240] for field in ("title", "author")
+                           if isinstance(value := properties.get(field), str) and value.strip()}
+        if file_properties:
+            document_metadata["file_properties"] = file_properties
+        warnings = []
+        if not segments:
+            warnings.append("No embedded PDF text was found. This appears to require an OCR processor."
+                            if suffix == ".pdf" else "No text content was found.")
         return ExtractionResponse(
             request_id=request.request_id,
             processor=self.descriptor,
             segments=segments,
-            document_metadata={"source_filename": document.filename},
-            warnings=[] if segments else ["No text content was found."],
+            document_metadata=document_metadata,
+            warnings=warnings,
         )
 
 

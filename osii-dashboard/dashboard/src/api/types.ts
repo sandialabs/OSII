@@ -117,6 +117,7 @@ export type ScopeSummariesResponse = {
 };
 
 export type ScopeOverview = {
+  library_metadata?: LibraryMetadataOverview;
   permissions?: { run: boolean };
   scope: ScopeDescribeRequest;
   file_count: number;
@@ -146,6 +147,23 @@ export type ScopeOverview = {
     };
   };
   warnings: string[];
+};
+
+export type LibraryMetadataSource = {
+  kind: "file" | "edited" | "ai" | "unknown";
+  processor: string | null;
+  count: number;
+};
+
+export type LibraryMetadataOverview = {
+  source_root: string;
+  locations: { label: string; browse_path: string; count: number }[];
+  location_count: number;
+  document_fields: Record<"author" | "agency" | "document_type" | "date" | "title", {
+    recorded_count: number;
+    distinct_count: number;
+    rows: { label: string; count: number; sources?: LibraryMetadataSource[] }[];
+  }>;
 };
 
 export type ObjectSummariesRequest = {
@@ -195,6 +213,7 @@ export type HashMeta = {
 export type ObjectMeta = {
   file: FileMeta;
   hash: HashMeta;
+  meta?: { source_path?: string };
 };
 
 export type Span = {
@@ -275,6 +294,7 @@ export type ExtractionVariant = {
   text_path: string;
   manifest_path: string;
   provenance_path: string;
+  artifacts?: ExtractionArtifact[];
 };
 
 export type ExtractionVariantsResponse = {
@@ -290,6 +310,7 @@ export type ExtractionArtifact = {
   source_origin: Record<string, unknown>;
   filename: string;
   size_bytes: number | null;
+  relpath?: string;
   data: unknown | null;
 };
 
@@ -640,10 +661,12 @@ export type CapabilityReadiness = {
   index_rebuild_required?: boolean;
   indexed_model?: string;
   config_schema?: ProcessorConfigSchema;
+  capabilities?: { file_extensions?: string[]; media_types?: string[]; output_kinds?: string[] };
   descriptor?: {
     config_schema?: ProcessorConfigSchema;
     capabilities?: {
       file_extensions?: string[];
+      media_types?: string[];
       output_kinds?: string[];
       scope_types?: string[];
       [key: string]: unknown;
@@ -761,6 +784,7 @@ export type ProcessingRun = {
   };
   embedding_model?: string;
   indexing_status?: string;
+  indexing_file_ids?: string[];
   indexing_error?: string | null;
   error_phase?: string | null;
   embedding_target?: { provider: string; model: string };
@@ -773,11 +797,19 @@ export type ProcessingRun = {
   };
   items?: Array<{
     file_id?: string;
+    path?: string;
+    source_relpath?: string;
     display: string;
     status: string;
     error?: string | null;
     diagnostics?: Array<Record<string, unknown>>;
     synthesizer?: string | null;
+    synthesis?: string | null;
+    synthesis_error?: string | null;
+    enrichment?: unknown;
+    enrichment_error?: string | null;
+    extract_error?: string | null;
+    embedder?: string | null;
     enricher?: string | null;
     current_step?: string | null;
     steps?: Record<string, string>;
@@ -817,6 +849,11 @@ export type ProcessorEndpoint = {
   kind: "extractor" | "synthesizer" | "embedder" | "enricher";
   base_url: string;
   enabled: boolean;
+  built_in?: boolean;
+  description?: string | null;
+  config_schema?: ProcessorConfigSchema | null;
+  manifest?: string | null;
+  implementation?: string | null;
   model_access?: { mode: "none" | "gateway"; bindings?: Record<string, string> };
   model_requirements?: Record<string, "required" | "optional">;
   capabilities?: {
