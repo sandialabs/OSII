@@ -199,7 +199,7 @@ def test_browse_and_preview_report_processed_files(
         {
             "extension": ".pdf",
             "extractor": "local.native-text",
-            "fallbacks": [],
+            "fallbacks": ["local.tesseract-page-ocr"],
             "count": 1,
             "sample": ["finished.PDF"],
         }

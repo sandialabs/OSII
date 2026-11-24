@@ -204,6 +204,7 @@ export type FileMeta = {
   mime: string | null;
   size_bytes: number | null;
   mtime_utc: string | null;
+  birthtime_utc?: string | null;
 };
 
 export type HashMeta = {

@@ -139,6 +139,7 @@ def test_pdf_preview_recovers_after_source_returns(isolated_library):
     with dashboard_page(isolated_library, "pdf-preview-trace") as page:
         page.goto(f"/files/{file_id}")
         expect(page.get_by_role("heading", name=SAMPLE.name)).to_be_visible()
+        expect(page.get_by_role("heading", name="Original file", exact=True)).to_be_visible()
         breadcrumbs = page.get_by_role("navigation", name="Breadcrumbs")
         expect(breadcrumbs.get_by_role("link", name="Files")).to_have_attribute("href", "/files")
         expect(breadcrumbs.locator('[aria-current="page"]')).to_have_text(SAMPLE.name)
@@ -160,6 +161,17 @@ def test_pdf_preview_recovers_after_source_returns(isolated_library):
         expect(page.get_by_text("Page 1 of 7", exact=True)).to_be_visible()
         expect(page.get_by_role("main").get_by_role("link", name="Open OCR Workbench")).to_have_count(0)
         page.get_by_role("button", name="Single view", exact=True).click()
+        expect(page.get_by_role("separator", name="Resize document panes")).to_have_count(0)
+        page.get_by_role("button", name="File details", exact=True).click()
+        expect(page.get_by_text(str(source.resolve()), exact=True)).to_be_visible()
+        expect(page.get_by_text("File type", exact=True)).to_be_visible()
+        page.get_by_role("button", name=re.compile("Collection membership")).click()
+        expect(page.get_by_text("This file is part of no collections.", exact=True)).to_be_visible()
+        page.get_by_role("button", name="Original file", exact=True).click()
+        expect(page.get_by_text("Page 1 of 7", exact=True)).to_be_visible()
+        page.get_by_role("button", name="Next", exact=True).click()
+        expect(page.get_by_text("Page 2 of 7", exact=True)).to_be_visible()
+        expect(page.get_by_role("heading", name="Original file", exact=True)).to_be_visible()
         expect(page.get_by_role("separator", name="Resize document panes")).to_have_count(0)
 
 
@@ -254,7 +266,7 @@ def test_intake_from_two_locations_is_browsable_even_after_source_goes_offline(i
         expect(failures).to_contain_text("damaged.pdf")
         expect(failures).to_contain_text("local.native-text")
         expect(files.get_by_role("row", name=re.compile("report.txt"))).to_contain_text("Read text · Completed · local.native-text")
-        expect(files.get_by_role("row", name=re.compile("damaged.pdf"))).to_contain_text("Read text · Failed · local.native-text")
+        expect(files.get_by_role("row", name=re.compile("damaged.pdf"))).to_contain_text("Read text · Failed · local.tesseract-page-ocr")
         assert failures.evaluate("(node) => node.compareDocumentPosition(document.querySelector('table')) & Node.DOCUMENT_POSITION_FOLLOWING")
         expect(page.get_by_text("Refresh log", exact=True)).to_have_count(0)
         assert not log_requests
@@ -301,6 +313,8 @@ def test_intake_from_two_locations_is_browsable_even_after_source_goes_offline(i
         expect(page.get_by_role("button", name="Open file damaged.pdf")).to_have_count(0)
         page.get_by_role("button", name="Open file report.txt").click()
         expect(page).to_have_url(re.compile("/files/" + second_id))
+        expect(page.get_by_role("heading", name="Original file", exact=True)).to_be_visible()
+        page.get_by_role("button", name="local.native-text Primary", exact=True).click()
         expect(page.get_by_text("The second source has inspection notes about copper joints.", exact=False).first).to_be_visible()
 
         update_synthesis_provenance(root / ".osii", first_id, synthesizer_name="openai.synthesizer",
@@ -524,10 +538,16 @@ def test_simple_intake_connects_models_before_document_selection(isolated_librar
     unknown = source / "sensor-export.bin"
     unknown.write_bytes(b"\x00\x01\x02\xff")
     image = source / "inspection.png"
+    scan = source / "scanned-inspection.pdf"
     with pymupdf.open() as document:
         page_image = document.new_page(width=600, height=175)
         page_image.insert_text((35, 95), "Inspection records", fontsize=28)
         page_image.get_pixmap(dpi=150).save(image)
+    with pymupdf.open() as document:
+        scan_page = document.new_page(width=600, height=175)
+        scan_page.insert_image(scan_page.rect, filename=image)
+        assert not scan_page.get_text().strip()
+        document.save(scan)
     model_port, bridge_port = available_port(), available_port()
     endpoint = f"http://127.0.0.1:{model_port}/v1"
     bridge = f"http://127.0.0.1:{bridge_port}"
@@ -619,7 +639,8 @@ if shutil.which("tesseract") is None:
         dialog.get_by_text(damaged.name, exact=True).click()
         dialog.get_by_text(unknown.name, exact=True).click()
         dialog.get_by_text(image.name, exact=True).click()
-        dialog.get_by_role("button", name="Use 4 files", exact=True).click()
+        dialog.get_by_text(scan.name, exact=True).click()
+        dialog.get_by_role("button", name="Use 5 files", exact=True).click()
         page.get_by_role("navigation", name="Breadcrumbs").get_by_role("link", name="Intake & Setup").click()
 
         page.get_by_role("button", name="Connect embedding model", exact=True).click()
@@ -648,7 +669,7 @@ if shutil.which("tesseract") is None:
         connect.get_by_role("button", name="Save and test", exact=True).click()
         expect(connect).to_have_count(0)
 
-        process = page.get_by_role("button", name="Process 4 files", exact=True)
+        process = page.get_by_role("button", name="Process 5 files", exact=True)
         expect(process).to_be_enabled()
         calls_url = f"http://127.0.0.1:{model_port}/calls"
         calls = page.request.get(calls_url).json()
@@ -667,17 +688,19 @@ if shutil.which("tesseract") is None:
         log = page.locator("details").filter(has_text="Run log")
         expect(run_header.get_by_text("Completed with issues", exact=True)).to_be_visible(timeout=30_000)
         expect(log).to_contain_text("Extractor 'local.native-text' failed for damaged.pdf")
+        expect(log).to_contain_text("No embedded PDF text was found")
         expect(log).to_contain_text("No built-in reader for .bin")
         run = page.request.get("/api/runs/" + id).json()
         assert run["processing_flow"]["id"] == "quick-start"
         assert run["indexing_status"] == "done"
         good = next(item for item in run["items"] if item["status"] == "done")
         assert good["steps"]["synthesizer"] == "done"
-        ocr = next(item for item in run["items"] if item["display"].endswith(image.name))
-        assert ocr["status"] == "done" and ocr["extractor"] == "local.tesseract-page-ocr"
-        assert ocr["file_id"] in run["indexing_file_ids"]
-        ocr_text = Path(env["OSII_ROOT"]) / "objects" / ocr["file_id"] / "text.txt"
-        assert "Inspection records" in ocr_text.read_text(encoding="utf-8")
+        for name in (image.name, scan.name):
+            ocr = next(item for item in run["items"] if item["display"].endswith(name))
+            assert ocr["status"] == "done" and ocr["extractor"] == "local.tesseract-page-ocr", ocr["error"]
+            assert ocr["file_id"] in run["indexing_file_ids"]
+            ocr_text = Path(env["OSII_ROOT"]) / "objects" / ocr["file_id"] / "text.txt"
+            assert "Inspection records" in ocr_text.read_text(encoding="utf-8")
         metadata = next(item for item in run["items"] if item["status"] == "metadata_only")
         assert metadata["file_id"] not in run["indexing_file_ids"]
         expect(page.get_by_role("row", name=re.compile(unknown.name))).to_contain_text("Added without text")
@@ -691,10 +714,31 @@ if shutil.which("tesseract") is None:
         expect(page.get_by_role("heading", name="Failures", exact=True)).to_have_count(0, timeout=30_000)
         expect(run_header.get_by_text("Completed", exact=True)).to_be_visible(timeout=30_000)
         rerun = page.request.get("/api/runs/" + id).json()
-        assert sorted(item["status"] for item in rerun["items"]) == ["done", "done", "done", "metadata_only"]
-        assert rerun["completed"] == 4
+        assert sorted(item["status"] for item in rerun["items"]) == ["done"] * 4 + ["metadata_only"]
+        assert rerun["completed"] == 5
         assert next(item for item in rerun["items"] if item["file_id"] == good["file_id"])["finished_at"] == good["finished_at"]
         assert next(item for item in rerun["items"] if item["file_id"] == metadata["file_id"])["finished_at"] == metadata["finished_at"]
+
+        scanned_id = next(item["file_id"] for item in run["items"] if item["display"].endswith(scan.name))
+        page.goto("/files/" + scanned_id)
+        expect(page.get_by_role("heading", name="Original file", exact=True)).to_be_visible()
+        text_version = page.get_by_role("button", name="local.tesseract-page-ocr Primary", exact=True)
+        text_version.click()
+        expect(page.get_by_role("button", name="Current text", exact=True)).to_have_count(0)
+        expect(page.get_by_role("button", name="Edit Text", exact=True)).to_have_count(0)
+        expect(page.get_by_text("Inspection records", exact=True)).to_be_visible()
+        page.get_by_role("button", name="Keywords", exact=True).click()
+        expect(page.get_by_role("list", name="Keywords", exact=True)).to_contain_text("inspection")
+        expect(page.get_by_role("table", name="Document statistics and keywords")).to_have_count(0)
+
+        page.goto("/tools/ocr?file_id=" + scanned_id)
+        page.get_by_role("button", name="Edit Text", exact=True).click()
+        page.get_by_role("textbox", name="Edit segment text", exact=True).fill("Corrected inspection records")
+        page.get_by_role("button", name="Save", exact=True).click()
+        expect(page.get_by_role("button", name="Edit Text", exact=True)).to_be_visible()
+        page.goto("/files/" + scanned_id)
+        text_version.click()
+        expect(page.get_by_text("Corrected inspection records", exact=True)).to_be_visible()
 
         secret = root / "secrets.env"
         secret.write_text(secret.read_text().replace("fixture-key-original", "fixture-key-replaced"))

@@ -270,9 +270,11 @@ the file selection remains saved in the browser.
 shortcuts or paste a path into **Folder path**. Select files in the list and
 choose **Use files** to return to Intake.
 
-The standard reader handles text-layer PDFs, common Office files, and text
-formats. PNG, JPEG, and TIFF go to Tesseract. Native Tesseract must be installed
-for image OCR in OSII-local. Advanced intake offers named OCR and custom flows.
+The standard flow reads a PDF's embedded text first and tries Tesseract if
+the native reader cannot extract text. PNG, JPEG, and TIFF go directly to
+Tesseract. OCR in OSII-local uses the installed native Tesseract program.
+Office and plain-text documents use the native reader. Advanced intake offers
+named OCR and custom flows.
 
 With the default sidecar storage, Simple Intake saves basic file metadata for
 other formats. Files shows the original's name, location, size, and detected
@@ -300,7 +302,8 @@ and embedding coverage. Open a run in **Queue & activity** for a bookmarkable
 report with failures first, the recorded file and processor steps, and retry or
 pause controls. **Copy run report** includes diagnostics and saved log lines.
 Open **Run log** when you need the timeline. Read generated products from
-Files or Collections.
+Files or Collections. A file opens on its original. Use the OCR Workbench from
+the Toolbox to correct its primary extracted text.
 
 Large-volume scanning is archived on `archive/large-volume-discovery-2026-11-19`.
 The beta launcher does not start its worker. Inventory history remains intact.

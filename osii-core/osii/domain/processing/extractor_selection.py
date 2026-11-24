@@ -43,7 +43,10 @@ def require_source_type(path: Path, capabilities: dict, extractor: str) -> None:
 
 def default_extractor_routes() -> list[dict]:
     return [
-        {"name": "native-supported", "extractor": "local.native-text", "fallbacks": [], "extensions": NATIVE_EXTENSIONS},
+        {"name": "pdf-native-ocr", "extractor": "local.native-text",
+         "fallbacks": ["local.tesseract-page-ocr"], "extensions": [".pdf"]},
+        {"name": "native-supported", "extractor": "local.native-text", "fallbacks": [],
+         "extensions": [suffix for suffix in NATIVE_EXTENSIONS if suffix != ".pdf"]},
         {"name": "images-ocr", "extractor": "local.tesseract-page-ocr", "fallbacks": [], "extensions": IMAGE_OCR_EXTENSIONS},
         {"name": "other-native", "extractor": "local.native-text", "fallbacks": [], "extensions": ["*"]},
     ]

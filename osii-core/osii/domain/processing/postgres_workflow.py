@@ -699,6 +699,10 @@ class PostgresWorkflow:
                             }
                         )
                         response = client.extract(request)
+                    if path.suffix.lower() == ".pdf" and len(names) > 1 and not any(
+                        segment.text.strip() for segment in response.segments
+                    ):
+                        raise ValueError("; ".join(response.warnings) or "The PDF reader returned no text.")
                     break
                 except Exception as exc:
                     failures.append(f"{name}: {type(exc).__name__}")

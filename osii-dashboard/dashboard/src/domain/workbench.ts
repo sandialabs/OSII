@@ -12,10 +12,10 @@ export type WorkbenchHome = {
 // Data only: consumed by local routing, hosted adapters, tiles, and navigation.
 export const ocrWorkbench = {
   id: "ocr", path: "/tools/ocr", label: "OCR Workbench", illustration: "🔠", icon: "ocr",
-  description: "Read text from a scanned PDF or image.",
+  description: "Read scanned PDFs or images and correct saved text.",
   scope: "One file",
   input: "source",
-  flow: { reads: ["source"], writes: ["text", "artifacts"] },
+  flow: { reads: ["source", "text"], writes: ["text", "artifacts"] },
 } as const satisfies DocumentTool;
 
 type DocumentTool = {

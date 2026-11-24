@@ -34,6 +34,7 @@ export function OcrWorkbenchPage() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [fileSearch, setFileSearch] = useState("");
+  const [editing, setEditing] = useState(false);
   const runId = params.get("run_id") ?? "";
   const run = useQuery({
     queryKey: ["processing-runs", "detail", runId],
@@ -57,13 +58,12 @@ export function OcrWorkbenchPage() {
   });
   const readyFile = current.data?.meta.file;
   const file = readyFile ?? (picked ? { filename: picked.name, mime: picked.mime ?? null } : undefined);
-  const compatible = (candidate: { filename?: string | null; mime?: string | null }) =>
-    methods.some(method => sourceCompatibility(candidate, method.types) === "supported");
-  const options = (files.data?.items ?? []).filter(compatible).map(item => ({
+  const options = (files.data?.items ?? []).map(item => ({
     id: item.file_id,
     label: item.source_relpath || item.filename || item.file_id,
   }));
   const selected = options.find(item => item.id === fileId) ?? (fileId ? { id: fileId, label: readyFile?.filename ?? fileId } : null);
+  const canLeave = () => !editing || window.confirm("Discard unsaved text edits?");
 
   return (
     <Stack spacing={2.5} sx={{ maxWidth: 1200, mx: "auto" }}>
@@ -72,7 +72,7 @@ export function OcrWorkbenchPage() {
           <Typography component="h1" variant="h4" fontWeight={750}>OCR Workbench</Typography>
           <IconButton aria-label="About OCR Workbench" onClick={() => setHelpOpen(true)}><HelpOutline /></IconButton>
         </Stack>
-        <Typography color="text.secondary">One file · Recognize text in a PDF or image</Typography>
+        <Typography color="text.secondary">One file · Run OCR or correct saved text</Typography>
         <LibraryFlow {...ocrWorkbench.flow} />
       </Stack>
       <Paper variant="outlined" sx={{ p: 2 }}>
@@ -84,8 +84,8 @@ export function OcrWorkbenchPage() {
               open={pickerOpen} onOpen={() => setPickerOpen(true)}
               onClose={() => { setPickerOpen(false); setFileSearch(""); }}
               onInputChange={(_, value, reason) => { if (reason === "input" || reason === "clear") setFileSearch(value.trim()); }}
-              noOptionsText={files.data?.next_cursor ? "Search by filename to narrow the results" : "No compatible files found"}
-              onChange={(_, item) => { setPicked(undefined); setParams(item ? { file_id: item.id } : {}); }}
+              noOptionsText={files.data?.next_cursor ? "Search by filename to narrow the results" : "No files found"}
+              onChange={(_, item) => { if (canLeave()) { setPicked(undefined); setParams(item ? { file_id: item.id } : {}); } }}
               renderInput={input => <TextField {...input} label="Choose a library file" size="small" />}
               sx={{ flex: 1 }}
             />
@@ -94,7 +94,7 @@ export function OcrWorkbenchPage() {
           {picked && !fileId && <Typography fontWeight={650}>{picked.name}</Typography>}
           <LocationBrowser open={browseOpen} singleFile selected={picked ? [picked] : []}
             onClose={() => setBrowseOpen(false)}
-            onFiles={items => { setPicked(items[0]); setParams({}); setBrowseOpen(false); }}
+            onFiles={items => { if (canLeave()) { setPicked(items[0]); setParams({}); setBrowseOpen(false); } }}
           />
           {files.isError && <Alert severity="warning" action={<Button onClick={() => void files.refetch()}>Retry</Button>}>Could not load library files.</Alert>}
           {readiness.isError && <Alert severity="error" action={<Button onClick={() => void readiness.refetch()}>Retry</Button>}>Could not check OCR methods.</Alert>}
@@ -105,19 +105,20 @@ export function OcrWorkbenchPage() {
             run={run} picked={fileId ? undefined : picked} sourceActive={current.data?.artifact_summary.actions.source_is_active ?? Boolean(picked)}
             methods={methods.filter(method => file && sourceCompatibility(file, method.types) === "supported")}
             catalogLoaded={readiness.isSuccess && methods.length > 0}
+            editing={editing} onEditingChange={setEditing}
           />}
         </Stack>
       </Paper>
       <Dialog open={helpOpen} onClose={() => setHelpOpen(false)} aria-labelledby="ocr-help-title">
         <DialogTitle id="ocr-help-title">About OCR Workbench</DialogTitle>
-        <DialogContent><Typography><strong>OCR saves a text version.</strong> Existing primary text stays in use until you choose Make primary. For a new file, its first extraction is primary. Available formats depend on the selected method.</Typography></DialogContent>
+        <DialogContent><Stack spacing={1}><Typography><strong>OCR saves a text version.</strong> Existing primary text stays in use until you choose Make primary. Available formats depend on the OCR method.</Typography><Typography><strong>Edit Text</strong> corrects the primary version and keeps its original extraction.</Typography></Stack></DialogContent>
         <DialogActions><Button onClick={() => setHelpOpen(false)}>Close</Button></DialogActions>
       </Dialog>
     </Stack>
   );
 }
 
-function OcrDocument({ fileId, file, picked, run, sourceActive, methods, catalogLoaded }: {
+function OcrDocument({ fileId, file, picked, run, sourceActive, methods, catalogLoaded, editing, onEditingChange }: {
   fileId: string;
   file?: { filename: string; mime: string | null };
   picked?: PickedFile;
@@ -125,6 +126,8 @@ function OcrDocument({ fileId, file, picked, run, sourceActive, methods, catalog
   sourceActive: boolean;
   methods: { id: string; display_name: string; available: boolean; detail: string }[];
   catalogLoaded: boolean;
+  editing: boolean;
+  onEditingChange: (editing: boolean) => void;
 }) {
   const [params, setParams] = useSearchParams();
   const [methodId, setMethodId] = useState("");
@@ -150,7 +153,7 @@ function OcrDocument({ fileId, file, picked, run, sourceActive, methods, catalog
   const runItem = run.data?.items?.[0];
   const runError = runItem?.error || run.data?.error;
   const inspected = variantId || runItem?.extraction_variant_id || "";
-  const activeVariant = versions.data?.variants.find(version => version.id === inspected);
+  const activeVariant = versions.data?.variants.find(version => inspected ? version.id === inspected : version.primary);
 
   useEffect(() => {
     if (fileId && (status === "done" || status === "error")) {
@@ -165,6 +168,7 @@ function OcrDocument({ fileId, file, picked, run, sourceActive, methods, catalog
   }, [fileId, client, runId, status]);
 
   const inspect = (id: string) => {
+    if (editing && id !== activeVariant?.id && !window.confirm("Discard unsaved text edits?")) return;
     setPage(1);
     setSegmentId(null);
     const next = new URLSearchParams(params);
@@ -180,7 +184,7 @@ function OcrDocument({ fileId, file, picked, run, sourceActive, methods, catalog
           <MenuItem value="" disabled>Choose a ready method</MenuItem>
           {methods.map(item => <MenuItem key={item.id} value={item.id} disabled={!item.available}>{item.display_name}{item.available ? "" : " · unavailable"}</MenuItem>)}
         </TextField>}
-        <Button variant="contained" disabled={!method || !sourceActive || running || run.isError}
+        <Button variant="contained" disabled={!method || !sourceActive || running || run.isError || editing}
           onClick={() => {
             if (!method) return;
             queue.mutate({ extractor_name: method.id, extraction_policy: "save_variant" }, {
@@ -192,7 +196,8 @@ function OcrDocument({ fileId, file, picked, run, sourceActive, methods, catalog
               },
             });
           }}>{queue.isPending ? "Queueing…" : "Run OCR"}</Button>
-        {fileId && <Button component={Link} to={buildFileRoute({ fileId })}>View file products</Button>}
+        {fileId && <Button component={Link} to={buildFileRoute({ fileId })}
+          onClick={event => { if (editing && !window.confirm("Discard unsaved text edits?")) event.preventDefault(); }}>View file products</Button>}
       </Stack>
       {file && !sourceActive && <Alert severity="warning">Original file is unavailable.</Alert>}
       {file && catalogLoaded && !methods.length && <Alert severity="info">No OCR method accepts this file type.</Alert>}
@@ -215,13 +220,14 @@ function OcrDocument({ fileId, file, picked, run, sourceActive, methods, catalog
         {versions.isSuccess && !versions.data.variants.length && <Typography color="text.secondary">No versions saved yet.</Typography>}
         <ExtractionVersions variants={versions.data?.variants ?? []} onInspect={inspect} onPromote={id => {
           if (window.confirm("Make this the primary text? Existing summaries and the search index may need refreshing.")) promote.mutate(id);
-        }} promoting={promote.isPending || running} />
+        }} promoting={promote.isPending || running || editing} />
         {promote.isError && <Alert severity="error">{promote.error.message}</Alert>}
       </>}
       {activeVariant && file && <Stack component="section" aria-label="Extraction preview" spacing={2} key={activeVariant.id}>
         <Typography component="h2" variant="h6" fontWeight={700}>Source and text · {activeVariant.extractor.name}</Typography>
         <DocumentReadingPane fileId={fileId} mime={file.mime} versionId={activeVariant.id} mode="split" page={page} segmentId={segmentId}
-          readOnly onPageChange={setPage} onJumpToSource={target => { if (target.page) setPage(target.page); setSegmentId(target.segmentId ?? null); }} />
+          editable={activeVariant.primary && !running} showEdits={activeVariant.primary} onEditingChange={onEditingChange}
+          onPageChange={setPage} onJumpToSource={target => { if (target.page) setPage(target.page); setSegmentId(target.segmentId ?? null); }} />
         <ExtractionArtifacts fileId={fileId} variantId={activeVariant.id} />
       </Stack>}
     </Stack>

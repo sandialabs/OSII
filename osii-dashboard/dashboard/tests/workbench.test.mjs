@@ -35,7 +35,7 @@ test("every Toolbox workspace declares a scope and uses the shared library produ
     for (const key of [...tool.flow.reads, ...tool.flow.writes]) assert.ok(libraryProducts[key]);
   }
   assert.deepEqual(documentTools.find(tool => tool.id === "ocr").flow, {
-    reads: ["source"], writes: ["text", "artifacts"],
+    reads: ["source", "text"], writes: ["text", "artifacts"],
   });
 });
 
