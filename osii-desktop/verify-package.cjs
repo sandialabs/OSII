@@ -19,7 +19,7 @@ module.exports = async context => {
     }
   } else {
     for (const executable of ['osii-runtime', '_internal/ocr/tesseract', '_internal/embedding/llama-server']) {
-      await execFile('/usr/bin/lipo', ['-verify_arch', 'arm64', path.join(root, executable)]);
+      await execFile('/usr/bin/lipo', [path.join(root, executable), '-verify_arch', 'arm64']);
     }
   }
   const manifest = JSON.parse(await fs.readFile(path.join(root, '_internal/release.json'), 'utf8'));
