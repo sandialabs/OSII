@@ -13,11 +13,12 @@ export function ScopePicker({ value, onChange, allowedTypes = ["root", "folder",
     : value.scope_type === "folder" ? (folders.data?.scopes ?? []).map(scope => ({ id: scope.folder_id, label: scope.path || "/" })) : [];
   const id = value.scope_type === "object" ? value.file_id : value.scope_type === "collection" ? value.collection_id : value.scope_type === "folder" ? value.folder_id : "";
   return <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-    <TextField select disabled={disabled} size="small" label="Scope" value={value.scope_type} onChange={event => {
+    {allowedTypes.length > 1 && <TextField select disabled={disabled} size="small" label="Scope" value={value.scope_type} onChange={event => {
       const kind = event.target.value;
       onChange(kind === "object" ? { scope_type: "object", file_id: "" } : kind === "folder" ? { scope_type: "folder", folder_id: "" } : kind === "collection" ? { scope_type: "collection", collection_id: "" } : { scope_type: "root" });
-    }} sx={{ minWidth: 180 }}>{allowedTypes.map(kind => <MenuItem key={kind} value={kind}>{{ root: "Library", folder: "Folder", collection: "Collection", object: "Document" }[kind]}</MenuItem>)}</TextField>
-    {value.scope_type !== "root" ? <Autocomplete disabled={disabled} size="small" options={options} value={options.find(option => option.id === id) ?? null} isOptionEqualToValue={(a, b) => a.id === b.id} getOptionLabel={option => option.label} sx={{ minWidth: 300, flex: 1 }}
+    }} sx={{ minWidth: 180 }}>{allowedTypes.map(kind => <MenuItem key={kind} value={kind}>{{ root: "Library", folder: "Folder", collection: "Collection", object: "Document" }[kind]}</MenuItem>)}</TextField>}
+    {allowedTypes.length === 1 && value.scope_type === "root" && <TextField size="small" label="Scope" value="Library" slotProps={{ input: { readOnly: true } }} />}
+    {value.scope_type !== "root" ? <Autocomplete disabled={disabled} size="small" options={options} value={options.find(option => option.id === id) ?? null} isOptionEqualToValue={(a, b) => a.id === b.id} getOptionLabel={option => option.label} sx={{ minWidth: { xs: 0, sm: 260 }, flex: 1 }}
       onChange={(_, option) => onChange(value.scope_type === "object" ? { scope_type: "object", file_id: option?.id ?? "" } : value.scope_type === "folder" ? { scope_type: "folder", folder_id: option?.id ?? "" } : { scope_type: "collection", collection_id: option?.id ?? "" })}
       renderInput={params => <TextField {...params} label={`Choose ${value.scope_type === "object" ? "a document" : value.scope_type === "folder" ? "a folder" : "a collection"}`} />} /> : null}
   </Stack>;

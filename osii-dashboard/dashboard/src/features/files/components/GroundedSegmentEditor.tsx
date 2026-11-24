@@ -270,18 +270,10 @@ export function GroundedSegmentEditor({
         justifyContent="space-between"
         alignItems={compact ? "flex-start" : { xs: "flex-start", md: "center" }}
       >
-        <Stack spacing={0.25}>
-          <Typography variant="subtitle1" fontWeight={600}>
-            Grounded Text
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Click a segment to jump to the grounded PDF page.
-          </Typography>
-        </Stack>
-
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
           <IconButton
             size="small"
+            aria-label="Find in text"
             onClick={() => setSearchOpen((prev) => !prev)}
             sx={{
               border: "1px solid rgba(15,23,42,0.14)",
@@ -407,7 +399,7 @@ export function GroundedSegmentEditor({
         </Card>
       ) : null}
 
-      {hasEditedText ? (
+      {hasEditedText && !readOnly ? (
         <Alert severity="info">
           Edited text is present and is now the preferred text representation.
         </Alert>

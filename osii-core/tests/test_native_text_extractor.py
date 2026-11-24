@@ -54,14 +54,14 @@ def test_native_text_extractor_preserves_pdf_page_text(tmp_path: Path):
     assert "Host-native PDF text" in text
 
 
-def test_native_routes_leave_unsupported_binaries_for_explicit_handling(
+def test_builtin_routes_try_native_pdf_text_before_ocr(
     monkeypatch,
 ):
     monkeypatch.delenv("OSII_EXTRACTOR_ROUTES_PATH", raising=False)
     routes = load_extractor_routes()
 
     assert choose_extractor_for_path(Path("report.pdf"), routes) == "local.native-text"
-    assert extractor_chain_for_path(Path("report.pdf"), routes) == ["local.native-text"]
+    assert extractor_chain_for_path(Path("report.pdf"), routes) == ["local.native-text", "local.tesseract-page-ocr"]
     assert choose_extractor_for_path(Path("archive.bin"), routes) == "local.native-text"
 
 

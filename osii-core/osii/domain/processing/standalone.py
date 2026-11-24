@@ -175,8 +175,11 @@ def submit_full_index(
 ) -> dict:
     from osii.domain.processing.jobs import create_run_record, save_run, enqueue_run
     from osii.domain.read.catalog import load_files_catalog
+    from osii.domain.read.sidecar import SidecarLibraryReader
 
-    documents = {item["file_id"]: item for item in load_files_catalog(root)}
+    reader = SidecarLibraryReader(root)
+    documents = {item["file_id"]: item for item in load_files_catalog(root)
+                 if reader.representation_path(item["file_id"]).is_file()}
     members = sorted(documents)
     binding = embedding_binding(root)
     paths = [root / "objects" / file_id for file_id in members]

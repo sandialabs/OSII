@@ -70,7 +70,7 @@ class SidecarLibraryReader:
             with closing(sqlite3.connect(catalog.as_uri() + "?mode=ro", uri=True)) as conn:
                 conn.row_factory = sqlite3.Row
                 conn.execute("BEGIN")
-                terms, values = ["status IN ('done', 'partial')"], []
+                terms, values = ["status IN ('done', 'partial', 'metadata_only')"], []
                 if scope.kind == "object":
                     terms.append("file_id = ?")
                     values.append(scope.identifier)
@@ -104,7 +104,7 @@ class SidecarLibraryReader:
                         continue
                     record = self.get_document(obj.name)
                     provenance = self._toml(obj / "provenance.toml")
-                    if record is None or provenance.get("provenance", {}).get("status", "unknown") not in {"done", "partial"}:
+                    if record is None or provenance.get("provenance", {}).get("status", "unknown") not in {"done", "partial", "metadata_only"}:
                         continue
                     if scope.kind == "object" and record.file_id != scope.identifier:
                         continue

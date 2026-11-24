@@ -15,7 +15,7 @@ type ReadingTarget = { page?: number | null; segmentId?: string | null };
 
 export function DocumentReadingPane({
   fileId, mime, versionId, mode, page, segmentId, charStart, charEnd, onPageChange,
-  onJumpToSource, onEditingChange, readOnly = false, citedPassage = false,
+  onJumpToSource, onEditingChange, editable = false, showEdits = false, citedPassage = false,
 }: {
   fileId: string;
   mime: string | null;
@@ -28,23 +28,23 @@ export function DocumentReadingPane({
   onPageChange: (page: number) => void;
   onJumpToSource?: (target: ReadingTarget) => void;
   onEditingChange?: (editing: boolean) => void;
-  readOnly?: boolean;
+  editable?: boolean;
+  showEdits?: boolean;
   citedPassage?: boolean;
 }) {
-  const preferred = useObjectPreferredText(fileId, !versionId && (mode !== "source" || citedPassage));
-  const documentText = useObjectTexts(fileId, !versionId && !citedPassage);
+  const preferred = useObjectPreferredText(fileId, !versionId && citedPassage);
+  const documentText = useObjectTexts(fileId, !versionId && mode === "source");
+  const extraction = versionId ?? "canonical";
   const version = useQuery({
-    queryKey: ["objects", fileId, "extractions", versionId, "texts"],
-    queryFn: () => getExtractionText(fileId, versionId!),
-    enabled: Boolean(versionId),
+    queryKey: ["objects", fileId, "extractions", extraction, "texts"],
+    queryFn: () => getExtractionText(fileId, extraction),
+    enabled: Boolean(versionId) || (!citedPassage && mode !== "source"),
   });
-  const text = versionId ? version.data?.text : preferred.data?.text;
-  const segments = (versionId ? version.data?.segments : documentText.data?.segments) ?? [];
-  const loading = versionId ? version.isPending : preferred.isPending || documentText.isPending;
-  const failed = versionId ? version.isError : preferred.isError || documentText.isError;
+  const text = citedPassage && !versionId ? preferred.data?.text : version.data?.text;
+  const segments = version.data?.segments ?? documentText.data?.segments ?? [];
   if (citedPassage) return <ReportPassage text={text ?? ""} loading={versionId ? version.isPending : preferred.isPending} />;
-  if (mode !== "source" && loading) return <CircularProgress size={24} aria-label="Loading document text" />;
-  if (mode !== "source" && failed) return <Alert severity="error">Could not load this text.</Alert>;
+  if (mode !== "source" && version.isPending) return <CircularProgress size={24} aria-label="Loading document text" />;
+  if (mode !== "source" && version.isError) return <Alert severity="error">Could not load this text.</Alert>;
 
   const match = !segmentId && (charStart != null || charEnd != null)
     ? findBestMatchingSegment({ segments, charStart: charStart ?? null, charEnd: charEnd ?? null })
@@ -59,7 +59,7 @@ export function DocumentReadingPane({
 
   const props = {
     fileId, segments, canonicalText: text ?? "", activeSegmentId,
-    readOnly: readOnly || Boolean(versionId), onEditingChange, onJumpToSource,
+    readOnly: !editable, showEdits, expectedExtractionId: versionId, onEditingChange, onJumpToSource,
   };
   return mode === "text" ? <GroundedSegmentEditor {...props} /> : (
     <SplitFileView {...props} mime={mime} page={activePage} onPageChange={onPageChange} />

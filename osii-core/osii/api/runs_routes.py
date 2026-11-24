@@ -39,6 +39,7 @@ from osii.domain.processing.jobs import (
     worker_status,
 )
 from osii.domain.processing.manifests import save_manifest
+from osii.domain.processing.quick_intake import FLOW_ID
 from osii.domain.storage.root_descriptor import write_collection_synthesis, write_collection_toml
 from osii.domain.storage.folders import folder_stats, get_or_create_folder_id, write_folder_manifest
 from osii.domain.storage.synth import write_folder_synth_text
@@ -46,7 +47,8 @@ from osii.domain.storage.ids import compute_file_id
 from osii.domain.storage.store import ensure_osii_store_layout
 from osii.domain.processing.pathing import display_rel, path_within, source_relpath
 from osii.domain.processor_settings import merged_processor_settings
-from osii.domain.processing.extractor_selection import extractor_routes_path
+from osii.domain.processing.extractor_selection import extractor_routes_path, has_default_reader
+from osii.extraction.common import init_doc_context, record_source_metadata
 from osii.extraction.dispatcher import dispatch_extract
 from osii.enrichment.registry import resolve_enricher
 from osii.indexing.chunking import (
@@ -290,6 +292,7 @@ def run_worker(
     collection_id: str | None = None,
     staging: dict | None = None,
     routes_snapshot: list[dict] | None = None,
+    continue_to_embeddings: bool = False,
 ) -> None:
     attempt_started = monotonic()
     try:
@@ -307,6 +310,7 @@ def run_worker(
 
         run["status"] = "running"
         run["control_state"] = "running"
+        simple_intake = (run.get("processing_flow") or {}).get("id") == FLOW_ID
         if not run.get("started_at"):
             run["started_at"] = datetime.now(UTC).isoformat()
         save_run(run)
@@ -366,7 +370,7 @@ def run_worker(
             if run is None:
                 return
 
-            if run["items"][index].get("status") in {"done", "partial", "error"}:
+            if run["items"][index].get("status") in {"done", "partial", "error", "metadata_only"}:
                 append_log(run_id, f"Resume: kept completed result for {src.name}.")
                 continue
 
@@ -407,6 +411,18 @@ def run_worker(
                 )
                 existing_text = get_preferred_text_representation(osii_store, file_id)
                 item = run["items"][index]
+                if simple_intake and not existing_text and not has_default_reader(src):
+                    doc_ctx = retry_file_access(lambda: init_doc_context(src, data_volume_root, file_id=file_id))
+                    reason = f"No built-in reader for {extension}. Saved file details without text."
+                    record_source_metadata(osii_store, doc_ctx, reason)
+                    item.update(status="metadata_only", extractor=None, current_step=None,
+                                osii=f"objects/{file_id}", error=None, note=reason)
+                    item["steps"]["extraction"] = "skipped"
+                    _finish_item_timing(item, item_started)
+                    run["completed"] += 1
+                    save_run(run)
+                    append_log(run_id, f"{src.name}: {reason}")
+                    continue
                 kept_extraction = False
                 if existing_text and item.get("file_id") == file_id and item.get("retry_extraction_id"):
                     try:
@@ -454,6 +470,10 @@ def run_worker(
                             if attempt + 1 < len(extractor_chain):
                                 append_log(run_id, f"Trying fallback extractor '{extractor_chain[attempt + 1]}'.")
                     if extract_result is None:
+                        if simple_intake and not existing_text:
+                            doc_ctx = retry_file_access(lambda: init_doc_context(src, data_volume_root, file_id=file_id))
+                            record_source_metadata(osii_store, doc_ctx, "Extraction failed. See the Intake run for details.")
+                            append_log(run_id, f"Saved file details without text for {src.name}.")
                         raise RuntimeError("All configured extractors failed: " + "; ".join(extraction_failures))
                     file_id = extract_result["file_id"]
                     upsert_document(osii_store, file_id)
@@ -462,6 +482,8 @@ def run_worker(
                         f"Extraction variant {extract_result['variant_id']} saved"
                         + (" and made primary." if extract_result["made_primary"] else "."),
                     )
+                    if extract_result.get("error"):
+                        append_log(run_id, f"Extraction issue for {src.name} ({extractor_name}): {redact(extract_result['error'])}")
                 elif kept_extraction:
                     append_log(run_id, f"Retry: kept completed extraction for {src.name}.")
                 elif run_extraction:
@@ -620,21 +642,21 @@ def run_worker(
         if run is None:
             return
 
-        run["status"] = "done"
-        run["finished_at"] = datetime.now(UTC).isoformat()
+        if not continue_to_embeddings:
+            run["status"] = "done"
+            run["finished_at"] = datetime.now(UTC).isoformat()
         save_run(run)
 
-        append_log(run_id, "Run complete.")
+        append_log(run_id, "File processing complete. Preparing embeddings." if continue_to_embeddings else "Run complete.")
 
     except Exception as exc:
+        append_log(run_id, f"Run failed: {exc}")
         run = get_run(run_id)
         if run is not None:
             run["status"] = "error"
             run["error"] = str(exc)
             run["finished_at"] = datetime.now(UTC).isoformat()
             save_run(run)
-
-        append_log(run_id, f"Run failed: {exc}")
 
 
 @router.post("/runs")

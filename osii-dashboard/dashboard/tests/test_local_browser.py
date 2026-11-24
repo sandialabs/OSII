@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import urlopen
 
 import pytest
+import pymupdf
 from playwright.sync_api import expect, sync_playwright
 
 from osii.domain.artifacts.products import product_path, publish_product
@@ -86,10 +87,10 @@ def isolated_library(tmp_path):
 
 
 @contextmanager
-def baseline_processors(library):
+def baseline_processors(library, extra_endpoints=()):
     root, _, env = library
     services = DASHBOARD.parents[1] / "osii-core" / "services"
-    endpoints = []
+    endpoints = list(extra_endpoints)
     with ExitStack() as stack:
         for name in ("local-extractor", "local-synthesizer", "local-enricher", "local-embedder"):
             port = available_port()
@@ -139,6 +140,7 @@ def test_pdf_preview_recovers_after_source_returns(isolated_library):
     with dashboard_page(isolated_library, "pdf-preview-trace") as page:
         page.goto(f"/files/{file_id}")
         expect(page.get_by_role("heading", name=SAMPLE.name)).to_be_visible()
+        expect(page.get_by_role("heading", name="Original file", exact=True)).to_be_visible()
         breadcrumbs = page.get_by_role("navigation", name="Breadcrumbs")
         expect(breadcrumbs.get_by_role("link", name="Files")).to_have_attribute("href", "/files")
         expect(breadcrumbs.locator('[aria-current="page"]')).to_have_text(SAMPLE.name)
@@ -160,6 +162,17 @@ def test_pdf_preview_recovers_after_source_returns(isolated_library):
         expect(page.get_by_text("Page 1 of 7", exact=True)).to_be_visible()
         expect(page.get_by_role("main").get_by_role("link", name="Open OCR Workbench")).to_have_count(0)
         page.get_by_role("button", name="Single view", exact=True).click()
+        expect(page.get_by_role("separator", name="Resize document panes")).to_have_count(0)
+        page.get_by_role("button", name="File details", exact=True).click()
+        expect(page.get_by_text(str(source.resolve()), exact=True)).to_be_visible()
+        expect(page.get_by_text("File type", exact=True)).to_be_visible()
+        page.get_by_role("button", name=re.compile("Collection membership")).click()
+        expect(page.get_by_text("This file is part of no collections.", exact=True)).to_be_visible()
+        page.get_by_role("button", name="Original file", exact=True).click()
+        expect(page.get_by_text("Page 1 of 7", exact=True)).to_be_visible()
+        page.get_by_role("button", name="Next", exact=True).click()
+        expect(page.get_by_text("Page 2 of 7", exact=True)).to_be_visible()
+        expect(page.get_by_role("heading", name="Original file", exact=True)).to_be_visible()
         expect(page.get_by_role("separator", name="Resize document panes")).to_have_count(0)
 
 
@@ -254,7 +267,7 @@ def test_intake_from_two_locations_is_browsable_even_after_source_goes_offline(i
         expect(failures).to_contain_text("damaged.pdf")
         expect(failures).to_contain_text("local.native-text")
         expect(files.get_by_role("row", name=re.compile("report.txt"))).to_contain_text("Read text · Completed · local.native-text")
-        expect(files.get_by_role("row", name=re.compile("damaged.pdf"))).to_contain_text("Read text · Failed · local.native-text")
+        expect(files.get_by_role("row", name=re.compile("damaged.pdf"))).to_contain_text("Read text · Failed · local.tesseract-page-ocr")
         assert failures.evaluate("(node) => node.compareDocumentPosition(document.querySelector('table')) & Node.DOCUMENT_POSITION_FOLLOWING")
         expect(page.get_by_text("Refresh log", exact=True)).to_have_count(0)
         assert not log_requests
@@ -272,8 +285,9 @@ def test_intake_from_two_locations_is_browsable_even_after_source_goes_offline(i
         expect(page.get_by_role("textbox", name="Run report")).to_have_value(re.compile(r"python"))
         page.get_by_role("button", name="Hide diagnostics", exact=True).click()
 
-        with page.expect_response(lambda response: response.url.endswith(f"/api/runs/{second_run['id']}/logs")):
-            page.get_by_text("Run log", exact=True).click()
+        page.get_by_text("Run log", exact=True).click()
+        expect(page.locator("details").filter(has_text="Run log")).to_contain_text("Extractor 'local.native-text' failed for damaged.pdf")
+        assert not log_requests
         expect(page.get_by_role("button", name="Refresh log", exact=True)).to_be_visible()
         page.reload()
         expect(failures).to_be_visible()
@@ -300,6 +314,8 @@ def test_intake_from_two_locations_is_browsable_even_after_source_goes_offline(i
         expect(page.get_by_role("button", name="Open file damaged.pdf")).to_have_count(0)
         page.get_by_role("button", name="Open file report.txt").click()
         expect(page).to_have_url(re.compile("/files/" + second_id))
+        expect(page.get_by_role("heading", name="Original file", exact=True)).to_be_visible()
+        page.get_by_role("button", name="local.native-text Primary", exact=True).click()
         expect(page.get_by_text("The second source has inspection notes about copper joints.", exact=False).first).to_be_visible()
 
         update_synthesis_provenance(root / ".osii", first_id, synthesizer_name="openai.synthesizer",
@@ -410,7 +426,11 @@ def test_tool_and_collection_wiki_breadcrumbs_follow_stable_routes(isolated_libr
             ("/tools/collections", "Create Collections"),
             ("/topics", "Explore Topics"),
             ("/tools/ocr", "OCR Workbench"),
-            ("/tools/workbench", "Library-wide processing"),
+            ("/tools/wikis", "Wikis"),
+            ("/tools/wiki", "Create a wiki"),
+            ("/tools/read-files", "Read files"),
+            ("/tools/summary", "Create a summary"),
+            ("/tools/metadata", "Suggest metadata"),
             ("/tools/search-index", "Search index"),
             ("/admin/database", "Database explorer"),
         ]:
@@ -422,6 +442,14 @@ def test_tool_and_collection_wiki_breadcrumbs_follow_stable_routes(isolated_libr
         breadcrumbs.get_by_role("link", name="Toolbox").click()
         expect(page).to_have_url(re.compile(r"/tools$"))
         expect(page.get_by_role("navigation", name="Breadcrumbs")).to_have_count(0)
+        navigation = page.get_by_role("navigation", name="Main navigation")
+        expect(navigation.get_by_text("Menu", exact=True)).to_have_count(0)
+        expect(page.get_by_text("Library-wide processing", exact=True)).to_have_count(0)
+        expect(page.get_by_role("link", name=re.compile("^Wikis "))).to_have_attribute("href", "/tools/wikis")
+        expect(navigation.get_by_text("Create a wiki", exact=True)).to_have_count(0)
+        expect(page.get_by_role("link", name="Search index", exact=True)).to_have_attribute("href", "/tools/search-index")
+        page.goto("/tools/workbench")
+        expect(page).to_have_url(re.compile(r"/tools$"))
 
         response = page.request.post("/api/collections", data={"name": "Inspection notes"})
         assert response.ok, response.text()
@@ -466,6 +494,21 @@ def test_setup_build_index_queues_existing_text_without_reopening_intake(isolate
         dashboard_page(isolated_library, "build-index") as page,
     ):
         queue_directory(page, source, [file.name], "Completed")
+        page.set_viewport_size({"width": 1280, "height": 640})
+        page.goto("/search")
+        page.get_by_role("textbox", name="Search files", exact=True).fill("inspection")
+        page.get_by_role("textbox", name="Search files", exact=True).press("Enter")
+        expect(page.get_by_role("button", name="Open Match", exact=True).first).to_be_in_viewport()
+        expect(page.get_by_role("dialog")).to_have_count(0)
+        page.get_by_role("button", name="Recent searches", exact=True).click()
+        history = page.get_by_role("dialog", name="Recent searches")
+        expect(history.get_by_role("button", name=re.compile(r"^inspection"))).to_be_visible()
+        history.get_by_role("button", name="Close", exact=True).click()
+        page.get_by_role("button", name="Search options", exact=True).click()
+        expect(page.get_by_role("dialog", name="Search options").get_by_role("combobox", name=re.compile("Search mode"))).to_be_visible()
+        page.get_by_role("dialog", name="Search options").get_by_role("button", name="Close", exact=True).click()
+        expect(page.get_by_role("button", name="Open Match", exact=True).first).to_be_in_viewport()
+        page.set_viewport_size({"width": 1380, "height": 900})
         file.rename(root / "offline-inspection.txt")
         page.goto("/admin/processors?view=advanced")
         page.get_by_role("button", name=re.compile(r"^6\. Build index")).click()
@@ -505,13 +548,114 @@ def test_setup_build_index_queues_existing_text_without_reopening_intake(isolate
         assert run["indexing_status"] == "done"
         assert run["indexing_progress"]["completed_documents"] == 1
 
-        tool = page.request.post("/api/enrichment-jobs/run", data={
-            "enricher_name": "stats_keywords", "scope": {"scope_type": "root"},
-        })
-        assert tool.ok, tool.text()
-        page.goto("/intake/runs/" + tool.json()["run_id"])
+        page.goto("/tools")
+        page.get_by_role("link", name="Stats Keywords Enricher", exact=True).click()
+        expect(page.get_by_role("heading", name="Stats Keywords Enricher", exact=True)).to_be_visible()
+        page.get_by_role("combobox", name="Scope", exact=False).click()
+        page.get_by_role("option", name="Library", exact=True).click()
+        with page.expect_response(lambda response: response.url.endswith("/api/enrichment-jobs/run")
+                                  and response.request.method == "POST") as tool:
+            page.get_by_role("button", name="Run", exact=True).click()
+        assert tool.value.ok, tool.value.text()
+        page.get_by_role("link", name="View run", exact=True).click()
         expect(page.get_by_role("region", name="Processors and models")).to_contain_text("stats_keywords")
         expect(page.get_by_role("table", name="Files and processors")).to_contain_text(file.name)
+
+
+def test_toolbox_read_summary_and_wiki_workflows(isolated_library):
+    root, source, env = isolated_library
+    file = source / "inspection-source.txt"
+    file.write_text("The inspection team documented thermal seals and copper joints.", encoding="utf-8")
+    port = available_port()
+    endpoint = f"http://127.0.0.1:{port}"
+    (root / "fixture_wiki.py").write_text("""
+from osii.processor_sdk import (
+    Artifact, Capability, Enricher, EnrichmentResponse, ProcessorDescriptor,
+    ProcessorKind, ProvenanceRef, WikiMarkdownArtifactData, create_processor_app,
+)
+
+class FixtureWiki(Enricher):
+    descriptor = ProcessorDescriptor(
+        name="fixture.inspection-wiki", version="1", display_name="Inspection Wiki",
+        description="Test processor", kind=ProcessorKind.ENRICHER,
+        capabilities=Capability(scope_types=["collection"], output_kinds=["wiki_markdown"], batch_reduction="wiki"),
+    )
+
+    def enrich(self, request):
+        document = request.scope.documents[0]
+        data = WikiMarkdownArtifactData(title="Inspection wiki",
+            markdown="## Inspection guidance\\n\\n" + document.text,
+            citations=[ProvenanceRef(file_id=document.file_id)])
+        return EnrichmentResponse(request_id=request.request_id, processor=self.descriptor,
+            artifacts=[Artifact(id="wiki", kind="wiki_markdown", media_type="application/json", standard_data=data)])
+
+app = create_processor_app(FixtureWiki())
+""")
+    with (
+        running_server([sys.executable, "-m", "uvicorn", "fixture_wiki:app", "--port", str(port)],
+                       url=endpoint + "/health", cwd=root, env=env),
+        baseline_processors(isolated_library, [endpoint]),
+        running_process([sys.executable, "-m", "osii.worker"], cwd=root, env=env),
+        dashboard_page(isolated_library, "toolbox-processes") as page,
+    ):
+        page.goto("/tools")
+        page.get_by_role("link", name="Read files", exact=True).click()
+        page.get_by_role("button", name="Browse files", exact=True).click()
+        picker = page.get_by_role("dialog", name="Select files")
+        picker.get_by_role("textbox", name="Folder path").fill(str(source))
+        picker.get_by_role("button", name="Go", exact=True).click()
+        picker.get_by_text(file.name, exact=True).click()
+        picker.get_by_role("button", name="Use 1 file", exact=True).click()
+        with page.expect_response(lambda response: response.url.endswith("/api/runs")
+                                  and response.request.method == "POST") as read:
+            page.get_by_role("button", name="Read 1 file", exact=True).click()
+        assert read.value.ok, read.value.text()
+        read_id = read.value.json()["id"]
+        expect(page.get_by_role("heading", level=1).locator("..").get_by_text("Completed", exact=True)).to_be_visible(timeout=30_000)
+        completed = page.request.get("/api/runs/" + read_id).json()
+        assert completed["operations"]["extract"] and not completed["operations"]["embed"]
+        assert completed["operations"]["synthesize"] is None
+        file_id = completed["items"][0]["file_id"]
+
+        page.goto("/tools")
+        page.get_by_role("link", name="Create a summary", exact=True).click()
+        page.get_by_role("combobox", name="Choose a document", exact=True).fill(file.name)
+        page.get_by_role("option", name=file.name, exact=True).click()
+        with page.expect_response(lambda response: "/api/synthesis/objects/" in response.url
+                                  and response.request.method == "POST") as summary:
+            page.get_by_role("button", name="Create summary", exact=True).click()
+        assert summary.value.ok, summary.value.text()
+        expect(page.get_by_role("heading", level=1).locator("..").get_by_text("Completed", exact=True)).to_be_visible(timeout=30_000)
+
+        collection = page.request.post("/api/collections", data={"name": "Inspection team"})
+        assert collection.ok, collection.text()
+        collection_id = collection.json()["collection"]["id"]
+        assert page.request.post(f"/api/collections/{collection_id}/members", data={"file_ids": [file_id]}).ok
+        page.goto("/tools")
+        page.get_by_role("link", name=re.compile("^Wikis ")).click()
+        page.get_by_role("link", name="Create a wiki", exact=True).click()
+        page.get_by_role("combobox", name="Choose a collection", exact=True).fill("Inspection team")
+        page.get_by_role("option", name="Inspection team", exact=True).click()
+        with page.expect_response(lambda response: response.url.endswith("/api/enrichment-jobs/run")
+                                  and response.request.method == "POST") as wiki:
+            page.get_by_role("button", name="Create wiki", exact=True).click()
+        assert wiki.value.ok, wiki.value.text()
+        read_wiki = page.get_by_role("link", name="Read wiki", exact=True)
+        expect(read_wiki).to_be_visible(timeout=30_000)
+        expect(page.get_by_role("link", name="View run", exact=True)).to_have_attribute("href", f"/intake/runs/{wiki.value.json()['run_id']}")
+        page.get_by_role("link", name="View run", exact=True).click()
+        page.get_by_role("link", name="Read wiki", exact=True).click()
+        expect(page.get_by_role("heading", name="Wikis", exact=True)).to_be_visible()
+        expect(page.get_by_role("article").get_by_text("The inspection team documented thermal seals and copper joints.", exact=True)).to_be_visible()
+        page.reload()
+        expect(page.get_by_role("article").get_by_role("heading", name="Inspection guidance")).to_be_visible()
+        page.get_by_text("Source documents (1)", exact=True).click()
+        expect(page.get_by_role("link", name=file.name, exact=True)).to_have_attribute("href", f"/files/{file_id}")
+        page.get_by_role("tab", name="Edit", exact=True).click()
+        expect(page.get_by_role("textbox", name="Wiki Markdown")).to_be_visible()
+        page.get_by_role("link", name="Recent wikis", exact=True).click()
+        page.get_by_role("link", name="Inspection team", exact=False).click()
+        expect(page.get_by_role("article").get_by_role("heading", name="Inspection guidance")).to_be_visible()
 
 
 def test_simple_intake_connects_models_before_document_selection(isolated_library):
@@ -520,6 +664,19 @@ def test_simple_intake_connects_models_before_document_selection(isolated_librar
     text.write_text("Inspection records cover thermal seals and copper joints.")
     damaged = source / "damaged.pdf"
     damaged.write_bytes(b"%PDF-1.7\nThis is an intentionally invalid PDF fixture.\n")
+    unknown = source / "sensor-export.bin"
+    unknown.write_bytes(b"\x00\x01\x02\xff")
+    image = source / "inspection.png"
+    scan = source / "scanned-inspection.pdf"
+    with pymupdf.open() as document:
+        page_image = document.new_page(width=600, height=175)
+        page_image.insert_text((35, 95), "Inspection records", fontsize=28)
+        page_image.get_pixmap(dpi=150).save(image)
+    with pymupdf.open() as document:
+        scan_page = document.new_page(width=600, height=175)
+        scan_page.insert_image(scan_page.rect, filename=image)
+        assert not scan_page.get_text().strip()
+        document.save(scan)
     model_port, bridge_port = available_port(), available_port()
     endpoint = f"http://127.0.0.1:{model_port}/v1"
     bridge = f"http://127.0.0.1:{bridge_port}"
@@ -564,10 +721,26 @@ async def chat(request: Request):
     return {"choices": [{"message": {"content": content}}]}
 """)
     services = DASHBOARD.parents[1] / "osii-core" / "services"
+    ocr_port = available_port()
+    ocr_url = f"http://127.0.0.1:{ocr_port}"
+    (root / "fixture_ocr.py").write_text(f"""
+import shutil
+import sys
+sys.path.insert(0, {str(services / 'local-tesseract')!r})
+from osii_local_tesseract import main
+app = main.app
+
+if shutil.which("tesseract") is None:
+    def ocr_fixture(*args, **kwargs):
+        return {{"text": "Inspection records", "regions": [], "page_width": 600, "page_height": 175}}
+    main._ocr_page = ocr_fixture
+""")
     command = [sys.executable, "-m", "uvicorn", "osii_model_provider_bridge.main:app",
                "--app-dir", str(services / "model-provider-bridge"), "--port", str(bridge_port)]
     with (
-        baseline_processors(isolated_library),
+        running_server([sys.executable, "-m", "uvicorn", "fixture_ocr:app", "--port", str(ocr_port)],
+                       url=ocr_url + "/health", cwd=root, env=env),
+        baseline_processors(isolated_library, [ocr_url]),
         running_server([sys.executable, "-m", "uvicorn", "fixture_models:app", "--port", str(model_port)],
                        url=f"http://127.0.0.1:{model_port}/health", cwd=root, env=env),
         running_server(command, url=bridge + "/health", cwd=root, env=env),
@@ -586,11 +759,18 @@ async def chat(request: Request):
         page.get_by_role("menuitem", name="Advanced intake", exact=True).click()
         page.get_by_role("button", name="Browse files", exact=True).click()
         dialog = page.get_by_role("dialog")
+        expect(dialog.get_by_role("list", name="Locations", exact=True)).to_be_visible()
+        expect(dialog.get_by_role("navigation", name="Folder breadcrumbs")).to_have_count(0)
         dialog.get_by_role("textbox", name="Folder path", exact=True).fill(str(source))
         dialog.get_by_role("button", name="Go", exact=True).click()
+        expect(dialog.get_by_role("list", name="Locations", exact=True)).to_have_count(0)
+        expect(dialog.get_by_role("button", name="Parent folder", exact=True)).to_be_enabled()
         dialog.get_by_text(text.name, exact=True).click()
         dialog.get_by_text(damaged.name, exact=True).click()
-        dialog.get_by_role("button", name="Use 2 files", exact=True).click()
+        dialog.get_by_text(unknown.name, exact=True).click()
+        dialog.get_by_text(image.name, exact=True).click()
+        dialog.get_by_text(scan.name, exact=True).click()
+        dialog.get_by_role("button", name="Use 5 files", exact=True).click()
         page.get_by_role("navigation", name="Breadcrumbs").get_by_role("link", name="Intake & Setup").click()
 
         page.get_by_role("button", name="Connect embedding model", exact=True).click()
@@ -619,7 +799,7 @@ async def chat(request: Request):
         connect.get_by_role("button", name="Save and test", exact=True).click()
         expect(connect).to_have_count(0)
 
-        process = page.get_by_role("button", name="Process 2 files", exact=True)
+        process = page.get_by_role("button", name="Process 5 files", exact=True)
         expect(process).to_be_enabled()
         calls_url = f"http://127.0.0.1:{model_port}/calls"
         calls = page.request.get(calls_url).json()
@@ -633,21 +813,62 @@ async def chat(request: Request):
         assert queued.value.ok, queued.value.text()
         id = queued.value.json()["id"]
         expect(page).to_have_url(re.compile(f"/intake/runs/{id}$"))
-        expect(page.get_by_text("Completed with issues", exact=True).first).to_be_visible(timeout=30_000)
+        run_header = page.get_by_role("heading", level=1).locator("..")
+        page.get_by_text("Run log", exact=True).click()
+        log = page.locator("details").filter(has_text="Run log")
+        expect(run_header.get_by_text("Completed with issues", exact=True)).to_be_visible(timeout=30_000)
+        expect(log).to_contain_text("Extractor 'local.native-text' failed for damaged.pdf")
+        expect(log).to_contain_text("No embedded PDF text was found")
+        expect(log).to_contain_text("No built-in reader for .bin")
         run = page.request.get("/api/runs/" + id).json()
         assert run["processing_flow"]["id"] == "quick-start"
         assert run["indexing_status"] == "done"
         good = next(item for item in run["items"] if item["status"] == "done")
         assert good["steps"]["synthesizer"] == "done"
+        for name in (image.name, scan.name):
+            ocr = next(item for item in run["items"] if item["display"].endswith(name))
+            assert ocr["status"] == "done" and ocr["extractor"] == "local.tesseract-page-ocr", ocr["error"]
+            assert ocr["file_id"] in run["indexing_file_ids"]
+            ocr_text = Path(env["OSII_ROOT"]) / "objects" / ocr["file_id"] / "text.txt"
+            assert "Inspection records" in ocr_text.read_text(encoding="utf-8")
+        metadata = next(item for item in run["items"] if item["status"] == "metadata_only")
+        assert metadata["file_id"] not in run["indexing_file_ids"]
+        expect(page.get_by_role("row", name=re.compile(unknown.name))).to_contain_text("Added without text")
+        bundle = Path(env["OSII_ROOT"]) / "objects" / metadata["file_id"]
+        assert (bundle / "meta.toml").is_file() and not (bundle / "text.txt").exists()
+        catalog = page.request.get("/api/catalog/files?status=metadata_only").json()
+        assert any(item["file_id"] == metadata["file_id"] for item in catalog["items"])
         shutil.copyfile(SAMPLE, damaged)
         page.get_by_role("button", name="Retry failed files", exact=True).click()
         expect(page.get_by_role("button", name="Retry failed files", exact=True)).to_have_count(0)
         expect(page.get_by_role("heading", name="Failures", exact=True)).to_have_count(0, timeout=30_000)
-        run_header = page.get_by_role("heading", level=1).locator("..")
         expect(run_header.get_by_text("Completed", exact=True)).to_be_visible(timeout=30_000)
         rerun = page.request.get("/api/runs/" + id).json()
-        assert all(item["status"] == "done" for item in rerun["items"])
+        assert sorted(item["status"] for item in rerun["items"]) == ["done"] * 4 + ["metadata_only"]
+        assert rerun["completed"] == 5
         assert next(item for item in rerun["items"] if item["file_id"] == good["file_id"])["finished_at"] == good["finished_at"]
+        assert next(item for item in rerun["items"] if item["file_id"] == metadata["file_id"])["finished_at"] == metadata["finished_at"]
+
+        scanned_id = next(item["file_id"] for item in run["items"] if item["display"].endswith(scan.name))
+        page.goto("/files/" + scanned_id)
+        expect(page.get_by_role("heading", name="Original file", exact=True)).to_be_visible()
+        text_version = page.get_by_role("button", name="local.tesseract-page-ocr Primary", exact=True)
+        text_version.click()
+        expect(page.get_by_role("button", name="Current text", exact=True)).to_have_count(0)
+        expect(page.get_by_role("button", name="Edit Text", exact=True)).to_have_count(0)
+        expect(page.get_by_text("Inspection records", exact=True)).to_be_visible()
+        page.get_by_role("button", name="Keywords", exact=True).click()
+        expect(page.get_by_role("list", name="Keywords", exact=True)).to_contain_text("inspection")
+        expect(page.get_by_role("table", name="Document statistics and keywords")).to_have_count(0)
+
+        page.goto("/tools/ocr?file_id=" + scanned_id)
+        page.get_by_role("button", name="Edit Text", exact=True).click()
+        page.get_by_role("textbox", name="Edit segment text", exact=True).fill("Corrected inspection records")
+        page.get_by_role("button", name="Save", exact=True).click()
+        expect(page.get_by_role("button", name="Edit Text", exact=True)).to_be_visible()
+        page.goto("/files/" + scanned_id)
+        text_version.click()
+        expect(page.get_by_text("Corrected inspection records", exact=True)).to_be_visible()
 
         secret = root / "secrets.env"
         secret.write_text(secret.read_text().replace("fixture-key-original", "fixture-key-replaced"))

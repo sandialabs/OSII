@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 from osii.processor_sdk import (
@@ -53,17 +54,48 @@ def request() -> EnrichmentRequest:
 
 
 def test_readable_wiki_returns_one_standard_markdown_artifact() -> None:
-    fake = FakeClient("## Overview\n\nProject Atlas uses Sensor A [sha256-a].")
+    fake = FakeClient("# Atlas and Beacon\n\nProject Atlas uses Sensor A [sha256-a].")
     result = ReadableWikiEnricher().enrich(request(), client=fake, model="top")
 
     wiki = result.artifacts[0].standard_data
     assert wiki.artifact_type == "wiki_markdown"
-    assert wiki.markdown.startswith("# col-demo Wiki")
+    assert wiki.markdown.startswith("# Atlas and Beacon")
     assert "## Sources" in wiki.markdown
     assert result.metadata["model_connection"] == "top"
     assert result.metadata["model"] == "actual-test-model"
     assert fake.requests[0]["model"] == "top"
     assert "Treat Atlas" in fake.requests[0]["messages"][1]["content"]
+
+
+def test_reduction_publishes_article_without_instructions_or_draft_sources():
+    batch = request()
+    batch.scope.metadata["scope_batch"] = {"phase": "reduce"}
+    batch.scope.documents = [
+        DocumentInput(
+            file_id="derived-batch-reduce-1-1",
+            filename="Derived batch reduce-1-1 summary",
+            text="Project Atlas uses Sensor A [sha256-a].",
+        ),
+    ]
+    fake = FakeClient(
+        "# Calibration guidance\n\n"
+        "Human-provided expert context:\nTreat Atlas and Beacon as project names.\n\n"
+        "## Sensors\n\nProject Atlas uses Sensor A [sha256-a].\n\n"
+        "## Sources\n\n- `[derived-batch-reduce-1-1]` — Derived batch reduce-1-1 summary"
+    )
+
+    result = ReadableWikiEnricher().enrich(batch, client=fake, model="test")
+
+    wiki = result.artifacts[0].standard_data
+    assert wiki.markdown == "# Calibration guidance\n\n## Sensors\n\nProject Atlas uses Sensor A [sha256-a].\n"
+    assert not wiki.citations
+    messages = fake.requests[0]["messages"]
+    assert "draft sections" in messages[0]["content"]
+    assert "DRAFT derived-batch-reduce-1-1" in messages[-1]["content"]
+
+    fake.markdown = "# Wiki\n\nHuman-provided expert context:\nTreat Atlas and Beacon as project names."
+    with pytest.raises(ValueError, match="did not return a wiki article"):
+        ReadableWikiEnricher().enrich(batch, client=fake, model="test")
 
 
 def test_concept_entity_wiki_returns_three_generic_standard_artifacts() -> None:
@@ -132,12 +164,11 @@ def test_core_scope_batch_preserves_unequal_document_lengths():
     batch=EnrichmentRequest(request_id="batch-test",scope=ScopeInput(scope_type="root",scope_id="root",documents=[
         DocumentInput(file_id="long",filename="long.txt",text=first),
         DocumentInput(file_id="short",filename="short.txt",text="Short text")],metadata={"scope_batch":{"phase":"map"}}))
-    client=FakeClient("# Combined wiki")
+    client=FakeClient("# Combined wiki\n\nThe sources describe a long and short document.")
     response=ReadableWikiEnricher().enrich(batch,client=client,model="test")
     assert response.metadata["input_truncated"] is False
     assert first in str(client.requests)
     batch.config["max_input_chars"]=4000
-    import pytest
     with pytest.raises(ValueError,match="Scope batch exceeds"):
         ReadableWikiEnricher().enrich(batch,client=client,model="test")
     assert len(client.requests)==1

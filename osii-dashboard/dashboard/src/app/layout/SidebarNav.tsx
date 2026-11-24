@@ -17,6 +17,7 @@ export function SidebarNav() {
       availability={availability}
       items={workbenchTools.filter(tool => tool.navigation !== false)}
       selected={current?.id === "setup" ? "intake"
+        : current?.id === "create-wiki" ? "wiki"
         : current?.navigation === false && current.group === "tools" ? "tools" : current?.id ?? "home"}
       onNavigate={(id) => {
         const tool = workbenchTools.find((item) => item.id === id);

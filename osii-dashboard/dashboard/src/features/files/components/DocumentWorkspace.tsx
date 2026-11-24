@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
-import { Box, List, ListItemButton, ListSubheader, Paper, Stack, Typography } from "@mui/material";
+import { Box, Chip, List, ListItemButton, ListSubheader, Paper, Stack, Typography } from "@mui/material";
 import { DocumentSplitPane } from "./SplitFileView";
 
 export type DocumentViewMode = "source" | "split" | "text";
 
 export type DocumentProductGroup = {
   label: string;
-  entries: { id: string; label: string; detail?: string }[];
+  entries: { id: string; label: string; detail?: string; primary?: boolean }[];
 };
 
 export function DocumentWorkspace({ header, groups, selected, onSelect, catalogStatus, sourcePane, children }: {
@@ -34,7 +34,10 @@ export function DocumentWorkspace({ header, groups, selected, onSelect, catalogS
                 <ListItemButton key={entry.id} selected={selected === entry.id} aria-current={selected === entry.id ? "true" : undefined}
                   onClick={() => onSelect(entry.id)} sx={{ mx: 0.5, px: 1, mt: 0.5, borderRadius: 1 }}>
                   <Stack minWidth={0}>
-                    <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>{entry.label}</Typography>
+                    <Stack direction="row" alignItems="center" spacing={0.75} flexWrap="wrap" useFlexGap>
+                      <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>{entry.label}</Typography>
+                      {entry.primary && <Chip size="small" variant="outlined" label="Primary" sx={{ height: 18 }} />}
+                    </Stack>
                     {entry.detail && <Typography variant="caption" color="text.secondary">{entry.detail}</Typography>}
                   </Stack>
                 </ListItemButton>

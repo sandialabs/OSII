@@ -778,7 +778,10 @@ def product_list(request: Request, payload: dict):
 @router.post("/api/products/revisions")
 @router.post("/api/enrichments/revisions")
 def product_history(request: Request, payload: dict):
-    return library(request).history(payload)
+    from osii.domain.artifacts.wiki_reading import wiki_reading_fields
+
+    history = library(request).history(payload)
+    return {**history, **wiki_reading_fields(history)}
 
 
 @router.put("/api/products/revisions")

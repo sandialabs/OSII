@@ -1,5 +1,8 @@
 import type { LibraryFlow } from "./libraryProducts";
 
+export const READ_WIKIS_PATH = "/tools/wikis";
+export const CREATE_WIKI_PATH = "/tools/wiki";
+
 export type ToolAvailability = { enabled: boolean; reason: string };
 export type WorkbenchHome = {
   setup: { visible: boolean };
@@ -12,10 +15,10 @@ export type WorkbenchHome = {
 // Data only: consumed by local routing, hosted adapters, tiles, and navigation.
 export const ocrWorkbench = {
   id: "ocr", path: "/tools/ocr", label: "OCR Workbench", illustration: "🔠", icon: "ocr",
-  description: "Read text from a scanned PDF or image.",
+  description: "Read scanned PDFs or images and correct saved text.",
   scope: "One file",
   input: "source",
-  flow: { reads: ["source"], writes: ["text", "artifacts"] },
+  flow: { reads: ["source", "text"], writes: ["text", "artifacts"] },
 } as const satisfies DocumentTool;
 
 type DocumentTool = {
@@ -39,6 +42,8 @@ export const documentTools = [
     scope: "Library, folder, collection, or file", input: "library", flow: { reads: ["text", "index"], writes: [] } },
   { id: "research", path: "/research", label: "Create a Report", illustration: "📝", icon: "report", description: "Draft and export a cited report.",
     scope: "Collection or file", input: "library", flow: { reads: ["text"], writes: [] } },
+  { id: "wiki", path: READ_WIKIS_PATH, label: "Wikis", illustration: "📖", icon: "wiki", description: "Read, edit, and create wikis from your documents.",
+    scope: "Library, folder, collection, or file", input: "library", flow: { reads: ["text", "artifacts"], writes: ["artifacts"] } },
   { id: "overview", path: "/library-overview", label: "Analyze Library", illustration: "📊", icon: "insights", description: "Review what your library contains.",
     scope: "Library", input: "library", flow: { reads: ["metadata", "artifacts", "index"], writes: [] } },
   { id: "create-collections", path: "/tools/collections", label: "Create Collections", illustration: "🗂️", icon: "collections", description: "Group documents by folder, selection, or topic.",

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -273,10 +273,12 @@ export function DerivedProductEditor({
   scope,
   filename,
   family = "enrichment",
+  preview,
 }: {
   scope: ScopeDescribeRequest;
   filename: string;
   family?: "enrichment" | "synthesis";
+  preview?: (data: unknown) => ReactNode;
 }) {
   const address = { scope, filename, family };
   const history = useQuery({
@@ -295,6 +297,7 @@ export function DerivedProductEditor({
       </Alert>
     );
   if (!history.data) return <Typography>Loading saved product…</Typography>;
+  if (preview) return <>{preview(history.data.data)}</>;
   return (
     <Editor
       key={`${history.data.library_id}:${JSON.stringify(address)}`}

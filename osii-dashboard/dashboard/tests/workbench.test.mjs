@@ -5,14 +5,14 @@ import { documentProducts } from "../src/domain/documentProducts.ts";
 import { ocrSourceTypes, sourceCompatibility } from "../src/domain/fileCompatibility.ts";
 import { libraryProducts } from "../src/domain/libraryProducts.ts";
 test("home tiles have distinct existing destinations and the requested labels", () => {
- assert.deepEqual(documentTools.map(t=>t.label), ["Browse","Search","Chat","Create a Report","Analyze Library","Create Collections","Explore Topics","OCR Workbench"]);
- assert.equal(new Set(documentTools.map(t=>t.path)).size,8);
+ assert.deepEqual(documentTools.map(t=>t.label), ["Browse","Search","Chat","Create a Report","Wikis","Analyze Library","Create Collections","Explore Topics","OCR Workbench"]);
+ assert.equal(new Set(documentTools.map(t=>t.path)).size,documentTools.length);
  assert.equal(documentTools.find(t=>t.id==="overview").path,"/library-overview");
  assert.ok(documentTools.every(t=>t.description && t.illustration));
 });
 test("Home is outside Library and AI workflows belong under Tools", () => {
  assert.deepEqual(workbenchNavigation.filter(t=>t.group==="documents").map(t=>t.label),["Files","Browse","Collections"]);
- assert.deepEqual(workbenchNavigation.filter(t=>t.group==="tools").map(t=>t.label),["Search","Chat","Create a Report","Analyze Library","Create Collections","Explore Topics","OCR Workbench"]);
+ assert.deepEqual(workbenchNavigation.filter(t=>t.group==="tools").map(t=>t.label),["Search","Chat","Create a Report","Wikis","Analyze Library","Create Collections","Explore Topics","OCR Workbench"]);
  assert.equal(workbenchNavigation[0].path,"/");
  assert.equal(workbenchNavigation.find(t=>t.id==="files").path,"/files");
 });
@@ -35,7 +35,7 @@ test("every Toolbox workspace declares a scope and uses the shared library produ
     for (const key of [...tool.flow.reads, ...tool.flow.writes]) assert.ok(libraryProducts[key]);
   }
   assert.deepEqual(documentTools.find(tool => tool.id === "ocr").flow, {
-    reads: ["source"], writes: ["text", "artifacts"],
+    reads: ["source", "text"], writes: ["text", "artifacts"],
   });
 });
 

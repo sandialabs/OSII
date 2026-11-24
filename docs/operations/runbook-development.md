@@ -266,11 +266,34 @@ steps for the selected files and opens the run report. Refreshing the page reads
 saved verification results. A changed model or key requires a new check and
 the file selection remains saved in the browser.
 
+**Browse files** opens the last folder you used. Choose **Locations** for
+shortcuts or paste a path into **Folder path**. Select files in the list and
+choose **Use files** to return to Intake.
+
+The standard flow reads a PDF's embedded text first and tries Tesseract if
+the native reader cannot extract text. PNG, JPEG, and TIFF go directly to
+Tesseract. OCR in OSII-local uses the installed native Tesseract program.
+Office and plain-text documents use the native reader. Advanced intake offers
+named OCR and custom flows.
+
+With the default sidecar storage, Simple Intake saves basic file metadata for
+other formats. Files shows the original's name, location, size, and detected
+type. Those records have no extracted text, summaries, or semantic vectors.
+If a supported reader fails, Simple Intake keeps the file record and reports
+the failure in the run. Processor modules can add format coverage independently.
+The archived Tika adapter requires a Java runtime and its own validation.
+
 Use **Advanced → Advanced intake** to choose a saved processing flow.
 **Advanced setup** contains the readiness checklist, sample tests, processor
 settings, and service diagnostics. Both intake workflows share the file
 selection and **Queue & activity**. Legacy API clients retain explicit
 operation flags and saved preset compatibility.
+
+Open **Toolbox** for a single task. **Read files** extracts text, **Create a
+summary** uses a file's saved text, and **Create a wiki** uses a chosen library
+scope. Choose a scope, run the tool, and open **View run** for diagnostics.
+Registered scope processors have their own entry or appear as methods in a
+shared task such as wiki creation.
 
 To build the semantic index for the existing library, select **Build index**
 in Setup’s readiness steps or open **Toolbox → Search index**. The page shows
@@ -285,7 +308,8 @@ and embedding coverage. Open a run in **Queue & activity** for a bookmarkable
 report with failures first, the recorded file and processor steps, and retry or
 pause controls. **Copy run report** includes diagnostics and saved log lines.
 Open **Run log** when you need the timeline. Read generated products from
-Files or Collections.
+Files or Collections. A file opens on its original. Use the OCR Workbench from
+the Toolbox to correct its primary extracted text.
 
 Large-volume scanning is archived on `archive/large-volume-discovery-2026-11-19`.
 The beta launcher does not start its worker. Inventory history remains intact.

@@ -564,15 +564,7 @@ def _execute(job):
                         batch_id=row["id"],
                     ),
                     config=header["config"],
-                    expert_context=(
-                        (
-                            "Combine these derived summaries; they are not original evidence. Preserve uncertainty and original source identifiers.\n"
-                            if row["phase"] == "reduce"
-                            else ""
-                        )
-                        + (header["expert_context"] or "")
-                    )
-                    or None,
+                    expert_context=header["expert_context"],
                 )
                 context = _model_context(
                     processor_name=header["processor"],

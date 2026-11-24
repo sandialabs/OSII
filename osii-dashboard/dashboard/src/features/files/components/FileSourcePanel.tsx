@@ -56,13 +56,10 @@ export function FileSourcePanel({
     );
   }
 
-  if (mime?.startsWith("image/")) return <ImageSourcePanel sourceUrl={sourceUrl} segments={segments} />;
+  if (mime?.startsWith("image/")) return <ImageSourcePanel sourceUrl={sourceUrl} segments={segments} compact={compact} />;
 
   return (
     <Stack spacing={1.25}>
-      <Typography variant="subtitle1" fontWeight={600}>
-        Source File
-      </Typography>
       <Button
         variant="contained"
         component="a"
@@ -164,9 +161,7 @@ function PdfSourcePanel({
         justifyContent="space-between"
         alignItems={compact ? "flex-start" : { xs: "flex-start", md: "center" }}
       >
-        <Typography variant="subtitle1" fontWeight={600}>
-          Source PDF
-        </Typography>
+        {compact && <Typography variant="subtitle1" fontWeight={600}>Source PDF</Typography>}
 
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
           <Button
@@ -267,14 +262,14 @@ function PdfSourcePanel({
   );
 }
 
-function ImageSourcePanel({ sourceUrl, segments }: { sourceUrl: string; segments: ManifestRecord[] }) {
+function ImageSourcePanel({ sourceUrl, segments, compact }: { sourceUrl: string; segments: ManifestRecord[]; compact: boolean }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [sourceUrl]);
   const [boxes, setBoxes] = useState(true);
   const regions = pageBoundingRegions(segments, 1);
   return <Stack spacing={1}>
     <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-      <Typography fontWeight={600}>Source image</Typography>
+      {compact && <Typography fontWeight={600}>Source image</Typography>}
       <Button component="a" href={sourceUrl} target="_blank" rel="noreferrer">Open original</Button>
       {regions.length > 0 && <FormControlLabel label="OCR boxes" control={<Switch size="small" checked={boxes} onChange={event => setBoxes(event.target.checked)} />} />}
     </Stack>
@@ -284,6 +279,6 @@ function ImageSourcePanel({ sourceUrl, segments }: { sourceUrl: string; segments
         <BoundingRegionOverlay regions={boxes ? regions : []} />
       </Box>
     </Box>}
-    <Typography variant="caption" color="text.secondary">{regions.length ? `${regions.length} source regions · hover for recognized text and confidence` : "This text version has no region geometry."}</Typography>
+    {regions.length > 0 && <Typography variant="caption" color="text.secondary">{regions.length} source regions · hover for text and confidence</Typography>}
   </Stack>;
 }

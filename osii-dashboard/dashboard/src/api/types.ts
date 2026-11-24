@@ -204,6 +204,7 @@ export type FileMeta = {
   mime: string | null;
   size_bytes: number | null;
   mtime_utc: string | null;
+  birthtime_utc?: string | null;
 };
 
 export type HashMeta = {
@@ -806,6 +807,7 @@ export type ProcessingRun = {
     synthesizer?: string | null;
     synthesis?: string | null;
     synthesis_error?: string | null;
+    note?: string | null;
     enrichment?: unknown;
     enrichment_error?: string | null;
     extract_error?: string | null;

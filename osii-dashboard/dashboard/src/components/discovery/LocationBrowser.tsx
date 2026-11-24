@@ -2,13 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Alert,
-  Breadcrumbs,
   Button,
   Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  IconButton,
   LinearProgress,
   List,
   ListItem,
@@ -16,9 +16,11 @@ import {
   ListItemText,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import FolderOutlinedIcon from "@mui/icons-material/FolderOutlined";
+import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import { apiJson } from "../../api/client";
 
 export type PickedFile = {
@@ -58,6 +60,7 @@ export function LocationBrowser({
   const [address, setAddress] = useState("");
   const [files, setFiles] = useState<PickedFile[]>([]);
   const [busy, setBusy] = useState(false);
+  const [showLocations, setShowLocations] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef<AbortController | null>(null);
   const cursor = useRef<string | null>(null);
@@ -111,6 +114,7 @@ export function LocationBrowser({
       if (controller.signal.aborted) return;
       cursor.current = result.cursor;
       setPage(result);
+      if (!next) setShowLocations(false);
       if (!addressEdited.current) setAddress(result.current_path);
     } catch (e) {
       if (!controller.signal.aborted)
@@ -125,13 +129,13 @@ export function LocationBrowser({
       const last = initialPath || (!boundaryPath ? localStorage.getItem("osii:last-folder") : null);
       setAddress(last ?? "");
       setPage(null);
+      setShowLocations(!last);
       if (last) void load(last);
     } else release();
     return release;
   }, [open]);
   const total = files.reduce((sum, file) => sum + (file.size_bytes ?? 0), 0);
-  const breadcrumbs =
-    page?.current_path.replace(/\\/g, "/").split("/").filter(Boolean) ?? [];
+  const locations = roots.data?.items.filter(insideBoundary) ?? [];
   const toggle = (file: PickedFile) =>
     setFiles((current) =>
       current.some((item) => item.path === file.path)
@@ -139,12 +143,25 @@ export function LocationBrowser({
         : singleFile ? [file] : [...current, file],
     );
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle>
         {foldersOnly ? "Choose a location" : singleFile ? "Select a file" : "Select files"}
       </DialogTitle>
       <DialogContent>
-        <Stack spacing={1.5} sx={{ pt: 1 }}>
+        <Stack spacing={1} sx={{ pt: 1 }}>
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Button size="small" aria-expanded={showLocations} aria-controls="file-picker-locations"
+              onClick={() => setShowLocations(value => !value)}>Locations</Button>
+            <Tooltip title="Parent folder">
+              <span>
+                <IconButton size="small" aria-label="Parent folder"
+                  disabled={!page?.parent_path || !insideBoundary(page.parent_path)}
+                  onClick={() => void load(page?.parent_path ?? undefined)}>
+                  <ArrowUpwardIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Stack>
           <Stack
             component="form"
             direction="row"
@@ -159,6 +176,7 @@ export function LocationBrowser({
               size="small"
               label="Folder path"
               value={address}
+              inputProps={{ title: address }}
               onChange={(e) => {
                 addressEdited.current = true;
                 setAddress(e.target.value);
@@ -166,35 +184,20 @@ export function LocationBrowser({
             />
             <Button type="submit">Go</Button>
           </Stack>
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            {roots.data?.items.filter(insideBoundary).map((root) => (
-              <Button key={root} size="small" onClick={() => void load(root)}>
-                {root}
-              </Button>
-            ))}
-          </Stack>
-          <Breadcrumbs aria-label="Folder breadcrumbs">
-            <Button
-              size="small"
-              disabled={!page?.parent_path || !insideBoundary(page.parent_path)}
-              onClick={() => void load(page?.parent_path ?? undefined)}
-            >
-              ↑ Parent
-            </Button>
-            {breadcrumbs.map((part, index) => {
-              const target = `${page?.current_path.replace(/\\/g, "/").startsWith("//") ? "//" : page?.current_path.startsWith("/") ? "/" : ""}${breadcrumbs.slice(0, index + 1).join("/")}${/^[A-Za-z]:$/.test(part) ? "/" : ""}`;
-              return (
-                <Button
-                  size="small"
-                  disabled={!insideBoundary(target)}
-                  key={target}
-                  onClick={() => void load(target)}
-                >
-                  {part}
-                </Button>
-              );
-            })}
-          </Breadcrumbs>
+          {showLocations && (
+            <List id="file-picker-locations" dense aria-label="Locations"
+              sx={{ border: 1, borderColor: "divider", borderRadius: 1, py: 0 }}>
+              {locations.map((location, index) => (
+                <ListItem key={location} disablePadding divider={index < locations.length - 1}>
+                  <ListItemButton selected={location === page?.current_path} onClick={() => void load(location)}>
+                    <FolderOutlinedIcon fontSize="small" sx={{ mr: 1 }} />
+                    <ListItemText primary={location} sx={{ overflowWrap: "anywhere" }} />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+              {!locations.length && <ListItem><ListItemText primary="Enter a folder path above." /></ListItem>}
+            </List>
+          )}
           {busy && (
             <Stack direction="row" alignItems="center" spacing={1}>
               <LinearProgress sx={{ flex: 1 }} />
@@ -220,16 +223,18 @@ export function LocationBrowser({
               {error}
             </Alert>
           )}
-          <List
+          {page && <List
             dense
             aria-label={foldersOnly ? "Available folders" : "Available files"}
-            sx={{ maxHeight: 350, overflow: "auto" }}
+            sx={{ minHeight: 100, maxHeight: 350, overflow: "auto", py: 0, border: 1, borderColor: "divider", borderRadius: 1 }}
           >
             {page?.entries
               .filter((entry) => !foldersOnly || entry.type === "folder")
+              .sort((a, b) => Number(b.type === "folder") - Number(a.type === "folder"))
               .map((entry) => (
-                <ListItem key={entry.path} disablePadding>
+                <ListItem key={entry.path} disablePadding divider>
                   <ListItemButton
+                    selected={files.some((file) => file.path === entry.path)}
                     disabled={
                       !["folder", "file"].includes(entry.type) ||
                       (entry.type === "file" &&
@@ -250,7 +255,7 @@ export function LocationBrowser({
                         checked={files.some((file) => file.path === entry.path)}
                       />
                     )}
-                    <ListItemText
+                    <ListItemText sx={{ overflowWrap: "anywhere" }}
                       primary={entry.name}
                       secondary={
                         entry.error ??
@@ -264,7 +269,7 @@ export function LocationBrowser({
                   </ListItemButton>
                 </ListItem>
               ))}
-          </List>
+          </List>}
           {!foldersOnly && !singleFile && page && (
             <Stack direction="row" spacing={1}>
               <Button

@@ -4,15 +4,15 @@ import {
 } from "@mui/material";
 import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../../api/client";
-import { controlProcessingRun, getProcessingRun, getProcessingRunLogs } from "../../../api/queue";
+import { controlProcessingRun, getProcessingRun } from "../../../api/queue";
 import type { ProcessingRun } from "../../../api/types";
 import { PageBreadcrumbs } from "../../../components/workbench/PageBreadcrumbs";
 import { failedRunFiles, processingStatus, recordedFileStages, runHasFailures, runReport, runStatusLabel, runTitle } from "../../../domain/processingRun";
 import { flowTestError } from "../../../domain/processingFlowTests";
 import { isActiveRun } from "../../../domain/workflow";
-import { QUEUE_ACTIVITY_PATH } from "../../../utils/routes";
+import { QUEUE_ACTIVITY_PATH, wikiRunRoute } from "../../../utils/routes";
 import { RunFiles } from "../components/RunFiles";
 
 const parents = [{ label: "Queue & activity", to: QUEUE_ACTIVITY_PATH }];
@@ -76,19 +76,13 @@ function RunDetails({ run, refresh }: { run: ProcessingRun; refresh: () => Promi
   const [report, setReport] = useState<string | null>(null);
   const active = isActiveRun(run.status);
   const hasFailures = runHasFailures(run);
-  const logs = useQuery({
-    queryKey: ["processing-runs", "detail", run.id, "logs"],
-    queryFn: ({ signal }) => getProcessingRunLogs(run.id, signal),
-    enabled: logOpen,
-    refetchInterval: active ? 3000 : false,
-  });
   const control = useMutation({
     mutationFn: (action: Parameters<typeof controlProcessingRun>[1]) => controlProcessingRun(run.id, action),
     onSuccess: async () => {
       await Promise.all([refresh(), client.invalidateQueries({ queryKey: ["processing-runs"] })]);
     },
   });
-  const formattedReport = () => JSON.stringify(runReport(run, run.logs ?? logs.data?.logs), null, 2);
+  const formattedReport = () => JSON.stringify(runReport(run), null, 2);
   const copy = async () => {
     const text = formattedReport();
     try {
@@ -116,7 +110,8 @@ function RunDetails({ run, refresh }: { run: ProcessingRun; refresh: () => Promi
     ...(run.items ?? []).flatMap(item => recordedFileStages(run, item, indexed)
       .filter(stage => !["skipped", "reused", "queued"].includes(stage.status)).map(stage => stage.processor)),
   ].filter(Boolean))];
-  const lines = logs.data?.logs ?? run.logs ?? [];
+  const lines = run.logs ?? [];
+  const reader = wikiRunRoute(run);
   return (
     <>
       <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" spacing={1} useFlexGap>
@@ -129,6 +124,7 @@ function RunDetails({ run, refresh }: { run: ProcessingRun; refresh: () => Promi
         </Stack>
         <Stack spacing={0.5}>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            {reader && <Button component={Link} to={reader} variant="outlined">Read wiki</Button>}
             <Button variant="contained" startIcon={<ContentCopyOutlined />} onClick={() => void copy()}>Copy run report</Button>
             <Button aria-expanded={report !== null} onClick={() => setReport(report === null ? formattedReport() : null)}>
               {report === null ? "View diagnostics" : "Hide diagnostics"}
@@ -171,10 +167,9 @@ function RunDetails({ run, refresh }: { run: ProcessingRun; refresh: () => Promi
       <Paper component="details" variant="outlined" onToggle={event => setLogOpen(event.currentTarget.open)} sx={{ p: 2 }}>
         <Box component="summary" sx={{ cursor: "pointer", fontWeight: 700 }}>Run log</Box>
         {logOpen && <Stack spacing={1} sx={{ mt: 1 }}>
-          <Button size="small" onClick={() => void logs.refetch()} sx={{ alignSelf: "start" }}>Refresh log</Button>
-          {logs.isError && <Alert severity="warning">Could not refresh the log.</Alert>}
+          <Button size="small" onClick={() => void refresh()} sx={{ alignSelf: "start" }}>Refresh log</Button>
           <Box component="pre" sx={{ maxHeight: 400, overflow: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 12, m: 0 }}>
-            {lines.join("\n") || (logs.isPending ? "Loading log…" : "No log entries yet.")}
+            {lines.join("\n") || "No log entries yet."}
           </Box>
         </Stack>}
       </Paper>
