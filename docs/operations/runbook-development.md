@@ -259,13 +259,18 @@ model selectors when the processor declares a model requirement. Use **?** for t
 implementation or module manifest path. Register external Processor API services
 from the same Processors section.
 
-**Intake & Queue always starts with All processes**: extract, synthesize, enrich,
-then embed. Select files and a flow, then queue. It does not ask users to rebuild
-reader rules or repeat endpoint tests after file selection. Paths and selected
-membership survive navigation to Setup in the same browser. The lightweight
-selection preview reads metadata only. Flow-backed queue submissions defer
-provider operation tests to the worker; errors remain retryable in the queue.
-Legacy APIs retain explicit operation flags and saved preset compatibility.
+In **Intake & Setup**, connect and test an embedding model and a language
+model first. **Add documents** appears after both checks pass. **Process files**
+runs the standard extraction, synthesis, enrichment, and incremental embedding
+steps for the selected files and opens the run report. Refreshing the page reads
+saved verification results. A changed model or key requires a new check and
+the file selection remains saved in the browser.
+
+Use **Advanced → Advanced intake** to choose a saved processing flow.
+**Advanced setup** contains the readiness checklist, sample tests, processor
+settings, and service diagnostics. Both intake workflows share the file
+selection and **Queue & activity**. Legacy API clients retain explicit
+operation flags and saved preset compatibility.
 
 To build the semantic index for the existing library, select **Build index**
 in Setup’s readiness steps or open **Toolbox → Search index**. The page shows
@@ -363,7 +368,7 @@ trail to go back up a folder. Intake from outside the configured source appears
 under **Other locations** when its recorded path is external. Both locations can
 contain the same filename. **Folder Details** shows the current location and
 its saved summary when one is available. Browse still works if a source goes
-offline. Go to **Intake & Queue** to find and add new files from the drive.
+offline. Go to **Intake & Setup** to find and add new files from the drive.
 
 **Analyze Library** shows the configured source folder and the recorded folders
 that contain library files. Open a location to browse its saved entries. Group

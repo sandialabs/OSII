@@ -42,6 +42,7 @@ def test_configured_processor_urls_includes_enabled_admin_registry(tmp_path, mon
         "http://processor-a:8000", "http://127.0.0.1:8095/metadata",
         "http://127.0.0.1:8099", "http://127.0.0.1:8100", "http://127.0.0.1:8081",
         "http://127.0.0.1:8101", "http://127.0.0.1:8097", "http://127.0.0.1:8098", "http://custom:8000",
+        "http://127.0.0.1:8095/ollama/embedder", "http://127.0.0.1:8095/ollama/synthesizer",
     }
 
 

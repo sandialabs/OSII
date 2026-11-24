@@ -1231,6 +1231,17 @@ def resolve(request: Request, payload: dict):
 
 @router.post("/api/runs")
 def start_run(request: Request, payload: dict):
+    if payload.get("processing_flow_id"):
+        from osii.domain.processing.flows import flow_payload, resolve_requested_flow
+        try:
+            selected = resolve_requested_flow(request.app.state.osii_root.resolve(), payload["processing_flow_id"])
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        if selected is None:
+            raise HTTPException(404, "Processing flow not found")
+        payload = {**payload, **flow_payload(selected), "routes_snapshot": selected["routes"]}
+    else:
+        payload = {key: value for key, value in payload.items() if key not in {"routes_snapshot", "processing_flow"}}
     selection = resolve(request, payload)
     flow = workflow(request)
     options = dict(payload)

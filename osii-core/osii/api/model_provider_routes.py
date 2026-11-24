@@ -505,36 +505,15 @@ def provider_health(request: Request, provider_id: str):
 @router.post("/{provider_id}/test-model")
 def test_provider_model(request: Request, provider_id: str, payload: dict):
     """Explicit small inference probe; never used by periodic status polling."""
-    from math import isfinite
     record = _provider(request.app.state.osii_root.resolve(), provider_id)
     if not record:
         raise HTTPException(404, "model provider not found")
     model, capability = payload.get("model"), payload.get("capability")
     if not isinstance(model, str) or not model.strip() or len(model) > 200 or capability not in {"chat", "embedding"}:
         raise HTTPException(422, "Choose a listed model and capability")
-    ollama = record["type"] == "ollama"
-    token = "" if ollama else resolve_env_value(str(record.get("credential_env") or "OPENAI_API_KEY"))[0]
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    path = ("/api/embed" if ollama else "/embeddings") if capability == "embedding" else ("/api/chat" if ollama else "/chat/completions")
-    body = {"model": model, "input": ["OSII connection test"]} if capability == "embedding" else {
-        "model": model, "messages": [{"role": "user", "content": "Reply OK."}],
-        **({"stream": False, "options": {"num_predict": 8}} if ollama else {"max_tokens": 8})}
-    try:
-        response = requests.post(record["base_url"] + path, headers=headers, json=body, timeout=(3, 20))
-        response.raise_for_status()
-        result = response.json()
-        if capability == "embedding":
-            vector = (result.get("embeddings") or [None])[0] if ollama else (result.get("data") or [{}])[0].get("embedding")
-            if not (isinstance(vector, list) and vector and all(isinstance(x, (int, float)) and not isinstance(x, bool) and isfinite(x) for x in vector)):
-                raise ValueError("No usable numeric embedding vector returned")
-            return {"ok": True, "model": model, "capability": capability, "dimensions": len(vector)}
-        message = result.get("message") if ollama else (result.get("choices") or [{}])[0].get("message")
-        if not isinstance(message, dict) or not (message.get("content") or message.get("reasoning_content")):
-            raise ValueError("No generated text returned")
-        return {"ok": True, "model": model, "capability": capability}
-    except (requests.RequestException, ValueError, TypeError, AttributeError, IndexError) as exc:
-        from osii.processor_sdk.diagnostics import redact
-        return {"ok": False, "model": model, "capability": capability, "detail": redact(str(exc))}
+    from osii.domain.processing.model_probe import probe_model
+    token = "" if record["type"] == "ollama" else resolve_env_value(str(record.get("credential_env") or "OPENAI_API_KEY"))[0]
+    return probe_model(record["base_url"], record["type"], token, model, capability)
 
 
 @router.put("/{provider_id}/credential")
