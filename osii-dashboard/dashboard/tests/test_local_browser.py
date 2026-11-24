@@ -1,6 +1,7 @@
 """Exercise the production dashboard against a temporary OSII-local library."""
 
 from contextlib import ExitStack, contextmanager
+import json
 import os
 from pathlib import Path
 import re
@@ -231,13 +232,53 @@ def test_intake_from_two_locations_is_browsable_even_after_source_goes_offline(i
         running_process([sys.executable, "-m", "osii.worker"], cwd=root, env=env),
         dashboard_page(isolated_library, "intake-browse-trace") as page,
     ):
-        first_run = queue_directory(page, first, ["report.txt"], "done")
+        first_run = queue_directory(page, first, ["report.txt"], "Completed")
         second_run = queue_directory(page, second, ["report.txt", "damaged.pdf"], "Completed with issues", last_folder=first)
         assert [item["status"] for item in first_run["items"]] == ["done"]
         assert sorted(item["status"] for item in second_run["items"]) == ["done", "error"]
         first_id, = first_run["indexing_file_ids"]
         second_id, = second_run["indexing_file_ids"]
         assert first_id != second_id
+
+        detail_path = f"/intake/runs/{second_run['id']}"
+        log_requests = []
+        page.on("request", lambda request: log_requests.append(request.url)
+                if request.url.endswith(f"/api/runs/{second_run['id']}/logs") else None)
+        page.get_by_role("link", name=re.compile(r"Completed with issues")).click()
+        expect(page).to_have_url(re.compile(detail_path + "$"))
+        breadcrumbs = page.get_by_role("navigation", name="Breadcrumbs")
+        expect(breadcrumbs.get_by_role("link", name="Queue & activity")).to_have_attribute("href", "/intake?tab=activity")
+        failures = page.get_by_role("region", name="Failures", exact=True)
+        files = page.get_by_role("table", name="Files and processors")
+        expect(failures).to_contain_text("damaged.pdf")
+        expect(failures).to_contain_text("local.native-text")
+        expect(files.get_by_role("row", name=re.compile("report.txt"))).to_contain_text("Read text · Completed · local.native-text")
+        expect(files.get_by_role("row", name=re.compile("damaged.pdf"))).to_contain_text("Read text · Failed · local.native-text")
+        assert failures.evaluate("(node) => node.compareDocumentPosition(document.querySelector('table')) & Node.DOCUMENT_POSITION_FOLLOWING")
+        expect(page.get_by_text("Refresh log", exact=True)).to_have_count(0)
+        assert not log_requests
+
+        page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+        page.get_by_role("button", name="Copy run report", exact=True).click()
+        expect(page.get_by_role("status")).to_have_text("Run report copied.")
+        report = json.loads(page.evaluate("navigator.clipboard.readText()"))
+        assert report["run_id"] == second_run["id"]
+        failed_item = next(item for item in report["items"] if item["status"] == "error")
+        assert failed_item["diagnostics"][-1]["python"]["executable"]
+        assert any("damaged.pdf" in line for line in report["logs"])
+        assert not log_requests
+        page.get_by_role("button", name="View diagnostics", exact=True).click()
+        expect(page.get_by_role("textbox", name="Run report")).to_have_value(re.compile(r"python"))
+        page.get_by_role("button", name="Hide diagnostics", exact=True).click()
+
+        with page.expect_response(lambda response: response.url.endswith(f"/api/runs/{second_run['id']}/logs")):
+            page.get_by_text("Run log", exact=True).click()
+        expect(page.get_by_role("button", name="Refresh log", exact=True)).to_be_visible()
+        page.reload()
+        expect(failures).to_be_visible()
+        expect(page.get_by_role("button", name="Refresh log", exact=True)).to_have_count(0)
+        breadcrumbs.get_by_role("link", name="Queue & activity").click()
+        expect(page).to_have_url(re.compile(r"/intake\?tab=activity$"))
 
         page.goto("/browse")
         expect(page.get_by_role("heading", name="Browse")).to_be_visible()
@@ -306,6 +347,18 @@ def test_intake_from_two_locations_is_browsable_even_after_source_goes_offline(i
         page.get_by_role("navigation", name="Main navigation").get_by_role("button", name="Toolbox", exact=True).click()
         expect(page).to_have_url(re.compile("/tools$"))
         expect(page.get_by_role("heading", name="Toolbox", exact=True)).to_be_visible()
+
+        (root / "offline").rename(second.parent)
+        shutil.copyfile(SAMPLE, second / "damaged.pdf")
+        page.goto(detail_path)
+        page.get_by_role("button", name="Retry failed files", exact=True).click()
+        expect(page.get_by_text("Completed", exact=True).first).to_be_visible(timeout=30_000)
+        expect(failures).to_have_count(0, timeout=30_000)
+        after_retry = page.request.get("/api/runs/" + second_run["id"]).json()
+        good_item = next(item for item in second_run["items"] if item["status"] == "done")
+        kept = next(item for item in after_retry["items"] if item["file_id"] == good_item["file_id"])
+        assert kept["finished_at"] == good_item["finished_at"]
+        assert kept["extraction_variant_id"] == good_item["extraction_variant_id"]
 
 
 def test_processor_settings_are_saved_on_a_dedicated_page(isolated_library):
@@ -411,7 +464,7 @@ def test_setup_build_index_queues_existing_text_without_reopening_intake(isolate
         running_process([sys.executable, "-m", "osii.worker"], cwd=root, env=env),
         dashboard_page(isolated_library, "build-index") as page,
     ):
-        queue_directory(page, source, [file.name], "done")
+        queue_directory(page, source, [file.name], "Completed")
         file.rename(root / "offline-inspection.txt")
         page.goto("/admin/processors")
         page.get_by_role("button", name=re.compile(r"^6\. Build index")).click()
@@ -441,9 +494,20 @@ def test_setup_build_index_queues_existing_text_without_reopening_intake(isolate
         assert queued.value.ok, queued.value.text()
         expect(page).to_have_url(re.compile(r"/intake\?tab=activity$"))
         expect(page.get_by_role("tab", name=re.compile(r"^Queue & activity"))).to_have_attribute("aria-selected", "true")
-        run_card = page.get_by_role("button", name=re.compile(r"Full index rebuild.*done", re.DOTALL))
+        run_card = page.get_by_role("link", name=re.compile(r"Full index rebuild.*Completed", re.DOTALL))
         expect(run_card).to_be_visible(timeout=30_000)
+        run_card.click()
+        expect(page.get_by_role("table", name="Files and processors")).to_contain_text(file.name)
+        expect(page.get_by_role("table", name="Files and processors")).to_contain_text("Embed · Completed · local.hashing")
         run = page.request.get("/api/runs/" + queued.value.json()["run_id"]).json()
         assert run["operations"] == {"extract": False, "embed": True}
         assert run["indexing_status"] == "done"
         assert run["indexing_progress"]["completed_documents"] == 1
+
+        tool = page.request.post("/api/enrichment-jobs/run", data={
+            "enricher_name": "stats_keywords", "scope": {"scope_type": "root"},
+        })
+        assert tool.ok, tool.text()
+        page.goto("/intake/runs/" + tool.json()["run_id"])
+        expect(page.get_by_role("region", name="Processors and models")).to_contain_text("stats_keywords")
+        expect(page.get_by_role("table", name="Files and processors")).to_contain_text(file.name)

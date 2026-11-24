@@ -15,7 +15,7 @@ import { ocrSourceTypes, sourceCompatibility } from "../../domain/fileCompatibil
 import { ocrWorkbench } from "../../domain/workbench";
 import { LocationBrowser, type PickedFile } from "../../components/discovery/LocationBrowser";
 import { LibraryFlow } from "../../components/workbench/LibraryFlow";
-import { buildFileRoute } from "../../utils/routes";
+import { buildFileRoute, buildRunRoute } from "../../utils/routes";
 import { DocumentReadingPane } from "../files/components/DocumentReadingPane";
 import { ExtractionVersions } from "../files/components/ExtractionVersions";
 import { ExtractionArtifacts } from "../files/components/ExtractionArtifacts";
@@ -202,7 +202,7 @@ function OcrDocument({ fileId, file, picked, run, sourceActive, methods, catalog
       {runId && status && <Stack spacing={1}>
         <Stack direction="row" spacing={1} alignItems="center">
           <Typography role="status" fontWeight={650}>{runError ? "OCR failed" : runLabels[status] ?? status}</Typography>
-          <Button component={Link} to="/intake?tab=activity">Intake & Queue</Button>
+          <Button component={Link} to={buildRunRoute(runId)}>View run</Button>
         </Stack>
         {liveStatuses.includes(status) && <LinearProgress aria-label="OCR progress" />}
         {runError && <Alert severity="error" sx={{ overflowWrap: "anywhere" }}>{runError}</Alert>}

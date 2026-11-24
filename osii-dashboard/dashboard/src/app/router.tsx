@@ -11,6 +11,7 @@ import { PageBreadcrumbs } from "../components/workbench/PageBreadcrumbs";
 const CollectionPage = lazy(() => import("../features/collections/pages/CollectionPage").then(m => ({ default: m.CollectionPage })));
 const CollectionWikisPage = lazy(() => import("../features/collections/pages/CollectionWikisPage").then(m => ({ default: m.CollectionWikisPage })));
 const ProcessorDetailsPage = lazy(() => import("../features/admin/pages/ProcessorDetailsPage").then(m => ({ default: m.ProcessorDetailsPage })));
+const RunDetailsPage = lazy(() => import("../features/queue/pages/RunDetailsPage").then(m => ({ default: m.RunDetailsPage })));
 const FilePage = lazy(() => import("../features/files/pages/FilePage").then(m => ({ default: m.FilePage })));
 
 function NotFoundPage() {
@@ -38,6 +39,7 @@ export function AppRouter() {
         <Route path="/files/:fileId" element={<ToolBoundary key="file"><FilePage /></ToolBoundary>} />
         <Route path="/admin/processors/:processorId" element={<ToolBoundary key="processor"><ProcessorDetailsPage /></ToolBoundary>} />
         <Route path="/admin/processors/registered/:registrationId" element={<ToolBoundary key="processor-registration"><ProcessorDetailsPage /></ToolBoundary>} />
+        <Route path="/intake/runs/:runId" element={<ToolBoundary key="run"><RunDetailsPage /></ToolBoundary>} />
         <Route path="/queue" element={<Navigate to="/intake" replace />} />
         <Route path="/home" element={<Navigate to="/" replace />} />
         <Route path="*" element={<NotFoundPage />} />

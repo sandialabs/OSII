@@ -99,7 +99,11 @@ export function libraryWorkflowSteps(
   ];
 }
 
+export function isActiveRun(status: string | undefined): boolean {
+  return status !== undefined && ["queued", "pending", "running", "pausing", "cancelling"].includes(status);
+}
+
 /** Busy queues refresh promptly; empty and terminal queues stay quiet. */
 export function queuePollInterval(runs?: readonly {status: string}[]): number {
-  return runs?.some(run => ["queued", "pending", "running", "pausing", "cancelling"].includes(run.status)) ? 3000 : 30_000;
+  return runs?.some(run => isActiveRun(run.status)) ? 3000 : 30_000;
 }

@@ -784,6 +784,7 @@ export type ProcessingRun = {
   };
   embedding_model?: string;
   indexing_status?: string;
+  indexing_file_ids?: string[];
   indexing_error?: string | null;
   error_phase?: string | null;
   embedding_target?: { provider: string; model: string };
@@ -796,11 +797,19 @@ export type ProcessingRun = {
   };
   items?: Array<{
     file_id?: string;
+    path?: string;
+    source_relpath?: string;
     display: string;
     status: string;
     error?: string | null;
     diagnostics?: Array<Record<string, unknown>>;
     synthesizer?: string | null;
+    synthesis?: string | null;
+    synthesis_error?: string | null;
+    enrichment?: unknown;
+    enrichment_error?: string | null;
+    extract_error?: string | null;
+    embedder?: string | null;
     enricher?: string | null;
     current_step?: string | null;
     steps?: Record<string, string>;

@@ -379,6 +379,9 @@ def run_worker(
             extractor_name = extractor_chain[0]
             run["items"][index]["status"] = "running"
             run["items"][index]["current_step"] = "Check source"
+            run["items"][index]["steps"] = {"source": "running"}
+            for error_key in ("extract_error", "synthesis_error", "enrichment_error"):
+                run["items"][index].pop(error_key, None)
             run["items"][index]["extractor"] = extractor_name
             run["items"][index]["synthesizer"] = synthesizer_name
             run["items"][index]["enricher"] = enricher_name
@@ -397,6 +400,7 @@ def run_worker(
                 if staging:
                     retry_file_access(lambda: validate_member(staging, staging["members"][index]))
                 run["items"][index]["file_id"] = file_id
+                run["items"][index]["steps"]["source"] = "done"
                 save_run(run)
                 document_context = resolve_expert_context(
                     osii_store, {"scope_type": "object", "file_id": file_id}, context
@@ -421,6 +425,7 @@ def run_worker(
                         phase, active_processor = "extraction", candidate
                         extractor_name = candidate
                         run["items"][index]["current_step"] = "Read text"
+                        run["items"][index]["steps"]["extraction"] = "running"
                         run["items"][index]["extractor"] = extractor_name
                         save_run(run)
                         append_log(run_id, f"Extracting {src.name} with '{extractor_name}'")
@@ -471,6 +476,10 @@ def run_worker(
                 run["items"][index]["file_id"] = file_id
                 run["items"][index]["extraction_variant_id"] = extract_result.get("variant_id") if extract_result else item.get("retry_extraction_id") if kept_extraction else None
                 run["items"][index]["extract_error"] = extract_result.get("error") if extract_result else None
+                if extract_result:
+                    run["items"][index]["steps"]["extraction"] = "partial" if extract_result.get("error") else "done"
+                elif run_extraction or kept_extraction:
+                    run["items"][index]["steps"]["extraction"] = "reused"
                 save_run(run)
 
                 synthesis_result = None
@@ -481,7 +490,9 @@ def run_worker(
                 if synthesizer_name:
                     if should_extract and extraction_policy == "save_variant":
                         raise RuntimeError("Downstream processing requires the new extraction to be made primary.")
+                    phase, active_processor = "synthesis", synthesizer_name
                     run["items"][index]["current_step"] = "Generate summary"
+                    run["items"][index]["steps"]["synthesizer"] = "running"
                     save_run(run)
                     append_log(run_id, f"Running synthesizer '{synthesizer_name}' for {src.name}")
                     try:
@@ -499,12 +510,21 @@ def run_worker(
                         _record_failure(run_id, index, exc, synthesizer_name, "synthesis")
                         synthesis_error = redact(str(exc))
                         append_log(run_id, f"synthesis error: {src.name} -> {exc}")
+                    run = get_run(run_id)
+                    synthesis_item = run["items"][index]
+                    synthesis_item["steps"]["synthesizer"] = "error" if synthesis_error else "done"
+                    synthesis_item["synthesis_error"] = synthesis_error
+                    if synthesis_result and synthesis_result.get("actual_synthesizer"):
+                        synthesis_item["synthesizer"] = synthesis_result["actual_synthesizer"]
+                    save_run(run)
 
                 if enricher_name:
                     if should_extract and extraction_policy == "save_variant":
                         raise RuntimeError("Downstream processing requires the new extraction to be made primary.")
                     run = get_run(run_id)
+                    phase, active_processor = "enrichment", enricher_name
                     run["items"][index]["current_step"] = "Run enrichment"
+                    run["items"][index]["steps"]["enricher"] = "running"
                     save_run(run)
                     append_log(run_id, f"Running enricher '{enricher_name}' for {src.name}")
                     try:
@@ -536,7 +556,8 @@ def run_worker(
                 run["items"][index]["osii"] = extract_result["osii_rel"] if extract_result else f"objects/{file_id}"
                 run["items"][index]["synthesis"] = synthesis_result["synthesis_rel"] if synthesis_result else None
                 run["items"][index]["synthesis_provenance"] = synthesis_result["provenance_rel"] if synthesis_result else None
-                run["items"][index]["synthesis_error"] = synthesis_error
+                if enricher_name:
+                    run["items"][index]["steps"]["enricher"] = "error" if enrichment_error else "done"
                 run["items"][index]["enrichment"] = enrichment_result.get("result") if enrichment_result else None
                 run["items"][index]["enrichment_error"] = enrichment_error
                 run["items"][index]["error"] = "; ".join(errors) if errors else None
@@ -556,6 +577,8 @@ def run_worker(
                 if run is None:
                     return
 
+                step = {"source access": "source", "extraction": "extraction", "synthesis": "synthesizer", "enrichment": "enricher"}[phase]
+                run["items"][index]["steps"][step] = "error"
                 run["items"][index]["status"] = "error"
                 run["items"][index]["error"] = redact(str(exc))
                 _finish_item_timing(run["items"][index], item_started)

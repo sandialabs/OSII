@@ -5,6 +5,7 @@ import { Accordion, AccordionDetails, AccordionSummary, Alert, Button, Chip, Cir
 import PlayArrowOutlined from "@mui/icons-material/PlayArrowOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import { Link } from "react-router-dom";
+import { buildRunRoute } from "../../../utils/routes";
 import { getToolCatalog } from "../../../api/tools";
 import { controlProcessingRun, getProcessingRun } from "../../../api/queue";
 import type { ScopeDescribeRequest } from "../../../api/types";
@@ -87,7 +88,7 @@ export function ToolActionPanel({ scope, action, title }: { scope: ScopeDescribe
     {runId && run.data?.batch_progress ? <ScopeBatchResults runId={runId} progress={run.data.batch_progress} /> : null}
     {runId ? <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
       <Chip size="small" icon={active ? <CircularProgress size={12} /> : undefined} label={run.data?.status === "done" ? "Saved" : run.data?.status ?? "Queued"} color={run.data?.status === "error" ? "error" : run.data?.status === "done" ? "success" : "default"} />
-      <Button component={Link} to="/intake?tab=activity" size="small">Activity ↗</Button>
+      <Button component={Link} to={buildRunRoute(runId)} size="small">View run</Button>
       {run.data?.status === "running" || run.data?.status === "queued" ? <Button size="small" disabled={catalog.data?.permissions?.run === false || control.isPending} onClick={() => control.mutate("pause")}>Pause</Button> : null}
       {run.data?.status === "error" ? <Button size="small" disabled={catalog.data?.permissions?.run === false || control.isPending} onClick={() => control.mutate("retry")}>Retry</Button> : null}
       {run.data?.status === "paused" ? <Button size="small" disabled={catalog.data?.permissions?.run === false} onClick={() => control.mutate("resume")}>Resume</Button> : null}

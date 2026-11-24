@@ -276,9 +276,11 @@ activity** for progress. Intake continues to embed only the files you queue ther
 Use a collection's **Processing status** panel to process existing text or reread
 originals while preserving extraction history. Current semantic vectors depend
 on the selected embedding model; this panel reports read, synthesis, enrichment,
-and embedding coverage. Queue cards contain process information, files,
-backends, errors, logs, and a copyable run report. Products are viewed on Files
-and Collections, not embedded in queue cards.
+and embedding coverage. Open a run in **Queue & activity** for a bookmarkable
+report with failures first, the recorded file and processor steps, and retry or
+pause controls. **Copy run report** includes diagnostics and saved log lines.
+Open **Run log** when you need the timeline. Read generated products from
+Files or Collections.
 
 Large-volume scanning is archived on `archive/large-volume-discovery-2026-11-19`.
 The beta launcher does not start its worker. Inventory history remains intact.

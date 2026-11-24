@@ -107,8 +107,14 @@ export function getProcessingRun(runId: string, signal?: AbortSignal): Promise<P
   return apiJson(`/api/runs/${encodeURIComponent(runId)}`, { signal });
 }
 
-export async function getProcessingRunLogs(runId: string): Promise<{ run_id: string; logs: string[] }> {
-  return apiJson(`/api/runs/${encodeURIComponent(runId)}/logs`);
+export async function getProcessingRunLogs(runId: string, signal?: AbortSignal): Promise<{ run_id: string; logs: string[] }> {
+  return apiJson(`/api/runs/${encodeURIComponent(runId)}/logs`, { signal });
+}
+
+export function getRunSources(runId: string, cursor: number, signal?: AbortSignal) {
+  return apiJson<{ items: { file_id: string; filename: string; source_relpath?: string; has_text: boolean }[]; next_cursor: number | null }>(
+    `/api/enrichment-jobs/runs/${encodeURIComponent(runId)}/sources?limit=25&cursor=${cursor}`, { signal },
+  );
 }
 
 export async function controlProcessingRun(

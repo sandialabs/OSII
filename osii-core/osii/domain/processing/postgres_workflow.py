@@ -660,8 +660,10 @@ class PostgresWorkflow:
                 names = choose_parser_chain(path, load_extractor_routes())
             failures = []
             for name in names:
+                item["extractor"] = name
                 try:
                     descriptor, client = processor(self.root, name, "extractor")
+                    item["extractor"] = descriptor.name
                     require_source_type(path, descriptor.capabilities.model_dump(), name)
                     request_id = f"{lease.job_id}:{index}:extract"
                     from osii.domain.processor_settings import merged_processor_settings
@@ -811,6 +813,7 @@ class PostgresWorkflow:
                         tasks.append(task)
 
                 self._update_root(lease, add)
+                item[kind] = task["descriptor"]["name"]
                 item["steps"][kind] = "queued"
                 self.queue.checkpoint(lease, index=index, item=item)
         if options.get("collection_id"):
@@ -826,6 +829,7 @@ class PostgresWorkflow:
 
     def embed(self, lease, index, item, options):
         descriptor, client = processor(self.root, options["embedder_name"], "embedder")
+        item["embedder"] = descriptor.name
         from osii.domain.model_provider_config import selected_model
 
         model = options.get("embedding_model") or selected_model(
