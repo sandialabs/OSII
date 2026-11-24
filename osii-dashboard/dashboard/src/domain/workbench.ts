@@ -39,6 +39,8 @@ export const documentTools = [
     scope: "Library, folder, collection, or file", input: "library", flow: { reads: ["text", "index"], writes: [] } },
   { id: "research", path: "/research", label: "Create a Report", illustration: "📝", icon: "report", description: "Draft and export a cited report.",
     scope: "Collection or file", input: "library", flow: { reads: ["text"], writes: [] } },
+  { id: "wiki", path: "/tools/wiki", label: "Create a wiki", illustration: "📖", icon: "wiki", description: "Write a cited wiki from your documents.",
+    scope: "Library, folder, collection, or file", input: "library", flow: { reads: ["text"], writes: ["artifacts"] } },
   { id: "overview", path: "/library-overview", label: "Analyze Library", illustration: "📊", icon: "insights", description: "Review what your library contains.",
     scope: "Library", input: "library", flow: { reads: ["metadata", "artifacts", "index"], writes: [] } },
   { id: "create-collections", path: "/tools/collections", label: "Create Collections", illustration: "🗂️", icon: "collections", description: "Group documents by folder, selection, or topic.",

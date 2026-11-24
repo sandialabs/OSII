@@ -7,8 +7,6 @@ import {
   ListItemButton,
   ListItemText,
   ListSubheader,
-  Toolbar,
-  Typography,
 } from "@mui/material";
 import type { ToolAvailability } from "../../domain/workbench";
 import { HeaderBar } from "./HeaderBar";
@@ -42,11 +40,6 @@ export function WorkbenchNavigation({
   return (
     <>
       {items.filter(item => item.group === "home").map(({ id, label, icon: Icon }) => <ListItemButton key={id} selected={selected === id} aria-current={selected === id ? "page" : undefined} onClick={() => onNavigate(id)}><Icon fontSize="small" sx={{ mr: 1.5 }} /><ListItemText primary={label} /></ListItemButton>)}
-      <Toolbar variant="dense">
-        <Typography variant="caption" color="text.secondary" fontWeight={600}>
-          Menu
-        </Typography>
-      </Toolbar>
       {groups.map((group) => {
         const entries = items.filter((item) => item.group === group.id);
         const landing = entries.find(item => item.id === group.id);

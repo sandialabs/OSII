@@ -64,12 +64,11 @@ services in Setup. Declare supported `scope_types`,
   Return canonical text segments/source artifacts. An alternative OCR engine
   needs no OCR-specific sidebar page.
 - A **synthesizer** or **embedder** appears in the corresponding Intake step.
-- An **enricher** appears in scope tool controls and the **Toolbox**. Declare
-  `wiki_markdown` for the shared wiki workflow or `document_metadata` for
-  metadata suggestions. `topics`, `embedding_projection`, and `recommendations`
-  declare separate topic-modeling, projection, and recommendation operations.
-  Other output kinds use Analyze. Tables, entity
-  lists, graphs, and wikis reuse their existing viewers.
+- An **enricher** appears in the **Toolbox**. Declare `wiki_markdown` to appear in
+  the **Create a wiki** method selector or `document_metadata` for **Suggest
+  metadata**. Other registered scope methods get their own Toolbox entry and
+  share the scope picker and run controls. Tables, entity lists, graphs, and
+  wikis use the existing product viewers.
 
 Core's catalog at `GET /api/enrichment-jobs/tools` returns the operation,
 method identity/version, scopes, configuration schema, compatible model choices,
@@ -91,8 +90,8 @@ Use the existing run control endpoints and Activity rather than a temporary
 "generating" toast. See the [Workbench architecture](../concepts/architecture.md) and branch API
 reference for limits, retry semantics, and permission boundaries.
 
-To introduce a new operation grouping, update the catalog's descriptor-to-action
-adapter and the catalog label mapping. No new Processor SDK kind is needed.
+Add a dedicated route in `src/app/tools.tsx` when a task needs a specialized
+interaction. Use the existing Processor SDK kinds and the capability catalog.
 Topic inference, vector projection, and similarity ranking are separate actions;
 a projection must not be presented as a named-topic model.
 

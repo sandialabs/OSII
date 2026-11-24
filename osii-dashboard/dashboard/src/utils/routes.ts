@@ -8,6 +8,13 @@ export function buildRunRoute(runId: string): string {
 }
 
 export const SEARCH_INDEX_PATH = "/tools/search-index";
+export const SUMMARIZE_FILE_PATH = "/tools/summary";
+export const SUGGEST_METADATA_PATH = "/tools/metadata";
+export const READ_FILES_PATH = "/tools/read-files";
+
+export function buildScopeProcessorRoute(methodId: string): string {
+  return `/tools/process/${encodeURIComponent(methodId)}`;
+}
 
 export function buildFileRoute(params: {
   fileId: string;

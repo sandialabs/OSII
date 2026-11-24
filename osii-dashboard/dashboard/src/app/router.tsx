@@ -14,6 +14,7 @@ const ProcessorDetailsPage = lazy(() => import("../features/admin/pages/Processo
 const RunDetailsPage = lazy(() => import("../features/queue/pages/RunDetailsPage").then(m => ({ default: m.RunDetailsPage })));
 const AdvancedQueuePage = lazy(() => import("../features/queue/pages/QueuePage").then(m => ({ default: m.AdvancedQueuePage })));
 const FilePage = lazy(() => import("../features/files/pages/FilePage").then(m => ({ default: m.FilePage })));
+const ScopeProcessorPage = lazy(() => import("../features/files/pages/ProcessPages").then(m => ({ default: m.ScopeProcessorPage })));
 
 function NotFoundPage() {
   return <Navigate to="/" replace />;
@@ -38,6 +39,8 @@ export function AppRouter() {
         <Route path="/collections/:collectionId" element={<ToolBoundary key="collection"><CollectionPage /></ToolBoundary>} />
         <Route path="/collections/:collectionId/wikis" element={<ToolBoundary key="collection-wikis"><CollectionWikisPage /></ToolBoundary>} />
         <Route path="/files/:fileId" element={<ToolBoundary key="file"><FilePage /></ToolBoundary>} />
+        <Route path="/tools/workbench" element={<Navigate to="/tools" replace />} />
+        <Route path="/tools/process/:methodId" element={<ToolBoundary key="scope-processor"><ScopeProcessorPage /></ToolBoundary>} />
         <Route path="/admin/processors/:processorId" element={<ToolBoundary key="processor"><ProcessorDetailsPage /></ToolBoundary>} />
         <Route path="/admin/processors/registered/:registrationId" element={<ToolBoundary key="processor-registration"><ProcessorDetailsPage /></ToolBoundary>} />
         <Route path="/intake/advanced" element={<ToolBoundary key="advanced-intake"><AdvancedQueuePage /></ToolBoundary>} />

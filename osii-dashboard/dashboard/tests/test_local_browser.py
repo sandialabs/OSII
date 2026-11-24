@@ -425,7 +425,10 @@ def test_tool_and_collection_wiki_breadcrumbs_follow_stable_routes(isolated_libr
             ("/tools/collections", "Create Collections"),
             ("/topics", "Explore Topics"),
             ("/tools/ocr", "OCR Workbench"),
-            ("/tools/workbench", "Library-wide processing"),
+            ("/tools/wiki", "Create a wiki"),
+            ("/tools/read-files", "Read files"),
+            ("/tools/summary", "Create a summary"),
+            ("/tools/metadata", "Suggest metadata"),
             ("/tools/search-index", "Search index"),
             ("/admin/database", "Database explorer"),
         ]:
@@ -437,6 +440,13 @@ def test_tool_and_collection_wiki_breadcrumbs_follow_stable_routes(isolated_libr
         breadcrumbs.get_by_role("link", name="Toolbox").click()
         expect(page).to_have_url(re.compile(r"/tools$"))
         expect(page.get_by_role("navigation", name="Breadcrumbs")).to_have_count(0)
+        navigation = page.get_by_role("navigation", name="Main navigation")
+        expect(navigation.get_by_text("Menu", exact=True)).to_have_count(0)
+        expect(page.get_by_text("Library-wide processing", exact=True)).to_have_count(0)
+        expect(page.get_by_role("link", name="Create a wiki", exact=False)).to_have_attribute("href", "/tools/wiki")
+        expect(page.get_by_role("link", name="Search index", exact=True)).to_have_attribute("href", "/tools/search-index")
+        page.goto("/tools/workbench")
+        expect(page).to_have_url(re.compile(r"/tools$"))
 
         response = page.request.post("/api/collections", data={"name": "Inspection notes"})
         assert response.ok, response.text()
@@ -481,6 +491,21 @@ def test_setup_build_index_queues_existing_text_without_reopening_intake(isolate
         dashboard_page(isolated_library, "build-index") as page,
     ):
         queue_directory(page, source, [file.name], "Completed")
+        page.set_viewport_size({"width": 1280, "height": 640})
+        page.goto("/search")
+        page.get_by_role("textbox", name="Search files", exact=True).fill("inspection")
+        page.get_by_role("textbox", name="Search files", exact=True).press("Enter")
+        expect(page.get_by_role("button", name="Open Match", exact=True).first).to_be_in_viewport()
+        expect(page.get_by_role("dialog")).to_have_count(0)
+        page.get_by_role("button", name="Recent searches", exact=True).click()
+        history = page.get_by_role("dialog", name="Recent searches")
+        expect(history.get_by_role("button", name=re.compile(r"^inspection"))).to_be_visible()
+        history.get_by_role("button", name="Close", exact=True).click()
+        page.get_by_role("button", name="Search options", exact=True).click()
+        expect(page.get_by_role("dialog", name="Search options").get_by_role("combobox", name=re.compile("Search mode"))).to_be_visible()
+        page.get_by_role("dialog", name="Search options").get_by_role("button", name="Close", exact=True).click()
+        expect(page.get_by_role("button", name="Open Match", exact=True).first).to_be_in_viewport()
+        page.set_viewport_size({"width": 1380, "height": 900})
         file.rename(root / "offline-inspection.txt")
         page.goto("/admin/processors?view=advanced")
         page.get_by_role("button", name=re.compile(r"^6\. Build index")).click()
@@ -520,13 +545,101 @@ def test_setup_build_index_queues_existing_text_without_reopening_intake(isolate
         assert run["indexing_status"] == "done"
         assert run["indexing_progress"]["completed_documents"] == 1
 
-        tool = page.request.post("/api/enrichment-jobs/run", data={
-            "enricher_name": "stats_keywords", "scope": {"scope_type": "root"},
-        })
-        assert tool.ok, tool.text()
-        page.goto("/intake/runs/" + tool.json()["run_id"])
+        page.goto("/tools")
+        page.get_by_role("link", name="Stats Keywords Enricher", exact=True).click()
+        expect(page.get_by_role("heading", name="Stats Keywords Enricher", exact=True)).to_be_visible()
+        page.get_by_role("combobox", name="Scope", exact=False).click()
+        page.get_by_role("option", name="Library", exact=True).click()
+        with page.expect_response(lambda response: response.url.endswith("/api/enrichment-jobs/run")
+                                  and response.request.method == "POST") as tool:
+            page.get_by_role("button", name="Run", exact=True).click()
+        assert tool.value.ok, tool.value.text()
+        page.get_by_role("link", name="View run", exact=True).click()
         expect(page.get_by_role("region", name="Processors and models")).to_contain_text("stats_keywords")
         expect(page.get_by_role("table", name="Files and processors")).to_contain_text(file.name)
+
+
+def test_toolbox_read_summary_and_wiki_workflows(isolated_library):
+    root, source, env = isolated_library
+    file = source / "inspection-source.txt"
+    file.write_text("The inspection team documented thermal seals and copper joints.", encoding="utf-8")
+    port = available_port()
+    endpoint = f"http://127.0.0.1:{port}"
+    (root / "fixture_wiki.py").write_text("""
+from osii.processor_sdk import (
+    Artifact, Capability, Enricher, EnrichmentResponse, ProcessorDescriptor,
+    ProcessorKind, ProvenanceRef, WikiMarkdownArtifactData, create_processor_app,
+)
+
+class FixtureWiki(Enricher):
+    descriptor = ProcessorDescriptor(
+        name="fixture.inspection-wiki", version="1", display_name="Inspection Wiki",
+        description="Test processor", kind=ProcessorKind.ENRICHER,
+        capabilities=Capability(scope_types=["collection"], output_kinds=["wiki_markdown"], batch_reduction="wiki"),
+    )
+
+    def enrich(self, request):
+        document = request.scope.documents[0]
+        data = WikiMarkdownArtifactData(title="Inspection wiki",
+            markdown="## Inspection guidance\\n\\n" + document.text,
+            citations=[ProvenanceRef(file_id=document.file_id)])
+        return EnrichmentResponse(request_id=request.request_id, processor=self.descriptor,
+            artifacts=[Artifact(id="wiki", kind="wiki_markdown", media_type="application/json", standard_data=data)])
+
+app = create_processor_app(FixtureWiki())
+""")
+    with (
+        running_server([sys.executable, "-m", "uvicorn", "fixture_wiki:app", "--port", str(port)],
+                       url=endpoint + "/health", cwd=root, env=env),
+        baseline_processors(isolated_library, [endpoint]),
+        running_process([sys.executable, "-m", "osii.worker"], cwd=root, env=env),
+        dashboard_page(isolated_library, "toolbox-processes") as page,
+    ):
+        page.goto("/tools")
+        page.get_by_role("link", name="Read files", exact=True).click()
+        page.get_by_role("button", name="Browse files", exact=True).click()
+        picker = page.get_by_role("dialog", name="Select files")
+        picker.get_by_role("textbox", name="Folder path").fill(str(source))
+        picker.get_by_role("button", name="Go", exact=True).click()
+        picker.get_by_text(file.name, exact=True).click()
+        picker.get_by_role("button", name="Use 1 file", exact=True).click()
+        with page.expect_response(lambda response: response.url.endswith("/api/runs")
+                                  and response.request.method == "POST") as read:
+            page.get_by_role("button", name="Read 1 file", exact=True).click()
+        assert read.value.ok, read.value.text()
+        read_id = read.value.json()["id"]
+        expect(page.get_by_role("heading", level=1).locator("..").get_by_text("Completed", exact=True)).to_be_visible(timeout=30_000)
+        completed = page.request.get("/api/runs/" + read_id).json()
+        assert completed["operations"]["extract"] and not completed["operations"]["embed"]
+        assert completed["operations"]["synthesize"] is None
+        file_id = completed["items"][0]["file_id"]
+
+        page.goto("/tools")
+        page.get_by_role("link", name="Create a summary", exact=True).click()
+        page.get_by_role("combobox", name="Choose a document", exact=True).fill(file.name)
+        page.get_by_role("option", name=file.name, exact=True).click()
+        with page.expect_response(lambda response: "/api/synthesis/objects/" in response.url
+                                  and response.request.method == "POST") as summary:
+            page.get_by_role("button", name="Create summary", exact=True).click()
+        assert summary.value.ok, summary.value.text()
+        expect(page.get_by_role("heading", level=1).locator("..").get_by_text("Completed", exact=True)).to_be_visible(timeout=30_000)
+
+        collection = page.request.post("/api/collections", data={"name": "Inspection team"})
+        assert collection.ok, collection.text()
+        collection_id = collection.json()["collection"]["id"]
+        assert page.request.post(f"/api/collections/{collection_id}/members", data={"file_ids": [file_id]}).ok
+        page.goto("/tools")
+        page.get_by_role("link", name="Create a wiki", exact=False).click()
+        page.get_by_role("combobox", name="Choose a collection", exact=True).fill("Inspection team")
+        page.get_by_role("option", name="Inspection team", exact=True).click()
+        with page.expect_response(lambda response: response.url.endswith("/api/enrichment-jobs/run")
+                                  and response.request.method == "POST") as wiki:
+            page.get_by_role("button", name="Create wiki", exact=True).click()
+        assert wiki.value.ok, wiki.value.text()
+        expect(page.get_by_text("The inspection team documented thermal seals and copper joints.", exact=True)).to_be_visible(timeout=30_000)
+        expect(page.get_by_role("link", name="View run", exact=True)).to_have_attribute("href", f"/intake/runs/{wiki.value.json()['run_id']}")
+        page.get_by_role("tab", name="Edit", exact=True).click()
+        expect(page.get_by_role("textbox", name="Wiki Markdown")).to_be_visible()
 
 
 def test_simple_intake_connects_models_before_document_selection(isolated_library):

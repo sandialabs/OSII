@@ -289,6 +289,12 @@ settings, and service diagnostics. Both intake workflows share the file
 selection and **Queue & activity**. Legacy API clients retain explicit
 operation flags and saved preset compatibility.
 
+Open **Toolbox** for a single task. **Read files** extracts text, **Create a
+summary** uses a file's saved text, and **Create a wiki** uses a chosen library
+scope. Choose a scope, run the tool, and open **View run** for diagnostics.
+Registered scope processors have their own entry or appear as methods in a
+shared task such as wiki creation.
+
 To build the semantic index for the existing library, select **Build index**
 in Setup’s readiness steps or open **Toolbox → Search index**. The page shows
 saved-text coverage and the selected embedding model. It queues a full index
