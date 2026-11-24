@@ -179,6 +179,7 @@ def test_all_existing_processors_keep_their_switches_and_ids():
 @pytest.mark.parametrize(('service', 'descriptor', 'extension'), [
     ('whisper', 'local.whisper', '.wav'),
     ('vlm-endpoint', 'external.vlm-endpoint', '.pdf'),
+    ('ocria', 'local.ocria-nano', '.pdf'),
 ])
 def test_opt_in_extractors_can_be_routed_in_intake(service, descriptor, extension, monkeypatch):
     from osii.api.extractor_routes import validate_routes

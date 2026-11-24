@@ -13,6 +13,21 @@ backend processor modules.
 | [tabular-dataset-processors](tabular-dataset-processors/README.md) | CSV extraction and collection tables |
 | [whisper](whisper/README.md) | Opt-in local speech-to-text extraction with timestamps |
 | [vlm-endpoint](vlm-endpoint/README.md) | Opt-in image and PDF extraction through your vision model endpoint |
+| [ocria](ocria/README.md) | Opt-in OCRia-nano-1 CPU OCR; separately licensed model |
+
+## Copy the optional extractors into an existing checkout
+
+Download the `osii-processor-modules` branch as a ZIP and extract it into a
+temporary folder. Copy the `whisper/`, `vlm-endpoint/`, and `ocria/` directories
+you want from its `osii-processor-modules/` folder into the same folder in your
+existing OSII checkout. Copy whole module directories, not just the Python files.
+Do not replace the rest of your checkout with the ZIP: it is a branch snapshot.
+If the target checkout already supports `enabled_by_default` in processor
+manifests, you only need the module directories. For older checkouts, also
+merge this branch's small opt-in manifest change in
+`osii-core/osii/processor_modules.py` at the same relative path. Do not overwrite
+unrelated changes. No shared dependency-lock changes are needed.
+Follow the module's README to enable it and restart the launcher.
 
 `make dev` and `.\scripts\osii.ps1 dev` prepare independent environments and
 start enabled modules. Set `OSII_ENABLE_BANYAN=false`

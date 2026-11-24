@@ -1,0 +1,17 @@
+schema_version = 1
+id = "ocria"
+
+[[processors]]
+id = "ocria"
+processor_id = "local.ocria-nano"
+kind = "extractor"
+display_name = "OCRia-nano-1 via LiteParse"
+description = "Local CPU OCR for PDFs and scans. The OCRia model has a separate, restricted license."
+command = ["-m", "uvicorn", "osii_ocria.main:app"]
+port = 8117
+enabled_by_default = false
+readiness_path = "/ready"
+
+[processors.capabilities]
+file_extensions = [".pdf", ".png", ".jpg", ".jpeg"]
+output_kinds = ["text"]
