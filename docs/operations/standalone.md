@@ -1,4 +1,4 @@
-# OSII Standalone for Windows
+# OSII Standalone
 
 ## Install and start
 
@@ -18,6 +18,11 @@ follow your organization's software approval policy. The delivered artifact's
    EmbeddingGemma model when it opens the library.
 5. Select **Process files** and open the run report. When processing finishes,
    choose **Semantic** in Search options to search by meaning.
+
+On an Apple Silicon Mac with macOS 15 or newer, open the Mac pilot disk image
+and drag **OSII Standalone** into Applications. The pilot is ad hoc signed and
+has no Apple notarization. macOS can require [approval on first launch](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unidentified-developer-mh40616/mac).
+The app stores libraries and settings in `~/Library/Application Support/OSII Standalone`.
 
 The installer includes the text-only EmbeddingGemma 2 model and its CPU
 runtime. For offline processing, choose **Advanced → Advanced intake**, then
@@ -95,7 +100,7 @@ application and preserves library/configuration data. Keep backups and older
 installers. Binary rollback is supported only while data formats remain
 compatible; it never reverses a migration.
 
-## Build an installer
+## Build a Windows installer
 
 These requirements apply to the **maintainer's build machine only**: Windows
 11 x64, uv, Node.js 22.18+, 7-Zip, and Visual Studio C++ x64 build tools with
@@ -131,6 +136,21 @@ For a version change, update Core and workspace service versions, the dashboard
 and desktop package versions, and both dependency locks before building.
 The asset-preparation step rejects mismatched product versions. The delivered
 runtime contains dependency notices and Electron includes its own notices.
+
+## Build a Mac pilot
+
+Use Apple Silicon, macOS 15 or newer, Xcode Command Line Tools, uv, and Node.js
+22.18 or newer. The **Standalone macOS** workflow builds on macOS 15.
+
+```bash
+uv sync --frozen --python 3.12 --all-packages --extra standalone-build --extra dev
+uv run --no-sync --with cmake==4.3.2 python scripts/build_standalone.py --pilot
+```
+
+The result is `release/standalone/OSII-Standalone-macOS-arm64.dmg`. The build
+compiles Tesseract with its pinned image libraries, packages the same OCR
+languages and CPU EmbeddingGemma model as Windows, and tests the app copied
+from the disk image. Intel Macs need a separate build.
 
 ## Validation and release gates
 

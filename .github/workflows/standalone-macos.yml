@@ -1,0 +1,38 @@
+name: Standalone macOS
+on:
+  push:
+    branches: [osii-standalone, 'osii-standalone-sync/**']
+    tags: ['standalone-v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: standalone-macos-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  pilot:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            osii-desktop/package-lock.json
+            osii-dashboard/dashboard/package-lock.json
+      - name: Install the locked Python and processor dependencies
+        run: uv sync --frozen --python 3.12 --package osii --extra standalone-build --extra dev --package osii-local-extractor --package osii-local-tesseract --package osii-local-synthesizer --package osii-local-embedder --package osii-local-enricher --package osii-model-provider-bridge
+      - name: Build and test the Apple Silicon pilot disk image
+        run: uv run --no-sync --with cmake==4.3.2 python scripts/build_standalone.py --pilot
+      - uses: actions/upload-artifact@v6
+        with:
+          name: osii-standalone-macos-arm64-pilot
+          path: |
+            release/standalone/OSII-Standalone-macOS-arm64.dmg
+            release/standalone/SHA256SUMS-macOS.txt
+            release/standalone/validation-macOS.json
+          if-no-files-found: error
+          retention-days: 30

@@ -5,10 +5,10 @@
   integration, release, and deployment changes.
 - Develop shared Core and dashboard behavior on `main`, which also owns the
   local source workflow. `osii-server` owns hosted authentication, PostgreSQL,
-  and deployment. `osii-standalone` owns Windows desktop packaging.
+  and deployment. `osii-standalone` owns Windows and macOS desktop packaging.
 - Merge `main` into Standalone on an `osii-standalone-sync/<name>` integration
-  branch. Keep the Windows entry points and advance `osii-standalone` after
-  CI and Standalone Windows pass. Put portable fixes on `main`.
+  branch. Keep the desktop entry points and advance `osii-standalone` after
+  CI and the native packaging checks pass. Put portable fixes on `main`.
 - Core owns canonical storage and RAG orchestration. The dashboard and MCP
   server use Core APIs. Reuse dashboard components across profiles and keep
   processors behind the public `osii.processor_sdk` contract.
@@ -26,9 +26,9 @@
   credentials, library data, and generated outputs out of version control.
   Run intake tests with synthetic fixtures against an isolated library.
   Use Toolbox for frontend tools and processors for backend modules.
-- Preserve the offline Windows installer, loopback session, bundled OCR, and
-  local sidecar storage. Run the Windows installer checks for changes to
-  desktop startup, bundled processing, or packaging.
+- Preserve the offline desktop packages, loopback session, bundled OCR, and
+  local sidecar storage. Run the native package checks for changes to desktop
+  startup, bundled processing, or packaging.
 
 See the [developer guide](docs/contributing/developer-guide.md) for architecture
 and validation commands.

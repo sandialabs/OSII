@@ -10,5 +10,9 @@
     "sha256": "b2d794fa7587aba29f654d717ff9b73e31caeabf50a7766692903008bbe0855d",
     "license_url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/f5e6915c28f10330885fcb9243a93ae98d3115ab/LICENSE",
     "license_sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+  },
+  "macos_arm64": {
+    "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12651/llama-b12651-bin-macos-arm64.tar.gz",
+    "sha256": "264fd872de61679c45ad57e1e21c2a2a54e29b35734ecf3d50f24166447ab8d2"
   }
 }

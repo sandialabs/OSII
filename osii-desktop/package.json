@@ -11,7 +11,8 @@
     "test": "node --test tests/*.test.cjs",
     "smoke": "node tests/smoke.cjs",
     "package:windows": "electron-builder --win nsis --x64 --publish never",
-    "package:pilot": "electron-builder --win nsis --x64 --publish never -c.win.forceCodeSigning=false"
+    "package:pilot": "electron-builder --win nsis --x64 --publish never -c.win.forceCodeSigning=false",
+    "package:mac-pilot": "electron-builder --mac dmg --arm64 --publish never"
   },
   "devDependencies": {
     "electron": "45.3.4",
@@ -28,6 +29,15 @@
     "directories": {"output": "../release/standalone"},
     "artifactName": "OSII-Standalone-Setup.${ext}",
     "win": {"target": [{"target": "nsis", "arch": ["x64"]}], "icon": "icon.ico", "forceCodeSigning": true, "signAndEditExecutable": true},
+    "mac": {
+      "target": [{"target": "dmg", "arch": ["arm64"]}],
+      "identity": "-",
+      "hardenedRuntime": false,
+      "notarize": false,
+      "minimumSystemVersion": "15.0",
+      "category": "public.app-category.productivity"
+    },
+    "dmg": {"artifactName": "OSII-Standalone-macOS-arm64.${ext}", "sign": false},
     "nsis": {
       "oneClick": true,
       "perMachine": false,

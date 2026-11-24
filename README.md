@@ -1,15 +1,15 @@
 # OSII Standalone
 
-> To install OSII on Windows, use the [installer in GitHub Releases](https://github.com/sandialabs/OSII/releases).
-> Build the installer from `osii-standalone` using the [Windows build guide](docs/operations/standalone.md#build-an-installer).
+> Download OSII Standalone for Windows or Apple Silicon from [GitHub Releases](https://github.com/sandialabs/OSII/releases).
+> Build the installers from `osii-standalone` using the [Standalone build guide](docs/operations/standalone.md).
 > Use `main` for shared Core and dashboard development.
 
 > Keep the evidence. Grow the intelligence.
 
 OSII (the On-Store Intelligence Index) turns documents and datasets into a
 library you can browse, search, enrich, and ask questions about.
-OSII Standalone is a Windows desktop application for files on your computer
-or an already-connected shared drive. Its installer includes Python, the
+OSII Standalone is a desktop application for files on your computer
+or an already-connected shared drive. The Windows and Apple Silicon packages include Python, the
 dashboard, native document extraction, and full-page OCR.
 It runs without user accounts or a login; OSII-server provides hosted user access.
 

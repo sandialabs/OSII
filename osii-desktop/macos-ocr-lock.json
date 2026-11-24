@@ -1,0 +1,22 @@
+{
+  "tesseract": {
+    "url": "https://codeload.github.com/tesseract-ocr/tesseract/tar.gz/refs/tags/5.5.3",
+    "sha256": "9218e62793116d42a9f6d14cd9348518b27f382096eea3d0f2d1a24616bb5884",
+    "license": "LICENSE"
+  },
+  "leptonica": {
+    "url": "https://codeload.github.com/DanBloomberg/leptonica/tar.gz/refs/tags/1.87.0",
+    "sha256": "fa2b40c5caea96d1bb93a97486262aed8731b69ce25a84a6bf5d25323e33f631",
+    "license": "leptonica-license.txt"
+  },
+  "libpng": {
+    "url": "https://codeload.github.com/pnggroup/libpng/tar.gz/refs/tags/v1.6.55",
+    "sha256": "71a2c5b1218f60c4c6d2f1954c7eb20132156cae90bdb90b566c24db002782a6",
+    "license": "LICENSE"
+  },
+  "libtiff": {
+    "url": "https://download.osgeo.org/libtiff/tiff-4.7.2.tar.gz",
+    "sha256": "672bd7d10aee4606171afb864f3570b83340f6a33e2c186dc0512f7145ffdf6a",
+    "license": "LICENSE.md"
+  }
+}

@@ -40,6 +40,10 @@ async function main() {
   };
   if (process.env.OSII_DESKTOP_EXECUTABLE) options.executablePath = process.env.OSII_DESKTOP_EXECUTABLE;
   else options.args = [path.resolve(__dirname, '..')];
+  if (process.platform === 'darwin' && process.env.OSII_SMOKE_MAC_NETWORK_SANDBOX === '1') {
+    // Chromium cannot create its own process sandbox inside sandbox-exec.
+    options.args = [...(options.args || []), '--no-sandbox'];
+  }
   let application;
   const metrics = { platform: process.platform, packaged: Boolean(process.env.OSII_DESKTOP_EXECUTABLE) };
   try {
@@ -73,8 +77,9 @@ async function main() {
     }, { route, method, body });
     assert.equal((await api('/health')).status, 'ok');
     assert.equal((await api('/api/runtime')).user_authentication, false);
+    const payloadPath = process.platform === 'darwin' ? '../Resources' : 'resources';
     const assetDirectory = process.env.OSII_DESKTOP_EXECUTABLE
-      ? path.join(path.dirname(process.env.OSII_DESKTOP_EXECUTABLE), 'resources/runtime/_internal/dashboard/assets')
+      ? path.join(path.dirname(process.env.OSII_DESKTOP_EXECUTABLE), payloadPath, 'runtime/_internal/dashboard/assets')
       : path.resolve(__dirname, '../resources/dashboard/assets');
     const assetFiles = await fs.readdir(assetDirectory);
     const mathWorker = assetFiles.find(name => name.startsWith('mathpix.worker-'));
