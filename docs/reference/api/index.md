@@ -260,7 +260,10 @@ Example response:
 GET /api/scopes/folders
 ```
 
-This returns a flat catalog of folder scope descriptors.
+This returns a flat catalog of folder scope descriptors. Folder paths are
+relative to the source root. `source_namespace` is the source root's folder name,
+the first segment of stored source relpaths; it is the name only, never the
+host path.
 
 Example response:
 
@@ -274,7 +277,8 @@ Example response:
       "path": "",
       "label": "root-folder"
     }
-  ]
+  ],
+  "source_namespace": "source"
 }
 ```
 
