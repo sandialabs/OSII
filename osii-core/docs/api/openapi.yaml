@@ -334,6 +334,7 @@ paths:
                         folder_id: folder-root
                         path: ""
                         label: root-folder
+                    source_namespace: source
         default:
           $ref: '#/components/responses/GenericError'
 
@@ -2793,6 +2794,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FolderScopeDescriptor'
+        source_namespace:
+          type: string
+          description: >-
+            Folder name of the configured source root (not its path). Stored
+            source relpaths start with it, while folder paths are relative to
+            the source root. Empty when no root descriptor exists.
       additionalProperties: false
 
     CollectionScopeListResponse:

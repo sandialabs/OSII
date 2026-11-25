@@ -4,7 +4,7 @@ from osii.domain.artifacts.scope_artifacts import get_scope_artifact_summary
 from osii.domain.read.catalog import load_folders_catalog
 from osii.domain.scopes.collections import list_collections
 from osii.domain.scopes.descriptors import describe_scope
-from osii.domain.scopes.membership import list_scope_file_ids
+from osii.domain.scopes.membership import list_scope_file_ids, source_namespace
 from osii.domain.scopes.summaries import get_scope_object_summaries
 from osii.domain.scopes.overview import get_scope_overview
 
@@ -37,7 +37,10 @@ async def get_folder_scopes(request: Request):
             }
             for entry in folders
             if entry.get("folder_id")
-        ]
+        ],
+        # Folder paths are relative to the source root, while file relpaths
+        # start with its folder name. Clients need it to place files in folders.
+        "source_namespace": source_namespace(osii_root),
     }
 
 

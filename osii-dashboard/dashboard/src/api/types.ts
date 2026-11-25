@@ -56,6 +56,8 @@ export type ScopeSummariesRequest = {
 
 export type FolderScopeListResponse = {
   scopes: FolderScopeDescriptor[];
+  /** Folder name of the configured source root; file relpaths start with it. */
+  source_namespace?: string;
 };
 
 export type CollectionScopeListResponse = {

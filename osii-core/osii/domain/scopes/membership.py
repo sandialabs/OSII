@@ -40,6 +40,13 @@ def _folder_scope_match(source_relpath: str, folder_relpath: str, source_namespa
     return False
 
 
+def source_namespace(osii_root: Path) -> str:
+    """Name of the configured source folder, the first segment of its relpaths."""
+    descriptor = get_root_descriptor(osii_root) or {}
+    source_path = str(descriptor.get("data_root", {}).get("container_path") or "")
+    return Path(source_path.replace("\\", "/")).name
+
+
 def _resolve_folder_relpath(osii_root: Path, folder_id: str, *, canonical: bool = False) -> str | None:
     for entry in (scan_folders_catalog if canonical else load_folders_catalog)(osii_root):
         if entry.get("folder_id") == folder_id:
@@ -81,16 +88,14 @@ def list_scope_file_ids(osii_root: Path, scope: dict, *, canonical: bool = False
         if folder_relpath is None:
             return []
 
-        descriptor = get_root_descriptor(osii_root) or {}
-        source_path = str(descriptor.get("data_root", {}).get("container_path") or "")
-        source_namespace = Path(source_path.replace("\\", "/")).name
+        namespace = source_namespace(osii_root)
         results = []
         for entry in files(osii_root):
             file_id = entry.get("file_id")
             source_relpath = entry.get("source_relpath", "")
             if not file_id:
                 continue
-            if _folder_scope_match(source_relpath, folder_relpath, source_namespace):
+            if _folder_scope_match(source_relpath, folder_relpath, namespace):
                 results.append(file_id)
         return results
 
