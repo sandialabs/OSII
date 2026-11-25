@@ -430,7 +430,7 @@ class PostgresLibrary:
             )
         return rows
 
-    def overview(self, scope):
+    def overview(self, scope, *, source_root=None):
         from osii.domain.scopes.overview import _recorded_date, _date_histogram
 
         docs = self.documents(scope)
@@ -456,7 +456,21 @@ class PostgresLibrary:
             for label, key in (("created", "birthtime_utc"), ("modified", "mtime_utc"))
         }
         summaries = self.summaries([doc.file_id for doc in docs])
+        library_metadata = {}
+        if source_root is not None and scope.get("scope_type") == "root":
+            from osii.domain.read.postgres_metadata import postgres_document_labels
+            from osii.domain.scopes.library_metadata import LibraryMetadata
+
+            stats = LibraryMetadata(source_root)
+            with self.engine.connect() as connection:
+                labels = postgres_document_labels(connection, [doc.file_id for doc in docs])
+            for doc in docs:
+                recorded_path = doc.metadata.get("source_absolute_path") or (doc.metadata.get("meta") or {}).get("source_path")
+                extraction_metadata = doc.metadata.get("extraction_document_metadata") or {}
+                stats.add(doc.source_relpath, recorded_path, labels.get(doc.file_id, {}), extraction_metadata.get("file_properties"))
+            library_metadata["library_metadata"] = stats.summary()
         return {
+            **library_metadata,
             "permissions": {"run": True},
             "scope": scope,
             "file_count": len(docs),

@@ -268,6 +268,28 @@ def test_connection_or_dimensions_cannot_mix_with_existing_vectors(library):
     assert client.calls == []
 
 
+def test_bundled_embedding_checkpoints_survive_a_new_loopback_port(library, monkeypatch):
+    from osii.configuration import save_models_config
+
+    root, client = library
+    save_models_config({"version": 1, "models": {}, "defaults": {}})
+    monkeypatch.setenv("OSII_DEFAULT_EMBEDDER", "local.test")
+    monkeypatch.setenv("EMBEDDING_MODEL", "test-model")
+    client.base_url = "http://127.0.0.1:45601"
+    monkeypatch.setenv("OSII_BUNDLED_EMBEDDER_URL", client.base_url)
+    first = document(root, "first.txt", "Existing")
+    identity = embed(root, [first])["identity"]
+
+    client.base_url = "http://127.0.0.1:45602"
+    monkeypatch.setenv("OSII_BUNDLED_EMBEDDER_URL", client.base_url)
+    second = document(root, "second.txt", "New")
+    client.calls.clear()
+    report = embed(root, [first, second], expected_identity=identity)
+    assert report["reused_chunks"] == 1
+    assert client.calls == [["New"]]
+    assert {row["file_id"] for row in published(root)[1]} == {first, second}
+
+
 def test_pause_retains_partial_document_chunks_and_preserves_previous_vectors(library):
     root, client = library
     first = document(root, "first.txt", "Already saved")
@@ -558,3 +580,180 @@ def test_file_retry_adds_recovered_documents_to_embedding_membership(library, tm
     assert restored["indexing_progress"]["total_documents"] == 2
     assert set(restored["indexing_file_ids"]) == {first, second}
     assert client.calls == [["Recovered document"]]
+
+
+def test_intake_indexes_readable_files_when_one_source_read_fails(library, tmp_path, monkeypatch):
+    import errno
+    import tomllib
+
+    from osii.api import runs_routes
+    from osii.domain.processing.jobs import claim_next_queue_job, create_run_record, enqueue_run, get_run, save_run
+    from osii.domain.storage.ids import compute_file_id
+    from osii.worker import execute_job
+
+    root, client = library
+    source = tmp_path / "documents"
+    source.mkdir()
+    readable = source / "readable.txt"
+    readable.write_text("Searchable despite another file failing.", encoding="utf-8")
+    unreadable = source / "unreadable.pdf"
+    unreadable.touch()
+    attempts = []
+
+    def read_identity(path):
+        attempts.append(path)
+        if path == unreadable:
+            raise OSError(errno.EINVAL, "Invalid argument")
+        return compute_file_id(path)
+
+    original_dispatch = runs_routes.dispatch_extract
+    monkeypatch.setattr(runs_routes, "compute_file_id", read_identity)
+    monkeypatch.setattr(runs_routes, "dispatch_extract", lambda **kw: original_dispatch(**{**kw, "extractor_name": "native_text"}))
+    monkeypatch.setattr(runs_routes, "extractor_routes_path", lambda: tmp_path / "routes.toml")
+
+    files = [readable, unreadable]
+    run = create_run_record(files, source, tmp_path / "uploads", osii_root=root)
+    run.update(workflow="intake", operations={"embed": True})
+    save_run(run)
+    enqueue_run(run["id"], {
+        "osii_store": str(root), "resolved_files": list(map(str, files)), "queue_items": [],
+        "include_subfolders": False, "include_patterns": [], "exclude_patterns": [],
+        "context": "", "intake_name": "Mixed intake", "data_volume_root": str(tmp_path),
+        "shared_root": str(source), "upload_root": str(tmp_path / "uploads"),
+        "parser_routes_path": str(tmp_path / "routes.toml"),
+        "build_embeddings": True, "chunking_method": "paragraph",
+    })
+    execute_job(claim_next_queue_job("test"))
+    finished = get_run(run["id"])
+    assert finished["status"] == finished["indexing_status"] == "done"
+    assert finished["indexing_file_ids"] == [compute_file_id(readable)]
+    assert finished["items"][1]["steps"]["source"] == "error"
+    assert "make it available offline" in finished["items"][1]["error"]
+    assert attempts == files
+    assert client.calls == [["Searchable despite another file failing."]]
+    manifest, = (root / "folders").glob("folder-*.toml")
+    assert [doc["file_id"] for doc in tomllib.loads(manifest.read_text())["docs"]] == [compute_file_id(readable)]
+
+
+def test_old_intake_can_build_embeddings_from_saved_text_without_reopening_sources(library, tmp_path, monkeypatch):
+    from osii.api import runs_routes
+    from osii.domain.processing.jobs import (
+        can_resume_embeddings, claim_next_queue_job, complete_queue_job,
+        control_run, create_run_record, enqueue_run, get_run, save_run,
+    )
+    from osii.worker import execute_job
+
+    root, client = library
+    saved = document(root, "summary-failed.jpg", "Text from OCR")
+    originals = [tmp_path / "summary-failed.jpg", tmp_path / "unreadable.pdf"]
+    run = create_run_record(originals, tmp_path, tmp_path / "uploads", osii_root=root)
+    enqueue_run(run["id"], {"osii_store": str(root), "build_embeddings": True, "chunking_method": "paragraph"})
+    job = claim_next_queue_job("original")
+    run["items"][0].update(status="partial", file_id=saved, error="Summary unavailable")
+    run["items"][1].update(status="error", error="Windows file read failed")
+    run.update(status="error", workflow="intake", operations={"embed": True}, completed=2)
+    save_run(run)
+    complete_queue_job(job["id"], error="Old intake stopped while generating folder manifests")
+
+    def no_sources(**kwargs):
+        raise AssertionError("Embedding recovery must not open originals or repeat processing")
+
+    monkeypatch.setattr(runs_routes, "run_worker", no_sources)
+    assert can_resume_embeddings(get_run(run["id"]))
+    control_run(run["id"], "retry-embeddings")
+    assert not can_resume_embeddings(get_run(run["id"]))
+    with pytest.raises(ValueError):
+        control_run(run["id"], "retry-embeddings")
+    execute_job(claim_next_queue_job("embedding-only"))
+    finished = get_run(run["id"])
+    assert finished["status"] == finished["indexing_status"] == "done"
+    assert [item["error"] for item in finished["items"]] == ["Summary unavailable", "Windows file read failed"]
+    assert client.calls == [["Text from OCR"]]
+
+
+@pytest.mark.parametrize("interruption", ["failure", "restart"])
+def test_embedding_starts_while_summary_waits_and_reuses_completed_work(
+    library, tmp_path, monkeypatch, interruption,
+):
+    from threading import Event
+
+    from osii.api import runs_routes
+    from osii.domain.processing.jobs import (
+        claim_next_queue_job, complete_queue_job, control_run, get_run,
+        create_run_record, enqueue_run, recover_stale_queue_jobs, save_run,
+    )
+    from osii.worker import execute_job
+
+    root, client = library
+    original = tmp_path / "source.txt"
+    original.write_text("Text should become searchable before the summary returns.")
+    embedding_started = Event()
+    send = client.embed
+
+    def embed_now(**kwargs):
+        result = send(**kwargs)
+        embedding_started.set()
+        return result
+
+    monkeypatch.setattr(client, "embed", embed_now)
+    native = runs_routes.dispatch_extract
+    monkeypatch.setattr(runs_routes, "dispatch_extract", lambda **kwargs: native(**{**kwargs, "extractor_name": "native_text"}))
+    calls = []
+
+    class Summary:
+        def synthesize(self, **kwargs):
+            calls.append("summary")
+            if calls.count("summary") == 1:
+                assert embedding_started.wait(5), "Embedding waited for synthesis"
+                if interruption == "restart":
+                    raise KeyboardInterrupt("simulated worker interruption")
+                raise ValueError("Summary endpoint unavailable")
+            return {"synthesis_rel": "summary.txt", "provenance_rel": "summary.toml"}
+
+    class Enricher:
+        def enrich(self, **kwargs):
+            calls.append("enrichment")
+            return {"result": "saved enrichment"}
+
+    monkeypatch.setattr(runs_routes, "get_synthesizer", lambda _: Summary())
+    monkeypatch.setattr(runs_routes, "resolve_enricher", lambda _: Enricher())
+
+    run = create_run_record([original], tmp_path, tmp_path / "uploads", osii_root=root)
+    run.update(workflow="intake", operations={"embed": True, "synthesize": "test", "enrich": "test"})
+    save_run(run)
+    enqueue_run(run["id"], {
+        "osii_store": str(root), "resolved_files": [str(original)], "queue_items": [],
+        "include_subfolders": False, "include_patterns": [], "exclude_patterns": [],
+        "context": "", "intake_name": "Overlapped intake", "data_volume_root": str(tmp_path),
+        "shared_root": str(tmp_path), "upload_root": str(tmp_path / "uploads"),
+        "parser_routes_path": str(tmp_path / "routes.toml"),
+        "synthesizer_name": "test", "enricher_name": "test",
+        "build_embeddings": True, "chunking_method": "paragraph",
+    })
+    job = claim_next_queue_job("first-worker")
+    if interruption == "failure":
+        execute_job(job)
+        complete_queue_job(job["id"])
+    else:
+        with pytest.raises(KeyboardInterrupt, match="worker interruption"):
+            execute_job(job)
+    result = get_run(run["id"])
+    variant = result["items"][0]["extraction_variant_id"]
+    original.unlink()  # Retry uses the durable saved text even while the source is offline.
+    if interruption == "failure":
+        assert result["items"][0]["steps"]["synthesizer"] == "error"
+        assert result["items"][0]["steps"]["enricher"] == "done"
+        assert result["indexing_progress"]["completed_documents"] == 1
+        control_run(run["id"], "retry-synthesis")
+    else:
+        assert recover_stale_queue_jobs(stale_after_seconds=0) == [run["id"]]
+    execute_job(claim_next_queue_job("second-worker"))
+    result = get_run(run["id"])
+    assert result["items"][0]["extraction_variant_id"] == variant
+    assert result["items"][0]["status"] == "done"
+    assert len(client.calls) == 1
+    if interruption == "failure":
+        assert result["items"][0]["diagnostics"]
+        assert calls == ["summary", "enrichment", "summary"]
+    else:
+        assert calls == ["summary", "summary", "enrichment"]

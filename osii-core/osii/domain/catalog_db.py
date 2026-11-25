@@ -192,7 +192,7 @@ def _scan_documents(osii_root: Path, file_id: str | None = None) -> list[dict[st
             if not meta:
                 continue
             status = str((provenance or {}).get("provenance", {}).get("status", "done" if object_dir.name in documents else "unknown"))
-            if status not in {"done", "partial"}:
+            if status not in {"done", "partial", "metadata_only"}:
                 continue
             file_data = meta.get("file", {})
             relpath = _normalize(file_data.get("source_relpath"))

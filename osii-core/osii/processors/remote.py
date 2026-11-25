@@ -125,7 +125,16 @@ def configured_processor_urls() -> list[str]:
             providers = json.loads((state_path / "model_providers.json").read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             providers = []
-        bridge_url = os.getenv("OSII_MODEL_BRIDGE_URL", "http://127.0.0.1:8095").rstrip("/")
+        bridge_url = (os.getenv("OSII_MODEL_BRIDGE_URL")
+                      or f"http://127.0.0.1:{os.getenv('OSII_MODEL_BRIDGE_PORT', '8095')}").rstrip("/")
+        from osii.configuration import load_models_config
+        config = load_models_config(root)
+        for capability, kind in (("embedding", "embedder"), ("synthesis", "synthesizer")):
+            alias = config.get("defaults", {}).get(capability)
+            connection = config.get("models", {}).get(alias, {})
+            protocol = {"ollama-local": "ollama", "openai-compatible": "openai"}.get(connection.get("type"))
+            if protocol and connection.get("enabled", True):
+                configured.append(f"{bridge_url}/{protocol}/{kind}")
         for provider in providers:
             if not provider.get("enabled"):
                 continue
@@ -515,9 +524,17 @@ class ProcessorEmbeddingClient:
         self.endpoint_type: str | None = None
         self.semantic: bool | None = None
 
-    def embed(self, *, model: str, texts) -> list[list[float]]:
+    def embed_query(self, *, model: str, text: str) -> list[float]:
+        return self.embed(model=model, texts=[text], query=True)[0]
+
+    def embed(self, *, model: str, texts, query: bool = False) -> list[list[float]]:
         request_id = str(uuid.uuid4())
         identifiers = [f"input-{index}" for index in range(len(texts))]
+        metadata = (
+            {"purpose": "query"}
+            if query and (self.descriptor.get("config_schema") or {}).get("x-osii-embedding-input-purpose") is True
+            else {}
+        )
         model_context = _model_context(
             processor_name=self.descriptor["name"],
             descriptor=self.descriptor,
@@ -527,7 +544,10 @@ class ProcessorEmbeddingClient:
         try:
             response = self._client.embed(EmbeddingRequest(
                 request_id=request_id,
-                inputs=[EmbeddingInput(id=identifier, text=text) for identifier, text in zip(identifiers, texts)],
+                inputs=[
+                    EmbeddingInput(id=identifier, text=text, metadata=metadata)
+                    for identifier, text in zip(identifiers, texts)
+                ],
                 config={"model": model} if model else {},
                 model_context=model_context,
             ))

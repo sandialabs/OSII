@@ -16,6 +16,7 @@ export function useSaveEditedObjectText(fileId: string) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["workbench-home"] }),
         queryClient.invalidateQueries({ queryKey: ["scopes", "overview"] }),
+        queryClient.invalidateQueries({ queryKey: ["file-previews"] }),
         queryClient.invalidateQueries({ queryKey: ["objects", fileId, "edited-text"] }),
         queryClient.invalidateQueries({ queryKey: ["objects", fileId, "preferred-text"] }),
         queryClient.invalidateQueries({ queryKey: ["objects", fileId, "texts"] }),

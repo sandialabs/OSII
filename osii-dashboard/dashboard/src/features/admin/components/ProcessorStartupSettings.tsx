@@ -1,37 +1,66 @@
 import { useState } from "react";
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from "@mui/material";
+import { Alert, Button, Paper, Stack, TextField, Typography } from "@mui/material";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiJson } from "../../../api/client";
-import type { ProcessorConfigSchema } from "../../../api/types";
+import { controlCapabilityService } from "../../../api/queue";
+import type { ManagedCapabilityService, ProcessorConfigSchema } from "../../../api/types";
 import { ProcessorConfigInput } from "../../queue/components/ProcessorConfigInput";
 
-type ModuleSettings = {id: string; processor_id: string; display_name: string; schema: ProcessorConfigSchema; config: Record<string, unknown>; environment_overrides: string[]};
-export function ProcessorStartupSettings({processorId}: {processorId: string}) {
+type ModuleSettings = {
+  id: string; processor_id: string; schema: ProcessorConfigSchema;
+  config: Record<string, unknown>; environment_overrides: string[];
+  credential?: { present: boolean; writable: boolean } | null;
+};
+
+export function ProcessorStartupSettings({ processorId, service }: { processorId: string; service?: ManagedCapabilityService }) {
   const client = useQueryClient();
-  const settings = useQuery({queryKey: ["admin", "processor-startup-settings"], queryFn: () => apiJson<{path: string; processors: ModuleSettings[]}>("/api/admin/processor-settings/startup")});
-  const [open, setOpen] = useState(false);
+  const settings = useQuery({
+    queryKey: ["admin", "processor-startup-settings"],
+    queryFn: () => apiJson<{ processors: ModuleSettings[] }>("/api/admin/processor-settings/startup"),
+  });
   const [draft, setDraft] = useState<Record<string, unknown>>({});
-  const [error, setError] = useState("");
+  const [key, setKey] = useState("");
+  const [notice, setNotice] = useState<{ ok: boolean; text: string }>();
   const [saving, setSaving] = useState(false);
   const module = settings.data?.processors.find(item => item.processor_id === processorId);
-  if (settings.isError) return <Alert severity="error">Startup settings: {(settings.error as Error).message}</Alert>;
-  if (!module) return null;
+  if (!module) return settings.isError ? <Alert severity="error">{settings.error.message}</Alert> : null;
+  const changed = Object.keys(draft).length > 0;
+  const restart = changed && Boolean(service?.can_restart);
   const save = async () => {
-    setSaving(true); setError("");
+    setSaving(true); setNotice(undefined);
+    const path = "/api/admin/processor-settings/startup/" + encodeURIComponent(module.id);
     try {
-      await apiJson(`/api/admin/processor-settings/startup/${module.id}`, {method: "PUT", json: {config: draft}});
-      await client.invalidateQueries({queryKey: ["admin", "processor-startup-settings"]});
-      setOpen(false);
-    } catch (error) { setError((error as Error).message); }
-    finally { setSaving(false); }
+      if (key.trim()) {
+        await apiJson(path + "/credential", { method: "PUT", json: { api_key: key } });
+        setKey("");
+      }
+      if (changed) {
+        await apiJson(path, { method: "PUT", json: { config: { ...module.config, ...draft } } });
+        setDraft({});
+      }
+      if (restart && service) await controlCapabilityService(service.id, "restart");
+      setNotice({ ok: true, text: changed && !restart ? "Saved. Start or restart the processor to apply the settings." : "Connection settings saved." });
+    } catch (error) { setNotice({ ok: false, text: (error as Error).message }); }
+    finally {
+      await client.invalidateQueries({ queryKey: ["admin"] });
+      setSaving(false);
+    }
   };
-  return <><Button size="small" sx={{alignSelf: "flex-start", px: 0}} onClick={() => {
-    setDraft(Object.fromEntries(Object.entries(module.schema.properties ?? {}).map(([name, prop]) => [name, module.config[name] ?? prop.default]))); setError(""); setOpen(true);
-  }}>Startup settings</Button><Dialog open={open} onClose={() => !saving && setOpen(false)} fullWidth maxWidth="sm"><DialogTitle>{module.display_name} startup</DialogTitle><DialogContent><Stack spacing={1.5} sx={{pt: 1}}>
-    <Alert severity="info">Restart this service from Setup after saving. Running jobs keep their current configuration.</Alert>
-    {module.environment_overrides.length ? <Alert severity="warning">Startup environment overrides these saved fields: {module.environment_overrides.join(", ")}. Remove those overrides to use Setup.</Alert> : null}
-    {Object.entries(module.schema.properties ?? {}).map(([name, property]) => <ProcessorConfigInput key={name} name={name} property={property} value={draft[name]} onChange={value => setDraft({...draft, [name]: value})} />)}
-    <Typography variant="caption" sx={{overflowWrap: "anywhere"}}>Saved in: <code>{settings.data?.path}</code></Typography>
-    {error ? <Alert severity="error">{error}</Alert> : null}
-  </Stack></DialogContent><DialogActions><Button disabled={saving} onClick={() => setOpen(false)}>Cancel</Button><Button disabled={saving} onClick={() => void save()}>Save startup settings</Button></DialogActions></Dialog></>;
+  return <Paper component="form" variant="outlined" sx={{ p: 2 }} onSubmit={event => { event.preventDefault(); void save(); }}>
+    <Stack spacing={1.5}>
+      <Typography component="h2" variant="h6">Upstream settings</Typography>
+      {Object.entries(module.schema.properties ?? {}).map(([name, prop]) => <ProcessorConfigInput key={name} name={name}
+        property={prop} value={draft[name] ?? module.config[name] ?? prop.default}
+        disabled={module.environment_overrides.includes(name)}
+        onChange={value => setDraft(current => ({ ...current, [name]: value }))} />)}
+      {module.credential && <TextField size="small" label="API key" type="password" autoComplete="off"
+        disabled={!module.credential.writable} placeholder={module.credential.present ? "••••••••" : undefined}
+        value={key} onChange={event => setKey(event.target.value)} />}
+      {module.environment_overrides.length > 0 && <Typography variant="caption">Startup environment overrides {module.environment_overrides.join(", ")}.</Typography>}
+      {notice && <Alert severity={notice.ok ? "success" : "error"}>{notice.text}</Alert>}
+      <Button type="submit" variant="contained" disabled={saving || (!changed && !key.trim())} sx={{ alignSelf: "start" }}>
+        {saving ? "Saving…" : restart ? "Save & restart" : "Save upstream settings"}
+      </Button>
+    </Stack>
+  </Paper>;
 }

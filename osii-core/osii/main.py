@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -6,10 +7,11 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from osii.api.collection_synthesis_routes import router as collection_synthesis_router
-from osii.api.catalog_routes import router as catalog_router
+from osii.api.catalog_routes import browse_router, router as catalog_router
 from osii.api.chat_routes import router as chat_router
 from osii.api.research_routes import router as research_router
 from osii.api.collections_routes import router as collections_router
+from osii.api.database_routes import create_database_router
 from osii.api.embedding_routes import router as embedding_router
 from osii.api.enrichment_jobs_routes import router as enrichment_jobs_router
 from osii.api.enrichments_routes import router as enrichments_router, products_router
@@ -39,10 +41,12 @@ from osii.api.synthesizer_routes import router as synthesizer_router
 from osii.api.text_routes import router as text_router
 from osii.domain.processing.jobs import configure_job_store
 from osii.domain.catalog_db import ensure_catalog
+from osii.model_endpoints import CredentialFileError
 from osii.rag.strategies.http_reranker import create_reranker
 from osii.volume.api import create_app as create_inventory_app
 from osii.volume.store import database_path
 from osii.domain.storage.backend import BackendSettings, LibraryBackend
+from osii.api.quick_intake_routes import router as quick_intake_router
 
 storage_settings = BackendSettings.from_environment()
 
@@ -58,12 +62,18 @@ async def lifespan(application):
         application.state.library_backend = LibraryBackend(application.state.osii_root, storage_settings)
         application.state.postgres_library = PostgresLibrary(application.state.library_backend)
         application.state.postgres_workflow = PostgresWorkflow(application.state.postgres_library)
+        from osii.domain.storage.database_query import DatabaseExplorer
+        application.state.database_explorer = DatabaseExplorer(application.state.library_backend.engine)
     inventory_app.state.volume_store.path = database_path(application.state.osii_root)
     application.state.inventory_store=inventory_app.state.volume_store
     if storage_settings.kind == "postgres":
         inventory_app.state.volume_store.processing_links=lambda connection:application.state.postgres_library.inventory_links(connection,inventory_app.state.volume_store.path)
     inventory_app.state.source_root = application.state.shared_volume_root
     async with inventory_app.router.lifespan_context(inventory_app):
+        if os.getenv("OSII_BUNDLED_EMBEDDER_URL"):
+            from asyncio import to_thread
+            from osii.domain.processing.quick_intake import check_bundled_at_startup
+            await to_thread(check_bundled_at_startup, application.state.osii_root)
         try:
             yield
         finally:
@@ -84,7 +94,23 @@ app = FastAPI(
     openapi_url="/openapi.json",
     lifespan=lifespan,
     )
-app.state.rag_reranker = create_reranker()
+try:
+    app.state.rag_reranker = create_reranker()
+except CredentialFileError as exc:
+    logging.getLogger(__name__).warning("Reranking is unavailable. %s", exc)
+    app.state.rag_reranker = None
+
+# Local OSII has no accounts. The hosted composition supplies require("admin")
+# to this same router instead; authorization never lives in the query module.
+def local_operator() -> None:
+    return None
+
+app.include_router(create_database_router(
+    lambda request: getattr(request.app.state, "database_explorer", None),
+    authorize=local_operator,
+))
+app.include_router(browse_router)
+app.include_router(quick_intake_router)
 
 app.state.shared_volume_root = Path(
     os.getenv("SHARED_VOLUME_ROOT", "./data_volume/my_data")
@@ -109,7 +135,8 @@ if storage_settings.kind == "sidecar":
 if storage_settings.kind == "postgres":
     from osii.api.postgres_routes import router as postgres_router
     from osii.api.postgres_routes import readiness as postgres_readiness
-    from osii.api.intake_routes import browse_roots, browse_page, close_browse, upload_files, default_intake_settings
+    from osii.api.intake_routes import (browse_roots, browse_page, close_browse, upload_files,
+        default_intake_settings, list_processing_flows, save_processing_flow, test_processing_flow)
     from osii.domain.storage.authoring import AuthoringConflict
     from osii.domain.storage.commits import CommitConflict
     from fastapi.responses import JSONResponse
@@ -123,6 +150,9 @@ if storage_settings.kind == "postgres":
     app.add_api_route("/api/browse/page/{cursor}", close_browse, methods=["DELETE"])
     app.add_api_route("/api/uploads", upload_files, methods=["POST"])
     app.add_api_route("/api/intake/defaults", default_intake_settings, methods=["GET"])
+    app.add_api_route("/api/processing-flows", list_processing_flows, methods=["GET"])
+    app.add_api_route("/api/processing-flows/{flow_id}", save_processing_flow, methods=["PUT"])
+    app.add_api_route("/api/processing-flows/{flow_id}/test", test_processing_flow, methods=["POST"])
 
     @app.exception_handler(AuthoringConflict)
     @app.exception_handler(CommitConflict)

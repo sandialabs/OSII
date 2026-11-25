@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import mimetypes
 import os
 from pathlib import Path
 import tomllib
@@ -13,11 +14,40 @@ NATIVE_EXTENSIONS = [
     ".pptx", ".py", ".rst", ".rtf", ".sql", ".toml", ".ts",
     ".tsv", ".txt", ".xlsx", ".xml", ".yaml", ".yml",
 ]
+IMAGE_OCR_EXTENSIONS = [".png", ".jpg", ".jpeg", ".tif", ".tiff"]
+
+
+def has_default_reader(path: Path) -> bool:
+    return path.suffix.lower() in (*NATIVE_EXTENSIONS, *IMAGE_OCR_EXTENSIONS)
+
+
+def require_source_type(path: Path, capabilities: dict, extractor: str) -> None:
+    """Apply declared source constraints without opening the file."""
+    extensions = [value.strip().lower() for value in capabilities.get("file_extensions") or [] if value.strip()]
+    if extensions:
+        if "*" in extensions or path.suffix.lower() in extensions:
+            return
+        supported = extensions
+        received = path.suffix or "(no extension)"
+    else:
+        media_types = [value.strip().lower() for value in capabilities.get("media_types") or [] if value.strip()]
+        mime = mimetypes.guess_type(path.name)[0]
+        if not media_types or "*/*" in media_types:
+            return
+        if mime and (mime.lower() in media_types or f"{mime.split('/')[0].lower()}/*" in media_types):
+            return
+        supported = media_types
+        received = mime or "unknown media type"
+    raise ValueError(f"Extractor '{extractor}' does not accept {received}; supported: {', '.join(supported)}")
 
 
 def default_extractor_routes() -> list[dict]:
     return [
-        {"name": "native-supported", "extractor": "local.native-text", "fallbacks": [], "extensions": NATIVE_EXTENSIONS},
+        {"name": "pdf-native-ocr", "extractor": "local.native-text",
+         "fallbacks": ["local.tesseract-page-ocr"], "extensions": [".pdf"]},
+        {"name": "native-supported", "extractor": "local.native-text", "fallbacks": [],
+         "extensions": [suffix for suffix in NATIVE_EXTENSIONS if suffix != ".pdf"]},
+        {"name": "images-ocr", "extractor": "local.tesseract-page-ocr", "fallbacks": [], "extensions": IMAGE_OCR_EXTENSIONS},
         {"name": "other-native", "extractor": "local.native-text", "fallbacks": [], "extensions": ["*"]},
     ]
 

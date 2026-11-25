@@ -59,7 +59,7 @@ class FakeDescriptorResponse:
                 "output_kinds": ["wiki_markdown"],
             },
             "config_schema": {},
-            "model_requirements": {"chat": "required"},
+            "model_requirements": {"chat": "required", "embedding": "optional"},
         }
 
 
@@ -82,6 +82,28 @@ def test_register_running_processor_discovers_descriptor_and_writes_processors_t
     assert processor["model_access"]["bindings"] == {"chat": "base"}
     config = load_tools_config()
     assert config["tools"]["example.model-wiki"]["runtime"]["endpoint"] == "http://127.0.0.1:8123"
+
+    endpoint = "/api/admin/processors/" + processor["id"]
+    moved = client.put(endpoint, json={"base_url": "http://127.0.0.1:8124", "preserve_processor": True})
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["processor"]["base_url"] == "http://127.0.0.1:8124"
+    assert moved.json()["processor"]["model_access"]["bindings"] == {"chat": "base"}
+
+    updated = client.put(endpoint, json={
+        "model_access": {"mode": "gateway", "bindings": {"chat": "", "embedding": "semantic-search"}},
+        "preserve_processor": True,
+    })
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["processor"]["model_access"]["bindings"] == {"embedding": "semantic-search"}
+
+    class OtherDescriptor(FakeDescriptorResponse):
+        def json(self):
+            return {**super().json(), "name": "example.other-wiki"}
+
+    monkeypatch.setattr("osii.api.processor_admin_routes.requests.get", lambda *_, **__: OtherDescriptor())
+    rejected = client.put(endpoint, json={"base_url": "http://127.0.0.1:8125", "preserve_processor": True})
+    assert rejected.status_code == 422
+    assert load_tools_config()["tools"]["example.model-wiki"]["runtime"]["endpoint"] == "http://127.0.0.1:8124"
 
 
 def test_invalid_toml_retains_last_valid_generation_and_reports_line(monkeypatch):

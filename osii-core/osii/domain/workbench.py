@@ -34,6 +34,8 @@ def home_state(
         "text_documents": text_documents,
         "indexed_documents": indexed_documents,
         "tools": {
+            "ocr": {"enabled": True, "reason": "Choose a PDF or image"},
+            "wiki": {"enabled": True, "reason": "Open or create wikis"},
             "browse": state(
                 has_documents, f"{documents:,} documents available", "No documents yet"
             ),

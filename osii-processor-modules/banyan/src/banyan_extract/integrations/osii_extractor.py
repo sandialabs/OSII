@@ -12,6 +12,7 @@ from banyan_extract.processor.nemoparse_processor import NemoparseProcessor
 from banyan_extract.utils.setup_nemoparse_config import get_nemoparse_config
 
 try:
+    from osii.domain.env_credentials import resolve_env_value
     from osii.processor_sdk import (
         Artifact,
         Capability,
@@ -55,7 +56,7 @@ class BanyanOsiiExtractor(Extractor):
         config_schema={
             "type": "object",
             "properties": {
-                "model_name": {"type": "string"},
+                "model_name": {"type": "string", "title": "Nemotron model"},
                 "sort_by_position": {"type": "boolean", "default": True},
             },
             "additionalProperties": False,
@@ -71,7 +72,7 @@ class BanyanOsiiExtractor(Extractor):
         return NemoparseProcessor(
             endpoint_url=endpoint,
             model_name=model_name,
-            api_key=environment["NEMOPARSE_API_KEY"],
+            api_key=resolve_env_value("NEMOPARSE_API_KEY")[0] or environment["NEMOPARSE_API_KEY"],
             sort_by_position=bool(config.get("sort_by_position", True)),
         )
 

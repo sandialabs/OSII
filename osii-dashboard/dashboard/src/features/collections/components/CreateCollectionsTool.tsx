@@ -1,3 +1,4 @@
+import { ToolContext } from "../../../components/workbench/ToolContext";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
@@ -172,6 +173,7 @@ export function CreateCollectionsTool({
           View collections
         </Button>
       </Stack>
+      <ToolContext id="create-collections" />
       <Tabs
         value={mode}
         onChange={(_, value) => setMode(value)}

@@ -1,5 +1,3 @@
-import { EnrichmentArtifactView } from "./EnrichmentArtifactView";
-import { useScopeEnrichmentPayload } from "../../../hooks/useScopeEnrichmentPayload";
 import { ToolActionPanel } from "./ToolActionPanel";
 import { WikiProductEditor } from "./WikiProductEditor";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
@@ -34,12 +32,7 @@ function WikiArtifactCard({ scope, entry }: {
       <CardContent>
         <Stack spacing={1.5}>
           <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}>
-            <Stack spacing={0.25}>
-              <Typography fontWeight={700}>{entry.title || entry.name.replace(/\.json$/i, "")}</Typography>
-              <Typography variant="caption" color="text.secondary">
-                Wiki
-              </Typography>
-            </Stack>
+            <Typography fontWeight={700}>{entry.title || entry.name.replace(/\.json$/i, "")}</Typography>
             <Button disabled={entry.can_edit === false} color="error" size="small" startIcon={<DeleteOutlineOutlinedIcon />} onClick={() => setDeleteOpen(true)} sx={{ alignSelf: "flex-start" }}>
               Delete
             </Button>
@@ -67,12 +60,6 @@ function WikiArtifactCard({ scope, entry }: {
   );
 }
 
-function SavedBatchRun({ scope, filename }: { scope: ScopeDescribeRequest; filename: string }) {
-  const payload = useScopeEnrichmentPayload(scope, filename);
-  if (payload.isError) return <Alert severity="error">Could not load saved batch results.</Alert>;
-  return payload.data?.data ? <Card variant="outlined"><CardContent><EnrichmentArtifactView data={payload.data.data} /></CardContent></Card> : null;
-}
-
 export function ScopeWikiPanel({ scope, title, showActions = true }: {
   scope: ScopeDescribeRequest;
   title: string;
@@ -87,10 +74,9 @@ export function ScopeWikiPanel({ scope, title, showActions = true }: {
       {showActions ? <ToolActionPanel scope={scope} action="wiki.write" title={title} /> : null}
       {enrichments.isLoading ? <CircularProgress size={22} /> : null}
       {enrichments.isError ? <Alert severity="warning">Saved wikis could not be listed.</Alert> : null}
-      {(enrichments.data?.enrichments ?? []).filter((entry): entry is EnrichmentListEntryFile => entry.kind === "file" && entry.artifact_type === "scope_batch_run").map(entry => <SavedBatchRun key={entry.name} scope={scope} filename={entry.name} />)}
       {wikiEntries.map((entry) => <WikiArtifactCard key={entry.name} scope={scope} entry={entry} />)}
-      {!enrichments.isLoading && wikiEntries.length === 0 && !(enrichments.data?.enrichments ?? []).some(entry => entry.kind === "file" && entry.artifact_type === "scope_batch_run") ? (
-        <Alert severity="info">No wiki yet. Choose a method above to create one.</Alert>
+      {!enrichments.isLoading && !enrichments.isError && wikiEntries.length === 0 ? (
+        <Alert severity="info">No saved wikis.</Alert>
       ) : null}
     </Stack>
   );

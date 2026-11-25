@@ -1,23 +1,25 @@
 import { FormControlLabel, Switch, TextField, MenuItem } from "@mui/material";
 import type { ProcessorConfigProperty } from "../../../api/types";
 
-export function ProcessorConfigInput({ name, property, value, onChange }: {
+export function ProcessorConfigInput({ name, property, value, onChange, disabled = false }: {
   name: string;
   property: ProcessorConfigProperty;
   value: unknown;
   onChange: (value: unknown) => void;
+  disabled?: boolean;
 }) {
   const label = property.title ?? name.replace(/_/g, " ");
   if (property.type === "boolean") {
-    return <FormControlLabel control={<Switch checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} />} label={label} />;
+    return <FormControlLabel disabled={disabled} control={<Switch checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} />} label={label} />;
   }
   if (property.enum?.length) {
-    return <TextField select fullWidth size="small" label={label} value={value ?? ""} onChange={(event) => onChange(event.target.value)} helperText={property.description}>
+    return <TextField disabled={disabled} select fullWidth size="small" label={label} value={value ?? ""} onChange={(event) => onChange(event.target.value)} helperText={property.description}>
       {property.enum.map((option) => <MenuItem key={String(option)} value={option}>{option}</MenuItem>)}
     </TextField>;
   }
   const numeric = property.type === "number" || property.type === "integer";
   return <TextField
+    disabled={disabled}
     fullWidth size="small" multiline={property.format === "textarea"}
     minRows={property.format === "textarea" ? 6 : undefined} label={label}
     type={numeric ? "number" : "text"} value={value ?? ""}

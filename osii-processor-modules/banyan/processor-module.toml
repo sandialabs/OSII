@@ -17,6 +17,7 @@ command = [
     "banyan_extract.integrations.osii_extractor:app",
 ]
 port = 8101
+credential_env = "NEMOPARSE_API_KEY"
 
 [processors.capabilities]
 file_extensions = [
@@ -27,3 +28,12 @@ file_extensions = [
     ".tif",
     ".tiff",
 ]
+
+[processors.startup_schema]
+type = "object"
+additionalProperties = false
+
+[processors.startup_schema.properties.NEMOPARSE_ENDPOINT]
+type = "string"
+title = "Nemotron endpoint"
+default = ""

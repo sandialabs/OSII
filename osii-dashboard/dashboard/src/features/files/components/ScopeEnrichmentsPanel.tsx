@@ -23,9 +23,11 @@ type Product = {
 export function ScopeEnrichmentsPanel({
   scope,
   showActions = true,
+  filter,
 }: {
   scope: ScopeDescribeRequest;
   showActions?: boolean;
+  filter?: (product: Product) => boolean;
 }) {
   const query = useQuery({
     queryKey: ["products", "list", scope],
@@ -36,10 +38,8 @@ export function ScopeEnrichmentsPanel({
       }),
   });
   const products =
-    query.data?.products.filter(
-      (item) =>
-        item.artifact_type !== "wiki_markdown" || item.filename.endsWith(".md"),
-    ) ?? [];
+    query.data?.products.filter(item => filter ? filter(item)
+      : item.artifact_type !== "wiki_markdown" || item.filename.endsWith(".md")) ?? [];
   return (
     <Stack spacing={2}>
       <Typography variant="h6" fontWeight={700}>

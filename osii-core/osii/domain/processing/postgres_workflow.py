@@ -290,6 +290,8 @@ class PostgresWorkflow:
             "extraction_policy",
             "extractor_overrides",
             "extractor_config",
+            "routes_snapshot",
+            "processing_flow",
             "synthesizer_name",
             "synthesizer_config",
             "enricher_name",
@@ -319,6 +321,7 @@ class PostgresWorkflow:
         payload = {
             "workflow": options.get("workflow", "intake"),
             "options": options,
+            "processing_flow": options.get("processing_flow"),
             "items": items,
             "configuration_stamp": configuration_stamp(self.root),
             "staging": staging,
@@ -652,16 +655,19 @@ class PostgresWorkflow:
             options.get("extract_mode") != "missing" or previous is None
         )
         if read and item["steps"].get("extraction") != "done":
-            from osii.domain.processing.extractor_selection import load_extractor_routes
+            from osii.domain.processing.extractor_selection import load_extractor_routes, require_source_type
             from osii.api.runs_routes import choose_parser_chain
 
-            names = [options.get("extractor_overrides", {}).get(path.suffix.lower())]
+            names = [options.get("extractor_overrides", {}).get(path.suffix.lower() or "(no extension)")]
             if not names[0]:
-                names = choose_parser_chain(path, load_extractor_routes())
+                names = choose_parser_chain(path, options.get("routes_snapshot") or load_extractor_routes())
             failures = []
             for name in names:
+                item["extractor"] = name
                 try:
                     descriptor, client = processor(self.root, name, "extractor")
+                    item["extractor"] = descriptor.name
+                    require_source_type(path, descriptor.capabilities.model_dump(), name)
                     request_id = f"{lease.job_id}:{index}:extract"
                     from osii.domain.processor_settings import merged_processor_settings
                     from osii.domain.tool_actions import validate_tool_config
@@ -693,6 +699,10 @@ class PostgresWorkflow:
                             }
                         )
                         response = client.extract(request)
+                    if path.suffix.lower() == ".pdf" and len(names) > 1 and not any(
+                        segment.text.strip() for segment in response.segments
+                    ):
+                        raise ValueError("; ".join(response.warnings) or "The PDF reader returned no text.")
                     break
                 except Exception as exc:
                     failures.append(f"{name}: {type(exc).__name__}")
@@ -708,7 +718,6 @@ class PostgresWorkflow:
                 len(content),
                 {
                     "source_absolute_path": str(path.resolve()),
-                    "extraction_document_metadata": response.document_metadata,
                     "file": {
                         "mtime_utc": iso_mtime_utc(path),
                         "birthtime_utc": iso_birthtime_utc(path),
@@ -735,6 +744,7 @@ class PostgresWorkflow:
             )
             command = replace(command, chunks=chunks)
             item["steps"]["extraction"] = "done"
+            item["extraction_variant_id"] = command.commit_id
             if staging:
                 validate_member(staging, staging["members"][index])
             self.backend.committer.commit(
@@ -810,6 +820,7 @@ class PostgresWorkflow:
                         tasks.append(task)
 
                 self._update_root(lease, add)
+                item[kind] = task["descriptor"]["name"]
                 item["steps"][kind] = "queued"
                 self.queue.checkpoint(lease, index=index, item=item)
         if options.get("collection_id"):
@@ -825,6 +836,7 @@ class PostgresWorkflow:
 
     def embed(self, lease, index, item, options):
         descriptor, client = processor(self.root, options["embedder_name"], "embedder")
+        item["embedder"] = descriptor.name
         from osii.domain.model_provider_config import selected_model
 
         model = options.get("embedding_model") or selected_model(

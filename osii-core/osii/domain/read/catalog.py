@@ -100,8 +100,7 @@ def scan_files_catalog(osii_store: Path) -> list[dict]:
             add_entry(doc.get("source_relpath"), doc.get("file_id"))
 
     # Extraction commits an object bundle before the end-of-run folder rebuild.
-    # Include only completed/partial bundles so Files can update after each
-    # document without exposing a text file while an extractor is writing it.
+    # Show published records in Files while the rest of intake is still running.
     objects_dir = (osii_store / "objects").resolve()
     if objects_dir.exists():
         for object_path in sorted(objects_dir.iterdir()):
@@ -121,7 +120,7 @@ def scan_files_catalog(osii_store: Path) -> list[dict]:
             except Exception:
                 continue
             status = provenance.get("provenance", {}).get("status")
-            if status not in {"done", "partial"}:
+            if status not in {"done", "partial", "metadata_only"}:
                 continue
             add_entry(
                 meta.get("file", {}).get("source_relpath"),

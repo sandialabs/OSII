@@ -7,6 +7,7 @@ class FileDisplay(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     view: Literal["thumbnails", "list"] = "thumbnails"
     show_name: bool = True
+    name_source: Literal["filename", "descriptive_title"] = "filename"
     show_size: bool = False
     metadata: Literal["none", "format", "modified", "path"] = "none"
 

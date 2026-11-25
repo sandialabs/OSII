@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 import multiprocessing
+import mimetypes
 import os
 from pathlib import Path
 import time
@@ -65,6 +66,7 @@ def _reader(
                         if item["type"] == "unavailable":
                             item["error"] = "Not a regular file"
                         if item["type"] == "file":
+                            item["mime"] = mimetypes.guess_type(child.name)[0]
                             item["size_bytes"] = child.stat(
                                 follow_symlinks=False
                             ).st_size

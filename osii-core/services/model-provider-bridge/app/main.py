@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import threading
 import time
-from typing import Any
+from typing import Annotated, Any, Literal
 import uuid
 
 import requests
@@ -281,6 +281,12 @@ class ProviderSynthesizer(Synthesizer):
                 payload = CLIENTS[self.provider].request("POST", "/chat/completions", payload={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}, timeout=180, capability="synthesis")
                 choices = payload.get("choices") or []
                 markdown = choices[0].get("message", {}).get("content", "") if choices else ""
+                if (choices and choices[0].get("finish_reason") == "length"
+                        and (not isinstance(markdown, str) or not markdown.strip())):
+                    raise ValueError(
+                        "The model reached its output token limit before returning a summary. "
+                        "Increase the synthesis processor's Maximum tokens setting or select another model."
+                    )
             return markdown, payload.get("usage", {})
         response = synthesize_bounded(request, self.descriptor, model, complete, complete_metadata=lambda messages: complete(messages, metadata=True))
         response.metadata.update(provider=self.provider, endpoint_type="ollama-native" if self.provider == "ollama" else "openai-compatible")
@@ -322,11 +328,33 @@ class DocumentMetadataEnricher(Enricher):
                                 metadata={"document_metadata": metadata, "suggestions_only": True})])
 
 
+class JsonSchemaOutput(BaseModel):
+    name: str
+    schema_: dict[str, Any] = Field(alias="schema")
+    strict: bool | None = None
+    description: str | None = None
+
+
+class JsonSchemaResponseFormat(BaseModel):
+    type: Literal["json_schema"]
+    json_schema: JsonSchemaOutput
+
+
+class BasicResponseFormat(BaseModel):
+    type: Literal["text", "json_object"]
+
+
 class ChatRequest(BaseModel):
     model: str | None = None
     messages: list[dict[str, Any]] = Field(min_length=1)
     max_tokens: int = 900
     temperature: float | None = None
+
+
+class GatewayChatRequest(ChatRequest):
+    response_format: Annotated[
+        JsonSchemaResponseFormat | BasicResponseFormat, Field(discriminator="type")
+    ] | None = None
 
 
 class GatewayEmbeddingRequest(BaseModel):
@@ -447,6 +475,21 @@ def _gateway_request(client: ProviderHTTP, method: str, path: str, *, payload: d
         response.raise_for_status()
         return response.json()
     except (requests.RequestException, ValueError) as exc:
+        if (
+            isinstance(exc, requests.HTTPError)
+            and exc.response is not None
+            and exc.response.status_code in {400, 422}
+            and (
+                "format" in payload
+                or (payload.get("response_format") or {}).get("type") in {"json_object", "json_schema"}
+            )
+        ):
+            model = payload["model"]
+            raise HTTPException(status_code=422, detail={
+                "error": f"{model} rejected the structured output request (provider HTTP {exc.response.status_code}). Check the request or choose a model that supports JSON output.",
+                "model": model,
+                "provider_status": exc.response.status_code,
+            }) from exc
         raise HTTPException(status_code=502, detail=f"Selected model connection failed: {exc}") from exc
 
 
@@ -459,7 +502,7 @@ def gateway_models(authorization: str | None = Header(default=None)) -> dict[str
 
 @app.post("/v1/chat/completions")
 def gateway_chat(
-    request: ChatRequest,
+    request: GatewayChatRequest,
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     if not request.model:
@@ -469,26 +512,40 @@ def gateway_chat(
     client = _connection_client(connection)
     actual_model = str(connection.get("model") or "")
     provider_type = str(connection.get("type") or "")
+    response_format = request.response_format
     if provider_type == "ollama-local":
         options = {"num_predict": request.max_tokens}
         if request.temperature is not None:
             options["temperature"] = request.temperature
+        provider_payload = {"model": actual_model, "messages": request.messages, "stream": False, "options": options}
+        if isinstance(response_format, JsonSchemaResponseFormat):
+            provider_payload["format"] = response_format.json_schema.schema_
+        elif response_format and response_format.type == "json_object":
+            provider_payload["format"] = "json"
         payload = _gateway_request(
             client,
             "POST",
             "/api/chat",
-            payload={"model": actual_model, "messages": request.messages, "stream": False, "options": options},
+            payload=provider_payload,
             timeout=180,
         )
         content = payload.get("message", {}).get("content", "")
-        return {
+        result = {
             "id": f"chatcmpl-{uuid.uuid4().hex}",
             "object": "chat.completion",
             "created": int(time.time()),
-            "model": actual_model,
-            "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
+            "model": payload.get("model") or actual_model,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": payload.get("done_reason")}],
             "osii": {"connection": alias, "provider_type": provider_type},
         }
+        prompt_tokens, completion_tokens = payload.get("prompt_eval_count"), payload.get("eval_count")
+        if isinstance(prompt_tokens, int) and isinstance(completion_tokens, int):
+            result["usage"] = {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            }
+        return result
     provider_payload: dict[str, Any] = {
         "model": actual_model,
         "messages": request.messages,
@@ -496,6 +553,8 @@ def gateway_chat(
     }
     if request.temperature is not None:
         provider_payload["temperature"] = request.temperature
+    if response_format is not None:
+        provider_payload["response_format"] = response_format.model_dump(by_alias=True, exclude_none=True)
     payload = _gateway_request(client, "POST", "/chat/completions", payload=provider_payload, timeout=180)
     payload["osii"] = {"connection": alias, "provider_type": provider_type}
     return payload

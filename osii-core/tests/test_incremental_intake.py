@@ -28,7 +28,7 @@ def test_mixed_source_folders_and_uploads_have_distinct_bounded_folder_paths(
 
     for _ in range(2):
         runs_routes.build_folder_artifacts(
-            resolved_files=files,
+            file_ids={path.resolve(): compute_file_id(path) for path in files},
             data_volume_root=temp_data_root.parent,
             shared_root=temp_data_root,
             upload_root=temp_upload_root,

@@ -22,9 +22,103 @@ from osii.domain.processing.jobs import (
 )
 
 
-def execute_job(job: dict) -> None:
+def _process_files(job, osii_root, on_text_ready=None):
     from osii.api.runs_routes import run_worker
 
+    payload = job["payload"]
+    run_worker(
+        run_id=job["run_id"],
+        resolved_files=[Path(path) for path in payload["resolved_files"]],
+        queue_items=payload["queue_items"],
+        include_subfolders=payload["include_subfolders"],
+        include_patterns=payload["include_patterns"],
+        exclude_patterns=payload["exclude_patterns"],
+        context=payload["context"],
+        intake_name=payload["intake_name"],
+        data_volume_root=Path(payload["data_volume_root"]),
+        osii_store=osii_root,
+        shared_root=Path(payload["shared_root"]),
+        upload_root=Path(payload["upload_root"]),
+        parser_routes_path=Path(payload["parser_routes_path"]),
+        shared_root_host_path=payload.get("shared_root_host_path") or None,
+        synthesizer_name=payload.get("synthesizer_name") or None,
+        synthesizer_config=payload.get("synthesizer_config") or {},
+        extractor_overrides=payload.get("extractor_overrides") or {},
+        workflow=payload.get("workflow") or "intake",
+        run_extraction=bool(payload.get("run_extraction", True)),
+        extract_mode=payload.get("extract_mode") or "always",
+        extraction_policy=payload.get("extraction_policy") or "auto",
+        enricher_name=payload.get("enricher_name") or None,
+        enricher_config=payload.get("enricher_config") or {},
+        collection_id=payload.get("collection_id") or None,
+        staging=payload.get("staging"),
+        routes_snapshot=payload.get("routes_snapshot"),
+        continue_to_embeddings=bool(payload.get("build_embeddings")),
+        on_text_ready=on_text_ready,
+        extractor_settings=payload.get("extractor_settings"),
+    )
+
+
+def _process_with_intake_embeddings(job, root, run):
+    from osii.domain.processing.intake_embeddings import IntakeEmbeddings, progress_report
+    from osii.indexing.incremental import IncrementalEmbeddingError
+
+    run_id = run["id"]
+    def submit_saved_text(current, stream):
+        for item in current["items"]:
+            if item.get("text_ready") or ("text_ready" not in item and item.get("status") in {"done", "partial"}):
+                stream.submit(item.get("file_id"), item.get("text_revision"))
+
+    with IntakeEmbeddings(root, job, run) as stream:
+        submit_saved_text(run, stream)
+        if run.get("file_processing_status") != "done":
+            _process_files(job, root, stream.submit)
+            submit_saved_text(get_run(run_id), stream)
+
+    if honor_run_control(run_id):
+        return
+    run = get_run(run_id)
+    if run["status"] in {"paused", "cancelled"}:
+        return
+    if run["status"] == "error":
+        raise RuntimeError(run.get("error") or "File processing failed")
+    if run.get("file_processing_status") != "done":
+        from osii.domain.catalog_db import rebuild_catalog
+        rebuild_catalog(root)
+
+    receipt = stream.receipt
+    progress = progress_report(receipt)
+    problems = progress["failures"]
+    error = IncrementalEmbeddingError(progress) if problems else None
+    run.update(
+        file_processing_status="done",
+        embedding_target=receipt["identity"],
+        indexing_progress=progress,
+        indexing_file_ids=sorted(receipt["completed"]),
+        status="error" if error else "done",
+        indexing_status="error" if error else "done" if receipt["completed"] else "skipped",
+        indexing_error=str(error) if error else None,
+        error=str(error) if error else None,
+        error_phase="embedding" if error else None,
+        finished_at=datetime.now(UTC).isoformat(),
+    )
+    run.pop("retry_stage", None)
+    if error:
+        run.setdefault("diagnostics", []).append({
+            "phase": "embedding",
+            "processor": (receipt.get("identity") or {}).get("provider"),
+            "error": str(error),
+            "failures": dict(problems),
+            "recorded_at": datetime.now(UTC).isoformat(),
+        })
+    save_run(run)
+    if error:
+        append_log(run_id, "Some embeddings failed. Retry embeddings to reuse completed file work and vectors.")
+        raise error
+    append_log(run_id, "Embeddings saved." if receipt["completed"] else "No selected files had text to embed.")
+
+
+def execute_job(job: dict) -> None:
     payload = job["payload"]
     osii_root = Path(payload["osii_store"]).resolve()
     configure_job_store(osii_root)
@@ -44,37 +138,13 @@ def execute_job(job: dict) -> None:
             return
         from osii.domain.processing.standalone import validate_embedding_binding
         validate_embedding_binding(osii_root, payload)
-    # An interrupted/retried embedding phase never repeats original reads,
-    # extraction, summaries, or enrichment from the completed file phase.
+    if payload.get("build_embeddings") and payload.get("job_kind") != "full_index":
+        from osii.domain.processing.jobs import intake_embedding_receipt
+        if run and (run.get("file_processing_status") != "done" or intake_embedding_receipt(run["id"])):
+            return _process_with_intake_embeddings(job, osii_root, run)
+
     if not run or run.get("file_processing_status") != "done":
-        run_worker(
-            run_id=job["run_id"],
-            resolved_files=[Path(path) for path in payload["resolved_files"]],
-            queue_items=payload["queue_items"],
-            include_subfolders=payload["include_subfolders"],
-            include_patterns=payload["include_patterns"],
-            exclude_patterns=payload["exclude_patterns"],
-            context=payload["context"],
-            intake_name=payload["intake_name"],
-            data_volume_root=Path(payload["data_volume_root"]),
-            osii_store=osii_root,
-            shared_root=Path(payload["shared_root"]),
-            upload_root=Path(payload["upload_root"]),
-            parser_routes_path=Path(payload["parser_routes_path"]),
-            shared_root_host_path=payload.get("shared_root_host_path") or None,
-            synthesizer_name=payload.get("synthesizer_name") or None,
-            synthesizer_config=payload.get("synthesizer_config") or {},
-            extractor_overrides=payload.get("extractor_overrides") or {},
-            workflow=payload.get("workflow") or "intake",
-            run_extraction=bool(payload.get("run_extraction", True)),
-            extract_mode=payload.get("extract_mode") or "always",
-            extraction_policy=payload.get("extraction_policy") or "auto",
-            enricher_name=payload.get("enricher_name") or None,
-            enricher_config=payload.get("enricher_config") or {},
-            collection_id=payload.get("collection_id") or None,
-            staging=payload.get("staging"),
-            routes_snapshot=payload.get("routes_snapshot"),
-        )
+        _process_files(job, osii_root)
 
     run = get_run(job["run_id"])
     if run and run.get("status") in {"paused", "cancelled"}:
@@ -105,6 +175,13 @@ def execute_job(job: dict) -> None:
                 }
             )
             run["indexing_file_ids"] = file_ids
+        if not file_ids and payload.get("job_kind") != "full_index":
+            append_log(job["run_id"], "No selected files had text to embed.")
+            run = get_run(job["run_id"])
+            run.update(status="done", indexing_status="skipped", indexing_file_ids=[],
+                       finished_at=datetime.now(UTC).isoformat())
+            save_run(run)
+            return
         run.update(
             status="running",
             indexing_status="running",
@@ -148,6 +225,10 @@ def execute_job(job: dict) -> None:
                 run["indexing_status"] = run["status"]
                 save_run(run)
                 return
+            append_log(
+                job["run_id"],
+                "Full index saved." if payload.get("job_kind") == "full_index" else "Selected-document embeddings saved; existing library vectors preserved.",
+            )
             run = get_run(job["run_id"])
             run.update(
                 status="done",
@@ -157,11 +238,11 @@ def execute_job(job: dict) -> None:
                 finished_at=datetime.now(UTC).isoformat(),
             )
             save_run(run)
+        except Exception as exc:
             append_log(
                 job["run_id"],
-                "Full index saved." if payload.get("job_kind") == "full_index" else "Selected-document embeddings saved; existing library vectors preserved.",
+                f"Embeddings incomplete; retry will reuse saved vectors and completed file processing: {exc}",
             )
-        except Exception as exc:
             run = get_run(job["run_id"])
             if run:
                 run.update(
@@ -180,10 +261,6 @@ def execute_job(job: dict) -> None:
                         if key != "identity"
                     }
                 save_run(run)
-            append_log(
-                job["run_id"],
-                f"Embeddings incomplete; retry will reuse saved vectors and completed file processing: {exc}",
-            )
             raise
 
     run = get_run(job["run_id"])

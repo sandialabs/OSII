@@ -243,3 +243,16 @@ The synthesis layer is designed so that multiple strategies can be tried without
 The embeddings layer provides efficient vector search over text segments once the hierarchy has been narrowed.
 
 Together, these make the repo both operational and research-friendly.
+
+
+## Run OCR on a scanned file
+
+Open **OCR Workbench** in the Toolbox. Browse for a PDF or image, or choose
+an existing library file. Select a compatible OCR method and choose **Run OCR**.
+Review the source and recognized text together. When a method returns regions,
+you can view its boxes over the original.
+
+OCR saves an extraction version. Choose **Make primary** to use that version
+for future processing. Open **File products** to read file metadata, text
+versions, summaries, wikis, and artifacts. Check **Intake & Queue** for run
+history and retries.

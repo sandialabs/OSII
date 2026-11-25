@@ -5,6 +5,53 @@ a **workspace**. Most better implementations need only a method. Core owns
 canonical persistence, scopes, model access, runs, and provenance; the browser
 uses Core HTTP APIs and never opens sidecars or calls a provider directly.
 
+## Design each view around one action
+
+Name the **scope** (one file, a folder, a collection, or the library) and the
+**primary action** (read, search, edit, run, or review). Make the action order
+clear through layout, short headings, and the controls themselves. Use a
+labeled question-mark button for optional explanation and show errors beside the
+action they affect. Avoid nested drawers and repeated instructions.
+
+Use the shared product vocabulary in `src/domain/libraryProducts.ts` and the
+`LibraryFlow` component to show what a tool **reads** and **writes**. List saved
+outputs in the relevant file or collection view. Use a dedicated workspace for
+running processors and reviewing their progress.
+
+| Library data | Where to find it |
+| --- | --- |
+| Original and file facts | Files, under Source |
+| Extracted text, corrections, and versioned extraction artifacts | File products, under Extracted text |
+| Document metadata, summaries, wikis, and other derived artifacts | File products or the owning scope |
+| Collection membership | Collections |
+| Report drafts | Create a Report, with browser drafts and export |
+| Search chunks and embeddings | Search and Topic Explorer use the index; Library Overview shows coverage |
+| Run status, errors, and logs | Intake & Queue |
+
+Core owns storage. OSII-local saves library products in sidecars by default.
+The PostgreSQL profile exposes the same products through Core. Preserve source
+identity and provenance across processors, edits, and deployments.
+
+### Declare compatible inputs
+
+A workspace that consumes saved products declares its required product kinds
+and scopes. For example, Topic Explorer needs compatible embeddings and works
+across original file types. A workspace that works on source bytes declares
+`input: "source"` and uses the selected processor's supported file types to
+validate the file before enabling its action. Declare `capabilities.file_extensions`,
+including the leading dot, or `capabilities.media_types` on the Processor API
+descriptor. Extensions take precedence when present. MIME-only declarations
+accept exact types, `image/*`-style patterns, or `*/*`. OSII infers MIME
+from filenames during browsing. Core checks the descriptor again at execution.
+
+OCR Workbench is the reference workspace. An OCR extractor opts in with
+`"ocr_text"` in `capabilities.output_kinds` and declares its supported formats.
+It returns the normal extraction response, with page, regions, and confidence
+when available. One workspace can offer several OCR methods. Selecting and
+opening a file never starts a run. Run OCR saves a new version and preserves
+the current primary text for existing documents. The first successful
+extraction of a new file becomes its primary text.
+
 ## Add an interchangeable method
 
 Implement the existing [Processor SDK](processor-development.md) descriptor and
@@ -17,12 +64,11 @@ services in Setup. Declare supported `scope_types`,
   Return canonical text segments/source artifacts. An alternative OCR engine
   needs no OCR-specific sidebar page.
 - A **synthesizer** or **embedder** appears in the corresponding Intake step.
-- An **enricher** appears in scope tool controls and the **Toolbox**. Declare
-  `wiki_markdown` for the shared wiki workflow or `document_metadata` for
-  metadata suggestions. `topics`, `embedding_projection`, and `recommendations`
-  declare separate topic-modeling, projection, and recommendation operations.
-  Other output kinds use Analyze. Tables, entity
-  lists, graphs, and wikis reuse their existing viewers.
+- An **enricher** appears in the **Toolbox**. Declare `wiki_markdown` to appear in
+  the **Create a wiki** method selector or `document_metadata` for **Suggest
+  metadata**. Other registered scope methods get their own Toolbox entry and
+  share the scope picker and run controls. Tables, entity lists, graphs, and
+  wikis use the existing product viewers.
 
 Core's catalog at `GET /api/enrichment-jobs/tools` returns the operation,
 method identity/version, scopes, configuration schema, compatible model choices,
@@ -44,8 +90,8 @@ Use the existing run control endpoints and Activity rather than a temporary
 "generating" toast. See the [Workbench architecture](../concepts/architecture.md) and branch API
 reference for limits, retry semantics, and permission boundaries.
 
-To introduce a new operation grouping, update the catalog's descriptor-to-action
-adapter and the catalog label mapping. No new Processor SDK kind is needed.
+Add a dedicated route in `src/app/tools.tsx` when a task needs a specialized
+interaction. Use the existing Processor SDK kinds and the capability catalog.
 Topic inference, vector projection, and similarity ranking are separate actions;
 a projection must not be presented as a named-topic model.
 
@@ -78,13 +124,15 @@ editor or claim that edited passages retain validated citation spans.
    avoid displaying results from a previous scope as current results.
 4. On local, register a lazy page in `src/app/tools.tsx` with a unique ID, path,
    short label, icon, and group (`documents`, `tools`, `start`, or `setup`).
+   Register the scope, source or saved-product input, and read/write flow for
+   Toolbox tiles in `src/domain/workbench.ts`.
    Routing and sidebar consume that registration. Parameterized detail routes
    belong in the router and use `ToolBoundary`.
 5. Put shareable scope and selection in the URL. Use `buildFileRoute` for
    existing file identities. Keep drafts separate from saved products.
 6. Handle loading, empty, partial, unavailable, stale, and error states. Provide
-   keyboard alternatives for graphical selection. Put detailed explanations in
-   Options/Details and keep status/error recovery beside the relevant action.
+   keyboard alternatives for graphical selection. Keep status and recovery
+   beside the action and use a labeled question-mark button for optional help.
 
 This is build-time registration of reviewed code, not arbitrary downloaded JS.
 The hosted branch separately enforces its persistence and account permissions.
@@ -192,6 +240,13 @@ role-gated navigation. Preserve server authorization in its API adapter;
 OSII-local remains authentication-free. Add readiness behavior and tests if the
 new tile needs prerequisites. Do not advertise a tile before its route and both
 product adapters are implemented.
+
+Local Toolbox routes get a breadcrumb back to Toolbox through the route
+registry. Use `PageBreadcrumbs` on nested views with a named parent, such as
+`Collections → Collection name → Wikis`, or a parent section with a stable
+anchor, such as Setup’s Processors list. Link each parent to its canonical
+destination so the trail works when opening a bookmark. Use tabs for modes
+within the same task, such as reading, editing, and comparing wiki revisions.
 
 Run dashboard tests and build on each affected branch, plus
 `python scripts/check_extensions.py`. Keep durable processing and result storage

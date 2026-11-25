@@ -20,6 +20,7 @@ import { listProcessingRuns } from "../../api/queue";
 import type { ScopeDescribeRequest } from "../../api/types";
 import { useEnrichmentJob } from "../../hooks/useEnrichmentJob";
 import { useScopeKeywordSuggestions } from "../../hooks/useScopeKeywordSuggestions";
+import { LibraryMetadataPanel } from "./LibraryMetadataPanel";
 
 function sizeLabel(value: number | null): string {
   if (value === null) return "Not recorded";
@@ -35,17 +36,19 @@ export function ScopeOverviewPanel({ scope }: { scope: ScopeDescribeRequest }) {
   const overview = useQuery({
     queryKey: ["scopes", "overview", scope],
     queryFn: () => getScopeOverview(scope),
-    refetchInterval: 15_000,
+    refetchInterval: scope.scope_type === "root" ? false : 15_000,
     staleTime: 5_000,
   });
-  const topics = useScopeKeywordSuggestions(scope);
-  const tools = useQuery({ queryKey: ["tool-catalog"], queryFn: getToolCatalog, staleTime: 30_000 });
+  const showTopics = scope.scope_type !== "root";
+  const topics = useScopeKeywordSuggestions(scope, showTopics);
+  const tools = useQuery({ queryKey: ["tool-catalog"], queryFn: getToolCatalog, enabled: showTopics, staleTime: 30_000 });
   const keywordMethod = tools.data?.methods.find(method => method.id === "noun_adjective_ngrams" && method.scopes.includes(scope.scope_type) && !method.configuration_error)
     ?? tools.data?.methods.find(method => method.id === "local.stats-keywords" && method.scopes.includes(scope.scope_type) && !method.configuration_error);
   const enrichment = useEnrichmentJob();
   const runs = useQuery({
     queryKey: ["processing-runs"],
     queryFn: listProcessingRuns,
+    enabled: showTopics,
     refetchInterval: (query) =>
       query.state.data?.runs.some((run) =>
         ["queued", "pending", "running"].includes(run.status),
@@ -100,8 +103,7 @@ export function ScopeOverviewPanel({ scope }: { scope: ScopeDescribeRequest }) {
           </Button>
         </Stack>
         <Typography variant="body2" color="text.secondary">
-          Recorded documents in OSII—not a live inventory of unprocessed files
-          in your source folder.
+          Files recorded by Intake.
         </Typography>
         {overview.isLoading ? (
           <LinearProgress aria-label="Loading collection overview" />
@@ -158,6 +160,7 @@ export function ScopeOverviewPanel({ scope }: { scope: ScopeDescribeRequest }) {
               have summaries and {data.processing.enrichment_count} have
               enrichments.
             </Typography>
+            {data.library_metadata && <LibraryMetadataPanel data={data.library_metadata} fileCount={data.file_count} />}
             {data.file_count === 0 ? (
               <Typography variant="body2" color="text.secondary">
                 This scope is empty. Read documents in Intake, then this
@@ -291,7 +294,7 @@ export function ScopeOverviewPanel({ scope }: { scope: ScopeDescribeRequest }) {
                 </Typography>
               </Stack>
             </Box>
-            <Stack
+            {showTopics && <Stack
               spacing={1}
               sx={{ borderTop: "1px solid", borderColor: "divider", pt: 2 }}
             >
@@ -373,7 +376,7 @@ export function ScopeOverviewPanel({ scope }: { scope: ScopeDescribeRequest }) {
                     : "Topic generation started. The saved snapshot appears when processing finishes."}
                 </Typography>
               ) : null}
-            </Stack>
+            </Stack>}
             {data.warnings.length || data.missing_metadata_count ? (
               <Alert severity="warning">
                 Metadata is incomplete for some documents.{" "}

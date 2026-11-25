@@ -24,10 +24,10 @@ def test_readiness_is_per_tool_and_partial_indexing_is_usable():
 @pytest.mark.parametrize(
     "documents,text,chat,indexed,valid,expected",
     [
-        (0, 0, False, 0, False, set()),
-        (2, 0, True, 0, False, {"browse", "overview", "create-collections"}),
-        (2, 2, True, 0, False, {"browse", "overview", "search", "chat", "research", "create-collections"}),
-        (2, 2, True, 2, False, {"browse", "overview", "search", "chat", "research", "create-collections"}),
+        (0, 0, False, 0, False, {"ocr"}),
+        (2, 0, True, 0, False, {"ocr", "browse", "overview", "create-collections"}),
+        (2, 2, True, 0, False, {"ocr", "browse", "overview", "search", "chat", "research", "create-collections"}),
+        (2, 2, True, 2, False, {"ocr", "browse", "overview", "search", "chat", "research", "create-collections"}),
     ],
 )
 def test_incomplete_information_never_enables_an_unusable_tile(
@@ -43,6 +43,6 @@ def test_incomplete_information_never_enables_an_unusable_tile(
     )
     assert {
         key for key, value in state["tools"].items() if value["enabled"]
-    } == expected
+    } == expected | {"wiki"}  # The wiki reader opens even before a wiki exists.
     assert all(value["reason"] for value in state["tools"].values())
     assert not state["setup"]["visible"]

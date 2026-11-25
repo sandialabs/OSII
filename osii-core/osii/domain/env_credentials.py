@@ -8,9 +8,10 @@ import re
 import tempfile
 import json
 
+from osii.model_endpoints import CredentialFileError, read_credential_file
+
 
 ENV_NAME = re.compile(r"[A-Z_][A-Z0-9_]*")
-MAX_SECRET_FILE_BYTES = 64 * 1024
 
 
 def configured_env_file() -> Path | None:
@@ -59,15 +60,13 @@ def read_env_value(name: str) -> str:
 
 def read_secret_file_value(name: str) -> str:
     """Read the conventional ``<NAME>_FILE`` secret without exposing its path."""
-    configured = os.getenv(f"{name}_FILE", "").strip()
+    variable = f"{name}_FILE"
+    configured = os.getenv(variable, "").strip()
     if not configured:
         return ""
-    path = Path(configured)
     try:
-        if path.stat().st_size > MAX_SECRET_FILE_BYTES:
-            return ""
-        return path.read_text(encoding="utf-8").rstrip("\r\n")
-    except OSError:
+        return read_credential_file(configured, variable)
+    except CredentialFileError:
         return ""
 
 

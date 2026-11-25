@@ -528,14 +528,18 @@ def _execute(job):
     tool = resolve_enricher(header["processor"])
     if _fingerprint(tool.describe()) != header["descriptor_fingerprint"]:
         raise ValueError("The selected tool changed; start a new run")
+    model_targets = {}
     for cap, alias in header["bindings"].items():
-        if (
-            _fingerprint(model_connection(alias, root))
-            != header["model_fingerprints"][cap]
-        ):
+        connection = model_connection(alias, root)
+        if connection is None or _fingerprint(connection) != header["model_fingerprints"][cap]:
             raise ValueError(
                 "The selected model changed since submission; restore it to resume this run"
             )
+        model_targets[cap] = {
+            "alias": alias,
+            "model": connection.get("model") or alias,
+            "endpoint_type": connection.get("type"),
+        }
 
     def ready():
         return not honor_run_control(run_id)
@@ -545,6 +549,7 @@ def _execute(job):
         run.update(
             status="running",
             started_at=run.get("started_at") or datetime.now(UTC).isoformat(),
+            model_targets=model_targets,
         )
         run["items"][0]["status"] = "running"
         save_run(run)
@@ -564,15 +569,7 @@ def _execute(job):
                         batch_id=row["id"],
                     ),
                     config=header["config"],
-                    expert_context=(
-                        (
-                            "Combine these derived summaries; they are not original evidence. Preserve uncertainty and original source identifiers.\n"
-                            if row["phase"] == "reduce"
-                            else ""
-                        )
-                        + (header["expert_context"] or "")
-                    )
-                    or None,
+                    expert_context=header["expert_context"],
                 )
                 context = _model_context(
                     processor_name=header["processor"],

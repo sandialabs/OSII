@@ -1,6 +1,8 @@
 
 from osii.processor_sdk.diagnostics import failure, retry_file_access, redact
 from datetime import datetime, UTC
+import errno
+import hashlib
 import os
 from pathlib import Path
 from osii.expert_context import resolve_expert_context
@@ -27,6 +29,7 @@ from osii.domain.processing.jobs import (
     append_log,
     honor_run_control as _honor_run_control,
     control_run,
+    can_resume_embeddings,
     create_run_record,
     configure_job_store,
     enqueue_run,
@@ -38,15 +41,18 @@ from osii.domain.processing.jobs import (
     save_run,
     worker_status,
 )
+from osii.domain.processing.intake_embeddings import run_with_embedding_progress
 from osii.domain.processing.manifests import save_manifest
+from osii.domain.processing.quick_intake import FLOW_ID
 from osii.domain.storage.root_descriptor import write_collection_synthesis, write_collection_toml
 from osii.domain.storage.folders import folder_stats, get_or_create_folder_id, write_folder_manifest
 from osii.domain.storage.synth import write_folder_synth_text
 from osii.domain.storage.ids import compute_file_id
 from osii.domain.storage.store import ensure_osii_store_layout
 from osii.domain.processing.pathing import display_rel, path_within, source_relpath
-from osii.domain.processor_settings import merged_processor_settings
-from osii.domain.processing.extractor_selection import extractor_routes_path
+from osii.domain.processor_settings import load_processor_settings, merged_processor_settings
+from osii.domain.processing.extractor_selection import extractor_routes_path, has_default_reader
+from osii.extraction.common import init_doc_context, record_source_metadata
 from osii.extraction.dispatcher import dispatch_extract
 from osii.enrichment.registry import resolve_enricher
 from osii.indexing.chunking import (
@@ -66,6 +72,13 @@ def _finish_item_timing(item: dict, started: datetime) -> None:
     finished = datetime.now(UTC)
     item["finished_at"] = finished.isoformat()
     item["duration_seconds"] = round(max(0.0, (finished - started).total_seconds()), 3)
+
+
+def _stage_should_run(item: dict, stage: str, retry_stage: str | None) -> bool:
+    status = item.get("steps", {}).get(stage)
+    return status not in {"done", "reused"} and (
+        status != "error" or retry_stage in {"all", stage}
+    )
 
 
 
@@ -142,7 +155,7 @@ def relpath_under(root: Path, path: Path) -> str:
 
 
 def build_folder_artifacts(
-    resolved_files: list[Path],
+    file_ids: dict[Path, str],
     data_volume_root: Path,
     shared_root: Path,
     osii_store: Path,
@@ -155,7 +168,7 @@ def build_folder_artifacts(
     all_folders: set[Path] = {shared_root.resolve()}
     boundaries: set[Path] = set()
 
-    for file_path in resolved_files:
+    for file_path in file_ids:
         parent = file_path.parent.resolve()
         all_folders.add(parent)
         roots = [shared_root, *(source_roots or [])]
@@ -183,8 +196,8 @@ def build_folder_artifacts(
         folders_to_docs[str(folder)] = []
         folders_to_subfolders[str(folder)] = set()
 
-    for file_path in resolved_files:
-        folders_to_docs[str(file_path.parent.resolve())].append(file_path.resolve())
+    for file_path in file_ids:
+        folders_to_docs[str(file_path.parent.resolve())].append(file_path)
 
     for folder in all_folders:
         if folder == shared_root.resolve():
@@ -222,7 +235,7 @@ def build_folder_artifacts(
             docs_payload.append(
                 {
                     "source_relpath": source_relpath(doc, data_volume_root),
-                    "file_id": compute_file_id(doc),
+                    "file_id": file_ids[doc],
                 }
             )
 
@@ -290,6 +303,9 @@ def run_worker(
     collection_id: str | None = None,
     staging: dict | None = None,
     routes_snapshot: list[dict] | None = None,
+    continue_to_embeddings: bool = False,
+    on_text_ready=None,
+    extractor_settings: dict | None = None,
 ) -> None:
     attempt_started = monotonic()
     try:
@@ -307,6 +323,7 @@ def run_worker(
 
         run["status"] = "running"
         run["control_state"] = "running"
+        simple_intake = (run.get("processing_flow") or {}).get("id") == FLOW_ID
         if not run.get("started_at"):
             run["started_at"] = datetime.now(UTC).isoformat()
         save_run(run)
@@ -366,7 +383,7 @@ def run_worker(
             if run is None:
                 return
 
-            if run["items"][index].get("status") in {"done", "partial", "error"}:
+            if run["items"][index].get("status") in {"done", "partial", "error", "metadata_only"}:
                 append_log(run_id, f"Resume: kept completed result for {src.name}.")
                 continue
 
@@ -377,11 +394,16 @@ def run_worker(
                 else choose_parser_chain(src, parser_routes)
             )
             extractor_name = extractor_chain[0]
-            run["items"][index]["status"] = "running"
-            run["items"][index]["current_step"] = "Check source"
-            run["items"][index]["extractor"] = extractor_name
-            run["items"][index]["synthesizer"] = synthesizer_name
-            run["items"][index]["enricher"] = enricher_name
+            item = run["items"][index]
+            steps = item.setdefault("steps", {})
+            retry_stage = run.get("retry_stage")
+            saved_text = item.get("text_ready") and item.get("file_id") if retry_stage != "all" else None
+            item.update(status="running", current_step="Check source")
+            if not saved_text:
+                item["extractor"] = extractor_name
+                steps["source"] = "running"
+            item.setdefault("synthesizer", synthesizer_name)
+            item.setdefault("enricher", enricher_name)
             item_started = datetime.now(UTC)
             run["items"][index]["started_at"] = item_started.isoformat()
             run["items"][index]["finished_at"] = None
@@ -390,20 +412,44 @@ def run_worker(
 
             phase, active_processor = "source access", "Core file reader"
             try:
-                if staging:
+                if staging and not saved_text:
                     from osii.volume.staging import validate_member
                     retry_file_access(lambda: validate_member(staging, staging["members"][index]))
-                file_id = retry_file_access(lambda: compute_file_id(src), on_retry=lambda n, e: append_log(run_id, f"File access retry {n}/2: {src.name}: {redact(str(e))}"))
-                if staging:
+                file_id = saved_text or retry_file_access(lambda: compute_file_id(src), on_retry=lambda n, e: append_log(run_id, f"File access retry {n}/2: {src.name}: {redact(str(e))}"))
+                if staging and not saved_text:
                     retry_file_access(lambda: validate_member(staging, staging["members"][index]))
                 run["items"][index]["file_id"] = file_id
+                run["items"][index]["steps"]["source"] = "done"
                 save_run(run)
                 document_context = resolve_expert_context(
                     osii_store, {"scope_type": "object", "file_id": file_id}, context
                 )
                 existing_text = get_preferred_text_representation(osii_store, file_id)
                 item = run["items"][index]
-                kept_extraction = False
+                matching_rule = any(
+                    extension in {value.lower() for value in rule.get("extensions", ())}
+                    or "*" in rule.get("extensions", ()) for rule in parser_routes
+                )
+                named_flow = bool(run.get("processing_flow")) and not simple_intake
+                if not existing_text and ((simple_intake and not has_default_reader(src)) or
+                                          (named_flow and not matching_rule and extension not in (extractor_overrides or {}))):
+                    doc_ctx = retry_file_access(lambda: init_doc_context(src, data_volume_root, file_id=file_id))
+                    reader = "No built-in reader for" if simple_intake else "No reader assigned to"
+                    reason = f"{reader} {extension}. Saved file details without text."
+                    record_source_metadata(osii_store, doc_ctx, reason)
+                    item.update(status="metadata_only", extractor=None, current_step=None,
+                                osii=f"objects/{file_id}", error=None, note=reason)
+                    item["steps"]["extraction"] = "skipped"
+                    _finish_item_timing(item, item_started)
+                    run["completed"] += 1
+                    save_run(run)
+                    append_log(run_id, f"{src.name}: {reason}")
+                    continue
+                kept_extraction = bool(saved_text)
+                if kept_extraction and (not existing_text or (
+                    item.get("text_revision") and item["text_revision"] != hashlib.sha256(existing_text["text"].encode()).hexdigest()
+                )):
+                    raise ValueError("Saved text changed. Queue a new run to use the current text.")
                 if existing_text and item.get("file_id") == file_id and item.get("retry_extraction_id"):
                     try:
                         # A successful secondary OCR is complete too: retrying a
@@ -413,7 +459,9 @@ def run_worker(
                         pass
                     else:
                         kept_extraction = True
-                should_extract = run_extraction and not kept_extraction and (extract_mode == "reprocess" or existing_text is None)
+                should_extract = run_extraction and not kept_extraction and (
+                    extract_mode == "reprocess" or existing_text is None or steps.get("extraction") in {"error", "partial"}
+                )
                 extract_result = None
                 if should_extract:
                     extraction_failures: list[str] = []
@@ -421,6 +469,7 @@ def run_worker(
                         phase, active_processor = "extraction", candidate
                         extractor_name = candidate
                         run["items"][index]["current_step"] = "Read text"
+                        run["items"][index]["steps"]["extraction"] = "running"
                         run["items"][index]["extractor"] = extractor_name
                         save_run(run)
                         append_log(run_id, f"Extracting {src.name} with '{extractor_name}'")
@@ -431,11 +480,8 @@ def run_worker(
                                 data_volume_root=data_volume_root,
                                 osii_root=osii_store,
                                 expert_context=document_context,
-                                extractor_config=merged_processor_settings(
-                                    osii_store,
-                                    extractor_name,
-                                    {},
-                                ),
+                                extractor_config=(extractor_settings.get(extractor_name, {}) if extractor_settings is not None
+                                                  else merged_processor_settings(osii_store, extractor_name, {})),
                                 make_primary=None if extraction_policy == "auto" else extraction_policy == "make_primary",
                                 dispatcher=dispatch_extract,
                                 operation_id=f"{run_id}:{file_id}:extraction:{extractor_name}",
@@ -449,6 +495,10 @@ def run_worker(
                             if attempt + 1 < len(extractor_chain):
                                 append_log(run_id, f"Trying fallback extractor '{extractor_chain[attempt + 1]}'.")
                     if extract_result is None:
+                        if simple_intake and not existing_text:
+                            doc_ctx = retry_file_access(lambda: init_doc_context(src, data_volume_root, file_id=file_id))
+                            record_source_metadata(osii_store, doc_ctx, "Extraction failed. See the Intake run for details.")
+                            append_log(run_id, f"Saved file details without text for {src.name}.")
                         raise RuntimeError("All configured extractors failed: " + "; ".join(extraction_failures))
                     file_id = extract_result["file_id"]
                     upsert_document(osii_store, file_id)
@@ -457,6 +507,8 @@ def run_worker(
                         f"Extraction variant {extract_result['variant_id']} saved"
                         + (" and made primary." if extract_result["made_primary"] else "."),
                     )
+                    if extract_result.get("error"):
+                        append_log(run_id, f"Extraction issue for {src.name} ({extractor_name}): {redact(extract_result['error'])}")
                 elif kept_extraction:
                     append_log(run_id, f"Retry: kept completed extraction for {src.name}.")
                 elif run_extraction:
@@ -469,19 +521,35 @@ def run_worker(
                     return
 
                 run["items"][index]["file_id"] = file_id
-                run["items"][index]["extraction_variant_id"] = extract_result.get("variant_id") if extract_result else item.get("retry_extraction_id") if kept_extraction else None
-                run["items"][index]["extract_error"] = extract_result.get("error") if extract_result else None
+                item = run["items"][index]
+                if extract_result:
+                    item["extraction_variant_id"] = extract_result.get("variant_id")
+                    item["extract_error"] = extract_result.get("error")
+                    item["steps"]["extraction"] = "partial" if item["extract_error"] else "done"
+                elif not saved_text:
+                    item["steps"]["extraction"] = "reused"
+                    item["extract_error"] = None
+                text = get_preferred_text_representation(osii_store, file_id) or {}
+                item["text_ready"] = bool(text.get("text", "").strip())
+                if item["text_ready"]:
+                    revision = hashlib.sha256(text["text"].encode()).hexdigest()
+                    if item.get("text_revision", revision) != revision:
+                        for key in ("synthesizer", "enricher"):
+                            item["steps"].pop(key, None)
+                        for key in ("synthesis", "synthesis_provenance", "synthesis_error", "enrichment", "enrichment_error"):
+                            item.pop(key, None)
+                    item["text_revision"] = revision
                 save_run(run)
-
-                synthesis_result = None
-                synthesis_error = None
-                enrichment_result = None
-                enrichment_error = None
-
-                if synthesizer_name:
+                if on_text_ready and item.get("text_ready"):
+                    on_text_ready(file_id, item["text_revision"])
+                if synthesizer_name and _stage_should_run(item, "synthesizer", retry_stage):
+                    synthesis_result = None
+                    synthesis_error = None
                     if should_extract and extraction_policy == "save_variant":
                         raise RuntimeError("Downstream processing requires the new extraction to be made primary.")
+                    phase, active_processor = "synthesis", synthesizer_name
                     run["items"][index]["current_step"] = "Generate summary"
+                    run["items"][index]["steps"]["synthesizer"] = "running"
                     save_run(run)
                     append_log(run_id, f"Running synthesizer '{synthesizer_name}' for {src.name}")
                     try:
@@ -499,12 +567,25 @@ def run_worker(
                         _record_failure(run_id, index, exc, synthesizer_name, "synthesis")
                         synthesis_error = redact(str(exc))
                         append_log(run_id, f"synthesis error: {src.name} -> {exc}")
-
-                if enricher_name:
+                    run = get_run(run_id)
+                    synthesis_item = run["items"][index]
+                    synthesis_item["steps"]["synthesizer"] = "error" if synthesis_error else "done"
+                    synthesis_item["synthesis_error"] = synthesis_error
+                    if synthesis_result:
+                        synthesis_item.update(synthesis=synthesis_result.get("synthesis_rel"),
+                                              synthesis_provenance=synthesis_result.get("provenance_rel"))
+                    if synthesis_result and synthesis_result.get("actual_synthesizer"):
+                        synthesis_item["synthesizer"] = synthesis_result["actual_synthesizer"]
+                    save_run(run)
+                if enricher_name and _stage_should_run(item, "enricher", retry_stage):
+                    enrichment_result = None
+                    enrichment_error = None
                     if should_extract and extraction_policy == "save_variant":
                         raise RuntimeError("Downstream processing requires the new extraction to be made primary.")
                     run = get_run(run_id)
+                    phase, active_processor = "enrichment", enricher_name
                     run["items"][index]["current_step"] = "Run enrichment"
+                    run["items"][index]["steps"]["enricher"] = "running"
                     save_run(run)
                     append_log(run_id, f"Running enricher '{enricher_name}' for {src.name}")
                     try:
@@ -519,26 +600,29 @@ def run_worker(
                         _record_failure(run_id, index, exc, enricher_name, "enrichment")
                         enrichment_error = redact(str(exc))
                         append_log(run_id, f"Enrichment error: {src.name} -> {exc}")
+                    run = get_run(run_id)
+                    enrichment_item = run["items"][index]
+                    enrichment_item["steps"]["enricher"] = "error" if enrichment_error else "done"
+                    enrichment_item["enrichment"] = enrichment_result.get("result") if enrichment_result else None
+                    enrichment_item["enrichment_error"] = enrichment_error
+                    save_run(run)
 
                 run = get_run(run_id)
                 if run is None:
                     return
 
                 if staging:
-                    retry_file_access(lambda: validate_member(staging, staging["members"][index]))
+                    if not saved_text:
+                        retry_file_access(lambda: validate_member(staging, staging["members"][index]))
                     from osii.volume.store import VolumeStore
                     VolumeStore(Path(staging["database"])).link_sidecar(staging["members"][index], file_id, run_id)
 
-                errors = [item for item in [extract_result.get("error") if extract_result else None, synthesis_error, enrichment_error] if item]
+                errors = [run["items"][index].get(key) for key in ("extract_error", "synthesis_error", "enrichment_error")]
+                errors = [message for message in errors if message]
                 run["items"][index].pop("retry_extraction_id", None)
                 run["items"][index]["status"] = "partial" if errors else "done"
                 run["items"][index]["current_step"] = None
                 run["items"][index]["osii"] = extract_result["osii_rel"] if extract_result else f"objects/{file_id}"
-                run["items"][index]["synthesis"] = synthesis_result["synthesis_rel"] if synthesis_result else None
-                run["items"][index]["synthesis_provenance"] = synthesis_result["provenance_rel"] if synthesis_result else None
-                run["items"][index]["synthesis_error"] = synthesis_error
-                run["items"][index]["enrichment"] = enrichment_result.get("result") if enrichment_result else None
-                run["items"][index]["enrichment_error"] = enrichment_error
                 run["items"][index]["error"] = "; ".join(errors) if errors else None
                 _finish_item_timing(run["items"][index], item_started)
                 run["completed"] += 1
@@ -556,8 +640,17 @@ def run_worker(
                 if run is None:
                     return
 
+                step = {"source access": "source", "extraction": "extraction", "synthesis": "synthesizer", "enrichment": "enricher"}[phase]
+                run["items"][index]["steps"][step] = "error"
                 run["items"][index]["status"] = "error"
-                run["items"][index]["error"] = redact(str(exc))
+                message = redact(str(exc))
+                if phase == "source access" and isinstance(exc, OSError) and exc.errno == errno.EINVAL:
+                    message = (
+                        "OSII could not read the original file (invalid argument). "
+                        "If the file is in a synced folder, make it available offline and retry. "
+                        "You can also select a local copy."
+                    )
+                run["items"][index]["error"] = message
                 _finish_item_timing(run["items"][index], item_started)
                 run["completed"] += 1
                 save_run(run)
@@ -567,9 +660,20 @@ def run_worker(
         if _honor_run_control(run_id):
             return
 
-        if workflow == "intake" and not staging:
+        run = get_run(run_id)
+        if run is None:
+            return
+        # Folder manifests describe sources that have a verified identity. Reuse
+        # the read receipts, including those from before a retry, without
+        # reopening a cloud placeholder or recording a different file revision.
+        file_ids = {
+            path: item["file_id"]
+            for path, item in zip(resolved_files, run["items"])
+            if item.get("file_id") and (item.get("steps") or {}).get("source") != "error"
+        }
+        if workflow == "intake" and not staging and file_ids:
             top_level_doc_count, top_level_subfolder_count = build_folder_artifacts(
-                resolved_files=resolved_files,
+                file_ids=file_ids,
                 data_volume_root=data_volume_root,
                 shared_root=shared_root,
                 osii_store=osii_store,
@@ -582,13 +686,14 @@ def run_worker(
                 osii_store=osii_store,
                 collection_name=collection_name,
                 root_folder_label=shared_root.name,
-                total_files=len(resolved_files),
+                total_files=len(file_ids),
                 top_level_doc_count=top_level_doc_count,
                 top_level_subfolder_count=top_level_subfolder_count,
                 note=context or None,
             )
             append_log(run_id, "Collection synthesis updated.")
-        rebuild_catalog(osii_store)
+        if on_text_ready is None:
+            rebuild_catalog(osii_store)
 
         if _honor_run_control(run_id):
             return
@@ -597,21 +702,21 @@ def run_worker(
         if run is None:
             return
 
-        run["status"] = "done"
-        run["finished_at"] = datetime.now(UTC).isoformat()
+        if not continue_to_embeddings:
+            run["status"] = "done"
+            run["finished_at"] = datetime.now(UTC).isoformat()
         save_run(run)
 
-        append_log(run_id, "Run complete.")
+        append_log(run_id, "File processing complete. Preparing embeddings." if continue_to_embeddings else "Run complete.")
 
     except Exception as exc:
+        append_log(run_id, f"Run failed: {exc}")
         run = get_run(run_id)
         if run is not None:
             run["status"] = "error"
             run["error"] = str(exc)
             run["finished_at"] = datetime.now(UTC).isoformat()
             save_run(run)
-
-        append_log(run_id, f"Run failed: {exc}")
 
 
 @router.post("/runs")
@@ -631,8 +736,11 @@ def _start_staged_run(request: Request, payload: dict):
 def _start_run(request: Request, payload: dict):
     flow = None
     if payload.get("processing_flow_id"):
-        from osii.domain.processing.flows import get_flow, flow_payload
-        flow = get_flow(request.app.state.osii_root.resolve(), payload["processing_flow_id"])
+        from osii.domain.processing.flows import resolve_requested_flow, flow_payload
+        try:
+            flow = resolve_requested_flow(request.app.state.osii_root.resolve(), payload["processing_flow_id"])
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
         if flow is None:
             raise HTTPException(404, "Processing flow not found")
         payload = {**payload, **flow_payload(flow)}
@@ -884,6 +992,11 @@ def _start_run(request: Request, payload: dict):
     save_run(run)
 
     parser_routes_path = extractor_routes_path()
+    routes_snapshot = flow["routes"] if flow else load_parser_routes(parser_routes_path)
+    extractor_names = set(extractor_overrides.values())
+    for route in routes_snapshot:
+        extractor_names.update([route["extractor"], *route.get("fallbacks", [])])
+    from osii.domain.processing.standalone import embedding_binding
     shared_root_host_path = getattr(request.app.state, "shared_volume_host_path", "")
 
     if staged_run_id:
@@ -907,7 +1020,11 @@ def _start_run(request: Request, payload: dict):
             "shared_root": str(shared_root),
             "upload_root": str(upload_root),
             "parser_routes_path": str(parser_routes_path),
-            "routes_snapshot": flow["routes"] if flow else load_parser_routes(parser_routes_path),
+            "routes_snapshot": routes_snapshot,
+            "extractor_settings": {
+                name: config for name, config in load_processor_settings(osii_store).items()
+                if name in extractor_names
+            },
             "shared_root_host_path": shared_root_host_path,
             "synthesizer_name": synthesizer_name,
             "synthesizer_config": synthesizer_config,
@@ -917,6 +1034,7 @@ def _start_run(request: Request, payload: dict):
             "extract_mode": extract_mode,
             "extraction_policy": extraction_policy,
             "build_embeddings": build_embeddings,
+            **({"embedding_binding": embedding_binding(osii_store)} if build_embeddings else {}),
             "embedding_batch_size": int(payload.get("embedding_batch_size", 64)),
             "chunking_method": chunking_method,
             "chunk_size": chunk_size,
@@ -949,7 +1067,7 @@ def _start_run(request: Request, payload: dict):
 @router.get("/runs")
 async def list_run_status(limit: int = 100):
     return {
-        "runs": list_runs(limit=limit),
+        "runs": [run_with_embedding_progress(run) for run in list_runs(limit=limit)],
         "queue": list_queue_jobs(limit=limit),
         "worker": worker_status(),
     }
@@ -970,7 +1088,7 @@ async def get_run_status(run_id: str):
     job = get_run(run_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
-    return job
+    return {**run_with_embedding_progress(job), "can_resume_embeddings": can_resume_embeddings(job)}
 
 
 @router.post("/runs/{run_id}/{action}")

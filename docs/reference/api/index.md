@@ -55,6 +55,16 @@ Collection membership must reference stable object identifiers such as `file_id`
 
 ## Core endpoint families
 
+### Tool compatibility
+
+`GET /api/enrichment-jobs/tools` includes `source_types.file_extensions` and
+`source_types.media_types` for extractor methods in OSII-local. Methods
+working on saved products continue to declare their input and output kinds.
+`GET /api/objects/{file_id}/extractions?include_artifacts=true` adds artifact
+names and provenance to the version list without inline payloads. Versioned
+sidecar extraction artifacts include `relpath` for downloading via the existing
+artifact endpoint.
+
 ### Scopes
 
 - `GET /api/scopes/root`
@@ -1105,8 +1115,8 @@ not create a job or change queued/running work.
 
 `GET /api/admin/processor-settings/startup` returns `path` and `processors`
 with service `id`, `processor_id`, `display_name`, manifest `schema`, saved
-`config`, and `environment_overrides` (names only). Modules without startup
-fields are omitted. `PUT /api/admin/processor-settings/startup/{service_id}`
+`config`, `environment_overrides` (names only), and optional `credential`
+with `present` and `writable` flags. `PUT /api/admin/processor-settings/startup/{service_id}`
 accepts `{"config": {...}}`, validates against the manifest, and saves under
 `[processor_startup.<service-id>]`. It returns `restart_required: true`; it does
 not restart or interrupt the service. Unsupported services return 404, invalid
@@ -1114,6 +1124,10 @@ settings return 422. The launcher rereads the file for each service start, with
 explicit environment overrides taking precedence. Existing
 `/api/admin/processor-settings/{processor_name}` remains the per-request settings
 API, independent of lifecycle settings.
+
+`PUT /api/admin/processor-settings/startup/{service_id}/credential` accepts an
+`api_key` for the credential declared by that module's manifest. It returns
+`credential_present` after saving to the writable local credential store.
 
 `processors.toml` replaces the old filename `tools.toml`. The first load copies
 valid legacy settings when the new file is absent, then removes the migrated file;
@@ -1169,7 +1183,7 @@ without renaming stable provider IDs, defaults, credentials, or processor bindin
 
 - `GET /api/processing-flows` lists built-in and saved named flows, routing order,
   method choices, fingerprint, and any matching sample-test report.
-- `PUT /api/processing-flows/{id}` saves `name`, ordered `routes`,
+- `PUT /api/processing-flows/{id}` saves `name`, `description`, ordered `routes`,
   `synthesizer_name`, `enricher_name`, `chunk_size`, and `chunk_overlap` in
   `processors.toml`. Route validation enforces declared input types. Tests are
   invalidated on edits. The bundled and advanced-OCR flows can be customized.
@@ -1187,6 +1201,11 @@ without renaming stable provider IDs, defaults, credentials, or processor bindin
   repeat model preflight while queueing. Older callers and explicit flags remain
   compatible when no flow ID is supplied. Runtime provider outages can still fail
   work; existing retries preserve completed phases and vectors.
+- Local intake updates per-file `steps` and `text_ready` after saving text.
+  During processing, `indexing_progress` can include `running_file_ids` and
+  `completed_file_ids` while other stages are still active. Use
+  `POST /api/runs/{id}/retry-reading`, `retry-synthesis`, `retry-enrichment`,
+  or `retry-embeddings` to resume a failed local stage.
 - `POST /api/resolve` accepts `metadata_only: true` for lightweight file previews
   without hashing originals, resolving processor rules, or invoking models.
 - `POST /api/collections/{id}/process` accepts `processing_flow_id` and `mode`

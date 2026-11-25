@@ -29,6 +29,16 @@ def wiki(text):
     }
 
 
+def test_sidecar_database_explorer_stays_unavailable_without_optional_drivers(client):
+    schema = client.get("/api/admin/database/schema")
+    assert schema.status_code == 200
+    assert schema.json()["available"] is False
+    assert schema.json()["backend"] == "sidecar"
+    assert schema.json()["tables"] == []
+    result = client.post("/api/admin/database/query", json={"sql": "SELECT 1"})
+    assert result.status_code == 409
+
+
 @pytest.mark.parametrize(
     "scope",
     [
@@ -369,3 +379,34 @@ def test_revision_api_returns_library_identity_and_rejects_stale_save(
         ).status_code
         == 404
     )
+
+
+def test_legacy_wiki_reading_view_preserves_raw_and_human_revisions(
+    client, temp_osii_root
+):
+    scope = {"scope_type": "root"}
+    markdown = (
+        "# Inspection wiki\n\nHuman-provided expert context:\nWrite a reference article.\n\n"
+        "## Sources\n\n- `[derived-batch-reduce-1-1]` — Derived batch reduce-1-1 summary"
+    )
+    write_scope_enrichment_variant(
+        temp_osii_root, scope, kind="wiki", method="old", payload=wiki(markdown)
+    )
+    request = {"scope": scope, "filename": "wiki--old.json"}
+    original = client.post("/api/enrichments/revisions", json=request).json()
+    assert original["reading_markdown"] == ""
+    assert original["data"]["markdown"] == markdown
+
+    edited = client.put(
+        "/api/enrichments/revisions",
+        json={
+            **request,
+            "expected_revision": original["current"],
+            "markdown": "Preface\n\n" + markdown,
+        },
+    )
+    assert edited.status_code == 200
+    history = client.post("/api/enrichments/revisions", json=request).json()
+    assert "reading_markdown" not in history
+    assert history["data"]["markdown"] == "Preface\n\n" + markdown
+    assert history["revisions"][0]["data"]["markdown"] == markdown

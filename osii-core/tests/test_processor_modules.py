@@ -30,6 +30,13 @@ def write_module(root, folder='collection-data-card', **updates):
     return path
 
 
+def test_manifest_can_require_explicit_activation(tmp_path):
+    write_module(tmp_path, enabled_by_default=False)
+    processor, = discover_processors(tmp_path)
+    assert active_processors(tmp_path, {}) == []
+    assert active_processors(tmp_path, {processor.enable_env: 'true'}) == [processor]
+
+
 def test_new_module_drives_startup_registration_and_controls_without_central_edits(tmp_path, monkeypatch):
     # Use the actual launcher, without duplicating its discovery or registration code.
     sys.path.insert(0, str(ROOT / 'scripts'))
@@ -103,6 +110,26 @@ def test_new_module_appears_in_setup_before_it_runs(tmp_path, monkeypatch, clien
     assert card['config_schema']['properties']['detail']['default'] == 'short'
 
 
+def test_module_credential_is_writable_but_never_returned(tmp_path, monkeypatch, client):
+    modules = tmp_path / "modules"
+    write_module(modules, credential_env="FIXTURE_CARD_API_KEY")
+    monkeypatch.setenv("OSII_PROCESSOR_MODULES_DIR", str(modules))
+    monkeypatch.setenv("OSII_ALLOW_LOCAL_CONFIG_WRITES", "true")
+    monkeypatch.setenv("OSII_ENV_FILE", str(tmp_path / "secrets.env"))
+    monkeypatch.delenv("FIXTURE_CARD_API_KEY", raising=False)
+
+    base = "/api/admin/processor-settings/startup"
+    key = "fixture-credential"
+    written = client.put(base + "/collection-data-card/credential", json={"api_key": key})
+    assert written.status_code == 200
+    assert written.json() == {"credential_present": True}
+    reply = client.get(base)
+    assert reply.json()["processors"][0]["credential"] == {"present": True, "writable": True}
+    assert key not in reply.text
+    assert key in (tmp_path / "secrets.env").read_text()
+    assert client.put(base + "/unknown/credential", json={"api_key": key}).status_code == 404
+
+
 def test_discovery_is_bounded_and_never_imports_modules(tmp_path):
     write_module(tmp_path)
     (tmp_path / 'ignored' / 'deep').mkdir(parents=True)
@@ -171,7 +198,7 @@ def test_launcher_imports_without_installed_application_dependencies():
 
 def test_all_existing_processors_keep_their_switches_and_ids():
     processors = discover_processors(ROOT/'osii-processor-modules')
-    assert {row.id for row in processors} == {'banyan','tesseract-opencv','readable-wiki','concept-entity-wiki','csv-extractor','collection-table'}
+    assert {row.id for row in processors} == {'banyan','tesseract-opencv','readable-wiki','concept-entity-wiki','csv-extractor','collection-table','embeddinggemma'}
     assert next(row for row in processors if row.id == 'banyan').registration_id == 'banyan-nemotron-parse'
     assert not any(row.id == 'tika' for row in processors)
 

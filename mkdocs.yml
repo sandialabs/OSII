@@ -81,4 +81,5 @@ nav:
       - Processing commits: reference/processing-commits.md
       - Authoring: reference/library-authoring.md
       - Retrieval and jobs: reference/retrieval-jobs.md
+      - Read-only database explorer: reference/database-query.md
   - Contribute: contributing/developer-guide.md

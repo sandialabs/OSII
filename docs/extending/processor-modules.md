@@ -53,7 +53,8 @@ OSII_COLLECTION_DATA_CARD_PORT=18110
 
 Users put these overrides in the root `.env`; no change to Core, the launcher,
 or the central `.env.example` is needed. Document the generated switches in the
-module's README or configuration template. An absent enable switch means enabled.
+module's README or configuration template. An absent enable switch uses the
+manifest default, which is enabled for most modules.
 A false switch omits dependency preparation, service registration, and startup;
 saved overrides and processing history remain intact. When several processors
 share a project, its environment remains if another processor still needs it.
@@ -91,12 +92,14 @@ Processor fields:
 | `command` | Required Python argument array, e.g. `["run.py", "enricher"]`; never a shell command |
 | `port` | Required default port, integer 1–65535 |
 | `port_env` | Optional override name; defaults to `OSII_<ID>_PORT` |
+| `enabled_by_default` | Defaults to `true`. Set `false` for processors that require explicit opt-in before dependency setup and launch. |
 | `aliases` | Optional legacy processor IDs |
 | `requires` | Optional executables to check for Setup's prerequisite message, e.g. `["tesseract"]` |
 | `model_requirements` | Optional table mapping `chat` or `embedding` to `required` or `optional` |
 | `model_access` | `gateway` or `none`; inferred from model requirements if omitted |
 | `capabilities` | Optional offline metadata, including accepted `file_extensions` |
 | `startup_schema` | Optional closed object schema keyed by environment variable names, with scalar types and defaults; Setup saves lifecycle settings and the launcher passes them on service start |
+| `credential_env` | Optional module-specific API key variable. Setup writes to the private credential store and reads only whether a key is present. A module can use `osii.domain.env_credentials.resolve_env_value` to resolve it. |
 | `config_schema` | Optional offline settings schema; the live descriptor supplies processing configuration when available |
 | `health_path` | Adapter liveness path; defaults to `/health` |
 | `readiness_path` | Operational readiness path; defaults to `health_path` |

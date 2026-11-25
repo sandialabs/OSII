@@ -173,18 +173,23 @@ projection, embedding, OCR, or LLM request is made by opening the document.
 
 ## Files display and collection creation
 
-On **Files**, **Thumbnails / List** changes the current layout. Administrators use
-**Display settings** to save library-wide defaults: initial layout, prominent
-filenames, file size, and a small metadata line (file type, modification date, or
-source path). Hosted readers and curators can switch their current layout but
-cannot change the defaults. Local preferences live in `state/file-display.json`;
-PostgreSQL-backed libraries use the existing settings store.
+The gear on **Files** and **Browse** opens the same library-wide display settings.
+Set the initial Files layout, tile label, file size, and detail line. Choose
+**Descriptive title** to use a saved title from document metadata, with the
+filename as the fallback. A human correction wins over a suggestion. Opening
+the view reads saved metadata only. **Browse** uses filenames in its folder list
+and the shared labels in Icon view. Local preferences live in
+`state/file-display.json`; PostgreSQL uses the library settings store.
 
 Tiles retain visible PDF/image previews. Blank PDF pages and files without an
 image preview use a miniature of saved text, with saved synthesis as a fallback.
 Saved summaries appear on hover or keyboard focus. Preview reads are batched in
 groups of at most 48, returning at most 1,200 text characters and 1,000 synthesis
 characters per file; they do not invoke a processor or model.
+
+The file page's **Split view** shows the original alongside the selected saved
+product. The reading controls keep the selection while switching between layouts.
+Open **OCR Workbench** from the Toolbox to run or compare OCR.
 
 File-grid checkboxes are replaced by **Toolbox → Create Collections**. Select
 files using the compact searchable list, or select folders and preview one

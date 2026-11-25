@@ -21,3 +21,6 @@ Linux, or `.\scripts\osii.ps1 dev` in Windows PowerShell. Open the dashboard at
 See the [development guide](docs/operations/runbook-development.md) for setup,
 [architecture](docs/concepts/architecture.md) for the design, and the
 [frontend extension guide](docs/extending/frontend-tools.md) to add a Toolbox item.
+
+With PostgreSQL selected, use the [read-only database explorer](docs/reference/database-query.md)
+to inspect library records.

@@ -2,6 +2,7 @@ from osii.domain.processing.scope_batches import (
     BatchLimits,
     input_batches,
     normalize_result,
+    publication_outputs,
 )
 import pytest
 
@@ -53,3 +54,20 @@ def test_processor_reported_truncation_is_not_accepted_as_complete():
             {"markdown": "partial", "metadata": {"input_truncated": True}},
             [{"file_id": "a", "text": "full source"}],
         )
+
+
+def test_only_published_wiki_omits_draft_addresses():
+    final = {
+        "markdown": "# Inspection\n\nFindings from the source [sha256-a].\n\n"
+        "## Sources\n\n- `[derived-batch-reduce-1-1]` — Derived batch reduce-1-1 summary",
+        "citations": [
+            {"file_id": "sha256-a"},
+            {"source_origin": {"derived_batch": "reduce-1-1"}},
+        ],
+        "artifacts": [],
+    }
+    manifest, wiki = publication_outputs("run", {"map_batches": 2}, "Inspection", final)
+    assert manifest["data"]["map_batches"] == 2
+    assert wiki["data"]["markdown"] == "# Inspection\n\nFindings from the source [sha256-a].\n"
+    assert wiki["data"]["citations"] == [{"file_id": "sha256-a"}]
+    assert "derived-batch-" in final["markdown"]

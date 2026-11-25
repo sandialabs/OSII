@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
 
+from osii.domain.artifacts.wiki_reading import wiki_reading_fields
 from osii.domain.artifacts.read_enrichments import (
     get_object_enrichment_payload,
     get_scope_enrichment_payload,
@@ -87,6 +88,7 @@ def product_revisions(request: Request, payload: dict):
             raise HTTPException(status_code=404, detail="Product not found")
         return {
             **history,
+            **wiki_reading_fields(history),
             "library_id": hashlib.sha256(str(root).encode()).hexdigest()[:20],
             "input_state": product_input_state(root, scope, history),
         }

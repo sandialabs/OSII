@@ -43,6 +43,15 @@ catalog endpoints add stable cursor pagination and filtering:
 - `GET /api/catalog/folders`
 - `GET /api/catalog/artifacts?scope_type=object&scope_id=...&kind=enrichment`
 
+Browse uses `GET /api/catalog/browse` in OSII-local for both storage backends.
+Each response contains immediate child folders and saved file records for a
+recorded `path`. Omit `path` for the library root. `query` filters names and
+`sort` accepts `name-asc`, `name-desc`, `modified-desc`, or `size-desc`. Start
+with `offset=0` and advance by `limit` while `has_more` is true. The default
+page is 48 entries and the maximum is 100. This read uses the stored catalog
+paths, so ancestors can be browsed even without a separate folder record or a
+connected source drive.
+
 The dashboard's flat file grids provide an immediate browser-local filename,
 path, and file-type filter. They can sort the returned files alphabetically,
 by original modification date, or by original file size. These controls do not

@@ -161,7 +161,7 @@ def embedding_binding(root: Path) -> dict:
 def validate_embedding_binding(root: Path, payload: dict):
     if embedding_binding(root) != payload["embedding_binding"]:
         raise ValueError(
-            "This run's embedding connection changed. Restore it before retrying, or start a new rebuild."
+            "This run's embedding connection changed. Restore it before retrying, or start a new run."
         )
 
 
@@ -175,14 +175,21 @@ def submit_full_index(
 ) -> dict:
     from osii.domain.processing.jobs import create_run_record, save_run, enqueue_run
     from osii.domain.read.catalog import load_files_catalog
+    from osii.domain.read.sidecar import SidecarLibraryReader
 
-    members = sorted({item["file_id"] for item in load_files_catalog(root)})
+    reader = SidecarLibraryReader(root)
+    documents = {item["file_id"]: item for item in load_files_catalog(root)
+                 if reader.representation_path(item["file_id"]).is_file()}
+    members = sorted(documents)
     binding = embedding_binding(root)
-    run = create_run_record(
-        [root / "objects" / file_id for file_id in members], root, root, osii_root=root
-    )
+    paths = [root / "objects" / file_id for file_id in members]
+    run = create_run_record(paths, root, root, osii_root=root, displays={
+        str(path): Path((documents[file_id].get("source_relpath") or "").replace("\\", "/")).name or file_id
+        for path, file_id in zip(paths, members)
+    })
     for item, file_id in zip(run["items"], members):
         item["file_id"] = file_id
+        item["source_relpath"] = documents[file_id].get("source_relpath")
     run.update(
         status="queued",
         control_state="running",

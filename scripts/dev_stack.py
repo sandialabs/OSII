@@ -16,6 +16,7 @@ import shlex
 import shutil
 import socket
 from socketserver import TCPServer
+import stat
 import subprocess
 import sys
 import threading
@@ -144,19 +145,15 @@ def build_environment(core_only: bool) -> dict[str, str]:
     source_root = Path(source_value).expanduser()
     if not source_root.is_absolute():
         source_root = REPOSITORY_ROOT / source_root
-    source_root = source_root.resolve()
-    if not source_root.exists():
-        raise RuntimeError(
-            f"Documents folder is unavailable: {source_root}. "
-            "Connect or mount the shared drive, then start OSII again."
-        )
-    if not source_root.is_dir():
-        raise RuntimeError(f"Documents path is not a folder: {source_root}")
     try:
-        with os.scandir(source_root) as entries:
-            next(entries, None)
-    except OSError as exc:
-        raise RuntimeError(f"Documents folder cannot be read: {source_root}: {exc}") from exc
+        source_root = source_root.resolve()
+        source_mode = source_root.stat().st_mode
+    except OSError:
+        source_mode = None
+        print(f"[dev] Documents folder is unavailable: {source_root}. "
+              "Saved library data remains available. Reconnect the drive to open originals.")
+    if source_mode is not None and not stat.S_ISDIR(source_mode):
+        raise RuntimeError(f"Documents path is not a folder: {source_root}")
 
     osii_value = env.get("OSII_ROOT", "").strip()
     osii_root = Path(osii_value).expanduser() if osii_value else runtime_root / ".osii"
@@ -177,9 +174,6 @@ def build_environment(core_only: bool) -> dict[str, str]:
     if not uploads_root.is_absolute():
         uploads_root = REPOSITORY_ROOT / uploads_root
     uploads_root = uploads_root.resolve()
-    for path in (osii_root, uploads_root):
-        path.mkdir(parents=True, exist_ok=True)
-
     configured_directory = (env.get("OSII_CONFIG_DIR", "") or env.get("OSII_CONFIG_DIR_HOST", "")).strip()
     previous_configuration_root = None
     if configured_directory:
@@ -189,6 +183,11 @@ def build_environment(core_only: bool) -> dict[str, str]:
     else:
         configuration_root = runtime_root / "config"
     configuration_root = configuration_root.resolve()
+    writable_roots = (osii_root, uploads_root, configuration_root)
+    if source_mode is None and any(path.is_relative_to(source_root) for path in writable_roots):
+        raise RuntimeError("OSII data, uploads, and configuration must be outside the unavailable source folder.")
+    for path in (osii_root, uploads_root):
+        path.mkdir(parents=True, exist_ok=True)
     if configuration_root == runtime_root / "config":
         if sys.platform == "darwin":
             application_root = Path.home() / "Library" / "Application Support" / "org.osii.launcher"

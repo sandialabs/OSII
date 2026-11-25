@@ -38,6 +38,22 @@ def test_provider_client_preserves_ollama_context_error(monkeypatch):
         CLIENTS["ollama"].request("POST", "/api/embed", payload={"input": ["long"]})
 
 
+def test_synthesis_explains_output_budget_exhaustion(monkeypatch):
+    monkeypatch.setenv("OSII_CHAT_MODEL", "reasoning-model")
+    monkeypatch.setattr(CLIENTS["openai"], "request", lambda *args, **kwargs: {
+        "choices": [{"message": {"content": None}, "finish_reason": "length"}],
+    })
+    response = TestClient(app).post("/openai/synthesizer/v1/synthesize", json={
+        "request_id": "token-limit",
+        "config": {"model": "reasoning-model", "extract_metadata": False},
+        "scope": {"scope_type": "object", "scope_id": "a", "documents": [
+            {"file_id": "a", "filename": "a.txt", "text": "Input for the summary."},
+        ]},
+    })
+    assert response.status_code == 422
+    assert "output token limit" in response.json()["detail"]
+
+
 def test_ollama_embedding_and_synthesis_contract(monkeypatch):
     monkeypatch.setenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
     monkeypatch.setenv("OLLAMA_SYNTHESIS_MODEL", "gemma3:4b")
@@ -370,6 +386,77 @@ def test_model_gateway_token_cannot_select_another_connection(monkeypatch, tmp_p
     assert response.status_code == 403
 
 
+@pytest.mark.parametrize("provider", ["ollama-local", "openai-compatible"])
+@pytest.mark.parametrize("mode", ["json_schema", "json_object"])
+def test_gateway_routes_structured_chat_and_preserves_the_stop_reason(monkeypatch, provider, mode):
+    monkeypatch.setenv("OSII_MODEL_GATEWAY_SECRET", "test-gateway-secret")
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+    monkeypatch.setattr("app.main.model_connection", lambda alias: {
+        "type": provider, "base_url": "http://provider.test", "model": "actual", "capabilities": ["chat"],
+    })
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": False}
+    response_format = {"type": mode}
+    if mode == "json_schema":
+        response_format["json_schema"] = {"name": "example", "schema": schema, "strict": True}
+    calls = []
+
+    def reply(method, url, *, json, **kwargs):
+        calls.append((url, json))
+        response = requests.Response()
+        response.status_code = 200
+        if provider == "ollama-local":
+            response.json = lambda: {"model": "reported", "message": {"content": ""}, "done_reason": "length", "prompt_eval_count": 13, "eval_count": 7}
+        else:
+            response.json = lambda: {"model": "reported", "choices": [{"finish_reason": "length"}], "usage": {"prompt_tokens": 13, "completion_tokens": 7, "total_tokens": 20}}
+        return response
+
+    monkeypatch.setattr(requests, "request", reply)
+    token = issue_model_gateway_token(tool_id="test", job_id="structured", bindings={"chat": "writer"})
+    result = TestClient(app).post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"model": "writer", "messages": [{"role": "user", "content": "Return JSON."}], "response_format": response_format},
+    )
+    assert result.status_code == 200, result.text
+    url, body = calls[0]
+    assert body["model"] == "actual"
+    if provider == "ollama-local":
+        assert url.endswith("/api/chat")
+        assert body["format"] == (schema if mode == "json_schema" else "json")
+    else:
+        assert url.endswith("/chat/completions")
+        assert body["response_format"] == response_format
+    assert result.json()["choices"][0]["finish_reason"] == "length"
+    assert result.json()["model"] == "reported"
+    assert result.json()["usage"]["completion_tokens"] == 7
+
+
+def test_gateway_reports_provider_rejection_without_a_second_request(monkeypatch):
+    monkeypatch.setenv("OSII_MODEL_GATEWAY_SECRET", "test-gateway-secret")
+    monkeypatch.setattr("app.main.model_connection", lambda alias: {
+        "type": "openai-compatible", "base_url": "http://provider.test", "model": "actual", "capabilities": ["chat"],
+    })
+    calls = []
+
+    def reject(method, url, **kwargs):
+        calls.append(kwargs["json"])
+        response = requests.Response()
+        response.status_code = 400
+        response._content = b"private response content"
+        return response
+
+    monkeypatch.setattr(requests, "request", reject)
+    token = issue_model_gateway_token(tool_id="test", job_id="rejected", bindings={"chat": "writer"})
+    result = TestClient(app).post(
+        "/v1/chat/completions", headers={"Authorization": f"Bearer {token}"},
+        json={"model": "writer", "messages": [{"role": "user", "content": "Return JSON."}], "response_format": {"type": "json_object"}},
+    )
+    assert result.status_code == 422, result.text
+    assert result.json()["detail"]["model"] == "actual"
+    assert result.json()["detail"]["provider_status"] == 400
+    assert "private response content" not in result.text and len(calls) == 1
+
+
 def test_model_gateway_token_stops_working_when_job_revokes_it(monkeypatch):
     monkeypatch.setenv("OSII_MODEL_GATEWAY_SECRET", "test-gateway-secret")
     token = issue_model_gateway_token(
@@ -495,3 +582,16 @@ def test_local_replacement_overrides_optional_missing_key_file(monkeypatch, tmp_
     monkeypatch.setenv("OSII_ENV_FILE", str(secrets))
     secrets.write_text('OPENAI_API_KEY="local-replacement"\n')
     assert resolve_secret("OPENAI_API_KEY") == "local-replacement"
+
+
+def test_bridge_credential_file_must_contain_one_valid_key(monkeypatch, tmp_path):
+    from app.env_credentials import resolve_secret
+
+    secret = tmp_path / "provider-key"
+    monkeypatch.setenv("OPENAI_API_KEY_FILE", str(secret))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OSII_ENV_FILE", raising=False)
+    secret.write_bytes(b"\xffinvalid-key")
+    assert resolve_secret("OPENAI_API_KEY") == ""
+    secret.write_text("valid-key\n", encoding="utf-8")
+    assert resolve_secret("OPENAI_API_KEY") == "valid-key"

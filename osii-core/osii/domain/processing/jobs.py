@@ -65,6 +65,10 @@ def configure_job_store(osii_root: Path) -> Path:
             CREATE INDEX IF NOT EXISTS idx_queue_jobs_status_created
               ON queue_jobs(status, created_at);
             CREATE TABLE IF NOT EXISTS run_aliases (alias TEXT PRIMARY KEY, run_id TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS intake_embeddings (
+                run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+                progress_json TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS workers (
                 id TEXT PRIMARY KEY,
                 started_at TEXT NOT NULL,
@@ -95,17 +99,51 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _write_run(conn: sqlite3.Connection, run: dict) -> None:
+    conn.execute(
+        """
+        INSERT INTO runs(id, data_json, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json, updated_at=excluded.updated_at
+        """,
+        (run["id"], json.dumps(run), _now()),
+    )
+
+
 def save_run(run: dict) -> None:
     if _store_path() is None:
         return
     with _connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO runs(id, data_json, updated_at) VALUES (?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json, updated_at=excluded.updated_at
-            """,
-            (run["id"], json.dumps(run), _now()),
-        )
+        _write_run(conn, run)
+
+
+def intake_embedding_receipt(run_id: str) -> dict | None:
+    with _connection() as conn:
+        row = conn.execute("SELECT progress_json FROM intake_embeddings WHERE run_id = ?", (run_id,)).fetchone()
+    return json.loads(row[0]) if row else None
+
+
+def _owns_intake_embedding_claim(conn, job, *, allow_stop_requested=False):
+    row = conn.execute("SELECT worker_id, started_at, status FROM queue_jobs WHERE id = ?", (job["id"],)).fetchone()
+    allowed = {"running", "pause_requested", "cancel_requested"} if allow_stop_requested else {"running"}
+    return bool(row and row["worker_id"] == job["worker_id"] and row["started_at"] == job["started_at"] and row["status"] in allowed)
+
+
+def intake_embedding_should_stop(job: dict) -> bool:
+    from contextlib import closing
+
+    with closing(_connection()) as conn:
+        return not _owns_intake_embedding_claim(conn, job)
+
+
+def save_intake_embedding_receipt(run_id: str, receipt: dict, job: dict) -> None:
+    with _connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if not _owns_intake_embedding_claim(conn, job, allow_stop_requested=True):
+            raise RuntimeError("The embedding worker lost ownership of this run")
+        conn.execute("""
+            INSERT INTO intake_embeddings VALUES (?, ?)
+            ON CONFLICT(run_id) DO UPDATE SET progress_json = excluded.progress_json
+        """, (run_id, json.dumps(receipt)))
 
 
 def append_log(run_id: str, message: str) -> None:
@@ -514,35 +552,74 @@ def queue_status_for_run(run_id: str) -> str | None:
     return str(row["status"]) if row else None
 
 
+def can_resume_embeddings(run: dict) -> bool:
+    if run.get("status") not in {"done", "error"} or run.get("workflow") not in {"intake", "library"}:
+        return False
+    if not (run.get("operations") or {}).get("embed"):
+        return False
+    if run.get("indexing_status") == "error":
+        return run.get("file_processing_status") == "done" or run.get("status") == "done"
+    if run.get("indexing_status") not in {None, "pending", "queued"}:
+        return False
+    # Older intake could stop after processing every file and before indexing.
+    # Its successful file receipts suffice for an embedding-only recovery.
+    items = run.get("items", [])
+    return (
+        all(item.get("status") in {"done", "partial", "metadata_only", "error"} for item in items)
+        and any(item.get("status") in {"done", "partial"} and item.get("file_id") for item in items)
+    )
+
+
 def control_run(run_id: str, action: str) -> dict:
     """Persist a cooperative pause, resume, cancel, or retry request."""
-    if action not in {"pause", "resume", "cancel", "retry"}:
-        raise ValueError("action must be pause, resume, cancel, or retry")
+    stage_actions = {"retry-reading": "extraction", "retry-synthesis": "synthesizer", "retry-enrichment": "enricher"}
+    stage = stage_actions.get(action)
+    if action not in {"pause", "resume", "cancel", "retry", "retry-embeddings", *stage_actions}:
+        raise ValueError("Unknown queue action")
+    retry = action == "retry" or action == "retry-embeddings" or stage is not None
     run = get_run(run_id)
     if run is None:
         raise KeyError("run not found")
-    embedding_retry = action == "retry" and run.get("indexing_status") == "error" and (
+    embedding_retry = stage is None and retry and run.get("indexing_status") == "error" and (
         run.get("file_processing_status") == "done" or run.get("status") == "done"
     )
-    file_retry = not embedding_retry and action == "retry" and run.get("workflow") in {"intake", "library"} and any(
-        item.get("path") and item.get("status") in {"error", "partial"}
-        for item in run.get("items", [])
+    if action == "retry-embeddings":
+        embedding_retry = can_resume_embeddings(run)
+        if not embedding_retry:
+            raise ValueError("No completed file processing is available to resume embeddings for this run")
+    def matches(item):
+        if not item.get("path") or item.get("status") not in {"error", "partial"}:
+            return False
+        steps = item.get("steps") or {}
+        return stage is None or (
+            stage == "extraction" and (
+                steps.get("source") == "error" or steps.get("extraction") in {"error", "partial"} or item.get("extract_error")
+            )
+        ) or steps.get(stage) == "error"
+
+    file_retry = not embedding_retry and retry and run.get("workflow") in {"intake", "library"} and any(
+        matches(item) for item in run.get("items", [])
     )
+    if stage and not file_retry:
+        raise ValueError("This run has no files with a failure in the selected stage")
     if run.get("status") == "cancelled" or (run.get("status") == "done" and not (embedding_retry or file_retry)):
         raise ValueError(f"cannot {action} a {run.get('status')} run")
-    if run.get("status") == "error" and action != "retry":
+    if run.get("status") == "error" and not retry:
         raise ValueError("a failed run can be retried; it does not need cancellation")
 
     with _connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
-            "SELECT id, status FROM queue_jobs WHERE run_id = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT id, status, payload_json FROM queue_jobs WHERE run_id = ? ORDER BY created_at DESC LIMIT 1",
             (run_id,),
         ).fetchone()
         if row is None:
             raise ValueError("this run is not managed by the durable processing queue")
 
         queue_status = str(row["status"])
-        if action == "retry":
+        if retry:
+            if action == "retry-embeddings" and not json.loads(row["payload_json"]).get("build_embeddings"):
+                raise ValueError("Embeddings were not requested by this run")
             if not ((embedding_retry or file_retry) and queue_status in {"done", "error"}) and (
                 queue_status != "error" or run.get("status") != "error"
             ):
@@ -553,6 +630,7 @@ def control_run(run_id: str, action: str) -> dict:
                 run.pop("indexing_file_ids", None)
                 run["file_processing_status"] = "pending"
                 run["error_phase"] = None
+                run["retry_stage"] = stage or "all"
                 if run.get("operations", {}).get("embed"):
                     run["indexing_status"] = "pending"
                     run["indexing_error"] = None
@@ -561,6 +639,9 @@ def control_run(run_id: str, action: str) -> dict:
                 # original-file results are still complete and must be retained.
                 run["error_phase"] = "embedding"
                 run["file_processing_status"] = "done"
+                run["indexing_status"] = "queued"
+                run["indexing_error"] = None
+                run["retry_stage"] = "embedding"
             conn.execute(
                 """
                 UPDATE queue_jobs
@@ -575,9 +656,12 @@ def control_run(run_id: str, action: str) -> dict:
             run["error"] = None
             run["finished_at"] = None
             for item in run.get("items", []):
-                if (item.get("status") == "error" or (file_retry and item.get("status") == "partial")) and run.get("error_phase") != "embedding":
+                if (matches(item) if file_retry else item.get("status") == "error") and run.get("error_phase") != "embedding":
                     if file_retry and item.get("status") == "partial" and item.get("extraction_variant_id") and not item.get("extract_error"):
                         item["retry_extraction_id"] = item["extraction_variant_id"]
+                    if stage == "extraction" or (stage is None and item.get("extract_error")):
+                        item.pop("text_ready", None)
+                        item.pop("retry_extraction_id", None)
                     item["status"] = "pending"
                     item["error"] = None
                     item["started_at"] = None
@@ -586,7 +670,8 @@ def control_run(run_id: str, action: str) -> dict:
             run["completed"] = sum(
                 1
                 for item in run.get("items", [])
-                if item.get("status") in ({"done", "partial", "error"} if run.get("error_phase") == "embedding" else {"done", "partial"})
+                if item.get("status") in {"done", "partial", "metadata_only"}
+                or item.get("status") == "error"
             )
         elif action == "pause":
             if queue_status == "paused":
@@ -630,13 +715,16 @@ def control_run(run_id: str, action: str) -> dict:
                     if item.get("status") in {"pending", "running"}:
                         item["status"] = "cancelled"
 
-    if action == "retry":
-        append_log(run_id, "Retry requested. Completed files will not be repeated.")
-    save_run(run)
+        if retry:
+            timestamp = datetime.now(UTC).strftime("%H:%M:%S")
+            message = "Embeddings queued from saved text." if embedding_retry else "Retry requested. Completed files will not be repeated."
+            run["logs"].append(f"[{timestamp}] {message}")
+        # Make the new run receipt and claimable queue row visible together.
+        _write_run(conn, run)
     return {
         "run_id": run_id,
         "status": run["status"],
-        "queue_status": "queued" if action in {"resume", "retry"} else (
+        "queue_status": "queued" if retry or action == "resume" else (
             "paused" if run["status"] == "paused" else queue_status
         ),
     }
@@ -704,6 +792,7 @@ def purge_job_history(run_ids: list[str]) -> int:
         return 0
     placeholders = ",".join("?" for _ in run_ids)
     with _connection() as conn:
+        conn.execute(f"DELETE FROM intake_embeddings WHERE run_id IN ({placeholders})", run_ids)
         conn.execute(f"DELETE FROM queue_jobs WHERE run_id IN ({placeholders})", run_ids)
         conn.execute(f"DELETE FROM run_aliases WHERE run_id IN ({placeholders})", run_ids)
         cursor = conn.execute(f"DELETE FROM runs WHERE id IN ({placeholders})", run_ids)

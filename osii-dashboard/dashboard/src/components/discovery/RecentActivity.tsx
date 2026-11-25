@@ -29,12 +29,14 @@ export function RecentActivity({
   onSelect,
   onDelete,
   onClear,
+  titleId,
 }: {
   kind: ActivityHistoryKind;
   entries: ActivityHistoryEntry[];
   onSelect: (entry: ActivityHistoryEntry) => void;
   onDelete: (id: string) => void;
   onClear: () => void;
+  titleId?: string;
 }) {
   const [confirmClear, setConfirmClear] = useState(false);
   const [showAll, setShowAll] = useState(false);
@@ -48,7 +50,7 @@ export function RecentActivity({
           <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
             <Stack direction="row" spacing={1} alignItems="center">
               <HistoryOutlinedIcon color="action" fontSize="small" />
-              <Typography variant="subtitle1" fontWeight={700}>{title}</Typography>
+              <Typography id={titleId} variant="subtitle1" fontWeight={700}>{title}</Typography>
             </Stack>
             {entries.length > 0 ? <Button size="small" color="inherit" onClick={() => setConfirmClear(true)}>Clear all</Button> : null}
           </Stack>

@@ -9,7 +9,11 @@ from osii.domain.processing.jobs import configure_job_store, claim_next_queue_jo
 def test_flows_list_without_testing_services_and_enable_all_processes(client, monkeypatch):
     monkeypatch.setattr('requests.post', lambda *a, **kw: pytest.fail('Listing flows must not invoke models'))
     flows = client.get('/api/processing-flows').json()['flows']
-    assert {flow['id'] for flow in flows} >= {'bundled', 'advanced-ocr'}
+    assert [(flow["id"], flow["name"]) for flow in flows[:3]] == [
+        ("bundled", "Basic"), ("intermediate", "Intermediate"), ("advanced-ocr", "Advanced"),
+    ]
+    assert all(flow["description"] for flow in flows[:3])
+    assert flows[2]["routes"][0]["extractor"] == "banyan.nemotron-parse"
     assert flows[0]['test'] is None
     assert flows[0]['enricher_name']
     assert flows[0]['routes'][0]['extractor'] == 'local.native-text'

@@ -4,6 +4,9 @@ from pathlib import Path
 
 from osii.processor_sdk.document_metadata import DocumentMetadata
 
+METADATA_ENRICHER = "core.document-metadata"
+_AI_METHODS = {"text_llm", "vision_llm", "model_generated"}
+
 
 def document_labels(document: dict) -> dict:
     return {
@@ -40,6 +43,14 @@ def synthesis_labels(metadata: dict) -> dict:
     return labels
 
 
+def saved_descriptive_title(labels: dict) -> str | None:
+    """Use reviewed or inferred titles and older model headings for display."""
+    if not (labels.get("document_metadata") or labels.get("title_method") in {"model_generated", "text_llm"}):
+        return None
+    title = labels.get("document_title")
+    return " ".join(title.split())[:240] or None if isinstance(title, str) else None
+
+
 METADATA_FIELDS = (
     "descriptive_title",
     "title",
@@ -50,24 +61,73 @@ METADATA_FIELDS = (
 )
 
 
+def metadata_source(labels: dict, field: str) -> tuple[str, str | None]:
+    metadata = labels.get("document_metadata") or {}
+    sources = labels.get("metadata_sources")
+    saved = sources.get(field) if isinstance(sources, dict) else None
+    if isinstance(saved, dict) and saved.get("kind") in ("ai", "unknown"):
+        kind = saved["kind"]
+        processor = saved.get("processor")
+    else:
+        method = metadata.get("method")
+        if method == "human":
+            return "edited", None
+        kind = "ai" if method in _AI_METHODS or metadata.get("model") else "unknown"
+        processor = labels.get("metadata_processor")
+    return kind, processor if isinstance(processor, str) else None
+
+
+def manual_metadata_product(values: dict, current: dict) -> dict:
+    if not isinstance(values, dict) or set(values) - set(METADATA_FIELDS):
+        raise ValueError("Provide document metadata fields only")
+    record = DocumentMetadata.model_validate({
+        "method": "human",
+        "model": None,
+        **{name: {"value": values.get(name)} for name in METADATA_FIELDS},
+    }).model_dump(mode="json")
+    data = {
+        "artifact_type": "document_metadata",
+        "title": "Document metadata",
+        "document_metadata": record,
+    }
+    # The editor prefills saved suggestions. Saving another field must not
+    # relabel an unchanged suggestion as human-authored.
+    previous = current.get("document_metadata") or {}
+    sources = {}
+    for field in METADATA_FIELDS:
+        value = record[field]["value"]
+        old_value = (previous.get(field) or {}).get("value")
+        if field == "document_type" and value and old_value:
+            value, old_value = value.casefold(), old_value.casefold()
+        if value and value == old_value:
+            kind, processor = metadata_source(current, field)
+            if kind != "edited":
+                sources[field] = {"kind": kind, "processor": processor}
+    if sources:
+        data["metadata_sources"] = sources
+    return data
+
+
 def metadata_product_path(root: Path, file_id: str) -> Path:
-    from osii.domain.artifacts.products import product_path
+    from osii.domain.read.sidecar import SidecarLibraryReader
 
-    return product_path(
-        root,
-        {"scope_type": "object", "file_id": file_id},
-        "document_metadata--manual.json",
-    )
+    path = SidecarLibraryReader(root)._object(file_id) / "enrichments" / "document_metadata--manual.json"
+    if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):
+        raise ValueError("Metadata must remain inside the local store")
+    return path
 
 
-def read_manual_metadata(root: Path, file_id: str) -> tuple[str | None, dict | None]:
+def read_manual_metadata_product(root: Path, file_id: str) -> tuple[str | None, dict | None]:
     from osii.domain.artifacts.products import read_product
 
     history = read_product(metadata_product_path(root, file_id))
     data = history["data"]
-    return history["current"], data.get("document_metadata") if isinstance(
-        data, dict
-    ) else None
+    return history["current"], data if isinstance(data, dict) else None
+
+
+def read_manual_metadata(root: Path, file_id: str) -> tuple[str | None, dict | None]:
+    revision, data = read_manual_metadata_product(root, file_id)
+    return revision, data.get("document_metadata") if data else None
 
 
 def save_manual_metadata(
@@ -75,26 +135,14 @@ def save_manual_metadata(
 ) -> tuple[str | None, dict | None]:
     from osii.domain.artifacts.products import publish_product
     from osii.domain.read.docs import get_doc_meta
+    from osii.domain.read.synthesis import get_suggested_metadata
 
     if get_doc_meta(root, file_id) is None:
         raise LookupError("Unknown file_id")
-    if not isinstance(values, dict) or set(values) - set(METADATA_FIELDS):
-        raise ValueError("Provide document metadata fields only")
-    record = DocumentMetadata.model_validate(
-        {
-            "method": "human",
-            "model": None,
-            **{name: {"value": values.get(name)} for name in METADATA_FIELDS},
-        }
-    )
     publish_product(
         root,
         metadata_product_path(root, file_id),
-        {
-            "artifact_type": "document_metadata",
-            "title": "Document metadata",
-            "document_metadata": record.model_dump(mode="json"),
-        },
+        manual_metadata_product(values, get_suggested_metadata(root, file_id)),
         origin="human",
         expected=expected,
         check_expected=True,

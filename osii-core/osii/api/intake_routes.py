@@ -433,24 +433,26 @@ def test_intake_processors(request: Request, payload: dict):
     """Explicit tiny operation tests; no corpus reads or canonical writes."""
     import base64
     import pymupdf
-    from osii.processor_sdk import ProcessorClient, ExtractionRequest, DocumentInput, SynthesisRequest, ScopeInput, EnrichmentRequest
+    from osii.processor_sdk import (
+        DocumentInput, EmbeddingInput, EmbeddingRequest, EnrichmentRequest,
+        ExtractionRequest, ProcessorClient, ScopeInput, SynthesisRequest,
+    )
     from osii.processor_sdk.diagnostics import failure
     from osii.processors.remote import resolve_remote_processor, _model_context, _revoke_model_context
     from osii.domain.processor_settings import merged_processor_settings
     from osii.domain.processing.capability_readiness import embedding_readiness
 
     targets = payload.get("processors", [])
+    supported_kinds = {"extractor", "synthesizer", "enricher", "embedder"}
     if not isinstance(targets, list) or len(targets) > 8:
         raise HTTPException(422, "Test up to eight selected processors at a time")
     if any(not isinstance(target, dict) or not isinstance(target.get("name"), str)
-           or not target["name"] or target.get("kind") not in {"extractor", "synthesizer", "enricher"} for target in targets):
-        raise HTTPException(422, "Specify a registered extractor, synthesizer, or enricher")
+           or not target["name"] or target.get("kind") not in supported_kinds for target in targets):
+        raise HTTPException(422, "Specify a registered extractor, synthesizer, enricher, or embedder")
     results = []
     root = request.app.state.osii_root.resolve()
     for target in targets:
         name, kind = str(target.get("name", "")), target.get("kind")
-        if kind not in {"extractor", "synthesizer", "enricher"}:
-            raise HTTPException(422, "Unsupported processor test kind")
         context = None
         endpoint = None
         remote_environment = None
@@ -467,7 +469,16 @@ def test_intake_processors(request: Request, payload: dict):
             config = merged_processor_settings(root, name, {})
             if kind == "extractor":
                 extensions = descriptor.get("capabilities", {}).get("file_extensions", [])
-                extension = next((ext for ext in (".pdf", ".txt", ".csv", ".png") if ext in extensions or "*" in extensions), None)
+                allowed = target.get("extensions") or ["*"]
+                if not isinstance(allowed, list) or not all(isinstance(ext, str) for ext in allowed):
+                    raise ValueError("Test extensions must be a list of file suffixes")
+                extension = next((ext for ext in (".pdf", ".txt", ".csv", ".png")
+                                  if (ext in extensions or "*" in extensions) and (ext in allowed or "*" in allowed)), None)
+                if extension is None:
+                    # The tiny operation can still verify the endpoint when a
+                    # route uses formats with no bundled fixture.
+                    extension = next((ext for ext in (".pdf", ".txt", ".csv", ".png")
+                                      if ext in extensions or "*" in extensions), None)
                 if extension is None:
                     results.append({"processor": name, "endpoint": endpoint, "ok": None, "detail": "No supported synthetic input for this extractor; no operation was tested", "runtime": remote_environment})
                     continue
@@ -497,6 +508,12 @@ def test_intake_processors(request: Request, payload: dict):
                     config=config, model_context=context))
                 if not response.segments:
                     raise ValueError("Extractor returned no text for the test document")
+            elif kind == "embedder":
+                response = client.embed(EmbeddingRequest(request_id=request_id,
+                    inputs=[EmbeddingInput(id="sample", text="OSII endpoint test document.")],
+                    config=config, model_context=context))
+                if not response.vectors:
+                    raise ValueError("Embedder returned no vector for the test document")
             else:
                 operation = client.synthesize if kind == "synthesizer" else client.enrich
                 model = SynthesisRequest if kind == "synthesizer" else EnrichmentRequest
@@ -526,11 +543,17 @@ def save_processing_flow(request: Request, flow_id: str, payload: dict):
     from osii.configuration import load_tools_config, save_tools_config
     from osii.api.extractor_routes import validate_routes
     from osii.domain.processing.flows import get_flow
+    from osii.domain.processing.quick_intake import FLOW_ID
+    if flow_id == FLOW_ID:
+        raise HTTPException(422, "The standard flow is managed by OSII.")
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", flow_id):
         raise HTTPException(422, "Use a short flow ID with letters, numbers, and hyphens")
     name = payload.get("name")
     if not isinstance(name, str) or not name.strip() or len(name) > 120:
         raise HTTPException(422, "Enter a flow name (up to 120 characters)")
+    description = payload.get("description", "")
+    if not isinstance(description, str) or len(description) > 400:
+        raise HTTPException(422, "Enter a flow description of up to 400 characters")
     if not isinstance(payload.get("routes"), list) or not payload["routes"] or len(payload["routes"]) > 32:
         raise HTTPException(422, "Choose 1 to 32 file-type rules")
     errors, warnings = validate_routes({"routes": payload.get("routes")})
@@ -551,7 +574,7 @@ def save_processing_flow(request: Request, flow_id: str, payload: dict):
             raise HTTPException(422, "Select a synthesizer and enricher for all processes")
     settings = load_tools_config()
     settings.setdefault("processing_flows", {})[flow_id] = {key: payload[key] for key in (
-        "name", "routes", "synthesizer_name", "enricher_name", "chunk_size", "chunk_overlap") if key in payload}
+        "name", "description", "routes", "synthesizer_name", "enricher_name", "chunk_size", "chunk_overlap") if key in payload}
     settings.get("processing_flow_tests", {}).pop(flow_id, None)
     save_tools_config(settings)
     return {"flow": get_flow(request.app.state.osii_root.resolve(), flow_id), "warnings": warnings}
@@ -571,7 +594,8 @@ def test_processing_flow(request: Request, flow_id: str):
     for route in flow["routes"]:
         attempts = []
         for name in [route["extractor"], *route.get("fallbacks", [])]:
-            report = test_intake_processors(request, {"processors": [{"name": name, "kind": "extractor"}], "sample": "nist-cloud-definition"})
+            report = test_intake_processors(request, {"processors": [{"name": name, "kind": "extractor",
+                                                                        "extensions": route["extensions"]}], "sample": "nist-cloud-definition"})
             attempts.extend(report["results"])
         results.append({"step": "extract", "route": route["name"], "extensions": route["extensions"],
                         "ok": any(item["ok"] is True for item in attempts), "attempts": attempts})

@@ -422,3 +422,16 @@ All extracted text uses the common Mathpix Markdown viewer with a Plain text
 fallback. This is presentation, not an OCR conversion or a modification of the
 original extraction. See [extraction versions](../extraction-versions.md) for
 additive extraction defaults and explicit promotion.
+
+
+## Source compatibility and OCR
+
+Declare accepted source extensions in `capabilities.file_extensions` (for
+example, `[".pdf", ".png"]`). If extensions are absent, Core can use
+`capabilities.media_types`, including subtype wildcards. MIME is inferred from
+the source filename. Existing generic extractors may omit both declarations.
+
+To appear in OCR Workbench, advertise `ocr_text` in
+`capabilities.output_kinds` and declare supported extensions or MIME types.
+Return the standard text segments and include source coordinates and confidence
+where the engine provides them.

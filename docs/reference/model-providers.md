@@ -236,6 +236,23 @@ response = client.chat.completions.create(
 
 The processor receives neither the upstream base URL nor its API key.
 
+For typed output, pass `response_format=json_schema_format(MyOutput)` to
+`chat.completions.create`, where `MyOutput` is a Pydantic model with required
+fields and `extra="forbid"` on every object. Import the helper and
+`parse_structured_response` from `osii.processor_sdk.structured_output`.
+Validate the returned completion with
+`parse_structured_response(response, MyOutput, model=model, batch_id=batch_id)`
+before creating artifacts. The gateway forwards `json_schema` and
+`json_object` to OpenAI-compatible endpoints. It translates them to a schema
+or `"json"` in Ollama's `format` field. The selected model and endpoint need
+to support the requested format. A provider rejection ends that attempt with
+an actionable error.
+
+The Concept and Entity wiki uses this path for both source batches and
+combining drafts. Its run errors include the model, batch, and provider stop
+reason when available. Ollama stop reasons and token counts are carried
+through the gateway. Format errors omit the generated text and source excerpts.
+
 ## Secret handling
 
 `models.toml` stores no secret values. In host development, Setup may write a

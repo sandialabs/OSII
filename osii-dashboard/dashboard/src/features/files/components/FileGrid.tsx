@@ -17,7 +17,6 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { FileCardModel } from "../../../domain/files";
 import { FileCard } from "./FileCard";
-import { FileDisplaySettings } from "./FileDisplaySettings";
 import { useFileDisplay, useFilePreviews } from "../../../hooks/useFileDisplay";
 import { defaultFileDisplay, type FileDisplay } from "../../../domain/fileDisplay";
 
@@ -138,7 +137,8 @@ export function FileGrid({
     [filteredFiles, visibleCount],
   );
 
-  const previews=useFilePreviews(visibleFiles.map(file=>file.fileId));
+  const previews = useFilePreviews(visibleFiles.map(file => file.fileId),
+    display.show_name && display.name_source === "descriptive_title");
 
   useEffect(() => {
     setVisibleCount(FILES_PER_PAGE);
@@ -211,7 +211,6 @@ export function FileGrid({
             ))}
           </TextField>
           <ToggleButtonGroup exclusive size="small" value={view} aria-label="Files layout" onChange={(_,value)=>{if(value)setViewOverride(value);}}><ToggleButton value="thumbnails">Thumbnails</ToggleButton><ToggleButton value="list">List</ToggleButton></ToggleButtonGroup>
-          <FileDisplaySettings/>
           {toolbarActions}
         </Stack>
       ) : null}
@@ -232,15 +231,20 @@ export function FileGrid({
             </Typography>
           ) : null}
           <Grid container spacing={1.5}>
-            {visibleFiles.map((file) => (
+            {visibleFiles.map((file) => {
+              const preview = previews.items[file.fileId];
+              return (
               <Grid item xs={12} sm={view==="list"?12:6} md={view==="list"?12:4} lg={view==="list"?12:3} xl={view==="list"?12:2} key={file.fileId}>
                 <Box sx={{ position: "relative" }}>
                   {onToggle && <Checkbox checked={selectedIds?.has(file.fileId) ?? false} onChange={() => onToggle(file.fileId)}
                     inputProps={{ "aria-label": `Select ${file.title}` }} sx={{ position: "absolute", top: 4, left: 4, zIndex: 1, bgcolor: "background.paper", borderRadius: 1 }} />}
-                  <FileCard file={{...file,textPreview:previews.items[file.fileId]?.text_preview,synthesisPreview:previews.items[file.fileId]?.synthesis_preview||file.synthesisPreview}} onOpen={onOpen} display={display} list={view==="list"} />
+                  <FileCard file={{ ...file, textPreview: preview?.text_preview,
+                    synthesisPreview: preview?.synthesis_preview || file.synthesisPreview,
+                    descriptiveTitle: preview?.descriptive_title }} onOpen={onOpen} display={display} list={view === "list"} />
                 </Box>
               </Grid>
-            ))}
+              );
+            })}
           </Grid>
         </Stack>
       )}

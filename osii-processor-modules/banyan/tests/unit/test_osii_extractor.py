@@ -15,6 +15,13 @@ from banyan_extract.integrations import osii_extractor
 from banyan_extract.integrations.osii_extractor import BanyanOsiiExtractor, app
 
 
+@pytest.fixture(autouse=True)
+def isolate_api_key(monkeypatch, tmp_path):
+    monkeypatch.setenv("OSII_ENV_FILE", str(tmp_path / "secrets.env"))
+    monkeypatch.delenv("NEMOPARSE_API_KEY", raising=False)
+    monkeypatch.delenv("NEMOPARSE_API_KEY_FILE", raising=False)
+
+
 def test_osii_extractor_preserves_element_bounding_box_provenance(monkeypatch):
     """OSII segments and artifacts retain the complete Nemotron bbox response."""
     response_output = SimpleNamespace(

@@ -12,8 +12,19 @@
 - Core owns canonical storage and RAG orchestration. The dashboard and MCP
   server use Core APIs. Reuse dashboard components across profiles and keep
   processors behind the public `osii.processor_sdk` contract.
+- Give each page or view one defined scope and primary action. Use layout,
+  headings, and controls to show the order. Use short, plain-language labels
+  and put optional explanation behind a labeled question-mark button. Avoid
+  nested drawers.
+  Use the left menu or Toolbox to open tools. Keep related controls on one row
+  when space permits.
+- Use the shared library product names and show what each tool reads and writes
+  through Core. File pages show saved products and their provenance. Give
+  processing its own workspace. A tool that consumes original bytes must
+  declare supported source types and check compatibility before running.
 - Preserve source identity, stored records, and processing provenance. Keep
   credentials, library data, and generated outputs out of version control.
+  Run intake tests with synthetic fixtures against an isolated library.
   Use Toolbox for frontend tools and processors for backend modules.
 - Keep the source launcher working on macOS and Windows. OSII-local runs on
   loopback without user accounts and uses sidecars by default. PostgreSQL is

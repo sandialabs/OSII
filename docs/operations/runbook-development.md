@@ -112,6 +112,8 @@ The default document folder is `osii-data/source/`. Set `OSII_SOURCE_DIR` to
 an existing readable folder to use your own files. Quote paths containing
 spaces and use forward slashes on Windows. Connect shared drives in Finder or
 Explorer first. OSII never mounts the share or stores share credentials.
+If the source folder is offline, OSII still opens the saved library. Reconnect
+the share at the same path to open originals and run intake on those files.
 
 Runtime data defaults to `osii-data/`, separately from original documents.
 Configuration is in `osii-data/config/`. Preserve these directories and your
@@ -239,30 +241,78 @@ changing environment settings. Paths are checkout-relative; values are literal,
 without shell variable interpolation. This selects a configuration file, not a
 user account. OSII-local has no login.
 
-Use **Setup → Processing flows** to configure named reader/fallback chains,
-synthesis, and enrichment. **Test sample** uses the definition page (physical
-page 6) of the bundled text-layer NIST cloud-computing PDF and tiny text/model
-requests. It records endpoint diagnostics and a configuration fingerprint. Results open immediately with numbered steps and
-visible failures. Use **View errors** beside a flow to reopen its saved report,
-even after refreshing, and **Copy report** for full diagnostics.
-Changing the flow, models, or processor settings
-invalidates its displayed test result; passing a sample is not a future
-availability guarantee. Model-backed tests may use provider credits.
+Open a flow from **Setup → Processing flows** or **Advanced intake → Edit
+selected flow**. **Basic** reads native document text. **Intermediate** uses
+page-by-page Tesseract for scans and images. **Advanced** tries Banyan for PDF
+and image OCR, with native or Tesseract backup readers where applicable. Add
+a compatible registered vision model reader to an image rule when available.
 
-**Intake & Queue always starts with All processes**: extract, synthesize, enrich,
-then embed. Select files and a flow, then queue. It does not ask users to rebuild
-reader rules or repeat endpoint tests after file selection. Paths and selected
-membership survive navigation to Setup in the same browser. The lightweight
-selection preview reads metadata only. Flow-backed queue submissions defer
-provider operation tests to the worker; errors remain retryable in the queue.
-Legacy APIs retain explicit operation flags and saved preset compatibility.
+The flowchart shows allowed file types, the ordered readers, and the stages
+that use saved text. The first matching file-type rule wins. Save the flow,
+then use **Test sample** to check its processors on bundled inputs. **Results**
+reopens the report, and **Copy report** includes full diagnostics. Changing the
+flow, models, or processor settings invalidates the saved test result.
+
+Under **Setup → Processors**, expand the capability and open a processor’s
+details page. The processor descriptor supplies the processing settings.
+Readers list accepted file types, and model-backed processors offer compatible
+connected models. **Test** sends a small sample through the selected processor.
+Installed modules can expose upstream settings. For Banyan, open its
+processor page to enter the Nemotron endpoint, model, and API key. The key is
+saved to the same private credentials file used by model connections. Use **?**
+for the implementation or module manifest path.
+
+In **Intake & Setup**, connect and test an embedding model and a language
+model first. **Add documents** appears after both checks pass. **Process files**
+runs the standard extraction, synthesis, enrichment, and incremental embedding
+steps for the selected files and opens the run report. Refreshing the page reads
+saved verification results. A changed model or key requires a new check and
+the file selection remains saved in the browser.
+
+**Browse files** opens the last folder you used. Choose **Locations** for
+shortcuts or paste a path into **Folder path**. Select files in the list and
+choose **Use files** to return to Intake.
+
+The standard flow reads a PDF's embedded text first and tries Tesseract if
+the native reader cannot extract text. PNG, JPEG, and TIFF go directly to
+Tesseract. OCR in OSII-local uses the installed native Tesseract program.
+Office and plain-text documents use the native reader. Advanced intake offers
+named OCR and custom flows.
+
+With the default sidecar storage, Simple Intake saves basic file metadata for
+other formats. Files shows the original's name, location, size, and detected
+type. Those records have no extracted text, summaries, or semantic vectors.
+If a supported reader fails, Simple Intake keeps the file record and reports
+the failure in the run. Processor modules can add format coverage independently.
+The archived Tika adapter requires a Java runtime and its own validation.
+
+Use **Advanced → Advanced intake** to choose a saved processing flow.
+**Advanced setup** contains the readiness checklist, sample tests, processor
+settings, and service diagnostics. Both intake workflows share the file
+selection and **Queue & activity**. Legacy API clients retain explicit
+operation flags and saved preset compatibility.
+
+Open **Toolbox** for a single task. **Read files** extracts text, **Create a
+summary** uses a file's saved text, and **Create a wiki** uses a chosen library
+scope. Choose a scope, run the tool, and open **View run** for diagnostics.
+Registered scope processors have their own entry or appear as methods in a
+shared task such as wiki creation.
+
+To build the semantic index for the existing library, select **Build index**
+in Setup’s readiness steps or open **Toolbox → Search index**. The page shows
+saved-text coverage and the selected embedding model. It queues a full index
+build from saved text using the bundled flow’s chunk sizes and opens **Queue &
+activity** for progress. Intake continues to embed only the files you queue there.
 
 Use a collection's **Processing status** panel to process existing text or reread
 originals while preserving extraction history. Current semantic vectors depend
 on the selected embedding model; this panel reports read, synthesis, enrichment,
-and embedding coverage. Queue cards contain process information, files,
-backends, errors, logs, and a copyable run report. Products are viewed on Files
-and Collections, not embedded in queue cards.
+and embedding coverage. Open a run in **Queue & activity** for a bookmarkable
+report with failures first, the recorded file and processor steps, and retry or
+pause controls. **Copy run report** includes diagnostics and saved log lines.
+Open **Run log** when you need the timeline. Read generated products from
+Files or Collections. A file opens on its original. Use the OCR Workbench from
+the Toolbox to correct its primary extracted text.
 
 Large-volume scanning is archived on `archive/large-volume-discovery-2026-11-19`.
 The beta launcher does not start its worker. Inventory history remains intact.
@@ -338,10 +388,36 @@ launch it with `make dev ENV_FILE=.env.example.openrouter`. For corporate transf
 replace URLs, model IDs, credential locations, and source/runtime paths; keep
 runtime databases on local disk. Do not copy provider secrets into committed files.
 
-## Library overview and file metadata search
+## Browse, library overview, and file metadata search
 
-**Library at a glance** is a left-menu tool with format, date, processing, and
-topic summaries. It is separate from the home **Files** grid. Use **Search metadata**
+**Browse** opens the folders and files recorded by Intake. Use the breadcrumb
+trail to go back up a folder. Intake from outside the configured source appears
+under **Other locations** when its recorded path is external. Both locations can
+contain the same filename. **Folder Details** shows the current location and
+its saved summary when one is available. Browse still works if a source goes
+offline. Go to **Intake & Setup** to find and add new files from the drive.
+
+**Analyze Library** shows the configured source folder and the recorded folders
+that contain library files. Open a location to browse its saved entries. Group
+saved metadata by author, agency, document type, date, or title, and filter the
+values by name. Counts show how many files have a value. A single note flags
+when the displayed group includes AI-inferred values. Select a value to see
+counts for edits, embedded file properties, and inferences, with the processor
+named when it was recorded.
+
+To infer metadata for one file, open **Toolbox → Suggest metadata**. The default
+**Suggest document metadata** processor (`core.document-metadata`) reads the
+file's saved text. Model-backed synthesis can also infer metadata while
+generating a summary. [Document metadata contract](../reference/api/resource-model.md#document-metadata)
+
+Document type describes the genre, such as a report, memo, or article.
+Document type counts ignore capitalization. Embedded title and author are
+recorded by the native reader for PDF and supported Office files on extraction.
+Previously extracted files can show these properties once a reader has saved
+them. Document dates come from saved metadata. The filesystem timeline shows
+creation and modification times.
+
+Use **Search metadata**
 in Files to open the drawer and combine filename/path words, file format, size,
 modification date, extracted-text availability, summaries, and enrichments.
 Filters apply to recorded metadata for the files in the local library; they do

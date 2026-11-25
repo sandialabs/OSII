@@ -91,6 +91,14 @@ class NativeTextExtractor(BaseExtractor):
     )
     version = "1.0"
 
+    def describe(self) -> dict:
+        from osii.domain.processing.extractor_selection import NATIVE_EXTENSIONS
+
+        return {
+            **super().describe(),
+            "capabilities": {"file_extensions": NATIVE_EXTENSIONS, "output_kinds": ["text_segments"]},
+        }
+
     def _units(self, path: Path, chunk_chars: int) -> list[tuple[str, str, dict]]:
         suffix = path.suffix.lower()
         if suffix == ".pdf":

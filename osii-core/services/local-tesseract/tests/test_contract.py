@@ -44,6 +44,7 @@ def test_contract_and_page_provenance(monkeypatch):
     assert client.get("/health").json() == {"status": "ok"}
     descriptor = client.get("/v1/descriptor").json()
     assert descriptor["name"] == "local.tesseract-page-ocr"
+    assert "ocr_text" in descriptor["capabilities"]["output_kinds"]
     assert "OpenCV" in descriptor["description"]
     assert "/v1/extract" in client.get("/openapi.json").json()["paths"]
 

@@ -77,12 +77,10 @@ def synthesize_bounded(
         if saved is not None:
             return saved["markdown"]
         markdown, usage = (completion or complete)(messages)
-        if (
-            not isinstance(markdown, str)
-            or not markdown.strip()
-            or len(markdown) > 100_000
-        ):
-            raise ValueError("The model returned empty or oversized synthesis text")
+        if not isinstance(markdown, str) or not markdown.strip():
+            raise ValueError("The model returned no summary text. Retry synthesis or select another synthesis model.")
+        if len(markdown) > 100_000:
+            raise ValueError("The model returned a summary over the 100,000-character limit.")
         markdown = markdown.replace("\x00", "\ufffd")
         if validate:
             validate(markdown)

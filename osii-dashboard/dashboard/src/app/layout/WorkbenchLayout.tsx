@@ -7,8 +7,6 @@ import {
   ListItemButton,
   ListItemText,
   ListSubheader,
-  Toolbar,
-  Typography,
 } from "@mui/material";
 import type { ToolAvailability } from "../../domain/workbench";
 import { HeaderBar } from "./HeaderBar";
@@ -42,25 +40,22 @@ export function WorkbenchNavigation({
   return (
     <>
       {items.filter(item => item.group === "home").map(({ id, label, icon: Icon }) => <ListItemButton key={id} selected={selected === id} aria-current={selected === id ? "page" : undefined} onClick={() => onNavigate(id)}><Icon fontSize="small" sx={{ mr: 1.5 }} /><ListItemText primary={label} /></ListItemButton>)}
-      <Toolbar variant="dense">
-        <Typography variant="caption" color="text.secondary" fontWeight={600}>
-          Menu
-        </Typography>
-      </Toolbar>
       {groups.map((group) => {
         const entries = items.filter((item) => item.group === group.id);
+        const landing = entries.find(item => item.id === group.id);
+        const orderedEntries = landing ? [landing, ...entries.filter(item => item !== landing)] : entries;
         return entries.length ? (
           <Box key={group.id}>
             <Divider />
             <List
               dense
-              subheader={
+              subheader={landing ? undefined : (
                 <ListSubheader disableSticky component="div">
                   {group.label}
                 </ListSubheader>
-              }
+              )}
             >
-              {entries.map(({ id, label, icon: Icon }) => {
+              {orderedEntries.map(({ id, label, icon: Icon }) => {
                 const state = (group.id === "tools" || id === "browse") ? availability?.[id] : undefined;
                 return <ListItemButton
                   key={id}
@@ -75,7 +70,7 @@ export function WorkbenchNavigation({
                   <ListItemText
                     primary={label}
                     secondary={state?.enabled === false ? state.reason : undefined}
-                    primaryTypographyProps={{ variant: "body2" }}
+                  primaryTypographyProps={{ variant: "body2", fontWeight: id === group.id ? 700 : undefined }}
                   />
                 </ListItemButton>;
               })}

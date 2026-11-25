@@ -1,18 +1,23 @@
-// src/features/search/pages/SearchPage.tsx
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
   Button,
-  Card,
-  CardContent,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
   CircularProgress,
   MenuItem,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
+import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
+import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import TuneOutlinedIcon from "@mui/icons-material/TuneOutlined";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
@@ -27,6 +32,7 @@ import { ScopeSuggestions } from "../../../components/discovery/ScopeSuggestions
 import { useActivityHistory } from "../../../hooks/useActivityHistory";
 import type { ActivityHistoryEntry } from "../../../utils/activityHistory";
 
+import { ToolContext } from "../../../components/workbench/ToolContext";
 import { SearchModeSelect } from "../components/SearchModeSelect";
 
 function coerceMode(value: string | null): SearchMode {
@@ -39,37 +45,38 @@ function coerceMode(value: string | null): SearchMode {
 export function SearchPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { data: collectionsData } = useCollections();
   const recentSearches = useActivityHistory("search");
 
   const initialQuery = searchParams.get("q") ?? "";
   const initialMode = coerceMode(searchParams.get("mode"));
-  const initialScopeType = searchParams.get("scope_type") ?? "root";
+  const submittedCollection = searchParams.get("scope_type") === "collection" ? searchParams.get("collection_id") ?? "" : "";
 
   const [queryInput, setQueryInput] = useState(initialQuery);
   const [mode, setMode] = useState<SearchMode>(initialMode);
-  const [scopeType, setScopeType] = useState<string>(initialScopeType);
-  const [collectionId, setCollectionId] = useState(searchParams.get("collection_id") ?? "");
-  const [showOptions, setShowOptions] = useState(false);
+  const [scopeType, setScopeType] = useState(submittedCollection ? "collection" : "root");
+  const [collectionId, setCollectionId] = useState(submittedCollection);
+  const [panel, setPanel] = useState<"options" | "keywords" | "history" | null>(null);
+  const { data: collectionsData } = useCollections(panel === "options");
 
-  const effectiveScope: ScopeDescribeRequest = useMemo(() => {
-    if (scopeType === "collection" && collectionId.trim()) {
-      return {
-        scope_type: "collection",
-        collection_id: collectionId.trim(),
-      };
-    }
+  useEffect(() => {
+    setQueryInput(initialQuery);
+    setMode(initialMode);
+    setScopeType(submittedCollection ? "collection" : "root");
+    setCollectionId(submittedCollection);
+  }, [initialQuery, initialMode, submittedCollection]);
 
-    return { scope_type: "root" };
-  }, [scopeType, collectionId]);
-
-  const query = searchParams.get("q") ?? "";
-  const hasSearched = query.trim().length > 0;
+  const searchScope = (id: string): ScopeDescribeRequest =>
+    id ? { scope_type: "collection", collection_id: id } : { scope_type: "root" };
+  const effectiveScope = searchScope(scopeType === "collection" ? collectionId : "");
+  const query = initialQuery;
+  const hasSearched = Boolean(query.trim());
+  const scopeSelected = scopeType !== "collection" || Boolean(collectionId);
+  const keywordScope = scopeSelected ? effectiveScope : searchScope(submittedCollection);
 
   const { data, isLoading, isError, error } = useSearch({
     query,
-    mode,
-    scope: effectiveScope,
+    mode: initialMode,
+    scope: searchScope(submittedCollection),
     topK: 12,
     enabled: hasSearched,
   });
@@ -100,6 +107,7 @@ export function SearchPage() {
       setScopeType("root");
       setCollectionId("");
     }
+    setPanel(null);
     recentSearches.add({ text: cleanText, scope: nextScope, mode: nextMode });
     navigate(`/search?${next.toString()}`);
   };
@@ -124,155 +132,71 @@ export function SearchPage() {
   };
 
   return (
-    <Stack spacing={3}>
-      <Card
-        sx={{
-          background:
-            "linear-gradient(135deg, rgba(20,184,166,0.10), rgba(6,182,212,0.05) 55%, rgba(255,255,255,1) 100%)",
-          borderColor: "rgba(20,184,166,0.18)",
-        }}
-      >
-        <CardContent sx={{ py: 2.5 }}>
-          <Stack spacing={2.25}>
-            <Stack spacing={0.5}>
-              <Typography variant="h5" fontWeight={700}>
-                Search
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Search across your indexed files with grounded results.
-              </Typography>
-            </Stack>
-
-            <Stack
-              direction={{ xs: "column", md: "row" }}
-              spacing={1.25}
-              alignItems={{ xs: "stretch", md: "center" }}
-            >
-              <TextField
-                fullWidth
-                size="medium"
-                label="Search files"
-                placeholder="Ask a question or enter keywords"
-                value={queryInput}
-                onChange={(event) => setQueryInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && queryInput.trim()) {
-                    handleSearch();
-                  }
-                }}
-                sx={{
-                  "& .MuiOutlinedInput-root": {
-                    backgroundColor: "rgba(255,255,255,0.82)",
-                  },
-                }}
-              />
-
-              <Button
-                variant="contained"
-                size="medium"
-                startIcon={<SearchOutlinedIcon />}
-                onClick={handleSearch}
-                disabled={!queryInput.trim()}
-                sx={{
-                  minWidth: { xs: "100%", md: 140 },
-                  alignSelf: { xs: "stretch", md: "auto" },
-                }}
-              >
-                Search
-              </Button>
-            </Stack>
-
-            <Stack spacing={1}>
-              <Button
-                variant="text"
-                size="small"
-                startIcon={<TuneOutlinedIcon />}
-                onClick={() => setShowOptions((prev) => !prev)}
-                sx={{
-                  alignSelf: "flex-start",
-                  px: 0,
-                  color: "text.secondary",
-                }}
-              >
-                {showOptions ? "Hide search options" : "Show search options"}
-              </Button>
-
-              {showOptions ? (
-                <Stack
-                  direction={{ xs: "column", lg: "row" }}
-                  spacing={1.25}
-                  alignItems={{ xs: "stretch", lg: "center" }}
-                >
-                  <SearchModeSelect value={mode} onChange={setMode} />
-
-                  <TextField
-                    select
-                    size="small"
-                    label="Scope"
-                    value={scopeType}
-                    onChange={(event) => setScopeType(event.target.value)}
-                    sx={{ minWidth: 160 }}
-                  >
-                    <MenuItem value="root">All files</MenuItem>
-                    <MenuItem value="collection">Collection</MenuItem>
-                  </TextField>
-
-                  {scopeType === "collection" ? (
-                    <TextField
-                      select
-                      size="small"
-                      label="Collection"
-                      value={collectionId}
-                      onChange={(event) => setCollectionId(event.target.value)}
-                      sx={{ minWidth: 220 }}
-                    >
-                      <MenuItem value="">Select a collection</MenuItem>
-                      {(collectionsData?.collections ?? []).map((collection) => (
-                        <MenuItem key={collection.id} value={collection.id}>
-                          {collection.name}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  ) : null}
-                </Stack>
-              ) : null}
-            </Stack>
+    <Stack spacing={1.5}>
+      <Box component="form" role="search" onSubmit={event => {
+        event.preventDefault();
+        if (scopeSelected) handleSearch();
+      }}>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }}>
+          <Typography component="h1" variant="h5" fontWeight={700}>Search</Typography>
+          <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+            <TextField fullWidth size="small" label="Search files" value={queryInput}
+              onChange={event => setQueryInput(event.target.value)} />
+            <Button type="submit" variant="contained" disabled={!queryInput.trim() || !scopeSelected}
+              aria-label="Search" sx={{ minWidth: 40, px: 1.25 }}>
+              <SearchOutlinedIcon fontSize="small" />
+            </Button>
+            <Tooltip title="Search options">
+              <IconButton size="small" aria-label="Search options" onClick={() => setPanel("options")}><TuneOutlinedIcon fontSize="small" /></IconButton>
+            </Tooltip>
+            <Tooltip title="Explore by keyword">
+              <IconButton size="small" aria-label="Explore by keyword" onClick={() => setPanel("keywords")}><AutoAwesomeOutlinedIcon fontSize="small" /></IconButton>
+            </Tooltip>
+            <Tooltip title="Recent searches">
+              <IconButton size="small" aria-label="Recent searches" onClick={() => setPanel("history")}><HistoryOutlinedIcon fontSize="small" /></IconButton>
+            </Tooltip>
           </Stack>
-        </CardContent>
-      </Card>
+        </Stack>
+      </Box>
 
-      <ScopeSuggestions
-        scope={effectiveScope}
-        onSelect={(keyword) => runSearch(keyword, "hybrid", effectiveScope)}
-      />
+      <Dialog open={panel !== null} onClose={() => setPanel(null)} fullWidth maxWidth="sm" aria-labelledby="search-panel-title">
+        {panel === "options" && <DialogTitle id="search-panel-title">Search options</DialogTitle>}
+        <DialogContent>
+          {panel === "options" && <Stack spacing={1.5} sx={{ pt: 0.5 }}>
+            <SearchModeSelect value={mode} onChange={setMode} />
+            <TextField select size="small" label="Scope" value={scopeType} onChange={event => setScopeType(event.target.value)}>
+              <MenuItem value="root">All files</MenuItem>
+              <MenuItem value="collection">Collection</MenuItem>
+            </TextField>
+            {scopeType === "collection" && <TextField select size="small" label="Collection" value={collectionId}
+              onChange={event => setCollectionId(event.target.value)}>
+              <MenuItem value="">Select a collection</MenuItem>
+              {(collectionsData?.collections ?? []).map(collection => <MenuItem key={collection.id} value={collection.id}>{collection.name}</MenuItem>)}
+            </TextField>}
+            <ToolContext id="search" />
+          </Stack>}
+          {panel === "keywords" && <ScopeSuggestions scope={keywordScope} compact titleId="search-panel-title"
+            onSelect={word => runSearch(word, "hybrid", keywordScope)} />}
+          {panel === "history" && <RecentActivity kind="search" entries={recentSearches.entries} onSelect={handleRecentSearch} titleId="search-panel-title"
+            onDelete={recentSearches.remove} onClear={recentSearches.clear} />}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPanel(null)}>Close</Button>
+          {panel === "options" && <Button variant="contained" disabled={!scopeSelected}
+            onClick={() => queryInput.trim() ? handleSearch() : setPanel(null)}>{queryInput.trim() ? "Search" : "Done"}</Button>}
+        </DialogActions>
+      </Dialog>
 
-      <RecentActivity
-        kind="search"
-        entries={recentSearches.entries}
-        onSelect={handleRecentSearch}
-        onDelete={recentSearches.remove}
-        onClear={recentSearches.clear}
-      />
-
-      <Stack spacing={0.5}>
-        <Typography variant="subtitle1" fontWeight={600}>
-          Matched Chunks
-        </Typography>
-
-        {hasSearched && !isLoading && !isError && data ? (
-          <Stack spacing={0.25}>
-            <Typography variant="body2" color="text.secondary">
-              {results.length} result{results.length === 1 ? "" : "s"} for “{query}”
-            </Typography>
-
-            {data.retrieval_mode_used !== data.mode ? (
-              <Typography variant="caption" color="warning.main">
-                Requested {data.mode}, using {data.retrieval_mode_used} because semantic retrieval is currently unavailable.
-              </Typography>
-            ) : null}
-          </Stack>
-        ) : null}
-      </Stack>
+      {hasSearched && !isLoading && !isError && data && (
+        <Stack spacing={0.25}>
+          <Typography component="h2" variant="body2" color="text.secondary">
+            {results.length} {results.length === 1 ? "match" : "matches"} for “{query}”
+          </Typography>
+          {data.retrieval_mode_used !== data.mode && <Typography variant="caption" color="warning.main">
+            Requested {data.mode}. Showing {data.retrieval_mode_used} results.
+          </Typography>}
+        </Stack>
+      )}
 
       {isLoading ? (
         <Stack direction="row" spacing={2} alignItems="center">
@@ -284,14 +208,8 @@ export function SearchPage() {
           Search failed.
           {error instanceof Error ? ` ${error.message}` : ""}
         </Alert>
-      ) : !hasSearched ? (
-        <Typography color="text.secondary">
-          Enter a query to search the corpus.
-        </Typography>
-      ) : results.length === 0 ? (
-        <Typography color="text.secondary">No results found.</Typography>
-      ) : (
-        <Stack spacing={2}>
+      ) : !hasSearched || results.length === 0 ? null : (
+        <Stack spacing={1.25}>
           {results.map((result) => (
             <SearchResultCard
               key={`${result.fileId}:${result.charStart ?? "none"}:${result.charEnd ?? "none"}`}

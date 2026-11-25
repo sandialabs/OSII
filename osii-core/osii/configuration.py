@@ -93,6 +93,8 @@ def default_models_config() -> dict[str, Any]:
         if model:
             for name in capabilities:
                 config["defaults"][name] = alias
+    if os.getenv("OSII_DEFAULT_EMBEDDER", "").strip():
+        config["defaults"].pop("embedding", None)
     return config
 
 
@@ -102,7 +104,7 @@ def builtin_tools_config() -> dict[str, Any]:
     tools = {
         "document-metadata": {
             "enabled": True, "processor_id": "core.document-metadata",
-            "runtime": {"endpoint": "http://127.0.0.1:8095/metadata"},
+            "runtime": {"endpoint": f"http://127.0.0.1:{os.getenv('OSII_MODEL_BRIDGE_PORT', '8095')}/metadata"},
             "model_access": {"mode": "gateway", "bindings": {}},
             "model_requirements": {"chat": "required"},
         },

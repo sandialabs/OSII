@@ -81,6 +81,8 @@ class ModuleProcessor:
     readiness_path: str
     readiness_config: tuple[str, ...]
     startup_schema: dict[str, Any]
+    enabled_by_default: bool
+    credential_env: str = ""
 
     @property
     def directory(self) -> Path:
@@ -91,7 +93,8 @@ class ModuleProcessor:
         return 'OSII_ENABLE_' + self.id.upper().replace('-', '_')
 
     def is_enabled(self, env: Mapping[str, str]) -> bool:
-        return enabled(env.get(self.enable_env, 'true'))
+        override = env.get(self.enable_env)
+        return self.enabled_by_default if override is None else enabled(override)
 
     def resolved_port(self, env: Mapping[str, str]) -> int:
         try:
@@ -167,11 +170,14 @@ def _load(path: Path) -> list[ModuleProcessor]:
     records = data.get('processors')
     if not isinstance(records, list) or not records:
         raise ModuleManifestError(f'{path}: processors must contain at least one [[processors]] table')
-    allowed = {'id', 'registration_id', 'processor_id', 'kind', 'display_name', 'description', 'command', 'port', 'port_env', 'requires', 'aliases', 'model_access', 'model_requirements', 'capabilities', 'config_schema', 'health_path', 'readiness_path', 'readiness_config', 'startup_schema'}
+    allowed = {'id', 'registration_id', 'processor_id', 'kind', 'display_name', 'description', 'command', 'port', 'port_env', 'requires', 'aliases', 'model_access', 'model_requirements', 'capabilities', 'config_schema', 'health_path', 'readiness_path', 'readiness_config', 'startup_schema', 'enabled_by_default', 'credential_env'}
     result = []
     for record in records:
         if not isinstance(record, dict) or set(record) - allowed:
             raise ModuleManifestError(f'{path}: unknown processor fields or invalid processor table')
+        enabled_by_default = record.get('enabled_by_default', True)
+        if not isinstance(enabled_by_default, bool):
+            raise ModuleManifestError(f'{path}: enabled_by_default must be a boolean')
         identifier = _text(record.get('id'), 'processors.id', path)
         if not SLUG.fullmatch(identifier):
             raise ModuleManifestError(f'{path}: processors.id must be a lowercase hyphenated identifier')
@@ -198,11 +204,20 @@ def _load(path: Path) -> list[ModuleProcessor]:
                 raise ModuleManifestError(f'{path}: {key} must be a table')
             tables[key] = value
         startup = tables['startup_schema']
+        credential = record.get('credential_env', '')
+        if not isinstance(credential, str) or (credential and (
+            not ENV_NAME.fullmatch(credential)
+            or not credential.endswith('_API_KEY')
+            or credential.startswith(('OSII_', 'OPENAI_'))
+        )):
+            raise ModuleManifestError(f'{path}: credential_env must be a module-specific API key name')
         if startup:
             properties = startup.get('properties', {})
             if startup.get('type') != 'object' or not isinstance(properties, dict) or startup.get('additionalProperties') is not False:
                 raise ModuleManifestError(f'{path}: startup_schema must be a closed object schema')
             for name, prop in properties.items():
+                if name == credential:
+                    raise ModuleManifestError(f'{path}: store credentials separately from startup settings')
                 if not ENV_NAME.fullmatch(name) or name in {'DATABASE_URL', 'OSII_STORAGE_BACKEND', 'PYTHONPATH', 'UV_PROJECT_ENVIRONMENT', 'OSII_CONFIG_DIR'}:
                     raise ModuleManifestError(f'{path}: invalid startup setting {name}')
                 if not isinstance(prop, dict) or prop.get('type') not in {'string', 'boolean', 'integer', 'number'} or 'default' not in prop:
@@ -222,7 +237,7 @@ def _load(path: Path) -> list[ModuleProcessor]:
             _text(record.get('display_name'), 'display_name', path), _text(record.get('description'), 'description', path),
             command, port, port_env, extras, _strings(record.get('requires', []), 'requires', path), aliases,
             access, tables['model_requirements'], tables['capabilities'], tables['config_schema'], health_path, readiness_path,
-            _strings(record.get('readiness_config', []), 'readiness_config', path), startup))
+            _strings(record.get('readiness_config', []), 'readiness_config', path), startup, enabled_by_default, credential))
     return result
 
 

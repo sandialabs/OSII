@@ -5,42 +5,59 @@ import { Accordion, AccordionDetails, AccordionSummary, Alert, Button, Chip, Cir
 import PlayArrowOutlined from "@mui/icons-material/PlayArrowOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import { Link } from "react-router-dom";
+import { buildRunRoute, buildWikiRoute, READ_WIKIS_PATH, wikiRunRoute } from "../../../utils/routes";
 import { getToolCatalog } from "../../../api/tools";
 import { controlProcessingRun, getProcessingRun } from "../../../api/queue";
 import type { ScopeDescribeRequest } from "../../../api/types";
+import { flowTestError } from "../../../domain/processingFlowTests";
 import { useEnrichmentJob } from "../../../hooks/useEnrichmentJob";
 import { ProcessorConfigInput } from "../../queue/components/ProcessorConfigInput";
 
 const activeStatuses = ["pending", "queued", "running", "pausing", "cancelling"];
 
 /** One action surface for every registered scope tool, including new methods. */
-export function ToolActionPanel({ scope, action, title }: { scope: ScopeDescribeRequest; action?: string; title?: string }) {
+export function ToolActionPanel({ scope, action, title, methodId, compact = false }: {
+  scope: ScopeDescribeRequest; action?: string; title?: string; methodId?: string; compact?: boolean;
+}) {
   const client = useQueryClient();
   const catalog = useQuery({ queryKey: ["tool-catalog"], queryFn: getToolCatalog, staleTime: 30_000 });
-  const methods = useMemo(() => (catalog.data?.methods ?? []).filter(method => method.execution === "scope" && method.scopes.includes(scope.scope_type) && (!action || method.action === action)), [catalog.data, scope.scope_type, action]);
+  const methods = useMemo(() => (catalog.data?.methods ?? []).filter(method => method.execution === "scope"
+    && method.scopes.includes(scope.scope_type) && (!action || method.action === action)
+    && (!methodId || method.id === methodId)), [catalog.data, scope.scope_type, action, methodId]);
   const [selected, setSelected] = useState("");
   const [model, setModel] = useState("__configured__");
   const [config, setConfig] = useState<Record<string, unknown>>({});
-  const method = methods.find(item => item.id === selected) ?? methods[0];
+  const defaultMethod = action === "metadata.suggest"
+    ? methods.find(item => item.id === "core.document-metadata")
+    : undefined;
+  const method = methods.find(item => item.id === selected) ?? defaultMethod ?? methods[0];
   const job = useEnrichmentJob();
-  const key = `osii:tool-run:${catalog.data?.library_id}:${JSON.stringify(scope)}:${action ?? "all"}`;
+  const key = `osii:tool-run:${catalog.data?.library_id}:${JSON.stringify(scope)}:${methodId ?? action ?? "all"}`;
   const [runId, setRunId] = useState("");
   useEffect(() => { setRunId(localStorage.getItem(key) ?? ""); }, [key]);
   const run = useQuery({ queryKey: ["processing-run", runId], queryFn: () => getProcessingRun(runId), enabled: Boolean(runId),
     refetchInterval: query => query.state.error ? false : activeStatuses.includes(query.state.data?.status ?? "queued") ? 1200 : false });
+  const metadataFileId = action === "metadata.suggest" && scope.scope_type === "object" ? scope.file_id : undefined;
   useEffect(() => {
     if (run.data && ["done", "error", "cancelled"].includes(run.data.status)) {
       void client.invalidateQueries({ queryKey: ["enrichments"] });
       void client.invalidateQueries({ queryKey: ["product-history"] });
       void client.invalidateQueries({ queryKey: ["products"] });
+      if (metadataFileId && run.data.status === "done") {
+        void client.invalidateQueries({ queryKey: ["file-previews"] });
+        void client.invalidateQueries({ queryKey: ["scopes", "overview"] });
+        void client.invalidateQueries({ queryKey: ["objects", metadataFileId, "metadata"] });
+      }
     }
-  }, [run.data?.status, client]);
+  }, [run.data?.status, metadataFileId, client]);
   const control = useMutation({ mutationFn: (command: "pause" | "resume" | "cancel" | "retry") => controlProcessingRun(runId, command), onSuccess: () => { void run.refetch(); } });
   const active = job.isPending || Boolean(runId && !run.data && !run.isError) || activeStatuses.includes(run.data?.status ?? "");
   const chatModels = catalog.data?.models.filter(item => item.capabilities.includes("chat")) ?? [];
   const configuredModel = chatModels.find(item => item.id === method?.bindings.chat);
   const libraryModel = chatModels.find(item => item.id === catalog.data?.defaults.chat) ?? chatModels[0];
   const error = job.error ?? control.error ?? run.error;
+  const reader = wikiRunRoute(run.data) ?? (action === "wiki.write" && run.data?.status === "done"
+    ? buildWikiRoute(READ_WIKIS_PATH, scope, { method: run.data.tool_id }) : undefined);
   const generate = async () => {
     if (!method) return;
     const properties = method.config_schema.properties ?? {};
@@ -55,16 +72,16 @@ export function ToolActionPanel({ scope, action, title }: { scope: ScopeDescribe
   if (!method) return <Alert severity="info">No compatible method is connected. <Link to="/admin/processors">Open Setup</Link></Alert>;
   return <Stack spacing={1.5}>
     <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
-      <TextField select size="small" label="Method" value={method.id} onChange={event => { setSelected(event.target.value); setConfig({}); setModel("__configured__"); }} sx={{ minWidth: 250 }}>
+      {(!compact || methods.length > 1) && <TextField select size="small" label="Method" value={method.id} onChange={event => { setSelected(event.target.value); setConfig({}); setModel("__configured__"); }} sx={{ minWidth: 250 }}>
         {methods.map(item => <MenuItem key={item.id} value={item.id}>{item.label}</MenuItem>)}
-      </TextField>
+      </TextField>}
       {method.model_requirements.chat ? <TextField select size="small" label="Writing model" value={model} onChange={event => setModel(event.target.value)} sx={{ minWidth: 300 }}>
         <MenuItem value="__configured__">{configuredModel && configuredModel.id !== libraryModel?.id ? "Configured" : "Library default"} — {method.configuration_error ? "Choose a model" : configuredModel?.label ?? libraryModel?.label ?? "Choose in Setup"}</MenuItem>
         {configuredModel?.id !== libraryModel?.id ? <MenuItem value="__library__">Library default — {libraryModel?.label ?? "Choose in Setup"}</MenuItem> : null}
         {chatModels.map(item => <MenuItem value={item.id} key={item.id}>{item.label}</MenuItem>)}
       </TextField> : null}
       <Button variant="contained" startIcon={<PlayArrowOutlined />} disabled={catalog.data?.permissions?.run === false || active || Boolean(method.configuration_error && model === "__configured__") || Boolean(method.model_requirements.chat === "required" && !chatModels.length)} onClick={() => { void generate().catch(() => {}); }}>
-        {active ? "Working…" : action === "wiki.write" ? "Generate wiki" : "Run"}
+        {active ? "Working…" : action === "wiki.write" ? compact ? "Create wiki" : "Generate wiki" : "Run"}
       </Button>
     </Stack>
     {catalog.data?.permissions?.run === false ? <Typography variant="caption">An administrator can run shared processing tools.</Typography> : null}
@@ -73,19 +90,24 @@ export function ToolActionPanel({ scope, action, title }: { scope: ScopeDescribe
       <AccordionSummary expandIcon={<ExpandMoreOutlined />}><Typography variant="body2">Options</Typography></AccordionSummary>
       <AccordionDetails><Stack spacing={2}>{Object.entries(method.config_schema.properties ?? {}).filter(([name]) => name !== "title").map(([name, property]) => <ProcessorConfigInput key={name} name={name} property={property} value={config[name] ?? property.default} onChange={value => setConfig(old => ({ ...old, [name]: value }))} />)}</Stack></AccordionDetails>
     </Accordion> : null}
-    <Typography variant="caption" color="text.secondary">{method.batching?.whole_scope ? `New runs process every document and all usable saved text, in requests of up to ${method.batching.documents} text windows and ${method.batching.characters.toLocaleString()} characters. Completed batches are saved for pause and retry.` : `Up to ${method.limits.documents.toLocaleString()} documents · ${method.limits.characters.toLocaleString()} text characters.`}</Typography>
-    {method.batching?.whole_scope && method.model_requirements.chat ? <Typography variant="caption" color="text.secondary">Model-backed methods make calls for each batch and summary combination. Larger scopes can take longer and use more provider credit.</Typography> : null}
-    {runId && run.data?.batch_progress ? <ScopeBatchResults runId={runId} progress={run.data.batch_progress} /> : null}
+    {!compact && <Typography variant="caption" color="text.secondary">{method.batching?.whole_scope ? `New runs process every document and all usable saved text, in requests of up to ${method.batching.documents} text windows and ${method.batching.characters.toLocaleString()} characters. Completed batches are saved for pause and retry.` : `Up to ${method.limits.documents.toLocaleString()} documents · ${method.limits.characters.toLocaleString()} text characters.`}</Typography>}
+    {!compact && method.batching?.whole_scope && method.model_requirements.chat ? <Typography variant="caption" color="text.secondary">Model-backed methods make calls for each batch and summary combination. Larger scopes can take longer and use more provider credit.</Typography> : null}
+    {!compact && runId && run.data?.batch_progress ? <ScopeBatchResults runId={runId} progress={run.data.batch_progress} /> : null}
     {runId ? <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
       <Chip size="small" icon={active ? <CircularProgress size={12} /> : undefined} label={run.data?.status === "done" ? "Saved" : run.data?.status ?? "Queued"} color={run.data?.status === "error" ? "error" : run.data?.status === "done" ? "success" : "default"} />
-      <Button component={Link} to="/intake?tab=activity" size="small">Activity ↗</Button>
-      {run.data?.status === "running" || run.data?.status === "queued" ? <Button size="small" disabled={catalog.data?.permissions?.run === false || control.isPending} onClick={() => control.mutate("pause")}>Pause</Button> : null}
-      {run.data?.status === "error" ? <Button size="small" disabled={catalog.data?.permissions?.run === false || control.isPending} onClick={() => control.mutate("retry")}>Retry</Button> : null}
-      {run.data?.status === "paused" ? <Button size="small" disabled={catalog.data?.permissions?.run === false} onClick={() => control.mutate("resume")}>Resume</Button> : null}
-      {active ? <Button size="small" disabled={catalog.data?.permissions?.run === false || control.isPending} onClick={() => control.mutate("cancel")}>Cancel</Button> : null}
+      {reader && <Button component={Link} to={reader} size="small" variant="contained">Read wiki</Button>}
+      <Button component={Link} to={buildRunRoute(runId)} size="small">View run</Button>
+      {!compact && <>
+        {run.data?.status === "running" || run.data?.status === "queued" ? <Button size="small" disabled={catalog.data?.permissions?.run === false || control.isPending} onClick={() => control.mutate("pause")}>Pause</Button> : null}
+        {run.data?.status === "error" ? <Button size="small" disabled={catalog.data?.permissions?.run === false || control.isPending} onClick={() => control.mutate("retry")}>Retry</Button> : null}
+        {run.data?.status === "paused" ? <Button size="small" disabled={catalog.data?.permissions?.run === false} onClick={() => control.mutate("resume")}>Resume</Button> : null}
+        {active ? <Button size="small" disabled={catalog.data?.permissions?.run === false || control.isPending} onClick={() => control.mutate("cancel")}>Cancel</Button> : null}
+      </>}
     </Stack> : null}
-    {active ? <Typography variant="caption" color="text.secondary">You can leave this page. Your last saved result stays available.</Typography> : null}
-    {run.data?.status === "error" ? <Alert severity="error">{run.data.error || "The tool failed. Its inputs are saved for retry."}</Alert> : null}
+    {!compact && active ? <Typography variant="caption" color="text.secondary">You can leave this page. Your last saved result stays available.</Typography> : null}
+    {run.data?.status === "error" ? <Alert severity="error">
+      {flowTestError({ ok: false, detail: run.data.error || "The tool failed. Its inputs are saved for retry." }, "View run")}
+    </Alert> : null}
     {run.isError ? <Button size="small" onClick={() => { setRunId(""); localStorage.removeItem(key); }}>Dismiss unavailable run</Button> : null}
     {error ? <Alert severity="error">{error instanceof Error ? error.message : "The request failed."}</Alert> : null}
   </Stack>;

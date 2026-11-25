@@ -17,8 +17,10 @@ router = APIRouter(prefix="/api/objects", tags=["extraction-variants"])
 
 
 @router.get("/{file_id}/extractions")
-def get_extractions(request: Request, file_id: str):
-    result = list_extraction_variants(request.app.state.osii_root.resolve(), file_id)
+def get_extractions(request: Request, file_id: str, include_artifacts: bool = False):
+    result = list_extraction_variants(
+        request.app.state.osii_root.resolve(), file_id, include_artifacts=include_artifacts
+    )
     if result is None:
         raise HTTPException(status_code=404, detail="object not found")
     return result

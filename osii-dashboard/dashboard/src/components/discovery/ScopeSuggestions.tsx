@@ -10,11 +10,13 @@ export function ScopeSuggestions({
   scope,
   mode = "keywords",
   compact = false,
+  titleId,
   onSelect,
 }: {
   scope: ScopeDescribeRequest;
   mode?: "keywords" | "questions";
   compact?: boolean;
+  titleId?: string;
   onSelect: (value: string) => void;
 }) {
   const suggestions = useScopeKeywordSuggestions(scope);
@@ -32,7 +34,7 @@ export function ScopeSuggestions({
       <Stack spacing={1.25}>
         <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "flex-start", sm: "center" }} spacing={1}>
           <Stack spacing={0.2}>
-            <Typography variant={compact ? "subtitle2" : "subtitle1"} fontWeight={700}>
+            <Typography id={titleId} variant={compact ? "subtitle2" : "subtitle1"} fontWeight={700}>
               {mode === "questions" ? "Suggested questions" : "Explore by keyword"}
             </Typography>
             {!compact ? <Typography variant="body2" color="text.secondary">

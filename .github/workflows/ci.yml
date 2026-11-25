@@ -28,7 +28,7 @@ jobs:
       - name: Shared sidecar and PostgreSQL read contracts
         env:
           OSII_READ_TEST_DATABASE_URL: postgresql+psycopg://osii_read_test:osii-read-test-only@localhost:5432/osii_reads_test
-        run: uv run --frozen --python 3.12 --package osii --extra postgres --extra dev python -m pytest --noconftest osii-core/tests/test_library_reads.py osii-core/tests/test_processing_commits.py osii-core/tests/test_library_authoring.py osii-core/tests/test_retrieval_jobs.py osii-core/tests/test_text_authoring.py osii-core/tests/test_local_postgres.py -q
+        run: uv run --frozen --python 3.12 --package osii --extra postgres --extra dev python -m pytest --noconftest osii-core/tests/test_library_reads.py osii-core/tests/test_processing_commits.py osii-core/tests/test_library_authoring.py osii-core/tests/test_retrieval_jobs.py osii-core/tests/test_text_authoring.py osii-core/tests/test_local_postgres.py osii-core/tests/test_database_query.py -q
       - name: Shared RAG strategies
         run: uv run --frozen --python 3.12 --package osii --extra rag-haystack --extra dev python -m pytest osii-core/rag-tests osii-core/tests/test_rag_experiments_api.py -q
       - name: Processor contracts
@@ -58,6 +58,19 @@ jobs:
       - name: Dashboard
         working-directory: osii-dashboard/dashboard
         run: npm ci && npm test --if-present && npm run build
+      - uses: astral-sh/setup-uv@v10.1.0
+      - name: Install Chromium for browser tests
+        run: uv run --frozen --python 3.12 --package osii --extra dev --with playwright==1.65.2 python -m playwright install --with-deps chromium
+      - name: OSII-local workflows in Chromium
+        run: uv run --frozen --python 3.12 --package osii --extra dev --with playwright==1.65.2 --with docx2txt==0.9 python -m pytest osii-dashboard/dashboard/tests/test_local_browser.py -q
+      - name: Upload browser trace on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: local-browser-traces
+          path: osii-dashboard/dashboard/.cache/browser/
+          include-hidden-files: true
+          if-no-files-found: ignore
 
   windows-startup:
     runs-on: windows-latest

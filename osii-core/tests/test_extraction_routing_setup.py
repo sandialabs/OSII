@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from osii.api import extractor_routes as routes
+from osii.domain.processing.extractor_selection import require_source_type
 from osii.extraction.dispatcher import dispatch_extract
 
 
@@ -58,3 +59,13 @@ def test_manifest_extractors_validate_without_the_old_registry(monkeypatch):
     errors, warnings = routes.validate_routes({'routes': [{'name': 'unknown', 'extractor': 'not.installed', 'extensions': ['.pdf']}]})
     assert not errors
     assert any('registry' in warning for warning in warnings)
+
+
+def test_source_constraints_use_extensions_first_then_filename_mime():
+    require_source_type(Path("scan.PDF"), {"file_extensions": [".pdf"]}, "ocr")
+    require_source_type(Path("scan.PNG"), {"media_types": ["image/*"]}, "ocr")
+    require_source_type(Path("unknown"), {}, "generic")
+    with pytest.raises(ValueError, match="supported: .pdf"):
+        require_source_type(Path("scan.png"), {"file_extensions": [".pdf"], "media_types": ["image/*"]}, "ocr")
+    with pytest.raises(ValueError, match="supported: image/"):
+        require_source_type(Path("notes.txt"), {"media_types": ["image/*"]}, "ocr")

@@ -33,15 +33,15 @@ For source-only development commands and OpenAI-compatible routing, see
 
 ## Generate and compare
 
-Open a processed document's **Wiki** tab, a collection's **Wikis & products**
-section, or **Library wikis & products → Wiki** on Files. Choose either method and select
-**Generate wiki**. Saved Wiki Markdown outputs are discovered by
-their standard `artifact_type`, not by a hard-coded processor name or filename,
-so another SME's conforming wiki enricher appears in the same view.
+Open **Wikis** from the left menu or Toolbox, then select **Create a wiki**. Choose the library, a
+folder, a collection, or a document, then select a method and click **Create wiki**.
+The completed run links directly to **Read wiki**. To reopen one later, use
+**Wikis** and choose a recent run or select the original scope. You can read
+saved wikis when the writing processor is offline. The reader lists standard
+`wiki_markdown` artifacts from any registered method.
 
-The concept/entity processor also returns structured artifacts. Open the
-regular **Other products** view to browse and sort those outputs through the
-generic entity-list and table renderers.
+The concept/entity processor also saves an entity list and a concept table
+with the scope's other artifacts.
 
 Processor settings, including the prompt, temperature, and input budget, are
 descriptor-driven and appear in Setup. The chosen model connection is a tool
@@ -54,7 +54,7 @@ The writing-model field shows the actual configured model. Library defaults are
 selected automatically; a missing old `top`/`mid` placeholder inherits that
 default. A valid custom binding is preserved. Incompatible choices are rejected
 before a job starts. Generation uses the persistent worker and appears in
-**Activity**. Navigate away and return without losing its status; failed work
+**Queue & activity**. Navigate away and return without losing its status. Failed work
 can be retried on the same saved text inputs.
 
 Every document, folder, collection, and library wiki has **Read**, **Edit**, and
@@ -63,6 +63,12 @@ stale saves preserve the draft and require comparison with the latest revision.
 Regeneration leaves human edits visible and saves a candidate for review. Use
 **History → Use this revision** to explicitly choose a candidate or older version.
 Edited passages retain citation provenance but require grounding review.
+
+For large scopes, OSII combines draft sections into the article. The reading
+view can link back to the original files under **Source documents**. Temporary
+draft identifiers stay in the batch results. If an older run saved only
+generation notes, create a new wiki for the same scope. History keeps the
+original revision available.
 
 ## Storage and provenance
 
