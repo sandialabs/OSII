@@ -12,6 +12,8 @@ def test_scopes_folders_endpoint(client, sample_osii_object):
     data = response.json()
     assert "scopes" in data
     assert any(item["folder_id"] == sample_osii_object["root_folder_id"] for item in data["scopes"])
+    # The root descriptor's source folder name, never its full host path.
+    assert data["source_namespace"] == "data_root"
 
 
 def test_scopes_collections_endpoint(client, temp_osii_root):

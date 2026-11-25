@@ -31,6 +31,16 @@ test("source file path is preferred and legacy source paths still work", () => {
   assert.equal(immediateFiles([file("uploaded_data/report.pdf")], "").length, 1);
 });
 
+test("files under a custom-named source root appear in its folders", () => {
+  const files = ["osii_files/a.pdf", "osii_files/reports/b.pdf"].map(file);
+  assert.deepEqual(immediateFiles(files, "", "osii_files").map((item) => item.file_id), ["osii_files/a.pdf"]);
+  assert.deepEqual(immediateFiles(files, "reports", "osii_files").map((item) => item.file_id), ["osii_files/reports/b.pdf"]);
+  // Without the namespace the first segment is an ordinary folder, as before.
+  assert.equal(immediateFiles(files, "").length, 0);
+  // Namespace-less relpaths are not duplicated into the root.
+  assert.equal(immediateFiles([file("reports/c.pdf")], "", "osii_files").length, 0);
+});
+
 test("names sort naturally; missing dates and sizes sort last", () => {
   const files = [
     { fileId: "10", title: "Report 10", sizeBytes: null, modifiedAt: null },

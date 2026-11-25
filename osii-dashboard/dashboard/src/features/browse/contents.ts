@@ -23,14 +23,18 @@ export function immediateFolders(scopes: FolderScopeDescriptor[], parent: Folder
   }).sort((a, b) => compareNames(folderName(a), folderName(b)));
 }
 
-export function immediateFiles(summaries: ObjectSummary[], folderPath: string): ObjectSummary[] {
+export function immediateFiles(summaries: ObjectSummary[], folderPath: string, sourceNamespace = ""): ObjectSummary[] {
   const path = normalizeFolderPath(folderPath);
+  // Mirrors Core's folder membership: relpaths start with a storage namespace,
+  // which is the configured source folder's own name for custom source roots.
+  const namespaces = new Set(["source", "my_data", "uploaded_data"]);
+  if (sourceNamespace) namespaces.add(sourceNamespace);
   return summaries.filter((file) => {
     const source = normalizeFolderPath(file.source_file_relpath || file.source_relpath || "");
     const parent = source.split("/").slice(0, -1).join("/");
     if (parent === path) return true;
     const [namespace, ...relative] = source.split("/");
-    if (!["source", "my_data", "uploaded_data"].includes(namespace)) return false;
+    if (!namespaces.has(namespace)) return false;
     return relative.slice(0, -1).join("/") === path;
   });
 }

@@ -91,8 +91,8 @@ export function BrowsePage() {
   }, [scopes, currentFolder]);
 
   const fileCards = useMemo(
-    () => immediateFiles(summariesQuery.data?.summaries ?? [], currentFolder?.path ?? "").map(toFileCardModel),
-    [summariesQuery.data?.summaries, currentFolder?.path],
+    () => immediateFiles(summariesQuery.data?.summaries ?? [], currentFolder?.path ?? "", folderQuery.data?.source_namespace).map(toFileCardModel),
+    [summariesQuery.data?.summaries, currentFolder?.path, folderQuery.data?.source_namespace],
   );
 
   const handleOpenFolder = (folder: FolderScopeDescriptor) => {
